@@ -379,11 +379,11 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
 pub fn sub_perfixes_for_balanced_add(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
     let mut counts: BTreeMap<Prefix<XorName>, (usize, usize)> = BTreeMap::new();
     for node in nodes {
-        let pfx = *node.our_prefix();
+        let prefix = *node.our_prefix();
         let name = node.name();
 
-        let (bit_0, bit_1) = counts.entry(pfx).or_default();
-        if name.bit(pfx.bit_count()) {
+        let (bit_0, bit_1) = counts.entry(prefix).or_default();
+        if name.bit(prefix.bit_count()) {
             *bit_1 += 1;
         } else {
             *bit_0 += 1;

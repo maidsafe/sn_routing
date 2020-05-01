@@ -50,7 +50,7 @@ const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Number of RelocatePrepare to consensus before actually relocating a node.
 /// This helps avoid relocated node receiving message they need to process from previous section.
-const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
+const RELOCATE_COOL_DOWN_STEPS: i32 = 10;
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
@@ -59,11 +59,11 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     sig_accumulator: SignatureAccumulator,
-    gen_pfx_info: GenesisPrefixInfo,
+    genesis_prefix_info: GenesisPrefixInfo,
     timer_token: u64,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    // The accumulated info during a split pfx change.
+    // The accumulated info during a split.
     split_cache: Option<SplitCache>,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
@@ -85,7 +85,7 @@ impl Approved {
         let mut ages = BTreeMap::new();
         let _ = ages.insert(public_id, MIN_AGE_COUNTER);
         let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
-        let gen_pfx_info = GenesisPrefixInfo {
+        let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: create_first_elders_info(p2p_node)?,
             public_keys: first_dkg_result.public_key_set,
             state_serialized: Vec::new(),
@@ -95,7 +95,7 @@ impl Approved {
 
         Ok(Self::new(
             core,
-            gen_pfx_info,
+            genesis_prefix_info,
             first_dkg_result.secret_key_share,
         ))
     }
@@ -103,22 +103,26 @@ impl Approved {
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        gen_pfx_info: GenesisPrefixInfo,
+        genesis_prefix_info: GenesisPrefixInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let section_keys_provider = SectionKeysProvider::new(
-            gen_pfx_info.public_keys.clone(),
-            SectionKeyShare::new(secret_key_share, core.id(), &gen_pfx_info.elders_info),
+            genesis_prefix_info.public_keys.clone(),
+            SectionKeyShare::new(
+                secret_key_share,
+                core.id(),
+                &genesis_prefix_info.elders_info,
+            ),
         );
 
         let consensus_engine =
-            ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
+            ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &genesis_prefix_info);
         let shared_state = SharedState::new(
-            gen_pfx_info.elders_info.clone(),
-            gen_pfx_info.public_keys.clone(),
-            gen_pfx_info.ages.clone(),
+            genesis_prefix_info.elders_info.clone(),
+            genesis_prefix_info.public_keys.clone(),
+            genesis_prefix_info.ages.clone(),
         );
 
         Self {
@@ -126,7 +130,7 @@ impl Approved {
             shared_state,
             section_keys_provider,
             sig_accumulator: Default::default(),
-            gen_pfx_info,
+            genesis_prefix_info,
             timer_token,
             dkg_cache: Default::default(),
             split_cache: None,
@@ -144,7 +148,7 @@ impl Approved {
             shared_state: self.shared_state,
             section_keys_provider: self.section_keys_provider,
             full_id: core.full_id,
-            gen_pfx_info: self.gen_pfx_info,
+            genesis_prefix_info: self.genesis_prefix_info,
             msg_filter: core.msg_filter,
             msg_queue: core.msg_queue,
             transport: core.transport,
@@ -182,7 +186,7 @@ impl Approved {
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             sig_accumulator: state.sig_accumulator,
-            gen_pfx_info: state.gen_pfx_info,
+            genesis_prefix_info: state.genesis_prefix_info,
             timer_token,
             split_cache: state.split_cache,
             // TODO: these fields should come from PausedState too
@@ -368,12 +372,12 @@ impl Approved {
     pub fn handle_genesis_update(
         &mut self,
         core: &mut Core,
-        gen_pfx_info: GenesisPrefixInfo,
+        genesis_prefix_info: GenesisPrefixInfo,
     ) -> Result<()> {
-        info!("Received GenesisUpdate: {:?}", gen_pfx_info);
+        info!("Received GenesisUpdate: {:?}", genesis_prefix_info);
 
         core.msg_filter.reset();
-        self.handle_elders_update(core, gen_pfx_info);
+        self.handle_elders_update(core, genesis_prefix_info);
         Ok(())
     }
 
@@ -866,7 +870,7 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
+                self.vote_for_relocate_prepare(details, RELOCATE_COOL_DOWN_STEPS);
             }
 
             return true;
@@ -1136,7 +1140,7 @@ impl Approved {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
             self.process_post_reset_events(core, old_prefix, complete_data.to_process);
-            self.handle_elders_update(core, complete_data.gen_pfx_info);
+            self.handle_elders_update(core, complete_data.genesis_prefix_info);
 
             info!("Demoted");
             core.send_event(Event::Demoted);
@@ -1146,7 +1150,7 @@ impl Approved {
 
         self.finalise_parsec_reset(
             core,
-            complete_data.gen_pfx_info,
+            complete_data.genesis_prefix_info,
             complete_data.to_vote_again,
         )?;
         self.process_post_reset_events(core, old_prefix, complete_data.to_process);
@@ -1200,22 +1204,22 @@ impl Approved {
                     });
                     Ok(false)
                 }
-                Some(cache) => {
-                    let cache_pfx = *cache.elders_info.prefix();
+                Some(cached) => {
+                    let cached_prefix = *cached.elders_info.prefix();
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
-                    if cache_pfx.matches(our_id.name()) {
+                    if cached_prefix.matches(our_id.name()) {
                         self.add_our_elders_info(
                             our_id,
-                            cache.elders_info,
-                            cache.key_info,
-                            cache.proofs,
+                            cached.elders_info,
+                            cached.key_info,
+                            cached.proofs,
                         )?;
                         self.shared_state.sections.add_neighbour(elders_info);
                     } else {
                         self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
-                        self.shared_state.sections.add_neighbour(cache.elders_info);
+                        self.shared_state.sections.add_neighbour(cached.elders_info);
                     }
                     Ok(true)
                 }
@@ -1333,7 +1337,7 @@ impl Approved {
         let complete_data = self.prepare_parsec_reset(core.id())?;
         self.finalise_parsec_reset(
             core,
-            complete_data.gen_pfx_info,
+            complete_data.genesis_prefix_info,
             complete_data.to_vote_again,
         )?;
         self.send_genesis_updates(core);
@@ -1356,7 +1360,7 @@ impl Approved {
         self.shared_state.handled_genesis_event = false;
         let cached_events = self.consensus_engine.prepare_reset(our_id);
 
-        let gen_pfx_info = GenesisPrefixInfo {
+        let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: self.shared_state.our_info().clone(),
             public_keys: self.section_keys_provider.public_key_set().clone(),
             state_serialized: bincode::serialize(&self.shared_state)?,
@@ -1364,7 +1368,7 @@ impl Approved {
             parsec_version: self.consensus_engine.parsec_version() + 1,
         };
 
-        let our_pfx = *self.shared_state.our_prefix();
+        let our_prefix = *self.shared_state.our_prefix();
 
         let to_process = cached_events
             .iter()
@@ -1395,15 +1399,15 @@ impl Approved {
                 match event.payload {
                     // Only re-vote if still relevant to our new prefix.
                     AccumulatingEvent::Online(ref payload) => {
-                        our_pfx.matches(payload.p2p_node.name())
+                        our_prefix.matches(payload.p2p_node.name())
                     }
-                    AccumulatingEvent::Offline(pub_id) => our_pfx.matches(pub_id.name()),
+                    AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
                     AccumulatingEvent::AckMessage(ref payload) => {
-                        our_pfx.matches(&payload.dst_name)
+                        our_prefix.matches(&payload.dst_name)
                     }
                     AccumulatingEvent::Relocate(ref details)
                     | AccumulatingEvent::RelocatePrepare(ref details, _) => {
-                        our_pfx.matches(details.pub_id.name())
+                        our_prefix.matches(details.pub_id.name())
                     }
                     // Drop: no longer relevant after prefix change.
                     AccumulatingEvent::Genesis { .. }
@@ -1414,7 +1418,7 @@ impl Approved {
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
                     | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
-                        our_pfx.is_neighbour(elders_info.prefix())
+                        our_prefix.is_neighbour(elders_info.prefix())
                     }
 
                     // Keep: Still relevant after prefix change.
@@ -1426,7 +1430,7 @@ impl Approved {
             .collect();
 
         Ok(ParsecResetData {
-            gen_pfx_info,
+            genesis_prefix_info,
             to_vote_again,
             to_process,
         })
@@ -1435,7 +1439,7 @@ impl Approved {
     fn process_post_reset_events(
         &mut self,
         core: &mut Core,
-        old_pfx: Prefix<XorName>,
+        old_prefix: Prefix<XorName>,
         to_process: BTreeSet<NetworkEvent>,
     ) {
         to_process.iter().for_each(|event| match &event.payload {
@@ -1459,21 +1463,21 @@ impl Approved {
             }
         });
 
-        self.resend_pending_voted_messages(core, old_pfx);
+        self.resend_pending_voted_messages(core, old_prefix);
     }
 
     // Finalise parsec reset and revotes for all previously unaccumulated events.
     fn finalise_parsec_reset(
         &mut self,
         core: &mut Core,
-        gen_pfx_info: GenesisPrefixInfo,
+        genesis_prefix_info: GenesisPrefixInfo,
         to_vote_again: BTreeSet<NetworkEvent>,
     ) -> Result<()> {
-        self.gen_pfx_info = gen_pfx_info;
+        self.genesis_prefix_info = genesis_prefix_info;
         self.consensus_engine.finalise_reset(
             &mut core.rng,
             core.full_id.clone(),
-            &self.gen_pfx_info,
+            &self.genesis_prefix_info,
         );
 
         to_vote_again.iter().for_each(|event| {
@@ -1484,17 +1488,20 @@ impl Approved {
     }
 
     // Handles change to the section elders as non-elder.
-    fn handle_elders_update(&mut self, core: &mut Core, gen_pfx_info: GenesisPrefixInfo) {
+    fn handle_elders_update(&mut self, core: &mut Core, genesis_prefix_info: GenesisPrefixInfo) {
         self.section_keys_provider =
-            SectionKeysProvider::new(gen_pfx_info.public_keys.clone(), None);
-        self.consensus_engine
-            .finalise_reset(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
-        self.shared_state = SharedState::new(
-            gen_pfx_info.elders_info.clone(),
-            gen_pfx_info.public_keys.clone(),
-            gen_pfx_info.ages.clone(),
+            SectionKeysProvider::new(genesis_prefix_info.public_keys.clone(), None);
+        self.consensus_engine.finalise_reset(
+            &mut core.rng,
+            core.full_id.clone(),
+            &genesis_prefix_info,
         );
-        self.gen_pfx_info = gen_pfx_info;
+        self.shared_state = SharedState::new(
+            genesis_prefix_info.elders_info.clone(),
+            genesis_prefix_info.public_keys.clone(),
+            genesis_prefix_info.ages.clone(),
+        );
+        self.genesis_prefix_info = genesis_prefix_info;
     }
 
     // Checking members vote status and vote to remove those non-resposive nodes.
@@ -1564,7 +1571,7 @@ impl Approved {
             p2p_node
         );
 
-        let trimmed_info = self.gen_pfx_info.trimmed();
+        let trimmed_info = self.genesis_prefix_info.trimmed();
         let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
         let dst = DstLocation::Node(*p2p_node.name());
 
@@ -1575,9 +1582,9 @@ impl Approved {
     }
 
     fn send_neighbour_infos(&mut self, core: &mut Core) {
-        for pfx in self.shared_state.neighbour_prefixes() {
+        for prefix in self.shared_state.neighbour_prefixes() {
             let src = SrcLocation::Section(*self.shared_state.our_prefix());
-            let dst = DstLocation::Prefix(pfx);
+            let dst = DstLocation::Prefix(prefix);
             let variant = Variant::NeighbourInfo(self.shared_state.our_info().clone());
 
             if let Err(err) = self.send_routing_message(core, src, dst, variant, None) {
@@ -1591,7 +1598,7 @@ impl Approved {
         for (recipient, msg) in self.create_genesis_updates() {
             trace!(
                 "Send GenesisUpdate({:?}) to {}",
-                self.gen_pfx_info,
+                self.genesis_prefix_info,
                 recipient
             );
 
@@ -1604,7 +1611,7 @@ impl Approved {
 
     // TODO: make non-pub
     pub fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let payload = self.gen_pfx_info.trimmed();
+        let payload = self.genesis_prefix_info.trimmed();
 
         self.shared_state
             .adults_and_infants_p2p_nodes()
@@ -1740,7 +1747,7 @@ impl Approved {
 
     // After parsec reset, resend any unaccumulated voted messages to everyone that needs
     // them but possibly did not receive them already.
-    fn resend_pending_voted_messages(&mut self, core: &mut Core, _old_pfx: Prefix<XorName>) {
+    fn resend_pending_voted_messages(&mut self, core: &mut Core, _old_prefix: Prefix<XorName>) {
         for (_, msg) in mem::take(&mut self.pending_voted_msgs) {
             let msg = match MessageWithBytes::new(msg) {
                 Ok(msg) => msg,
@@ -1876,9 +1883,10 @@ impl Approved {
     fn should_handle_genesis_update(
         &self,
         our_id: &PublicId,
-        gen_pfx_info: &GenesisPrefixInfo,
+        genesis_prefix_info: &GenesisPrefixInfo,
     ) -> bool {
-        !self.is_our_elder(our_id) && gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+        !self.is_our_elder(our_id)
+            && genesis_prefix_info.parsec_version > self.genesis_prefix_info.parsec_version
     }
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
@@ -1975,7 +1983,7 @@ enum PendingMessageKey {
 // Data needed to finalise parsec reset.
 struct ParsecResetData {
     // The new genesis prefix info.
-    gen_pfx_info: GenesisPrefixInfo,
+    genesis_prefix_info: GenesisPrefixInfo,
     // The cached events that should be revoted. Not shared state: only the ones we voted for.
     // Also contains our votes that never reached consensus.
     to_vote_again: BTreeSet<NetworkEvent>,

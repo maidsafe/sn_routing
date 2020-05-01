@@ -101,8 +101,8 @@ pub fn delivery_targets(
                     return Err(RoutingError::CannotRoute);
                 }
 
-                let is_compatible = |(pfx, section)| {
-                    if prefix.is_compatible(pfx) {
+                let is_compatible = |(other_prefix, section)| {
+                    if prefix.is_compatible(other_prefix) {
                         Some(section)
                     } else {
                         None

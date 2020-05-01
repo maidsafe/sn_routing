@@ -636,9 +636,9 @@ impl Node {
                         msg.src.to_sender_node(sender)?,
                         elders_info,
                     )?,
-                Variant::NodeApproval(gen_pfx_info) => {
+                Variant::NodeApproval(genesis_prefix_info) => {
                     let connect_type = stage.connect_type();
-                    self.approve(connect_type, *gen_pfx_info)
+                    self.approve(connect_type, *genesis_prefix_info)
                 }
                 Variant::Bounce {
                     elders_version,
@@ -818,13 +818,13 @@ impl Node {
     }
 
     // Transition from Joining to Approved
-    fn approve(&mut self, connect_type: Connected, gen_pfx_info: GenesisPrefixInfo) {
+    fn approve(&mut self, connect_type: Connected, genesis_prefix_info: GenesisPrefixInfo) {
         info!(
             "This node has been approved to join the network at {:?}!",
-            gen_pfx_info.elders_info.prefix(),
+            genesis_prefix_info.elders_info.prefix(),
         );
 
-        let stage = Approved::new(&mut self.core, gen_pfx_info, None);
+        let stage = Approved::new(&mut self.core, genesis_prefix_info, None);
         self.stage = Stage::Approved(stage);
         self.core.send_event(Event::Connected(connect_type));
     }
@@ -1067,7 +1067,7 @@ impl Node {
     // Create new node which is already an approved member of a section.
     pub(crate) fn approved(
         config: NodeConfig,
-        gen_pfx_info: GenesisPrefixInfo,
+        genesis_prefix_info: GenesisPrefixInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
@@ -1076,7 +1076,11 @@ impl Node {
 
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Stage::Approved(Approved::new(&mut core, gen_pfx_info, secret_key_share));
+        let stage = Stage::Approved(Approved::new(
+            &mut core,
+            genesis_prefix_info,
+            secret_key_share,
+        ));
 
         let node = Self {
             stage,

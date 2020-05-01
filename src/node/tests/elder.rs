@@ -57,8 +57,11 @@ impl Env {
         let (elders_info, full_ids) =
             test_utils::create_elders_info(&mut rng, &network, sec_size, None);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
-        let gen_pfx_info =
-            test_utils::create_gen_pfx_info(elders_info.clone(), secret_key_set.public_keys(), 0);
+        let genesis_prefix_info = test_utils::create_genesis_prefix_info(
+            elders_info.clone(),
+            secret_key_set.public_keys(),
+            0,
+        );
 
         let mut full_and_bls_ids = full_ids
             .into_iter()
@@ -74,7 +77,7 @@ impl Env {
                 full_id: Some(full_id),
                 ..Default::default()
             },
-            gen_pfx_info,
+            genesis_prefix_info,
             Some(secret_key_share),
         );
 

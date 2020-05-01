@@ -81,7 +81,7 @@ impl SectionMap {
     /// Returns a known section whose prefix is compatible with the given prefix, if any.
     pub fn compatible(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
         self.all()
-            .find(move |(pfx, _)| pfx.is_compatible(prefix))
+            .find(move |(known_prefix, _)| known_prefix.is_compatible(prefix))
             .map(|(_, info)| info)
     }
 
@@ -96,17 +96,17 @@ impl SectionMap {
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
     pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_pfx = self.our().prefix();
+        let mut best_prefix = self.our().prefix();
         let mut best_info = self.our();
-        for (pfx, info) in self.all() {
+        for (prefix, info) in self.all() {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(pfx, name) == Ordering::Greater {
-                best_pfx = pfx;
+            if !info.is_empty() && best_prefix.cmp_distance(prefix, name) == Ordering::Greater {
+                best_prefix = prefix;
                 best_info = info;
             }
         }
 
-        (best_pfx, best_info)
+        (best_prefix, best_info)
     }
 
     /// Returns iterator over all known sections.
@@ -165,7 +165,7 @@ impl SectionMap {
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
         self.all()
-            .find(|(pfx, _)| pfx.matches(name))
+            .find(|(prefix, _)| prefix.matches(name))
             .and_then(|(_, elders_info)| elders_info.member_map().get(name))
     }
 
@@ -222,12 +222,12 @@ impl SectionMap {
     }
 
     fn add_to_other(&mut self, elders_info: EldersInfo) {
-        let pfx = *elders_info.prefix();
-        let parent_pfx = elders_info.prefix().popped();
-        let sibling_pfx = elders_info.prefix().sibling();
+        let prefix = *elders_info.prefix();
+        let parent_prefix = elders_info.prefix().popped();
+        let sibling_prefix = elders_info.prefix().sibling();
         let new_elders_info_version = elders_info.version();
 
-        if let Some(old_elders_info) = self.other.insert(pfx, elders_info) {
+        if let Some(old_elders_info) = self.other.insert(prefix, elders_info) {
             if old_elders_info.version() > new_elders_info_version {
                 log_or_panic!(
                     log::Level::Error,
@@ -241,48 +241,49 @@ impl SectionMap {
         // add the sibling prefix with the parent prefix sigs.
         if let Some(sinfo) = self
             .other
-            .get(&parent_pfx)
+            .get(&parent_prefix)
             .filter(|pinfo| {
                 pinfo.version() < new_elders_info_version
-                    && self.our().prefix().is_neighbour(&sibling_pfx)
-                    && !self.other.contains_key(&sibling_pfx)
+                    && self.our().prefix().is_neighbour(&sibling_prefix)
+                    && !self.other.contains_key(&sibling_prefix)
             })
             .cloned()
         {
-            let _ = self.other.insert(sibling_pfx, sinfo);
+            let _ = self.other.insert(sibling_prefix, sinfo);
         }
     }
 
     // Remove outdated neighbour infos.
     fn prune_neighbours(&mut self) {
-        // Remove invalid neighbour pfx, older version of compatible pfx.
+        // Remove invalid neighbour prefix, older version of compatible prefix.
         let to_remove: Vec<_> = self
             .other
             .iter()
-            .filter_map(|(pfx, elders_info)| {
-                if !self.our().prefix().is_neighbour(pfx) {
+            .filter_map(|(prefix, elders_info)| {
+                if !self.our().prefix().is_neighbour(prefix) {
                     // we just split making old neighbour no longer needed
-                    return Some(*pfx);
+                    return Some(*prefix);
                 }
 
                 // Remove older compatible neighbour prefixes.
                 // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
-                let is_newer = |(other_pfx, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
-                    other_pfx.is_compatible(pfx)
-                        && other_elders_info.version() > elders_info.version()
-                        && !pfx.is_extension_of(other_pfx)
-                };
+                let is_newer =
+                    |(other_prefix, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
+                        other_prefix.is_compatible(prefix)
+                            && other_elders_info.version() > elders_info.version()
+                            && !prefix.is_extension_of(other_prefix)
+                    };
 
                 if self.other.iter().any(is_newer) {
-                    return Some(*pfx);
+                    return Some(*prefix);
                 }
 
                 None
             })
             .collect();
 
-        for pfx in to_remove {
-            let _ = self.other.remove(&pfx);
+        for prefix in to_remove {
+            let _ = self.other.remove(&prefix);
         }
     }
 
@@ -306,34 +307,35 @@ impl SectionMap {
     pub fn update_keys(&mut self, key_info: &SectionKeyInfo) {
         trace!("attempts to update keys for {:?}", key_info);
 
-        if let Some((&old_pfx, old_version)) = self
+        if let Some((&old_prefix, old_version)) = self
             .keys
             .iter()
-            .find(|(pfx, _)| pfx.is_compatible(key_info.prefix()))
-            .map(|(pfx, info)| (pfx, info.version()))
+            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
+            .map(|(prefix, info)| (prefix, info.version()))
         {
-            if old_version >= key_info.version() || old_pfx.is_extension_of(key_info.prefix()) {
+            if old_version >= key_info.version() || old_prefix.is_extension_of(key_info.prefix()) {
                 // Do not overwrite newer version or prefix extensions
                 return;
             }
 
             let old_key_info = self
                 .keys
-                .remove(&old_pfx)
+                .remove(&old_prefix)
                 .expect("Bug in BTreeMap for update_keys");
 
-            self.recent_keys.push_front((old_pfx, old_key_info.clone()));
+            self.recent_keys
+                .push_front((old_prefix, old_key_info.clone()));
             if self.recent_keys.len() > MAX_RECENT_KEYS {
                 let _ = self.recent_keys.pop_back();
             }
 
             trace!("    from {:?} to {:?}", old_key_info, key_info);
 
-            let old_pfx_sibling = old_pfx.sibling();
-            let mut current_pfx = key_info.prefix().sibling();
-            while !self.keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
-                let _ = self.keys.insert(current_pfx, old_key_info.clone());
-                current_pfx = current_pfx.popped().sibling();
+            let old_prefix_sibling = old_prefix.sibling();
+            let mut current_prefix = key_info.prefix().sibling();
+            while !self.keys.contains_key(&current_prefix) && current_prefix != old_prefix_sibling {
+                let _ = self.keys.insert(current_prefix, old_key_info.clone());
+                current_prefix = current_prefix.popped().sibling();
             }
         }
         let _ = self.keys.insert(*key_info.prefix(), key_info.clone());
@@ -393,31 +395,33 @@ impl SectionMap {
             prefix
         );
 
-        if let Some((&old_pfx, &old_version)) = self
+        if let Some((&old_prefix, &old_version)) = self
             .knowledge
             .iter()
-            .find(|(pfx, _)| pfx.is_compatible(&prefix))
+            .find(|(other_prefix, _)| other_prefix.is_compatible(&prefix))
         {
-            if old_version >= version || old_pfx.is_extension_of(&prefix) {
+            if old_version >= version || old_prefix.is_extension_of(&prefix) {
                 // Do not overwrite newer version or prefix extensions
                 return;
             }
 
-            let _ = self.knowledge.remove(&old_pfx);
+            let _ = self.knowledge.remove(&old_prefix);
 
             trace!(
                 "    from {:?}/{:?} to {:?}/{:?}",
-                old_pfx,
+                old_prefix,
                 old_version,
                 prefix,
                 version
             );
 
-            let old_pfx_sibling = old_pfx.sibling();
-            let mut current_pfx = prefix.sibling();
-            while !self.knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
-                let _ = self.knowledge.insert(current_pfx, old_version);
-                current_pfx = current_pfx.popped().sibling();
+            let old_prefix_sibling = old_prefix.sibling();
+            let mut current_prefix = prefix.sibling();
+            while !self.knowledge.contains_key(&current_prefix)
+                && current_prefix != old_prefix_sibling
+            {
+                let _ = self.knowledge.insert(current_prefix, old_version);
+                current_prefix = current_prefix.popped().sibling();
             }
         }
         let _ = self.knowledge.insert(prefix, version);

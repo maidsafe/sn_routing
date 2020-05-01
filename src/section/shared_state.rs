@@ -479,20 +479,19 @@ mod test {
         str::FromStr,
     };
 
-    fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
+    fn gen_elders_info(rng: &mut MainRng, prefix: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
         let mut members = BTreeMap::new();
         (0..sec_size).for_each(|index| {
-            let pub_id = *FullId::within_range(rng, &pfx.range_inclusive()).public_id();
+            let pub_id = *FullId::within_range(rng, &prefix.range_inclusive()).public_id();
             let _ = members.insert(
                 pub_id,
                 P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
             );
         });
-        EldersInfo::new_for_test(members, pfx, version).unwrap()
+        EldersInfo::new_for_test(members, prefix, version).unwrap()
     }
 
-    // start_pfx: the prefix of our section as string
     // updates: our section prefix followed by the prefixes of the sections we update the keys for,
     //          in sequence; every entry in the vector will get its own key.
     // expected: vec of pairs (prefix, index)
@@ -512,9 +511,9 @@ mod test {
         //
         let keys_to_update = updates
             .into_iter()
-            .map(|(version, pfx_str)| {
-                let pfx = Prefix::<XorName>::from_str(pfx_str).unwrap();
-                let elders_info = gen_elders_info(rng, pfx, version as u64);
+            .map(|(version, prefix_str)| {
+                let prefix = Prefix::<XorName>::from_str(prefix_str).unwrap();
+                let elders_info = gen_elders_info(rng, prefix, version as u64);
                 let bls_keys = generate_bls_threshold_secret_key(rng, 1).public_keys();
                 let key_info =
                     SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
@@ -523,9 +522,9 @@ mod test {
             .collect::<Vec<_>>();
         let expected_keys = expected
             .into_iter()
-            .map(|(pfx_str, index)| {
-                let pfx = Prefix::<XorName>::from_str(pfx_str).unwrap();
-                (pfx, Some(index))
+            .map(|(prefix_str, index)| {
+                let prefix = Prefix::<XorName>::from_str(prefix_str).unwrap();
+                (prefix, Some(index))
             })
             .collect::<Vec<_>>();
 
@@ -691,17 +690,17 @@ mod test {
         gen: SecInfoGen,
     ) -> (EldersInfo, HashMap<PublicId, FullId>) {
         match gen {
-            SecInfoGen::New(pfx, n) => {
+            SecInfoGen::New(prefix, n) => {
                 let mut full_ids = HashMap::new();
                 let mut members = BTreeMap::new();
                 for _ in 0..n {
-                    let some_id = FullId::within_range(rng, &pfx.range_inclusive());
+                    let some_id = FullId::within_range(rng, &prefix.range_inclusive());
                     let peer_addr = ([127, 0, 0, 1], 9999).into();
                     let pub_id = *some_id.public_id();
                     let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
-                (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
+                (EldersInfo::new(members, prefix, None).unwrap(), full_ids)
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.member_map().clone();
@@ -753,8 +752,8 @@ mod test {
         let mut full_ids = HashMap::new();
         let mut our_id = None;
         let mut section_members = vec![];
-        for (pfx, size) in sections {
-            let (info, ids) = gen_section_info(rng, SecInfoGen::New(pfx, size));
+        for (prefix, size) in sections {
+            let (info, ids) = gen_section_info(rng, SecInfoGen::New(prefix, size));
             if our_id.is_none() {
                 our_id = ids.values().next().cloned();
             }
@@ -807,10 +806,10 @@ mod test {
     fn check_infos_for_duplication(state: &SharedState) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
         for (_, info) in state.sections.all() {
-            if let Some(pfx) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
+            if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
-                    pfx,
+                    prefix,
                     info.prefix()
                 );
             }
