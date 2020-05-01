@@ -12,7 +12,6 @@ use super::{
 use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
-    utils::NonEmptyList,
     xor_space::{Prefix, XorName},
 };
 use std::{
@@ -30,7 +29,7 @@ const MAX_RECENT_KEYS: usize = 20;
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
     // Our section including its whole history.
-    our: NonEmptyList<EldersInfo>,
+    our: EldersInfo,
     // Other sections: maps section prefixes to their latest signed elders infos.
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
@@ -49,7 +48,7 @@ pub struct SectionMap {
 impl SectionMap {
     pub fn new(our_info: EldersInfo, our_key: SectionKeyInfo) -> Self {
         Self {
-            our: NonEmptyList::new(our_info),
+            our: our_info,
             other: Default::default(),
             other_queued: Default::default(),
             keys: iter::once((*our_key.prefix(), our_key)).collect(),
@@ -60,18 +59,13 @@ impl SectionMap {
 
     /// Get our section info
     pub fn our(&self) -> &EldersInfo {
-        self.our.last()
-    }
-
-    // Returns whether we have the history of our infos or just the latest one.
-    pub fn has_our_history(&self) -> bool {
-        self.our.len() > 1
+        &self.our
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if prefix == self.our.last().prefix() {
-            Some(self.our.last())
+        if prefix == self.our.prefix() {
+            Some(&self.our)
         } else {
             self.other.get(prefix)
         }
@@ -111,7 +105,7 @@ impl SectionMap {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
-        iter::once((self.our.last().prefix(), self.our.last())).chain(&self.other)
+        iter::once((self.our.prefix(), &self.our)).chain(&self.other)
     }
 
     /// Returns iterator over all known sections excluding ours.
@@ -174,9 +168,9 @@ impl SectionMap {
         self.get_elder(pub_id.name()).is_some()
     }
 
-    /// Push the new version of our section.
-    pub fn push_our(&mut self, elders_info: EldersInfo) {
-        self.our.push(elders_info);
+    /// Set the new version of our section.
+    pub fn set_our(&mut self, elders_info: EldersInfo) {
+        self.our = elders_info;
         self.prune_neighbours()
     }
 
