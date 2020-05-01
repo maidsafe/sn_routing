@@ -86,7 +86,7 @@ impl Approved {
         let _ = ages.insert(public_id, MIN_AGE_COUNTER);
         let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
         let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info: create_first_elders_info(p2p_node)?,
+            elders_info: create_first_elders_info(p2p_node),
             public_keys: first_dkg_result.public_key_set,
             state_serialized: Vec::new(),
             ages,
@@ -763,7 +763,7 @@ impl Approved {
 
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
-        if self.promote_and_demote_elders(core)? {
+        if self.promote_and_demote_elders(core) {
             return Ok(true);
         }
 
@@ -832,27 +832,27 @@ impl Approved {
 
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
-    fn promote_and_demote_elders(&mut self, core: &Core) -> Result<bool> {
+    fn promote_and_demote_elders(&mut self, core: &Core) -> bool {
         if !self.members_changed || !self.is_ready_to_churn() {
             // Nothing changed that could impact elder set, or we cannot process it yet.
-            return Ok(false);
+            return false;
         }
 
         self.members_changed = false;
 
         let new_infos = if let Some(new_infos) = self
             .shared_state
-            .promote_and_demote_elders(&core.network_params, core.name())?
+            .promote_and_demote_elders(&core.network_params, core.name())
         {
             self.churn_in_progress = true;
             new_infos
         } else {
             self.churn_in_progress = false;
-            return Ok(false);
+            return false;
         };
 
         if !self.is_our_elder(core.id()) {
-            return Ok(true);
+            return true;
         }
 
         for info in new_infos {
@@ -861,7 +861,7 @@ impl Approved {
             self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
 
-        Ok(true)
+        true
     }
 
     /// Polls and handles the next scheduled relocation, if any.
@@ -2009,14 +2009,8 @@ pub struct RelocateParams {
 }
 
 // Create `EldersInfo` for the first node.
-fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo> {
+fn create_first_elders_info(p2p_node: P2pNode) -> EldersInfo {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default(), 0).map_err(|err| {
-        error!(
-            "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
-            name, err
-        );
-        err
-    })
+    EldersInfo::new(iter::once(node).collect(), Prefix::default(), 0)
 }

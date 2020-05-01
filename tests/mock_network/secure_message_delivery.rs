@@ -71,7 +71,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         P2pNode::new(*fake_full.public_id(), socket_addr),
     ))
     .collect();
-    let new_info = EldersInfo::new(members, our_prefix, 10001).unwrap();
+    let new_info = EldersInfo::new(members, our_prefix, 10001);
 
     let content = PlainMessage {
         src: our_prefix,

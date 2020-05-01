@@ -283,8 +283,7 @@ impl Env {
                 .collect(),
             *self.elders_info.prefix(),
             self.elders_info.version() + 1,
-        )
-        .unwrap();
+        );
 
         self.updated_other_ids(new_elder_info)
     }
@@ -295,8 +294,7 @@ impl Env {
             self.elders_info.elder_map().clone(),
             *old_info.new_elders_info.prefix(),
             old_info.new_elders_info.version() + 1,
-        )
-        .unwrap();
+        );
         self.updated_other_ids(new_elder_info)
     }
 
@@ -330,8 +328,7 @@ impl Env {
             new_member_map,
             *self.elders_info.prefix(),
             self.elders_info.version() + 1,
-        )
-        .unwrap();
+        );
         self.updated_other_ids(new_elders_info)
     }
 

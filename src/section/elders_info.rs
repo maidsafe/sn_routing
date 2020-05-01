@@ -8,13 +8,11 @@
 
 use crate::{
     consensus::ProofSet,
-    crypto::{self, Digest256},
-    error::RoutingError,
     id::{P2pNode, PublicId},
     Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use itertools::Itertools;
-use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Formatter},
@@ -23,7 +21,7 @@ use std::{
 /// The information about all elders of a section at one point in time. Each elder is always a
 /// member of exactly one current section, but a new `EldersInfo` is created whenever the elders
 /// change, due to an elder being added or removed, or the section splitting or merging.
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to a `P2pNode`.
     elders: BTreeMap<XorName, P2pNode>,
@@ -32,43 +30,16 @@ pub struct EldersInfo {
     version: u64,
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
-    /// The hash of the above fields. This is not serialized, and computed after deserialization.
-    hash: Digest256,
-}
-
-impl Serialize for EldersInfo {
-    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        (&self.elders, &self.prefix, self.version).serialize(serialiser)
-    }
-}
-
-impl<'de> Deserialize<'de> for EldersInfo {
-    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (members, prefix, version) = Deserialize::deserialize(deserialiser)?;
-        Self::new(members, prefix, version)
-            .map_err(|err| D::Error::custom(format!("failed to construct elders info: {:?}", err)))
-    }
 }
 
 impl EldersInfo {
     /// Creates a new `EldersInfo` with the given members, prefix and version.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        elders: BTreeMap<XorName, P2pNode>,
-        prefix: Prefix<XorName>,
-        version: u64,
-    ) -> Result<Self, RoutingError> {
-        let hash = {
-            let fields = (&elders, &prefix, version);
-            crypto::sha3_256(&bincode::serialize(&fields)?)
-        };
-
-        Ok(Self {
+    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix<XorName>, version: u64) -> Self {
+        Self {
             elders,
             version,
             prefix,
-            hash,
-        })
+        }
     }
 
     pub(crate) fn elder_map(&self) -> &BTreeMap<XorName, P2pNode> {
@@ -123,7 +94,7 @@ impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo {{ prefix: ({:b}), version: {}, members: {{{}}} }}",
+            "EldersInfo {{ prefix: ({:b}), version: {}, elders: {{{}}} }}",
             self.prefix,
             self.version,
             self.elder_nodes().format(", "),

@@ -48,7 +48,7 @@ pub fn create_elders_info(
         })
         .collect();
 
-    let elders_info = EldersInfo::new(members_map, Prefix::default(), version).unwrap();
+    let elders_info = EldersInfo::new(members_map, Prefix::default(), version);
     (elders_info, full_ids)
 }
 
