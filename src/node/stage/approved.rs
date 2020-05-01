@@ -336,8 +336,8 @@ impl Approved {
             let _ = self
                 .pending_voted_msgs
                 .entry(PendingMessageKey::NeighbourInfo {
-                    version: elders_info.version(),
-                    prefix: *elders_info.prefix(),
+                    version: elders_info.version,
+                    prefix: elders_info.prefix,
                 })
                 .or_insert_with(|| Message {
                     src,
@@ -494,7 +494,7 @@ impl Approved {
             p2p_node, join_request.elders_version
         );
 
-        if join_request.elders_version < self.shared_state.our_info().version() {
+        if join_request.elders_version < self.shared_state.our_info().version {
             self.resend_bootstrap_response_join(core, &p2p_node);
             return;
         }
@@ -1127,8 +1127,8 @@ impl Approved {
             };
 
         let elders_info = self.shared_state.our_info();
-        let info_prefix = *elders_info.prefix();
-        let info_version = elders_info.version();
+        let info_prefix = elders_info.prefix;
+        let info_version = elders_info.version;
         let is_elder = elders_info.contains_elder(core.id());
         let is_split = info_prefix.is_extension_of(&old_prefix);
 
@@ -1203,7 +1203,7 @@ impl Approved {
     ) -> Result<bool> {
         // Split handling alone. wouldn't cater to merge
         if elders_info
-            .prefix()
+            .prefix
             .is_extension_of(self.shared_state.our_prefix())
         {
             match self.split_cache.take() {
@@ -1216,7 +1216,7 @@ impl Approved {
                     Ok(false)
                 }
                 Some(cached) => {
-                    let cached_prefix = *cached.elders_info.prefix();
+                    let cached_prefix = cached.elders_info.prefix;
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
@@ -1283,8 +1283,8 @@ impl Approved {
         let _ = self
             .pending_voted_msgs
             .remove(&PendingMessageKey::NeighbourInfo {
-                version: elders_info.version(),
-                prefix: *elders_info.prefix(),
+                version: elders_info.version,
+                prefix: elders_info.prefix,
             });
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
         Ok(())
@@ -1429,7 +1429,7 @@ impl Approved {
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
                     | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
-                        our_prefix.is_neighbour(elders_info.prefix())
+                        our_prefix.is_neighbour(&elders_info.prefix)
                     }
 
                     // Keep: Still relevant after prefix change.
@@ -1583,7 +1583,7 @@ impl Approved {
         );
 
         let trimmed_info = self.genesis_prefix_info.trimmed();
-        let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
+        let src = SrcLocation::Section(trimmed_info.elders_info.prefix);
         let dst = DstLocation::Node(*p2p_node.name());
 
         let variant = Variant::NodeApproval(Box::new(trimmed_info));
@@ -1710,7 +1710,7 @@ impl Approved {
 
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
-            elders_version: self.shared_state.our_info().version(),
+            elders_version: self.shared_state.our_info().version,
             parsec_version: self.consensus_engine.parsec_version(),
         };
 
@@ -1726,7 +1726,7 @@ impl Approved {
 
     fn send_bounce(&mut self, core: &mut Core, recipient: &SocketAddr, msg_bytes: Bytes) {
         let variant = Variant::Bounce {
-            elders_version: Some(self.shared_state.our_info().version()),
+            elders_version: Some(self.shared_state.our_info().version),
             message: msg_bytes,
         };
 
@@ -1738,16 +1738,16 @@ impl Approved {
         let our_info = self.shared_state.our_info();
 
         let response_section = Some(our_info)
-            .filter(|info| info.prefix().matches(p2p_node.name()))
-            .or_else(|| self.shared_state.sections.get(&our_info.prefix().sibling()))
-            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .filter(|info| info.prefix.matches(p2p_node.name()))
+            .or_else(|| self.shared_state.sections.get(&our_info.prefix.sibling()))
+            .filter(|info| info.prefix.matches(p2p_node.name()))
             .cloned();
 
         if let Some(response_section) = response_section {
             trace!(
                 "Resend Join to {} with version {}",
                 p2p_node,
-                response_section.version()
+                response_section.version
             );
             core.send_direct_message(
                 p2p_node.peer_addr(),
@@ -1903,7 +1903,7 @@ impl Approved {
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
-        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version()
+        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us

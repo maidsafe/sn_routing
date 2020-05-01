@@ -64,7 +64,7 @@ impl SectionMap {
 
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if prefix == self.our.prefix() {
+        if *prefix == self.our.prefix {
             Some(&self.our)
         } else {
             self.other.get(prefix)
@@ -89,7 +89,7 @@ impl SectionMap {
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
     pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_prefix = self.our().prefix();
+        let mut best_prefix = &self.our().prefix;
         let mut best_info = self.our();
         for (prefix, info) in self.all() {
             // TODO: Remove the first check after verifying that section infos are never empty.
@@ -105,7 +105,7 @@ impl SectionMap {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
-        iter::once((self.our.prefix(), &self.our)).chain(&self.other)
+        iter::once((&self.our.prefix, &self.our)).chain(&self.other)
     }
 
     /// Returns iterator over all known sections excluding ours.
@@ -132,8 +132,8 @@ impl SectionMap {
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
-        let our_prefix = self.our().prefix();
-        let other_prefix = elders_info.prefix();
+        let our_prefix = &self.our().prefix;
+        let other_prefix = &elders_info.prefix;
 
         (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
             && self.is_new(elders_info)
@@ -205,24 +205,24 @@ impl SectionMap {
     // Is the given section immediate successor of a section we already know?
     fn is_immediate_successor(&self, new_info: &EldersInfo) -> bool {
         let not_follow = |old_info: &EldersInfo| {
-            new_info.prefix().is_compatible(old_info.prefix())
-                && new_info.version() != (old_info.version() + 1)
+            new_info.prefix.is_compatible(&old_info.prefix)
+                && new_info.version != (old_info.version + 1)
         };
 
         !self
-            .compatible(new_info.prefix())
+            .compatible(&new_info.prefix)
             .into_iter()
             .any(not_follow)
     }
 
     fn add_to_other(&mut self, elders_info: EldersInfo) {
-        let prefix = *elders_info.prefix();
-        let parent_prefix = elders_info.prefix().popped();
-        let sibling_prefix = elders_info.prefix().sibling();
-        let new_elders_info_version = elders_info.version();
+        let prefix = elders_info.prefix;
+        let parent_prefix = elders_info.prefix.popped();
+        let sibling_prefix = elders_info.prefix.sibling();
+        let new_elders_info_version = elders_info.version;
 
         if let Some(old_elders_info) = self.other.insert(prefix, elders_info) {
-            if old_elders_info.version() > new_elders_info_version {
+            if old_elders_info.version > new_elders_info_version {
                 log_or_panic!(
                     log::Level::Error,
                     "Ejected newer neighbour info {:?}",
@@ -237,8 +237,8 @@ impl SectionMap {
             .other
             .get(&parent_prefix)
             .filter(|pinfo| {
-                pinfo.version() < new_elders_info_version
-                    && self.our().prefix().is_neighbour(&sibling_prefix)
+                pinfo.version < new_elders_info_version
+                    && self.our().prefix.is_neighbour(&sibling_prefix)
                     && !self.other.contains_key(&sibling_prefix)
             })
             .cloned()
@@ -254,7 +254,7 @@ impl SectionMap {
             .other
             .iter()
             .filter_map(|(prefix, elders_info)| {
-                if !self.our().prefix().is_neighbour(prefix) {
+                if !self.our().prefix.is_neighbour(prefix) {
                     // we just split making old neighbour no longer needed
                     return Some(*prefix);
                 }
@@ -264,7 +264,7 @@ impl SectionMap {
                 let is_newer =
                     |(other_prefix, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
                         other_prefix.is_compatible(prefix)
-                            && other_elders_info.version() > elders_info.version()
+                            && other_elders_info.version > elders_info.version
                             && !prefix.is_extension_of(other_prefix)
                     };
 

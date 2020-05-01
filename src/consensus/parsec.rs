@@ -14,7 +14,7 @@ use crate::{
     time::Duration,
 };
 #[cfg(feature = "mock")]
-use crate::{crypto, mock::parsec as inner, unwrap};
+use crate::{crypto, mock::parsec as inner};
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
 #[cfg(all(test, feature = "mock"))]
@@ -377,11 +377,11 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
     #[cfg(feature = "mock")]
     let hash = {
         let fields = (
-            genesis_prefix_info.elders_info.prefix(),
-            genesis_prefix_info.elders_info.version(),
+            genesis_prefix_info.elders_info.prefix,
+            genesis_prefix_info.elders_info.version,
             genesis_prefix_info.parsec_version,
         );
-        crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
+        crypto::sha3_256(&bincode::serialize(&fields).unwrap())
     };
 
     if genesis_prefix_info

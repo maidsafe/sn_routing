@@ -76,7 +76,7 @@ impl Env {
     }
 
     fn perform_elders_change(&mut self) {
-        let current_version = self.elders[0].state.our_info().version();
+        let current_version = self.elders[0].state.our_info().version;
         self.elders = create_elders(&mut self.rng, &self.network, current_version + 1);
     }
 

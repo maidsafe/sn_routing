@@ -279,7 +279,7 @@ impl SectionKeyInfo {
     }
 
     pub fn from_elders_info(elders_info: &EldersInfo, key: bls::PublicKey) -> Self {
-        Self::new(elders_info.version(), *elders_info.prefix(), key)
+        Self::new(elders_info.version, elders_info.prefix, key)
     }
 
     pub fn key(&self) -> &bls::PublicKey {

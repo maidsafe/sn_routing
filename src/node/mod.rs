@@ -758,7 +758,7 @@ impl Node {
             Stage::Approved(stage) => stage
                 .shared_state
                 .find_section_by_member(sender.public_id())
-                .map(|info| info.version()),
+                .map(|info| info.version),
             Stage::Terminated => unreachable!(),
         };
 
@@ -827,7 +827,7 @@ impl Node {
     fn approve(&mut self, connect_type: Connected, genesis_prefix_info: GenesisPrefixInfo) {
         info!(
             "This node has been approved to join the network at {:?}!",
-            genesis_prefix_info.elders_info.prefix(),
+            genesis_prefix_info.elders_info.prefix,
         );
 
         let stage = Approved::new(&mut self.core, genesis_prefix_info, None);
@@ -867,15 +867,15 @@ impl Node {
                 buffer,
                 "{}({:b}v{}?) ",
                 self.name(),
-                stage.target_section_elders_info().prefix(),
-                stage.target_section_elders_info().version(),
+                stage.target_section_elders_info().prefix,
+                stage.target_section_elders_info().version,
             ),
             Stage::Approved(stage) => write!(
                 buffer,
                 "{}({:b}v{}{}) ",
                 self.core.name(),
                 stage.shared_state.our_prefix(),
-                stage.shared_state.our_info().version(),
+                stage.shared_state.our_info().version,
                 if stage.is_our_elder(self.core.id()) {
                     "!"
                 } else {
@@ -940,8 +940,7 @@ impl Node {
                 state
                     .sections
                     .other()
-                    .map(|(_, info)| info.prefix())
-                    .copied()
+                    .map(|(_, info)| info.prefix)
                     .collect()
             })
             .unwrap_or_default()
@@ -960,7 +959,7 @@ impl Node {
     pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> Option<u64> {
         self.shared_state()
             .and_then(|state| state.sections.get(prefix))
-            .map(|info| info.version())
+            .map(|info| info.version)
     }
 
     /// Returns the elders of a section with the given prefix.

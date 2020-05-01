@@ -99,11 +99,11 @@ impl Joining {
         sender: P2pNode,
         new_elders_info: EldersInfo,
     ) -> Result<()> {
-        if new_elders_info.version() <= self.elders_info.version() {
+        if new_elders_info.version <= self.elders_info.version {
             return Ok(());
         }
 
-        if new_elders_info.prefix().matches(core.name()) {
+        if new_elders_info.prefix.matches(core.name()) {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
                 new_elders_info, sender
@@ -195,7 +195,7 @@ impl Joining {
 
         for dst in self.elders_info.elder_nodes() {
             let join_request = JoinRequest {
-                elders_version: self.elders_info.version(),
+                elders_version: self.elders_info.version,
                 relocate_payload: relocate_payload.cloned(),
             };
 
