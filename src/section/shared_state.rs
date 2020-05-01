@@ -113,6 +113,11 @@ impl SharedState {
             .chain(self.sections.other_elders())
     }
 
+    /// Returns whether we know the given peer.
+    pub fn is_known_peer(&self, pub_id: &PublicId) -> bool {
+        self.our_members.is_active(pub_id) || self.sections.is_elder(pub_id)
+    }
+
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.sections.is_elder(pub_id)

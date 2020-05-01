@@ -16,8 +16,8 @@ pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{
-        AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload, IntoAccumulatingEvent,
-        NetworkEvent, OnlinePayload, SendAckMessagePayload,
+        AccumulatingEvent, AckMessagePayload, EventSigPayload, IntoAccumulatingEvent,
+        NeighbourEldersRemoved, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     parsec::{
         generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
