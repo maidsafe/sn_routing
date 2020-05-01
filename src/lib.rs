@@ -111,9 +111,7 @@ pub use self::{
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
     routing_table::delivery_group_size,
-    section::{
-        elders_info_for_test, quorum_count, section_proof_slice_for_test, SectionKeyShare, MIN_AGE,
-    },
+    section::{quorum_count, section_proof_slice_for_test, EldersInfo, SectionKeyShare, MIN_AGE},
     xor_space::Xorable,
 };
 

@@ -303,11 +303,7 @@ mod test {
     }
 
     fn empty_elders_info() -> EldersInfo {
-        unwrap!(EldersInfo::new_for_test(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-        ))
+        EldersInfo::new(Default::default(), Default::default(), Default::default()).unwrap()
     }
 
     fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, bls::PublicKeySet) {

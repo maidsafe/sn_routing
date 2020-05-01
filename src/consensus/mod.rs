@@ -185,25 +185,8 @@ impl ConsensusEngine {
         our_elders: &EldersInfo,
     ) -> bool {
         match event {
-            AccumulatingEvent::SectionInfo(info, _) => {
-                if !our_elders.is_quorum(proofs) {
-                    return false;
-                }
-
-                if !info.is_successor_of(our_elders) {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "We shouldn't have a SectionInfo that is not a direct descendant. our: \
-                         {:?}, new: {:?}",
-                        our_elders,
-                        info
-                    );
-                }
-
-                true
-            }
-
-            AccumulatingEvent::Online(_)
+            AccumulatingEvent::SectionInfo(..)
+            | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::NeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo(_)
