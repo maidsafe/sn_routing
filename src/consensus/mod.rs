@@ -143,7 +143,7 @@ impl ConsensusEngine {
                     .map(|(event, _)| event.clone())?;
 
                 self.accumulator
-                    .poll_event(event, our_elders.member_ids().cloned().collect())
+                    .poll_event(event, our_elders.elder_ids().cloned().collect())
             }
             Observation::DkgResult {
                 participants,

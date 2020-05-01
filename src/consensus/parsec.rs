@@ -385,7 +385,7 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
 
     if genesis_prefix_info
         .elders_info
-        .is_member(full_id.public_id())
+        .contains_elder(full_id.public_id())
     {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]
@@ -393,7 +393,7 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
             full_id,
             &genesis_prefix_info
                 .elders_info
-                .member_ids()
+                .elder_ids()
                 .copied()
                 .collect(),
             genesis_prefix_info.state_serialized.clone(),
@@ -403,7 +403,7 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
     } else {
         let members = genesis_prefix_info
             .elders_info
-            .member_ids()
+            .elder_ids()
             .copied()
             .collect();
 
@@ -490,7 +490,7 @@ mod tests {
             version
         ));
         let ages = elders_info
-            .member_ids()
+            .elder_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         GenesisPrefixInfo {

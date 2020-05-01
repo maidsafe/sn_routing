@@ -57,7 +57,7 @@ pub fn create_genesis_prefix_info(
     public_keys: bls::PublicKeySet,
     parsec_version: u64,
 ) -> GenesisPrefixInfo {
-    let ages = elder_age_counters(elders_info.member_ids());
+    let ages = elder_age_counters(elders_info.elder_ids());
 
     GenesisPrefixInfo {
         elders_info,

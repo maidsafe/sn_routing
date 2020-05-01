@@ -278,7 +278,13 @@ impl Node {
     pub fn is_elder(&self) -> bool {
         self.stage
             .approved()
-            .map(|stage| stage.shared_state.sections.our().is_member(self.core.id()))
+            .map(|stage| {
+                stage
+                    .shared_state
+                    .sections
+                    .our()
+                    .contains_elder(self.core.id())
+            })
             .unwrap_or(false)
     }
 
@@ -301,7 +307,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(move |stage| stage.shared_state.sections.closest(name).1.member_nodes())
+            .flat_map(move |stage| stage.shared_state.sections.closest(name).1.elder_nodes())
     }
 
     /// Returns the information of all the current section adults.
@@ -962,7 +968,7 @@ impl Node {
     pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.shared_state()
             .and_then(|state| state.sections.get(prefix))
-            .map(|info| info.member_names().copied().collect())
+            .map(|info| info.elder_names().copied().collect())
             .unwrap_or_default()
     }
 

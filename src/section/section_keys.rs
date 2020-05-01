@@ -45,7 +45,7 @@ impl SectionKeyShare {
         new_elders_info: &EldersInfo,
     ) -> Option<Self> {
         let key = key?;
-        let index = new_elders_info.member_ids().position(|id| id == our_id)?;
+        let index = new_elders_info.elder_ids().position(|id| id == our_id)?;
 
         Some(Self { index, key })
     }
@@ -126,7 +126,7 @@ impl SectionKeysProvider {
 
     pub fn finalise_dkg(&mut self, our_id: &PublicId, elders_info: &EldersInfo) -> Result<()> {
         let first_name = elders_info
-            .member_names()
+            .elder_names()
             .next()
             .ok_or(RoutingError::InvalidElderDkgResult)?;
         let dkg_result = self

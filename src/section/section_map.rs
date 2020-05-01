@@ -22,12 +22,11 @@ use std::{
 };
 
 // Number of recent keys we keep: i.e how many other section churns we can handle before a
-// message send with a previous version of a section is no longer trusted.
-// With low churn rate, a ad hoc 20 should be big enough to avoid losing messages.
+// message sent with a previous version of a section is no longer trusted.
+// With low churn rate, an ad hoc 20 should be big enough to avoid losing messages.
 const MAX_RECENT_KEYS: usize = 20;
 
 /// Container for storing information about sections in the network.
-/// Note: currently does not store our section, but that may change.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
     // Our section including its whole history.
@@ -41,7 +40,7 @@ pub struct SectionMap {
     other_queued: VecDeque<EldersInfo>,
     // BLS public keys of known sections
     keys: BTreeMap<Prefix<XorName>, SectionKeyInfo>,
-    // Recent keys removed from `keys`
+    // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
     recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
     // Version of our section that other sections know about
     knowledge: BTreeMap<Prefix<XorName>, u64>,
@@ -86,10 +85,10 @@ impl SectionMap {
     }
 
     /// Find other section containing the given elder.
-    pub fn find_other_by_member(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
+    pub fn find_other_by_elder(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
         self.other
             .iter()
-            .find(|(_, info)| info.is_member(pub_id))
+            .find(|(_, info)| info.contains_elder(pub_id))
             .map(|(_, info)| info)
     }
 
@@ -100,7 +99,8 @@ impl SectionMap {
         let mut best_info = self.our();
         for (prefix, info) in self.all() {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_prefix.cmp_distance(prefix, name) == Ordering::Greater {
+            if info.num_elders() > 0 && best_prefix.cmp_distance(prefix, name) == Ordering::Greater
+            {
                 best_prefix = prefix;
                 best_info = info;
             }
@@ -149,24 +149,24 @@ impl SectionMap {
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.all()
             .map(|(_, info)| info)
-            .flat_map(EldersInfo::member_nodes)
+            .flat_map(EldersInfo::elder_nodes)
     }
 
     /// Returns all elders from our section.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.our().member_nodes()
+        self.our().elder_nodes()
     }
 
     /// Returns all elders from other sections.
     pub fn other_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.other.values().flat_map(EldersInfo::member_nodes)
+        self.other.values().flat_map(EldersInfo::elder_nodes)
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
         self.all()
             .find(|(prefix, _)| prefix.matches(name))
-            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
+            .and_then(|(_, elders_info)| elders_info.elder_map().get(name))
     }
 
     /// Returns whether the given peer is elder in a known sections.
@@ -345,9 +345,9 @@ impl SectionMap {
         self.knowledge.get(prefix).copied()
     }
 
-    /// Returns the index of the public key in our_history that will be trusted by the target
+    /// Returns the version of the public key in our_history that will be trusted by the target
     /// location
-    pub fn proving_index(&self, target: &DstLocation) -> u64 {
+    pub fn trusted_key_version(&self, target: &DstLocation) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .knowledge
             .iter()
@@ -369,30 +369,14 @@ impl SectionMap {
         }
     }
 
-    /// Provide a start index of a SectionProofSlice that proves the given signature to the given
-    /// destination location.
-    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
-    pub fn knowledge_index(
-        &self,
-        target: &DstLocation,
-        node_knowledge_override: Option<u64>,
-    ) -> u64 {
-        match (target, node_knowledge_override) {
-            (DstLocation::Node(_), Some(knowledge)) => knowledge,
-            _ => self.proving_index(target),
-        }
-    }
-
     /// Updates the entry in `knowledge` for `prefix` to the `version`; if a split
     /// occurred in the meantime, the versions for sections covering the rest of the address space
     /// are initialised to the old version that was stored for their common ancestor
     pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
         trace!(
-            "attempts to update knowledge of our elders_info with version {:?} for \
-             prefix {:?} ",
+            "update knowledge of section ({:b}) about our section to v{}",
+            prefix,
             version,
-            prefix
         );
 
         if let Some((&old_prefix, &old_version)) = self
@@ -408,7 +392,7 @@ impl SectionMap {
             let _ = self.knowledge.remove(&old_prefix);
 
             trace!(
-                "    from {:?}/{:?} to {:?}/{:?}",
+                "    from ({:b}) v{} to ({:b}) v{}",
                 old_prefix,
                 old_version,
                 prefix,
@@ -427,11 +411,12 @@ impl SectionMap {
         let _ = self.knowledge.insert(prefix, version);
     }
 
-    /// Compute an estimate of the size of the network from the size of our routing table.
+    /// Compute an estimate of the total number of elders in the network from the size of our
+    /// routing table.
     ///
     /// Return (estimate, exact), with exact = true iff we have the whole network in our
     /// routing table.
-    pub fn network_size_estimate(&self) -> (u64, bool) {
+    pub fn network_elder_count_estimate(&self) -> (u64, bool) {
         let known_prefixes = self.prefixes();
         let is_exact = Prefix::default().is_covered_by(known_prefixes.clone());
 
@@ -449,7 +434,7 @@ impl SectionMap {
 
     /// Returns network statistics.
     pub fn network_stats(&self) -> NetworkStats {
-        let (total_elders, total_elders_exact) = self.network_size_estimate();
+        let (total_elders, total_elders_exact) = self.network_elder_count_estimate();
 
         NetworkStats {
             known_elders: self.elders().count() as u64,

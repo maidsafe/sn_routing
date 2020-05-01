@@ -62,11 +62,7 @@ impl Joining {
         if join_token == token {
             debug!("Timeout when trying to join a section.");
 
-            for addr in self
-                .elders_info
-                .member_nodes()
-                .map(|node| *node.peer_addr())
-            {
+            for addr in self.elders_info.elder_nodes().map(|node| *node.peer_addr()) {
                 core.transport.disconnect(addr);
             }
 
@@ -197,7 +193,7 @@ impl Joining {
             JoinType::Relocate(payload) => Some(payload),
         };
 
-        for dst in self.elders_info.member_nodes() {
+        for dst in self.elders_info.elder_nodes() {
             let join_request = JoinRequest {
                 elders_version: self.elders_info.version(),
                 relocate_payload: relocate_payload.cloned(),

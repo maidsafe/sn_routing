@@ -28,7 +28,7 @@ pub struct SectionMembers {
     members: BTreeMap<XorName, MemberInfo>,
     // Number that gets incremented every time a node joins or leaves our section - that is, every
     // time `members` changes.
-    section_version: u64,
+    version: u64,
 
     // Members of our sibling section immediately after the last split.
     // Note: this field is not part of the shared state.
@@ -40,7 +40,7 @@ impl SectionMembers {
     /// Constructs the container initially with the section elders.
     pub fn new(elders_info: &EldersInfo, ages: &BTreeMap<PublicId, AgeCounter>) -> Self {
         let members = elders_info
-            .member_nodes()
+            .elder_nodes()
             .map(|p2p_node| {
                 let info = MemberInfo {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
@@ -54,7 +54,7 @@ impl SectionMembers {
 
         Self {
             members,
-            section_version: 0,
+            version: 0,
             post_split_siblings: Default::default(),
         }
     }
@@ -160,9 +160,9 @@ impl SectionMembers {
                     // new age to max(old_age, new_age)
                     entry.get_mut().state = MemberState::Joined;
                     entry.get_mut().set_age(age);
-                    entry.get_mut().section_version = self.section_version;
+                    entry.get_mut().section_version = self.version;
 
-                    self.increment_section_version();
+                    self.increment_version();
                 } else {
                     // Node already joined - this should not happen.
                     log_or_panic!(
@@ -175,8 +175,8 @@ impl SectionMembers {
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
 
-                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone(), self.section_version));
-                self.increment_section_version();
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone(), self.version));
+                self.increment_version();
             }
         }
     }
@@ -194,7 +194,7 @@ impl SectionMembers {
             let member_addr = *info.p2p_node.peer_addr();
 
             info.state = MemberState::Left;
-            self.increment_section_version();
+            self.increment_version();
 
             (Some(member_addr), member_state)
         } else {
@@ -218,14 +218,14 @@ impl SectionMembers {
         self.post_split_siblings = siblings;
     }
 
-    fn increment_section_version(&mut self) {
-        self.section_version = self.section_version.wrapping_add(1);
+    fn increment_version(&mut self) {
+        self.version = self.version.wrapping_add(1);
     }
 }
 
 impl PartialEq for SectionMembers {
     fn eq(&self, other: &Self) -> bool {
-        self.members == other.members && self.section_version == other.section_version
+        self.members == other.members && self.version == other.version
     }
 }
 

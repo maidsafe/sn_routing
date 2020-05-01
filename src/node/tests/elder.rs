@@ -185,7 +185,7 @@ impl Env {
     }
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
-        let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
+        let participants: BTreeSet<_> = new_elders_info.elder_ids().copied().collect();
         let parsec = self
             .subject
             .consensus_engine_mut()
@@ -271,13 +271,13 @@ impl Env {
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
         assert!(
-            self.elders_info.len() < ELDER_SIZE,
+            self.elders_info.num_elders() < ELDER_SIZE,
             "There is already ELDER_SIZE elders - the candidate won't be promoted"
         );
 
         let new_elder_info = EldersInfo::new(
             self.elders_info
-                .member_nodes()
+                .elder_nodes()
                 .chain(iter::once(&self.candidate))
                 .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
@@ -292,7 +292,7 @@ impl Env {
     fn new_elders_info_without_candidate(&mut self) -> DkgToSectionInfo {
         let old_info = self.new_elders_info_with_candidate();
         let new_elder_info = EldersInfo::new(
-            self.elders_info.member_map().clone(),
+            self.elders_info.elder_map().clone(),
             *old_info.new_elders_info.prefix(),
             Some(&old_info.new_elders_info),
         )
@@ -316,7 +316,7 @@ impl Env {
 
         let new_member_map = self
             .elders_info
-            .member_map()
+            .elder_map()
             .iter()
             .filter(|(_, node)| node.public_id() != dropped_elder_id)
             .map(|(name, node)| (*name, node.clone()))
