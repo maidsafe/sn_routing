@@ -1258,7 +1258,7 @@ impl Approved {
         self.section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
         self.shared_state
-            .push_our_new_info(elders_info, proof_block);
+            .update_our_section(elders_info, proof_block);
         self.churn_in_progress = false;
         Ok(())
     }

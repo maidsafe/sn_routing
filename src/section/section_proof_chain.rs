@@ -234,6 +234,10 @@ impl SectionProofChain {
             blocks,
         }
     }
+
+    pub fn len(&self) -> usize {
+        1 + self.blocks.len()
+    }
 }
 
 fn validate_next_block(last: &SectionKeyInfo, next: &SectionProofBlock) -> bool {

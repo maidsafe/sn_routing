@@ -73,7 +73,7 @@ impl SharedState {
         }
 
         if let Some(new) = new {
-            if self.sections.has_our_history() && *self != new {
+            if self.our_history.len() > 1 && *self != new {
                 log_or_panic!(
                     log::Level::Error,
                     "shared state update - mismatch: old: {:?} --- new: {:?}",
@@ -237,11 +237,11 @@ impl SharedState {
         }
     }
 
-    pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
+    pub fn update_our_section(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_members
             .remove_not_matching_our_prefix(elders_info.prefix());
         self.our_history.push(proof_block);
-        self.sections.push_our(elders_info);
+        self.sections.set_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());
     }
 
