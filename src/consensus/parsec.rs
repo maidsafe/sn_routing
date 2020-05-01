@@ -490,7 +490,7 @@ mod tests {
                 )
             })
             .collect();
-        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version).unwrap();
+        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version);
         let ages = elders_info
             .elder_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
