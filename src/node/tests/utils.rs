@@ -52,7 +52,7 @@ pub fn create_elders_info(
     (elders_info, full_ids)
 }
 
-pub fn create_gen_pfx_info(
+pub fn create_genesis_prefix_info(
     elders_info: EldersInfo,
     public_keys: bls::PublicKeySet,
     parsec_version: u64,

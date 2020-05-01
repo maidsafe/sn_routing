@@ -34,7 +34,7 @@ pub struct PausedState {
     pub(super) shared_state: SharedState,
     pub(super) section_keys_provider: SectionKeysProvider,
     pub(super) full_id: FullId,
-    pub(super) gen_pfx_info: GenesisPrefixInfo,
+    pub(super) genesis_prefix_info: GenesisPrefixInfo,
     pub(super) msg_filter: MessageFilter,
     pub(super) msg_queue: VecDeque<QueuedMessage>,
     // TODO: instead of storing both transport and network_rx, store only the network config.

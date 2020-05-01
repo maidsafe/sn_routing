@@ -44,14 +44,15 @@ impl Env {
 
         let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
         let elders_info = elders[0].state.our_info().clone();
-        let gen_pfx_info = test_utils::create_gen_pfx_info(elders_info, public_key_set, 0);
+        let genesis_prefix_info =
+            test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
 
         let (subject, ..) = Node::approved(
             NodeConfig {
                 network_params: NETWORK_PARAMS,
                 ..Default::default()
             },
-            gen_pfx_info,
+            genesis_prefix_info,
             None,
         );
 
@@ -63,8 +64,8 @@ impl Env {
         }
     }
 
-    fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
-        test_utils::create_gen_pfx_info(
+    fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
+        test_utils::create_genesis_prefix_info(
             self.elders[0].state.our_info().clone(),
             self.elders[0]
                 .section_keys_provider
@@ -79,12 +80,12 @@ impl Env {
         self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
     }
 
-    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPrefixInfo) -> Result<()> {
+    fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
         for elder in &self.elders {
             let msg = genesis_update_message_signature(
                 elder,
                 *self.subject.name(),
-                gen_pfx_info.clone(),
+                genesis_prefix_info.clone(),
             )?;
 
             test_utils::handle_message(&mut self.subject, Some(elder.addr), msg)?;
@@ -111,23 +112,24 @@ fn create_elders(
     let public_key_set = secret_key_set.public_keys();
     let (elders_info, full_ids) =
         test_utils::create_elders_info(rng, network, ELDER_SIZE, prev_info);
-    let gen_pfx_info = test_utils::create_gen_pfx_info(elders_info, public_key_set, 0);
+    let genesis_prefix_info =
+        test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
 
     full_ids
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
             let state = SharedState::new(
-                gen_pfx_info.elders_info.clone(),
-                gen_pfx_info.public_keys.clone(),
-                gen_pfx_info.ages.clone(),
+                genesis_prefix_info.elders_info.clone(),
+                genesis_prefix_info.public_keys.clone(),
+                genesis_prefix_info.ages.clone(),
             );
             let section_keys_provider = SectionKeysProvider::new(
-                gen_pfx_info.public_keys.clone(),
+                genesis_prefix_info.public_keys.clone(),
                 SectionKeyShare::new(
                     Some(secret_key_set.secret_key_share(index)),
                     full_id.public_id(),
-                    &gen_pfx_info.elders_info,
+                    &genesis_prefix_info.elders_info,
                 ),
             );
 
@@ -146,21 +148,21 @@ fn create_elders(
 fn genesis_update_message_signature(
     sender: &Elder,
     dst: XorName,
-    gen_pfx_info: GenesisPrefixInfo,
+    genesis_prefix_info: GenesisPrefixInfo,
 ) -> Result<Message> {
-    let msg = genesis_update_accumulating_message(sender, dst, gen_pfx_info)?;
+    let msg = genesis_update_accumulating_message(sender, dst, genesis_prefix_info)?;
     to_message_signature(&sender.full_id, msg)
 }
 
 fn genesis_update_accumulating_message(
     sender: &Elder,
     dst: XorName,
-    gen_pfx_info: GenesisPrefixInfo,
+    genesis_prefix_info: GenesisPrefixInfo,
 ) -> Result<AccumulatingMessage> {
     let content = PlainMessage {
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
-        variant: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
+        variant: Variant::GenesisUpdate(Box::new(genesis_prefix_info)),
     };
 
     let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
@@ -180,8 +182,8 @@ fn handle_genesis_update_on_parsec_prune() {
     let mut env = Env::new();
     assert_eq!(env.subject.parsec_last_version(), 0);
 
-    let gen_pfx_info = env.gen_pfx_info(1);
-    env.handle_genesis_update(gen_pfx_info).unwrap();
+    let genesis_prefix_info = env.genesis_prefix_info(1);
+    env.handle_genesis_update(genesis_prefix_info).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
 
@@ -189,14 +191,15 @@ fn handle_genesis_update_on_parsec_prune() {
 fn handle_genesis_update_ignore_old_vesions() {
     let mut env = Env::new();
 
-    let gen_pfx_info_1 = env.gen_pfx_info(1);
-    let gen_pfx_info_2 = env.gen_pfx_info(2);
+    let genesis_prefix_info_1 = env.genesis_prefix_info(1);
+    let genesis_prefix_info_2 = env.genesis_prefix_info(2);
 
-    env.handle_genesis_update(gen_pfx_info_1.clone()).unwrap();
-    env.handle_genesis_update(gen_pfx_info_2).unwrap();
+    env.handle_genesis_update(genesis_prefix_info_1.clone())
+        .unwrap();
+    env.handle_genesis_update(genesis_prefix_info_2).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 2);
 
-    env.handle_genesis_update(gen_pfx_info_1).unwrap();
+    env.handle_genesis_update(genesis_prefix_info_1).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 2);
 }
 
@@ -205,17 +208,18 @@ fn handle_genesis_update_allow_skipped_versions() {
     let mut env = Env::new();
     assert_eq!(env.subject.parsec_last_version(), 0);
 
-    let gen_pfx_info = env.gen_pfx_info(2);
-    env.handle_genesis_update(gen_pfx_info).unwrap();
+    let genesis_prefix_info = env.genesis_prefix_info(2);
+    env.handle_genesis_update(genesis_prefix_info).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 2);
 }
 
 #[test]
 fn genesis_update_message_successful_trust_check() {
     let mut env = Env::new();
-    let gen_pfx_info = env.gen_pfx_info(1);
-    let msg = genesis_update_message_signature(&env.elders[0], *env.subject.name(), gen_pfx_info)
-        .unwrap();
+    let genesis_prefix_info = env.genesis_prefix_info(1);
+    let msg =
+        genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
+            .unwrap();
     test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
@@ -226,8 +230,9 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     let mut env = Env::new();
     env.perform_elders_change();
 
-    let gen_pfx_info = env.gen_pfx_info(1);
-    let msg = genesis_update_message_signature(&env.elders[0], *env.subject.name(), gen_pfx_info)
-        .unwrap();
+    let genesis_prefix_info = env.genesis_prefix_info(1);
+    let msg =
+        genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
+            .unwrap();
     test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
 }

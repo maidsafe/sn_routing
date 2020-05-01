@@ -50,9 +50,13 @@ pub struct ConsensusEngine {
 }
 
 impl ConsensusEngine {
-    pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) -> Self {
+    pub fn new(
+        rng: &mut MainRng,
+        full_id: FullId,
+        genesis_prefix_info: &GenesisPrefixInfo,
+    ) -> Self {
         let mut parsec_map = ParsecMap::default();
-        parsec_map.init(rng, full_id, gen_pfx_info);
+        parsec_map.init(rng, full_id, genesis_prefix_info);
 
         Self {
             parsec_map,
@@ -259,9 +263,9 @@ impl ConsensusEngine {
         &mut self,
         rng: &mut MainRng,
         full_id: FullId,
-        gen_pfx_info: &GenesisPrefixInfo,
+        genesis_prefix_info: &GenesisPrefixInfo,
     ) {
-        self.parsec_map.init(rng, full_id, gen_pfx_info)
+        self.parsec_map.init(rng, full_id, genesis_prefix_info)
     }
 
     pub fn check_vote_status<'a>(

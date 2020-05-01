@@ -132,7 +132,7 @@ impl SectionProofSlice {
 
         for proof_key_info in their_key_infos
             .into_iter()
-            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
+            .filter(|(prefix, _)| last_prefix.is_compatible(prefix))
             .map(|(_, info)| info)
         {
             max_known_version = std::cmp::max(max_known_version, proof_key_info.version());

@@ -119,8 +119,13 @@ impl Default for ParsecMap {
 }
 
 impl ParsecMap {
-    pub fn init(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) {
-        self.add_new(rng, full_id, gen_pfx_info);
+    pub fn init(
+        &mut self,
+        rng: &mut MainRng,
+        full_id: FullId,
+        genesis_prefix_info: &GenesisPrefixInfo,
+    ) {
+        self.add_new(rng, full_id, genesis_prefix_info);
         self.remove_old();
     }
 
@@ -320,11 +325,16 @@ impl ParsecMap {
         }
     }
 
-    fn add_new(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) {
-        if let Entry::Vacant(entry) = self.map.entry(gen_pfx_info.parsec_version) {
-            let _ = entry.insert(create(rng, full_id, gen_pfx_info));
+    fn add_new(
+        &mut self,
+        rng: &mut MainRng,
+        full_id: FullId,
+        genesis_prefix_info: &GenesisPrefixInfo,
+    ) {
+        if let Entry::Vacant(entry) = self.map.entry(genesis_prefix_info.parsec_version) {
+            let _ = entry.insert(create(rng, full_id, genesis_prefix_info));
             self.size_counter = ParsecSizeCounter::default();
-            info!("Init new Parsec, genesis = {:?}", gen_pfx_info);
+            info!("Init new Parsec, genesis = {:?}", genesis_prefix_info);
         }
     }
 
@@ -363,25 +373,39 @@ pub fn generate_bls_threshold_secret_key(
 }
 
 /// Create Parsec instance.
-fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) -> Parsec {
+fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefixInfo) -> Parsec {
     #[cfg(feature = "mock")]
     let hash = {
-        let fields = (gen_pfx_info.elders_info.hash(), gen_pfx_info.parsec_version);
+        let fields = (
+            genesis_prefix_info.elders_info.hash(),
+            genesis_prefix_info.parsec_version,
+        );
         crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
     };
 
-    if gen_pfx_info.elders_info.is_member(full_id.public_id()) {
+    if genesis_prefix_info
+        .elders_info
+        .is_member(full_id.public_id())
+    {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]
             hash,
             full_id,
-            &gen_pfx_info.elders_info.member_ids().copied().collect(),
-            gen_pfx_info.state_serialized.clone(),
+            &genesis_prefix_info
+                .elders_info
+                .member_ids()
+                .copied()
+                .collect(),
+            genesis_prefix_info.state_serialized.clone(),
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
     } else {
-        let members = gen_pfx_info.elders_info.member_ids().copied().collect();
+        let members = genesis_prefix_info
+            .elders_info
+            .member_ids()
+            .copied()
+            .collect();
 
         Parsec::from_existing(
             #[cfg(feature = "mock")]
@@ -450,7 +474,7 @@ mod tests {
             .collect()
     }
 
-    fn create_gen_pfx_info(
+    fn create_genesis_prefix_info(
         rng: &mut MainRng,
         full_ids: Vec<FullId>,
         version: u64,
@@ -484,8 +508,8 @@ mod tests {
 
         let mut parsec_map = ParsecMap::default();
         for parsec_no in 0..=size {
-            let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), parsec_no);
-            parsec_map.init(rng, full_id.clone(), &gen_pfx_info);
+            let genesis_prefix_info = create_genesis_prefix_info(rng, full_ids.clone(), parsec_no);
+            parsec_map.init(rng, full_id.clone(), &genesis_prefix_info);
         }
 
         parsec_map
@@ -495,8 +519,8 @@ mod tests {
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
-        let gen_pfx_info = create_gen_pfx_info(rng, full_ids, version);
-        parsec_map.init(rng, full_id, &gen_pfx_info);
+        let genesis_prefix_info = create_genesis_prefix_info(rng, full_ids, version);
+        parsec_map.init(rng, full_id, &genesis_prefix_info);
     }
 
     trait HandleRequestResponse {
