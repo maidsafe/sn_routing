@@ -8,9 +8,9 @@
 
 use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
-    generate_bls_threshold_secret_key, mock::Environment, section_proof_slice_for_test,
-    AccumulatingMessage, DstLocation, EldersInfo, FullId, Message, NetworkParams, P2pNode,
-    PlainMessage, Prefix, SectionKeyShare, Variant, XorName,
+    generate_bls_threshold_secret_key, mock::Environment, AccumulatingMessage, DstLocation,
+    EldersInfo, FullId, Message, NetworkParams, P2pNode, PlainMessage, Prefix, SectionKeyInfo,
+    SectionKeyShare, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -87,7 +87,11 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
-                section_proof_slice_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())
+                SectionProofChain::new(SectionKeyInfo::new(
+                    0,
+                    invalid_prefix,
+                    bls_keys.public_keys().public_key(),
+                ))
             }
         };
         let pk_set = bls_keys.public_keys();

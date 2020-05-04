@@ -22,14 +22,9 @@ pub use self::{
     section_keys::{SectionKeyShare, SectionKeys, SectionKeysProvider},
     section_map::SectionMap,
     section_members::SectionMembers,
-    section_proof_chain::{
-        SectionKeyInfo, SectionProofBlock, SectionProofChain, SectionProofSlice, TrustStatus,
-    },
+    section_proof_chain::{SectionKeyInfo, SectionProofBlock, SectionProofChain, TrustStatus},
     shared_state::SharedState,
 };
-
-#[cfg(feature = "mock_base")]
-pub use self::section_proof_chain::section_proof_slice_for_test;
 
 use crate::consensus::AccumulatingProof;
 

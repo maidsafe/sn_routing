@@ -9,7 +9,7 @@
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
     error::Result,
-    section::{SectionKeyShare, SectionProofSlice},
+    section::{SectionKeyShare, SectionProofChain},
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -22,7 +22,7 @@ use std::{collections::BTreeSet, mem};
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct AccumulatingMessage {
     pub content: PlainMessage,
-    pub proof: SectionProofSlice,
+    pub proof: SectionProofChain,
     pub public_key_set: bls::PublicKeySet,
     pub signature_shares: BTreeSet<(usize, bls::SignatureShare)>,
 }
@@ -33,7 +33,7 @@ impl AccumulatingMessage {
         content: PlainMessage,
         section_share: &SectionKeyShare,
         public_key_set: bls::PublicKeySet,
-        proof: SectionProofSlice,
+        proof: SectionProofChain,
     ) -> Result<Self> {
         let bytes = content.serialize_for_signing()?;
         let mut signature_shares = BTreeSet::new();
@@ -267,8 +267,8 @@ mod tests {
         SectionKeyInfo::new(version, prefix, pk_set.public_key())
     }
 
-    fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofSlice {
-        SectionProofSlice::from_genesis(make_section_key_info(pk_set))
+    fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
+        SectionProofChain::new(make_section_key_info(pk_set))
     }
 
     fn make_their_key_infos(

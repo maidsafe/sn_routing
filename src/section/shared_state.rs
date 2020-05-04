@@ -8,7 +8,7 @@
 
 use super::{
     AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
-    SectionProofBlock, SectionProofChain, SectionProofSlice,
+    SectionProofBlock, SectionProofChain,
 };
 use crate::{
     consensus::AccumulatingEvent,
@@ -49,7 +49,7 @@ impl SharedState {
         ages: BTreeMap<XorName, AgeCounter>,
     ) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info, section_pk);
-        let our_history = SectionProofChain::from_genesis(pk_info);
+        let our_history = SectionProofChain::new(pk_info);
         let our_key_info = our_history.last_key_info().clone();
         let our_members = SectionMembers::new(&elders_info, &ages);
 
@@ -280,7 +280,7 @@ impl SharedState {
         Some(details)
     }
 
-    /// Provide a SectionProofSlice that proves the given signature to the given destination
+    /// Provide a SectionProofChain that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
     /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
@@ -288,7 +288,7 @@ impl SharedState {
         &self,
         target: &DstLocation,
         node_knowledge_override: Option<u64>,
-    ) -> SectionProofSlice {
+    ) -> SectionProofChain {
         let version = match (target, node_knowledge_override) {
             (DstLocation::Node(_), Some(knowledge)) => knowledge,
             _ => self.sections.trusted_key_version(target),

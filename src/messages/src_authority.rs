@@ -12,7 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    section::{SectionKeyInfo, SectionProofSlice, TrustStatus},
+    section::{SectionKeyInfo, SectionProofChain, TrustStatus},
     xor_space::{Prefix, XorName},
 };
 use std::net::SocketAddr;
@@ -26,7 +26,7 @@ pub enum SrcAuthority {
     Section {
         prefix: Prefix<XorName>,
         signature: bls::Signature,
-        proof: SectionProofSlice,
+        proof: SectionProofChain,
     },
 }
 

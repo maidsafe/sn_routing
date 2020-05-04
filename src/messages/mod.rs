@@ -96,7 +96,7 @@ impl Message {
     pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
         match &self.src {
             SrcAuthority::Node { .. } => None,
-            SrcAuthority::Section { proof, .. } => proof.last_key_info(),
+            SrcAuthority::Section { proof, .. } => Some(proof.last_key_info()),
         }
     }
 
