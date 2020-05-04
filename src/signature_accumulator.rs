@@ -79,7 +79,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng,
-        section::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
+        section::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
@@ -110,7 +110,7 @@ mod tests {
             let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
             let elders_info = EldersInfo::new(all_nodes.clone(), prefix, 0);
             let key_info = SectionKeyInfo::from_elders_info(&elders_info, pk_set.public_key());
-            let proof = SectionProofSlice::from_genesis(key_info);
+            let proof = SectionProofChain::new(key_info);
 
             let signed_msg = unwrap!(AccumulatingMessage::new(
                 content.clone(),

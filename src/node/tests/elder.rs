@@ -20,7 +20,7 @@ use crate::{
     quic_p2p,
     rng::{self, MainRng},
     section::MIN_AGE,
-    section::{EldersInfo, SectionKeyInfo, SectionProofSlice},
+    section::{EldersInfo, SectionKeyInfo, SectionProofChain},
     utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;
@@ -521,22 +521,22 @@ fn send_genesis_update() {
     verify_proof_chain_does_not_contain(proof, orig_elders_version);
 }
 
-fn verify_proof_chain_contains(proof_chain: &SectionProofSlice, expected_version: u64) {
+fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version: u64) {
     assert!(
         proof_chain
-            .all_prefix_version()
-            .any(|(_, version)| version == expected_version),
+            .key_infos()
+            .any(|info| info.version() == expected_version),
         "{:?} doesn't contain expected version {}",
         proof_chain,
         expected_version,
     );
 }
 
-fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofSlice, unexpected_version: u64) {
+fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpected_version: u64) {
     assert!(
         proof_chain
-            .all_prefix_version()
-            .all(|(_, version)| version != unexpected_version),
+            .key_infos()
+            .all(|info| info.version() != unexpected_version),
         "{:?} contains unexpected version {}",
         proof_chain,
         unexpected_version,

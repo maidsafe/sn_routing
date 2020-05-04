@@ -47,92 +47,105 @@ impl SectionProofBlock {
     }
 }
 
+/// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
+/// first one.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SectionProofSlice {
-    /// The version of the section key to use as root of trust.
-    version: u64,
-    /// The prefix of section key to use as root of trust.
-    prefix: Prefix<XorName>,
-    /// chain of trust to the section, if empty use root of trust.
-    blocks: Vec<SectionProofBlock>,
+pub struct SectionProofChain {
+    head: SectionKeyInfo,
+    tail: Vec<SectionProofBlock>,
 }
 
-impl SectionProofSlice {
-    #[cfg(any(feature = "mock_base", test))]
-    pub fn from_genesis(key_info: SectionKeyInfo) -> Self {
+impl SectionProofChain {
+    /// Creates new chain consisting of only one block.
+    pub fn new(first: SectionKeyInfo) -> Self {
         Self {
-            version: key_info.version,
-            prefix: key_info.prefix,
-            blocks: Vec::new(),
+            head: first,
+            tail: Vec::new(),
         }
     }
 
-    pub fn last_prefix_version(&self) -> (&Prefix<XorName>, u64) {
-        self.blocks
-            .last()
-            .map(|block| (block.prefix(), block.version()))
-            .unwrap_or((&self.prefix, self.version))
-    }
-
-    #[cfg(all(test, feature = "mock"))]
-    pub fn all_prefix_version(&self) -> impl DoubleEndedIterator<Item = (&Prefix<XorName>, u64)> {
-        iter::once((&self.prefix, self.version)).chain(
-            self.blocks
-                .iter()
-                .map(|block| (block.prefix(), block.version())),
-        )
-    }
-
-    pub fn last_key_info(&self) -> Option<&SectionKeyInfo> {
-        self.blocks.last().map(|block| block.key_info())
-    }
-
-    fn last_trusted_key_info<'a>(
-        &'a self,
-        last_trusted: &'a SectionKeyInfo,
-    ) -> Option<&'a SectionKeyInfo> {
-        let block_offset = last_trusted.version().saturating_sub(self.version) as usize;
-
-        if block_offset == 0 {
-            if last_trusted.version() != self.version || last_trusted.prefix() != &self.prefix {
-                return None;
-            }
-        } else if let Some(block) = self.blocks.get(block_offset - 1) {
-            if block.key_info() != last_trusted {
-                return None;
-            }
-        } else {
-            // Root of trust not found
-            return None;
+    pub(crate) fn push(&mut self, block: SectionProofBlock) {
+        if !validate_next_block(self.last_key_info(), &block) {
+            log_or_panic!(
+                log::Level::Error,
+                "Invalid next block: {:?} -> {:?}",
+                self.last_key_info(),
+                block
+            );
+            return;
         }
 
-        let mut current = last_trusted;
-        for block in &self.blocks[block_offset..] {
+        self.tail.push(block)
+    }
+
+    #[cfg(test)]
+    pub fn self_validate(&self) -> bool {
+        let mut current = &self.head;
+        for block in &self.tail {
             if !validate_next_block(current, block) {
-                return None;
+                return false;
             }
 
             current = block.key_info();
         }
-
-        Some(current)
+        true
     }
 
-    // Verify this proof chain against the given key infos.
-    pub fn check_trust<'a, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
+    pub(crate) fn first_key_info(&self) -> &SectionKeyInfo {
+        &self.head
+    }
+
+    pub(crate) fn last_key_info(&self) -> &SectionKeyInfo {
+        self.tail
+            .last()
+            .map(|block| block.key_info())
+            .unwrap_or(&self.head)
+    }
+
+    #[cfg(all(test, feature = "mock"))]
+    pub fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
+        iter::once(&self.head).chain(self.tail.iter().map(|block| block.key_info()))
+    }
+
+    /// Returns a slice of this chain starting at the given index.
+    pub(crate) fn slice_from(&self, first_index: usize) -> Self {
+        if first_index == 0 || self.tail.is_empty() {
+            return self.clone();
+        }
+
+        let head_index = std::cmp::min(first_index, self.tail.len()) - 1;
+        let head = self.tail[head_index].key_info().clone();
+
+        let tail_first_index = head_index + 1;
+        let tail = if tail_first_index >= self.tail.len() {
+            vec![]
+        } else {
+            self.tail[tail_first_index..].to_vec()
+        };
+
+        Self { head, tail }
+    }
+
+    /// Number of blocks in the chain (including the first block)
+    pub(crate) fn len(&self) -> usize {
+        1 + self.tail.len()
+    }
+
+    /// Verify this proof chain against the given key infos.
+    pub(crate) fn check_trust<'a, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
-        let first_version = self.version;
-        let (last_prefix, last_version) = self.last_prefix_version();
-        let inclusive_range = first_version..=last_version;
+        let first_version = self.head.version;
+        let last_key_info = self.last_key_info();
+        let inclusive_range = first_version..=last_key_info.version;
 
         let mut max_known_version = 0;
         let mut found_prefix_keys = false;
 
         for proof_key_info in their_key_infos
             .into_iter()
-            .filter(|(prefix, _)| last_prefix.is_compatible(prefix))
+            .filter(|(prefix, _)| last_key_info.prefix.is_compatible(prefix))
             .map(|(_, info)| info)
         {
             max_known_version = std::cmp::max(max_known_version, proof_key_info.version());
@@ -148,95 +161,44 @@ impl SectionProofSlice {
             }
         }
 
-        if found_prefix_keys && self.version > max_known_version {
+        if found_prefix_keys && self.head.version > max_known_version {
             TrustStatus::ProofTooNew
         } else {
             TrustStatus::ProofInvalid
         }
     }
-}
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SectionProofChain {
-    genesis_key_info: SectionKeyInfo,
-    blocks: Vec<SectionProofBlock>,
-}
+    fn last_trusted_key_info<'a>(
+        &'a self,
+        last_trusted: &'a SectionKeyInfo,
+    ) -> Option<&'a SectionKeyInfo> {
+        let block_offset = last_trusted.version().saturating_sub(self.head.version) as usize;
 
-impl SectionProofChain {
-    pub fn from_genesis(key_info: SectionKeyInfo) -> Self {
-        Self {
-            genesis_key_info: key_info,
-            blocks: Vec::new(),
-        }
-    }
-
-    pub fn push(&mut self, block: SectionProofBlock) {
-        if !validate_next_block(self.last_key_info(), &block) {
-            log_or_panic!(
-                log::Level::Error,
-                "Invalid next block: {:?} -> {:?}",
-                self.last_key_info(),
-                block
-            );
-            return;
+        if block_offset == 0 {
+            if last_trusted.version() != self.head.version
+                || last_trusted.prefix() != &self.head.prefix
+            {
+                return None;
+            }
+        } else if let Some(block) = self.tail.get(block_offset - 1) {
+            if block.key_info() != last_trusted {
+                return None;
+            }
+        } else {
+            // Root of trust not found
+            return None;
         }
 
-        self.blocks.push(block)
-    }
-
-    #[cfg(test)]
-    pub fn self_validate(&self) -> bool {
-        let mut current = &self.genesis_key_info;
-        for block in &self.blocks {
+        let mut current = last_trusted;
+        for block in &self.tail[block_offset..] {
             if !validate_next_block(current, block) {
-                return false;
+                return None;
             }
 
             current = block.key_info();
         }
-        true
-    }
 
-    pub fn first_key_info(&self) -> &SectionKeyInfo {
-        &self.genesis_key_info
-    }
-
-    pub fn last_key_info(&self) -> &SectionKeyInfo {
-        self.blocks
-            .last()
-            .map(|block| block.key_info())
-            .unwrap_or(&self.genesis_key_info)
-    }
-
-    /// Returns a slice of this chain starting at the given index.
-    pub fn slice_from(&self, first_index: usize) -> SectionProofSlice {
-        if first_index == 0 || self.blocks.is_empty() {
-            return SectionProofSlice {
-                version: self.genesis_key_info.version,
-                prefix: self.genesis_key_info.prefix,
-                blocks: self.blocks.clone(),
-            };
-        }
-
-        let genesis_index = std::cmp::min(first_index, self.blocks.len()) - 1;
-        let genesis_key_info = self.blocks[genesis_index].key_info().clone();
-
-        let block_first_index = genesis_index + 1;
-        let blocks = if block_first_index >= self.blocks.len() {
-            vec![]
-        } else {
-            self.blocks[block_first_index..].to_vec()
-        };
-
-        SectionProofSlice {
-            version: genesis_key_info.version,
-            prefix: genesis_key_info.prefix,
-            blocks,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        1 + self.blocks.len()
+        Some(current)
     }
 }
 
@@ -258,6 +220,7 @@ fn validate_next_block(last: &SectionKeyInfo, next: &SectionProofBlock) -> bool 
     true
 }
 
+/// Section BLS public key together with the section prefix and version.
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
     /// The section version. This increases monotonically whenever the set of elders changes.
@@ -270,6 +233,7 @@ pub struct SectionKeyInfo {
 }
 
 impl SectionKeyInfo {
+    /// Creates new `SectionKeyInfo` for a section with the given prefix and version.
     pub fn new(version: u64, prefix: Prefix<XorName>, key: bls::PublicKey) -> Self {
         Self {
             version,
@@ -278,23 +242,23 @@ impl SectionKeyInfo {
         }
     }
 
-    pub fn from_elders_info(elders_info: &EldersInfo, key: bls::PublicKey) -> Self {
+    pub(crate) fn from_elders_info(elders_info: &EldersInfo, key: bls::PublicKey) -> Self {
         Self::new(elders_info.version, elders_info.prefix, key)
     }
 
-    pub fn key(&self) -> &bls::PublicKey {
+    pub(crate) fn key(&self) -> &bls::PublicKey {
         &self.key
     }
 
-    pub fn prefix(&self) -> &Prefix<XorName> {
+    pub(crate) fn prefix(&self) -> &Prefix<XorName> {
         &self.prefix
     }
 
-    pub fn version(&self) -> u64 {
+    pub(crate) fn version(&self) -> u64 {
         self.version
     }
 
-    pub fn serialise_for_signature(&self) -> Result<Vec<u8>> {
+    pub(crate) fn serialise_for_signature(&self) -> Result<Vec<u8>> {
         Ok(bincode::serialize(&self)?)
     }
 }
@@ -309,14 +273,4 @@ pub enum TrustStatus<'a> {
     // Message trust cannot be determined because the proof starts at version that is newer than
     // our latest one.
     ProofTooNew,
-}
-
-#[cfg(feature = "mock_base")]
-/// Test helper to create arbitrary proof.
-pub fn section_proof_slice_for_test(
-    version: u64,
-    prefix: Prefix<XorName>,
-    key: bls::PublicKey,
-) -> SectionProofSlice {
-    SectionProofSlice::from_genesis(SectionKeyInfo::new(version, prefix, key))
 }

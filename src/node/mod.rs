@@ -44,7 +44,7 @@ use crate::{
 };
 #[cfg(feature = "mock_base")]
 use {
-    crate::section::{SectionProofSlice, SharedState},
+    crate::section::{SectionProofChain, SharedState},
     std::collections::{BTreeMap, BTreeSet},
 };
 
@@ -1049,7 +1049,7 @@ impl Node {
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
-    pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
+    pub fn prove(&self, target: &DstLocation) -> Option<SectionProofChain> {
         self.shared_state().map(|state| state.prove(target, None))
     }
 
