@@ -124,10 +124,10 @@ impl SectionProofChain {
         1 + self.tail.len()
     }
 
-    /// Verify this proof chain against the given key infos.
-    pub(crate) fn check_trust<'a, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
+    /// Verify this proof chain against the given trusted key infos.
+    pub(crate) fn check_trust<'a, I>(&'a self, trusted_key_infos: I) -> TrustStatus<'a>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+        I: IntoIterator<Item = &'a SectionKeyInfo>,
     {
         let first_version = self.head.version;
         let last_key_info = self.last_key_info();
@@ -136,18 +136,14 @@ impl SectionProofChain {
         let mut max_known_version = 0;
         let mut found_prefix_keys = false;
 
-        for proof_key_info in their_key_infos
-            .into_iter()
-            .filter(|(prefix, _)| last_key_info.prefix.is_compatible(prefix))
-            .map(|(_, info)| info)
-        {
-            max_known_version = std::cmp::max(max_known_version, proof_key_info.version);
+        for trusted_key_info in trusted_key_infos {
+            max_known_version = std::cmp::max(max_known_version, trusted_key_info.version);
             found_prefix_keys = true;
 
-            if inclusive_range.contains(&proof_key_info.version) {
+            if inclusive_range.contains(&trusted_key_info.version) {
                 // We can validate trust with that key: we are done.
-                if let Some(trusted_info) = self.last_trusted_key_info(proof_key_info) {
-                    return TrustStatus::Trusted(&trusted_info.key);
+                if let Some(new_trusted_key_info) = self.last_trusted_key_info(trusted_key_info) {
+                    return TrustStatus::Trusted(&new_trusted_key_info.key);
                 } else {
                     return TrustStatus::ProofInvalid;
                 }
@@ -265,14 +261,14 @@ mod tests {
 
         for key_info in chain.key_infos() {
             assert!(matches!(
-                chain.check_trust(iter::once((&key_info.prefix, key_info))),
+                chain.check_trust(iter::once(key_info)),
                 TrustStatus::Trusted(_)
             ))
         }
 
         let (invalid_key_info, _) = gen_key_info(&mut rng, prefix, 100);
         assert!(matches!(
-            chain.check_trust(iter::once((&invalid_key_info.prefix, &invalid_key_info))),
+            chain.check_trust(iter::once(&invalid_key_info)),
             TrustStatus::ProofInvalid
         ))
     }
