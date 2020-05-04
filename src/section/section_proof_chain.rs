@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::elders_info::EldersInfo;
 use crate::{
     error::Result,
     xor_space::{Prefix, XorName},
@@ -39,11 +38,11 @@ impl SectionProofBlock {
     }
 
     pub fn prefix(&self) -> &Prefix<XorName> {
-        self.key_info.prefix()
+        &self.key_info.prefix
     }
 
     pub fn version(&self) -> u64 {
-        self.key_info.version()
+        self.key_info.version
     }
 }
 
@@ -148,13 +147,13 @@ impl SectionProofChain {
             .filter(|(prefix, _)| last_key_info.prefix.is_compatible(prefix))
             .map(|(_, info)| info)
         {
-            max_known_version = std::cmp::max(max_known_version, proof_key_info.version());
+            max_known_version = std::cmp::max(max_known_version, proof_key_info.version);
             found_prefix_keys = true;
 
-            if inclusive_range.contains(&proof_key_info.version()) {
+            if inclusive_range.contains(&proof_key_info.version) {
                 // We can validate trust with that key: we are done.
                 if let Some(trusted_info) = self.last_trusted_key_info(proof_key_info) {
-                    return TrustStatus::Trusted(trusted_info.key());
+                    return TrustStatus::Trusted(&trusted_info.key);
                 } else {
                     return TrustStatus::ProofInvalid;
                 }
@@ -172,11 +171,10 @@ impl SectionProofChain {
         &'a self,
         last_trusted: &'a SectionKeyInfo,
     ) -> Option<&'a SectionKeyInfo> {
-        let block_offset = last_trusted.version().saturating_sub(self.head.version) as usize;
+        let block_offset = last_trusted.version.saturating_sub(self.head.version) as usize;
 
         if block_offset == 0 {
-            if last_trusted.version() != self.head.version
-                || last_trusted.prefix() != &self.head.prefix
+            if last_trusted.version != self.head.version || last_trusted.prefix != self.head.prefix
             {
                 return None;
             }
@@ -203,17 +201,17 @@ impl SectionProofChain {
 }
 
 fn validate_next_block(last: &SectionKeyInfo, next: &SectionProofBlock) -> bool {
-    if next.version() != last.version() + 1 {
+    if next.version() != last.version + 1 {
         return false;
     }
 
-    if !next.prefix().is_compatible(last.prefix())
-        || next.prefix().bit_count() > last.prefix().bit_count() + 1
+    if !next.prefix().is_compatible(&last.prefix)
+        || next.prefix().bit_count() > last.prefix.bit_count() + 1
     {
         return false;
     }
 
-    if !next.verify_with_pk(*last.key()) {
+    if !next.verify_with_pk(last.key) {
         return false;
     }
 
@@ -223,39 +221,23 @@ fn validate_next_block(last: &SectionKeyInfo, next: &SectionProofBlock) -> bool 
 /// Section BLS public key together with the section prefix and version.
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
+    /// The section prefix. It matches all the members' names.
+    pub prefix: Prefix<XorName>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Identical to `ElderInfo`'s.
-    version: u64,
-    /// The section prefix. It matches all the members' names.
-    prefix: Prefix<XorName>,
+    pub version: u64,
     /// The section BLS public key set
-    key: bls::PublicKey,
+    pub key: bls::PublicKey,
 }
 
 impl SectionKeyInfo {
     /// Creates new `SectionKeyInfo` for a section with the given prefix and version.
-    pub fn new(version: u64, prefix: Prefix<XorName>, key: bls::PublicKey) -> Self {
+    pub fn new(prefix: Prefix<XorName>, version: u64, key: bls::PublicKey) -> Self {
         Self {
-            version,
             prefix,
+            version,
             key,
         }
-    }
-
-    pub(crate) fn from_elders_info(elders_info: &EldersInfo, key: bls::PublicKey) -> Self {
-        Self::new(elders_info.version, elders_info.prefix, key)
-    }
-
-    pub(crate) fn key(&self) -> &bls::PublicKey {
-        &self.key
-    }
-
-    pub(crate) fn prefix(&self) -> &Prefix<XorName> {
-        &self.prefix
-    }
-
-    pub(crate) fn version(&self) -> u64 {
-        self.version
     }
 
     pub(crate) fn serialise_for_signature(&self) -> Result<Vec<u8>> {

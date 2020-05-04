@@ -48,7 +48,7 @@ impl SharedState {
         section_pk: bls::PublicKey,
         ages: BTreeMap<XorName, AgeCounter>,
     ) -> Self {
-        let pk_info = SectionKeyInfo::from_elders_info(&elders_info, section_pk);
+        let pk_info = SectionKeyInfo::new(elders_info.prefix, elders_info.version, section_pk);
         let our_history = SectionProofChain::new(pk_info);
         let our_key_info = our_history.last_key_info().clone();
         let our_members = SectionMembers::new(&elders_info, &ages);
@@ -521,8 +521,11 @@ mod test {
                 let prefix = Prefix::<XorName>::from_str(prefix_str).unwrap();
                 let elders_info = gen_elders_info(rng, prefix, version as u64);
                 let bls_keys = generate_bls_threshold_secret_key(rng, 1).public_keys();
-                let key_info =
-                    SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
+                let key_info = SectionKeyInfo::new(
+                    elders_info.prefix,
+                    elders_info.version,
+                    bls_keys.public_key(),
+                );
                 (key_info, elders_info, bls_keys)
             })
             .collect::<Vec<_>>();

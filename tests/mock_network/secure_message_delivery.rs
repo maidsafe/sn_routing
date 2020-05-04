@@ -88,8 +88,8 @@ fn message_with_invalid_security(fail_type: FailType) {
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
                 SectionProofChain::new(SectionKeyInfo::new(
-                    0,
                     invalid_prefix,
+                    0,
                     bls_keys.public_keys().public_key(),
                 ))
             }

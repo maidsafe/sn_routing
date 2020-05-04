@@ -562,7 +562,7 @@ impl Approved {
                 return;
             }
 
-            (details.age, Some(details.destination_key_info.version()))
+            (details.age, Some(details.destination_key_info.version))
         } else {
             (MIN_AGE, None)
         };
@@ -1311,8 +1311,8 @@ impl Approved {
         }
 
         self.vote_for_send_ack_message(SendAckMessagePayload {
-            ack_prefix: *key_info.prefix(),
-            ack_version: key_info.version(),
+            ack_prefix: key_info.prefix,
+            ack_version: key_info.version,
         });
         Ok(())
     }
@@ -1555,7 +1555,7 @@ impl Approved {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
+        let key_info = SectionKeyInfo::new(elders_info.prefix, elders_info.version, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
             &self.section_keys_provider.secret_key_share()?.key,
             &key_info,
@@ -1569,7 +1569,7 @@ impl Approved {
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
         let has_their_keys = self.shared_state.sections.keys().any(|(_, info)| {
-            *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
+            info.prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
         });
 
         if has_their_keys {
@@ -1951,8 +1951,8 @@ impl Approved {
             .shared_state
             .sections
             .keys()
-            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
-            .map_or(false, |(_, info)| info.version() < key_info.version());
+            .find(|(prefix, _)| prefix.is_compatible(&key_info.prefix))
+            .map_or(false, |(_, info)| info.version < key_info.version);
 
         if new_key_info {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
