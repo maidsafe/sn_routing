@@ -51,7 +51,7 @@ impl SectionMap {
             our: our_info,
             other: Default::default(),
             other_queued: Default::default(),
-            keys: iter::once((*our_key.prefix(), our_key)).collect(),
+            keys: iter::once((our_key.prefix, our_key)).collect(),
             recent_keys: Default::default(),
             knowledge: Default::default(),
         }
@@ -291,7 +291,7 @@ impl SectionMap {
         self.keys()
             .filter(|(prefix, _)| prefix.matches(name))
             .map(|(_, info)| info)
-            .max_by_key(|info| info.version())
+            .max_by_key(|info| info.version)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
@@ -303,10 +303,10 @@ impl SectionMap {
         if let Some((&old_prefix, old_version)) = self
             .keys
             .iter()
-            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
-            .map(|(prefix, info)| (prefix, info.version()))
+            .find(|(prefix, _)| prefix.is_compatible(&key_info.prefix))
+            .map(|(prefix, info)| (prefix, info.version))
         {
-            if old_version >= key_info.version() || old_prefix.is_extension_of(key_info.prefix()) {
+            if old_version >= key_info.version || old_prefix.is_extension_of(&key_info.prefix) {
                 // Do not overwrite newer version or prefix extensions
                 return;
             }
@@ -325,13 +325,13 @@ impl SectionMap {
             trace!("    from {:?} to {:?}", old_key_info, key_info);
 
             let old_prefix_sibling = old_prefix.sibling();
-            let mut current_prefix = key_info.prefix().sibling();
+            let mut current_prefix = key_info.prefix.sibling();
             while !self.keys.contains_key(&current_prefix) && current_prefix != old_prefix_sibling {
                 let _ = self.keys.insert(current_prefix, old_key_info.clone());
                 current_prefix = current_prefix.popped().sibling();
             }
         }
-        let _ = self.keys.insert(*key_info.prefix(), key_info.clone());
+        let _ = self.keys.insert(key_info.prefix, key_info.clone());
     }
 
     pub fn get_knowledge(&self, prefix: &Prefix<XorName>) -> Option<u64> {

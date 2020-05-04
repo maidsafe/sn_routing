@@ -236,5 +236,5 @@ fn as_iter(
 ) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
     key_info
         .into_iter()
-        .map(|key_info| (key_info.prefix(), key_info))
+        .map(|key_info| (&key_info.prefix, key_info))
 }

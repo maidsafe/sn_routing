@@ -224,8 +224,9 @@ impl Env {
     }
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let section_key_info = SectionKeyInfo::from_elders_info(
-            &new_info.new_elders_info,
+        let section_key_info = SectionKeyInfo::new(
+            new_info.new_elders_info.prefix,
+            new_info.new_elders_info.version,
             new_info.new_pk_set.public_key(),
         );
         let _ = self.n_vote_for_gossipped(
@@ -525,7 +526,7 @@ fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version
     assert!(
         proof_chain
             .key_infos()
-            .any(|info| info.version() == expected_version),
+            .any(|info| info.version == expected_version),
         "{:?} doesn't contain expected version {}",
         proof_chain,
         expected_version,
@@ -536,7 +537,7 @@ fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpect
     assert!(
         proof_chain
             .key_infos()
-            .all(|info| info.version() != unexpected_version),
+            .all(|info| info.version != unexpected_version),
         "{:?} contains unexpected version {}",
         proof_chain,
         unexpected_version,

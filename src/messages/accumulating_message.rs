@@ -262,9 +262,9 @@ mod tests {
     }
 
     fn make_section_key_info(pk_set: &bls::PublicKeySet) -> SectionKeyInfo {
-        let version = 0u64;
         let prefix = Prefix::default();
-        SectionKeyInfo::new(version, prefix, pk_set.public_key())
+        let version = 0u64;
+        SectionKeyInfo::new(prefix, version, pk_set.public_key())
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
@@ -275,7 +275,7 @@ mod tests {
         pk_set: &bls::PublicKeySet,
     ) -> BTreeMap<Prefix<XorName>, SectionKeyInfo> {
         let key_info = make_section_key_info(pk_set);
-        iter::once((*key_info.prefix(), key_info)).collect()
+        iter::once((key_info.prefix, key_info)).collect()
     }
 
     fn gen_message(rng: &mut MainRng) -> PlainMessage {
