@@ -62,7 +62,7 @@ impl SrcAuthority {
         &'a self,
         dst: &DstLocation,
         variant: &Variant,
-        their_key_infos: I,
+        trusted_key_infos: I,
     ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
@@ -78,9 +78,15 @@ impl SrcAuthority {
                 }
             }
             Self::Section {
-                signature, proof, ..
+                prefix,
+                signature,
+                proof,
             } => {
-                let public_key = match proof.check_trust(their_key_infos) {
+                let trusted_key_infos = trusted_key_infos
+                    .into_iter()
+                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
+                    .map(|(_, key_info)| key_info);
+                let public_key = match proof.check_trust(trusted_key_infos) {
                     TrustStatus::Trusted(key) => key,
                     TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
                     TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
