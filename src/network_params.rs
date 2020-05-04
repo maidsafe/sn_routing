@@ -6,22 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{ELDER_SIZE, SAFE_SECTION_SIZE};
+use crate::{ELDER_SIZE, RECOMMENDED_SECTION_SIZE};
 
-/// Network parameters: number of elders, safe section size
+/// Network parameters: number of elders, recommended section size
 #[derive(Clone, Copy, Debug)]
 pub struct NetworkParams {
     /// The number of elders per section
     pub elder_size: usize,
-    /// Minimum number of nodes we consider safe in a section
-    pub safe_section_size: usize,
+    /// Recommended number of nodes in a section.
+    pub recommended_section_size: usize,
 }
 
 impl Default for NetworkParams {
     fn default() -> Self {
         Self {
             elder_size: ELDER_SIZE,
-            safe_section_size: SAFE_SECTION_SIZE,
+            recommended_section_size: RECOMMENDED_SECTION_SIZE,
         }
     }
 }

@@ -169,11 +169,11 @@ const QUORUM_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
 const QUORUM_DENOMINATOR: usize = 3;
 
-/// Minimal safe section size. Routing will keep adding nodes until the section reaches this size.
+/// Recommended section size. Routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
-const SAFE_SECTION_SIZE: usize = 100;
+const RECOMMENDED_SECTION_SIZE: usize = 100;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;

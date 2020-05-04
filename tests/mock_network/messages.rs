@@ -16,11 +16,11 @@ use std::collections::HashMap;
 #[test]
 fn send() {
     let elder_size = 8;
-    let safe_section_size = 8;
+    let recommended_section_size = 8;
     let quorum = quorum_count(elder_size);
     let env = Environment::new(NetworkParams {
         elder_size,
-        safe_section_size,
+        recommended_section_size,
     });
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
@@ -54,11 +54,11 @@ fn send() {
 #[test]
 fn send_and_receive() {
     let elder_size = 8;
-    let safe_section_size = 8;
+    let recommended_section_size = 8;
     let quorum = quorum_count(elder_size);
     let env = Environment::new(NetworkParams {
         elder_size,
-        safe_section_size,
+        recommended_section_size,
     });
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, elder_size + 1);

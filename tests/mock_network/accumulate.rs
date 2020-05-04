@@ -18,7 +18,7 @@ fn messages_accumulate_with_quorum() {
     let elder_size = 8;
     let env = Environment::new(NetworkParams {
         elder_size,
-        safe_section_size: elder_size,
+        recommended_section_size: elder_size,
     });
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, section_size);

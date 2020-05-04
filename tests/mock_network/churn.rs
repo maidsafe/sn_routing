@@ -67,13 +67,13 @@ fn messages_during_churn() {
 #[ignore]
 fn remove_unresponsive_node() {
     let elder_size = 8;
-    let safe_section_size = 8;
+    let recommended_section_size = 8;
     let env = Environment::new(NetworkParams {
         elder_size,
-        safe_section_size,
+        recommended_section_size,
     });
 
-    let mut nodes = create_connected_nodes(&env, safe_section_size);
+    let mut nodes = create_connected_nodes(&env, recommended_section_size);
     // Pause a node to act as non-responsive.
     let mut rng = env.new_rng();
     let non_responsive_index = gen_elder_index(&mut rng, &nodes);
@@ -169,7 +169,7 @@ impl Default for Params {
         Self {
             network: NetworkParams {
                 elder_size: 4,
-                safe_section_size: 5,
+                recommended_section_size: 5,
             },
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
@@ -327,13 +327,13 @@ fn drop_random_nodes<R: Rng>(
         }
 
         let elder_size = node.inner.elder_size();
-        let safe_section_size = node.inner.safe_section_size();
+        let recommended_section_size = node.inner.recommended_section_size();
 
         let section = sections.get_mut(node.our_prefix()).unwrap();
 
         // Drop at most as many nodes as is the minimal number of non-elders in the section.
         // This guarantees we never drop below `elder_size` even in case of split.
-        if section.dropped_count >= safe_section_size - elder_size {
+        if section.dropped_count >= recommended_section_size - elder_size {
             continue;
         }
 

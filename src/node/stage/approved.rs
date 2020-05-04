@@ -976,7 +976,7 @@ impl Approved {
         if self.shared_state.add_member(
             payload.p2p_node.clone(),
             payload.age,
-            core.network_params.safe_section_size,
+            core.network_params.recommended_section_size,
         ) {
             info!("handle Online: {:?}.", payload);
 
@@ -1002,7 +1002,7 @@ impl Approved {
 
         if let (Some(addr), _) = self
             .shared_state
-            .remove_member(&pub_id, core.network_params.safe_section_size)
+            .remove_member(&pub_id, core.network_params.recommended_section_size)
         {
             info!("handle Offline: {}", pub_id);
 
@@ -1038,7 +1038,10 @@ impl Approved {
     ) -> Result<(), RoutingError> {
         let node_knowledge = match self
             .shared_state
-            .remove_member(&details.pub_id, core.network_params.safe_section_size)
+            .remove_member(
+                &details.pub_id,
+                core.network_params.recommended_section_size,
+            )
             .1
         {
             MemberState::Relocating { node_knowledge } => {
