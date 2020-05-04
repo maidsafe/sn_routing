@@ -580,7 +580,10 @@ impl Approved {
                 .update(payload);
         }
 
-        self.send_parsec_gossip(core, Some((payload.parsec_version, p2p_node)))
+        let version = payload
+            .parsec_version
+            .min(self.consensus_engine.parsec_version());
+        self.send_parsec_gossip(core, Some((version, p2p_node)))
     }
 
     pub fn handle_parsec_request(
