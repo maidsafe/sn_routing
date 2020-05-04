@@ -26,7 +26,7 @@ use std::iter;
 // allows churn to happen which doesn't trigger split or allow churn to not increase age.
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
     elder_size: LOWERED_ELDER_SIZE,
-    safe_section_size: LOWERED_ELDER_SIZE + 4,
+    recommended_section_size: LOWERED_ELDER_SIZE + 4,
 };
 
 #[test]
@@ -156,8 +156,8 @@ fn startup_phase() {
     let env = Environment::new(NETWORK_PARAMS);
     let mut nodes = vec![];
 
-    // Only the first `safe_section_size - 1` adds cause age increments, the rest does not.
-    for i in 0..(env.safe_section_size() + 1) {
+    // Only the first `recommended_section_size - 1` adds cause age increments, the rest does not.
+    for i in 0..(env.recommended_section_size() + 1) {
         trace!("add node {}", i);
         add_node_to_section(&env, &mut nodes, &Prefix::default());
 
@@ -175,10 +175,10 @@ fn startup_phase() {
 // were only adding nodes, not removing.
 fn check_root_section_age_counters_after_only_adds(env: &Environment, nodes: &[TestNode]) -> bool {
     // Maximum number of churn events a node can experience during the startup phase:
-    // The startup phase last only while the section has less than safe_section_size nodes which
-    // means it has been through at most safe_section_size - 1 adds. We need to subtract one to
+    // The startup phase last only while the section has less than recommended_section_size nodes which
+    // means it has been through at most recommended_section_size - 1 adds. We need to subtract one to
     // discount the node itself because its age is not affected by its own churn.
-    let max_startup_churn_events = nodes.len().min(env.safe_section_size() - 1) - 1;
+    let max_startup_churn_events = nodes.len().min(env.recommended_section_size() - 1) - 1;
 
     for i in 0..nodes.len() {
         assert!(
@@ -263,7 +263,7 @@ fn churn_until_age_counter(
     let min_section_size = (NETWORK_PARAMS.elder_size + 1) + 1;
 
     // Ensure we are increasing age at each churn event.
-    let max_section_size = NETWORK_PARAMS.safe_section_size - 1;
+    let max_section_size = NETWORK_PARAMS.recommended_section_size - 1;
     assert!(min_section_size < max_section_size);
 
     // Store the name here in case it changes due to relocation.

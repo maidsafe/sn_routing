@@ -16,7 +16,7 @@ use routing::{mock::Environment, NetworkParams};
 fn node_drops() {
     let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE + 1,
+        recommended_section_size: LOWERED_ELDER_SIZE + 1,
     });
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE + 2);

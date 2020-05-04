@@ -134,7 +134,12 @@ impl SharedState {
 
     /// Adds new member if its name matches our prefix and it's not already joined.
     /// Returns whether the member was actually added.
-    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8, safe_section_size: usize) -> bool {
+    pub fn add_member(
+        &mut self,
+        p2p_node: P2pNode,
+        age: u8,
+        recommended_section_size: usize,
+    ) -> bool {
         if !self.our_prefix().matches(p2p_node.name()) {
             trace!("not adding node {} - not matching our prefix", p2p_node);
             return false;
@@ -148,7 +153,7 @@ impl SharedState {
         let name = *p2p_node.name();
 
         self.our_members.add(p2p_node, age);
-        self.increment_age_counters(&name, safe_section_size);
+        self.increment_age_counters(&name, recommended_section_size);
 
         true
     }
@@ -159,7 +164,7 @@ impl SharedState {
     pub fn remove_member(
         &mut self,
         pub_id: &PublicId,
-        safe_section_size: usize,
+        recommended_section_size: usize,
     ) -> (Option<SocketAddr>, MemberState) {
         match self.our_members.get(pub_id.name()).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
@@ -168,7 +173,7 @@ impl SharedState {
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
-                self.increment_age_counters(pub_id.name(), safe_section_size)
+                self.increment_age_counters(pub_id.name(), recommended_section_size)
             }
         }
 
@@ -332,8 +337,8 @@ impl SharedState {
             });
 
         // If either of the two new sections will not contain enough entries, return `false`.
-        if our_new_size < network_params.safe_section_size
-            || sibling_new_size < network_params.safe_section_size
+        if our_new_size < network_params.recommended_section_size
+            || sibling_new_size < network_params.recommended_section_size
         {
             return None;
         }
@@ -382,12 +387,13 @@ impl SharedState {
     }
 
     // Increment the age counters of the members.
-    fn increment_age_counters(&mut self, trigger_node: &XorName, safe_section_size: usize) {
+    fn increment_age_counters(&mut self, trigger_node: &XorName, recommended_section_size: usize) {
         let our_section_size = self.our_members.joined().count();
         let our_prefix = &self.sections.our().prefix;
 
         // Is network startup in progress?
-        let startup = *our_prefix == Prefix::default() && our_section_size < safe_section_size;
+        let startup =
+            *our_prefix == Prefix::default() && our_section_size < recommended_section_size;
 
         // As a measure against sybil attacks, we don't increment the age counters on infant churn
         // once we completed the startup phase.

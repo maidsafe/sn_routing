@@ -76,9 +76,9 @@ impl Environment {
         self.network_params.elder_size
     }
 
-    /// Get the safe section size
-    pub fn safe_section_size(&self) -> usize {
-        self.network_params.safe_section_size
+    /// Get the recommended section size
+    pub fn recommended_section_size(&self) -> usize {
+        self.network_params.recommended_section_size
     }
 
     /// Poll the mock network.

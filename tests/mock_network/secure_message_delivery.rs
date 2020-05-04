@@ -48,7 +48,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     let mut env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
+        recommended_section_size: LOWERED_ELDER_SIZE,
     });
     env.expect_panic();
     let mut rng = env.new_rng();

@@ -1044,8 +1044,8 @@ impl Node {
 
     /// Size at which our section splits. Since this is configurable, this method is used to
     /// obtain it.
-    pub fn safe_section_size(&self) -> usize {
-        self.core.network_params.safe_section_size
+    pub fn recommended_section_size(&self) -> usize {
+        self.core.network_params.recommended_section_size
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.

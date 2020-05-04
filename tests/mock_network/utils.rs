@@ -405,9 +405,15 @@ pub fn add_connected_nodes_until_one_away_from_split(
     let sub_prefix_last_bit = env.new_rng().gen();
     let sub_prefix = prefix_to_nearly_split.pushed(sub_prefix_last_bit);
     let (count0, count1) = if sub_prefix_last_bit {
-        (env.safe_section_size(), env.safe_section_size() - 1)
+        (
+            env.recommended_section_size(),
+            env.recommended_section_size() - 1,
+        )
     } else {
-        (env.safe_section_size() - 1, env.safe_section_size())
+        (
+            env.recommended_section_size() - 1,
+            env.recommended_section_size(),
+        )
     };
 
     add_mature_nodes(env, nodes, prefix_to_nearly_split, count0, count1);
@@ -417,14 +423,14 @@ pub fn add_connected_nodes_until_one_away_from_split(
 
 /// Split the section by adding and/or removing nodes to/from it.
 pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
-    // To trigger split, we need the section to contain at least `safe_section_size` *mature* nodes
+    // To trigger split, we need the section to contain at least `recommended_section_size` *mature* nodes
     // from each sub-prefix.
     add_mature_nodes(
         env,
         nodes,
         prefix,
-        env.safe_section_size(),
-        env.safe_section_size(),
+        env.recommended_section_size(),
+        env.recommended_section_size(),
     );
 
     // Verify the split actually happened.
@@ -434,7 +440,7 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
 
 /// Add/remove nodes to the given section until it has exactly `count0` mature nodes from the
 /// 0-ending subprefix and `count1` mature nodes from the 1-ending subprefix.
-/// Note: if `count0` and `count1` are both at least `safe_section_size`, this causes the section
+/// Note: if `count0` and `count1` are both at least `recommended_section_size`, this causes the section
 /// to split.
 pub fn add_mature_nodes(
     env: &Environment,

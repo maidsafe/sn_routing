@@ -25,7 +25,7 @@ use std::net::SocketAddr;
 const ELDER_SIZE: usize = 3;
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
     elder_size: ELDER_SIZE,
-    safe_section_size: ELDER_SIZE + 1,
+    recommended_section_size: ELDER_SIZE + 1,
 };
 
 struct Env {
