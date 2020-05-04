@@ -62,7 +62,6 @@ pub fn create_genesis_prefix_info(
     GenesisPrefixInfo {
         elders_info,
         public_keys,
-        state_serialized: Vec::new(),
         ages,
         parsec_version,
     }

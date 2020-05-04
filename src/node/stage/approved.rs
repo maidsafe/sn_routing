@@ -87,7 +87,6 @@ impl Approved {
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: create_first_elders_info(p2p_node),
             public_keys: first_dkg_result.public_key_set,
-            state_serialized: Vec::new(),
             ages,
             parsec_version: 0,
         };
@@ -116,8 +115,13 @@ impl Approved {
             ),
         );
 
-        let consensus_engine =
-            ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &genesis_prefix_info);
+        let consensus_engine = ConsensusEngine::new(
+            &mut core.rng,
+            core.full_id.clone(),
+            &genesis_prefix_info.elders_info,
+            vec![],
+            genesis_prefix_info.parsec_version,
+        );
         let shared_state = SharedState::new(
             genesis_prefix_info.elders_info.clone(),
             genesis_prefix_info.public_keys.public_key(),
@@ -1379,7 +1383,6 @@ impl Approved {
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: self.shared_state.our_info().clone(),
             public_keys: self.section_keys_provider.public_key_set().clone(),
-            state_serialized: bincode::serialize(&self.shared_state)?,
             ages: self.shared_state.our_members.get_age_counters(),
             parsec_version: self.consensus_engine.parsec_version() + 1,
         };
@@ -1489,11 +1492,15 @@ impl Approved {
         genesis_prefix_info: GenesisPrefixInfo,
         to_vote_again: BTreeSet<NetworkEvent>,
     ) -> Result<()> {
+        let serialised_state = bincode::serialize(&self.shared_state)?;
+
         self.genesis_prefix_info = genesis_prefix_info;
         self.consensus_engine.finalise_reset(
             &mut core.rng,
             core.full_id.clone(),
-            &self.genesis_prefix_info,
+            &self.genesis_prefix_info.elders_info,
+            serialised_state,
+            self.genesis_prefix_info.parsec_version,
         );
 
         to_vote_again.iter().for_each(|event| {
@@ -1510,7 +1517,9 @@ impl Approved {
         self.consensus_engine.finalise_reset(
             &mut core.rng,
             core.full_id.clone(),
-            &genesis_prefix_info,
+            &genesis_prefix_info.elders_info,
+            vec![],
+            genesis_prefix_info.parsec_version,
         );
         self.shared_state = SharedState::new(
             genesis_prefix_info.elders_info.clone(),
@@ -1587,11 +1596,10 @@ impl Approved {
             p2p_node
         );
 
-        let trimmed_info = self.genesis_prefix_info.trimmed();
-        let src = SrcLocation::Section(trimmed_info.elders_info.prefix);
+        let src = SrcLocation::Section(self.genesis_prefix_info.elders_info.prefix);
         let dst = DstLocation::Node(*p2p_node.name());
 
-        let variant = Variant::NodeApproval(Box::new(trimmed_info));
+        let variant = Variant::NodeApproval(Box::new(self.genesis_prefix_info.clone()));
         if let Err(error) = self.send_routing_message(core, src, dst, variant, their_knowledge) {
             debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
         }
@@ -1627,13 +1635,11 @@ impl Approved {
 
     // TODO: make non-pub
     pub fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let payload = self.genesis_prefix_info.trimmed();
-
         self.shared_state
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(Box::new(payload.clone()));
+                let variant = Variant::GenesisUpdate(Box::new(self.genesis_prefix_info.clone()));
                 let dst = DstLocation::Node(*recipient.name());
                 let version = self
                     .members_knowledge

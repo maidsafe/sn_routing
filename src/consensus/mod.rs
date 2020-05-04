@@ -53,10 +53,12 @@ impl ConsensusEngine {
     pub fn new(
         rng: &mut MainRng,
         full_id: FullId,
-        genesis_prefix_info: &GenesisPrefixInfo,
+        elders_info: &EldersInfo,
+        serialised_state: Vec<u8>,
+        parsec_version: u64,
     ) -> Self {
         let mut parsec_map = ParsecMap::default();
-        parsec_map.init(rng, full_id, genesis_prefix_info);
+        parsec_map.init(rng, full_id, elders_info, serialised_state, parsec_version);
 
         Self {
             parsec_map,
@@ -246,9 +248,12 @@ impl ConsensusEngine {
         &mut self,
         rng: &mut MainRng,
         full_id: FullId,
-        genesis_prefix_info: &GenesisPrefixInfo,
+        elders_info: &EldersInfo,
+        serialised_state: Vec<u8>,
+        parsec_version: u64,
     ) {
-        self.parsec_map.init(rng, full_id, genesis_prefix_info)
+        self.parsec_map
+            .init(rng, full_id, elders_info, serialised_state, parsec_version)
     }
 
     pub fn detect_unresponsive<'a>(

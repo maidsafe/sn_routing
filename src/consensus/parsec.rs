@@ -7,10 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{AccumulatingEvent, GenesisPrefixInfo, NetworkEvent},
+    consensus::{AccumulatingEvent, NetworkEvent},
     id::{FullId, PublicId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
+    section::EldersInfo,
     time::Duration,
 };
 #[cfg(feature = "mock")]
@@ -123,9 +124,11 @@ impl ParsecMap {
         &mut self,
         rng: &mut MainRng,
         full_id: FullId,
-        genesis_prefix_info: &GenesisPrefixInfo,
+        elders_info: &EldersInfo,
+        serialised_state: Vec<u8>,
+        parsec_version: u64,
     ) {
-        self.add_new(rng, full_id, genesis_prefix_info);
+        self.add_new(rng, full_id, elders_info, serialised_state, parsec_version);
         self.remove_old();
     }
 
@@ -329,12 +332,20 @@ impl ParsecMap {
         &mut self,
         rng: &mut MainRng,
         full_id: FullId,
-        genesis_prefix_info: &GenesisPrefixInfo,
+        elders_info: &EldersInfo,
+        serialised_state: Vec<u8>,
+        parsec_version: u64,
     ) {
-        if let Entry::Vacant(entry) = self.map.entry(genesis_prefix_info.parsec_version) {
-            let _ = entry.insert(create(rng, full_id, genesis_prefix_info));
+        if let Entry::Vacant(entry) = self.map.entry(parsec_version) {
+            let _ = entry.insert(create(
+                rng,
+                full_id,
+                elders_info,
+                serialised_state,
+                parsec_version,
+            ));
             self.size_counter = ParsecSizeCounter::default();
-            info!("Init new Parsec, genesis = {:?}", genesis_prefix_info);
+            info!("Init new Parsec v{}", parsec_version);
         }
     }
 
@@ -373,41 +384,31 @@ pub fn generate_bls_threshold_secret_key(
 }
 
 /// Create Parsec instance.
-fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefixInfo) -> Parsec {
+fn create(
+    rng: &mut MainRng,
+    full_id: FullId,
+    elders_info: &EldersInfo,
+    serialised_state: Vec<u8>,
+    #[cfg_attr(not(feature = "mock"), allow(unused))] parsec_version: u64,
+) -> Parsec {
     #[cfg(feature = "mock")]
     let hash = {
-        let fields = (
-            genesis_prefix_info.elders_info.prefix,
-            genesis_prefix_info.elders_info.version,
-            genesis_prefix_info.parsec_version,
-        );
+        let fields = (elders_info.prefix, elders_info.version, parsec_version);
         crypto::sha3_256(&bincode::serialize(&fields).unwrap())
     };
 
-    if genesis_prefix_info
-        .elders_info
-        .elders
-        .contains_key(full_id.public_id().name())
-    {
+    if elders_info.elders.contains_key(full_id.public_id().name()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]
             hash,
             full_id,
-            &genesis_prefix_info
-                .elders_info
-                .elder_ids()
-                .copied()
-                .collect(),
-            genesis_prefix_info.state_serialized.clone(),
+            &elders_info.elder_ids().copied().collect(),
+            serialised_state,
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
     } else {
-        let members = genesis_prefix_info
-            .elders_info
-            .elder_ids()
-            .copied()
-            .collect();
+        let members = elders_info.elder_ids().copied().collect();
 
         Parsec::from_existing(
             #[cfg(feature = "mock")]
@@ -451,7 +452,6 @@ mod tests {
         id::P2pNode,
         rng::MainRng,
         section::EldersInfo,
-        section::MIN_AGE_COUNTER,
         unwrap,
         xor_space::{Prefix, XorName},
     };
@@ -476,11 +476,12 @@ mod tests {
             .collect()
     }
 
-    fn create_genesis_prefix_info(
+    fn init_parsec_map(
+        parsec_map: &mut ParsecMap,
         rng: &mut MainRng,
         full_ids: Vec<FullId>,
         version: u64,
-    ) -> GenesisPrefixInfo {
+    ) {
         let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let members = full_ids
             .iter()
@@ -492,28 +493,15 @@ mod tests {
             })
             .collect();
         let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version);
-        let ages = elders_info
-            .elders
-            .keys()
-            .map(|name| (*name, MIN_AGE_COUNTER))
-            .collect();
-        GenesisPrefixInfo {
-            elders_info,
-            public_keys: generate_first_dkg_result(rng).public_key_set,
-            state_serialized: Vec::new(),
-            ages,
-            parsec_version: version,
-        }
+        parsec_map.init(rng, full_ids[0].clone(), &elders_info, vec![], version);
     }
 
     fn create_parsec_map(rng: &mut MainRng, size: u64) -> ParsecMap {
         let full_ids = create_full_ids(rng);
-        let full_id = full_ids[0].clone();
 
         let mut parsec_map = ParsecMap::default();
         for parsec_no in 0..=size {
-            let genesis_prefix_info = create_genesis_prefix_info(rng, full_ids.clone(), parsec_no);
-            parsec_map.init(rng, full_id.clone(), &genesis_prefix_info);
+            init_parsec_map(&mut parsec_map, rng, full_ids.clone(), parsec_no);
         }
 
         parsec_map
@@ -521,10 +509,7 @@ mod tests {
 
     fn add_to_parsec_map(rng: &mut MainRng, parsec_map: &mut ParsecMap, version: u64) {
         let full_ids = create_full_ids(rng);
-        let full_id = full_ids[0].clone();
-
-        let genesis_prefix_info = create_genesis_prefix_info(rng, full_ids, version);
-        parsec_map.init(rng, full_id, &genesis_prefix_info);
+        init_parsec_map(parsec_map, rng, full_ids, version);
     }
 
     trait HandleRequestResponse {
