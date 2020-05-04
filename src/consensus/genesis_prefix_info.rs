@@ -20,21 +20,8 @@ use std::{
 pub struct GenesisPrefixInfo {
     pub elders_info: EldersInfo,
     pub public_keys: bls::PublicKeySet,
-    pub state_serialized: Vec<u8>,
     pub ages: BTreeMap<XorName, AgeCounter>,
     pub parsec_version: u64,
-}
-
-impl GenesisPrefixInfo {
-    pub fn trimmed(&self) -> Self {
-        Self {
-            elders_info: self.elders_info.clone(),
-            public_keys: self.public_keys.clone(),
-            state_serialized: Vec::new(),
-            ages: self.ages.clone(),
-            parsec_version: self.parsec_version,
-        }
-    }
 }
 
 impl Debug for GenesisPrefixInfo {
