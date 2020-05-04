@@ -11,7 +11,7 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 
-#[cfg(all(test, feature = "mock"))]
+#[cfg(test)]
 use std::iter;
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
@@ -101,8 +101,8 @@ impl SectionProofChain {
             .unwrap_or(&self.head)
     }
 
-    #[cfg(all(test, feature = "mock"))]
-    pub fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
+    #[cfg(test)]
+    pub(crate) fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
         iter::once(&self.head).chain(self.tail.iter().map(|block| block.key_info()))
     }
 
@@ -249,4 +249,65 @@ pub enum TrustStatus<'a> {
     // Message trust cannot be determined because the proof starts at version that is newer than
     // our latest one.
     ProofTooNew,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rng::{self, MainRng, RngCompat};
+    use rand_crypto::Rng;
+
+    #[test]
+    fn smoke() {
+        let mut rng = rng::new();
+        let prefix: Prefix<_> = "10".parse().unwrap();
+        let chain = gen_chain(&mut rng, prefix, 100, 10);
+
+        for key_info in chain.key_infos() {
+            assert!(matches!(
+                chain.check_trust(iter::once((&key_info.prefix, key_info))),
+                TrustStatus::Trusted(_)
+            ))
+        }
+
+        let (invalid_key_info, _) = gen_key_info(&mut rng, prefix, 100);
+        assert!(matches!(
+            chain.check_trust(iter::once((&invalid_key_info.prefix, &invalid_key_info))),
+            TrustStatus::ProofInvalid
+        ))
+    }
+
+    fn gen_key_info(
+        rng: &mut MainRng,
+        prefix: Prefix<XorName>,
+        version: u64,
+    ) -> (SectionKeyInfo, bls::SecretKey) {
+        let mut rng = RngCompat(rng);
+        let secret_key: bls::SecretKey = rng.gen();
+        let key_info = SectionKeyInfo::new(prefix, version, secret_key.public_key());
+
+        (key_info, secret_key)
+    }
+
+    fn gen_chain(
+        rng: &mut MainRng,
+        prefix: Prefix<XorName>,
+        first_version: u64,
+        len: usize,
+    ) -> SectionProofChain {
+        let (key_info, mut current_secret_key) = gen_key_info(rng, prefix, first_version);
+        let mut chain = SectionProofChain::new(key_info);
+
+        for n in 1..len {
+            let (new_key_info, new_secret_key) =
+                gen_key_info(rng, prefix, first_version + n as u64);
+            let signature =
+                current_secret_key.sign(new_key_info.serialise_for_signature().unwrap());
+            let new_block = SectionProofBlock::new(new_key_info, signature);
+            chain.push(new_block);
+            current_secret_key = new_secret_key;
+        }
+
+        chain
+    }
 }
