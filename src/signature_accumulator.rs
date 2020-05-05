@@ -109,8 +109,7 @@ mod tests {
 
             let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
             let elders_info = EldersInfo::new(all_nodes.clone(), prefix, 0);
-            let key_info =
-                SectionKeyInfo::new(elders_info.prefix, elders_info.version, pk_set.public_key());
+            let key_info = SectionKeyInfo::new(elders_info.version, pk_set.public_key());
             let proof = SectionProofChain::new(key_info);
 
             let signed_msg = unwrap!(AccumulatingMessage::new(

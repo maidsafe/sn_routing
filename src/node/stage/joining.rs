@@ -14,7 +14,7 @@ use crate::{
     messages::{self, BootstrapResponse, JoinRequest, Message, MessageHash, Variant, VerifyStatus},
     relocation::RelocatePayload,
     section::{EldersInfo, SectionKeyInfo},
-    xor_space::{Prefix, XorName},
+    xor_space::Prefix,
 };
 use bytes::Bytes;
 use std::{net::SocketAddr, time::Duration};
@@ -221,20 +221,16 @@ enum JoinType {
 }
 
 fn verify_message_full(msg: &Message, key_info: Option<&SectionKeyInfo>) -> Result<bool> {
-    msg.verify(as_iter(key_info))
+    // The message verification will use only those trusted keys whose prefix is compatible with
+    // the message source. By using empty prefix, we make sure `key_info` is always be used.
+    let prefix = Prefix::default();
+
+    msg.verify(key_info.map(|key_info| (&prefix, key_info)))
         .and_then(VerifyStatus::require_full)
         .map_err(|error| {
-            messages::log_verify_failure(msg, &error, as_iter(key_info));
+            messages::log_verify_failure(msg, &error, key_info.map(|key_info| (&prefix, key_info)));
             error
         })?;
 
     Ok(true)
-}
-
-fn as_iter(
-    key_info: Option<&SectionKeyInfo>,
-) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
-    key_info
-        .into_iter()
-        .map(|key_info| (&key_info.prefix, key_info))
 }

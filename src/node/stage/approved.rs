@@ -926,8 +926,8 @@ impl Approved {
             AccumulatingEvent::NeighbourInfo(elders_info) => {
                 self.handle_neighbour_info_event(core, elders_info)?
             }
-            AccumulatingEvent::TheirKeyInfo(key_info) => {
-                self.handle_their_key_info_event(core, key_info)?
+            AccumulatingEvent::TheirKeyInfo { prefix, key_info } => {
+                self.handle_their_key_info_event(core, prefix, key_info)?
             }
             AccumulatingEvent::AckMessage(payload) => self.handle_ack_message_event(payload),
             AccumulatingEvent::SendAckMessage(payload) => {
@@ -1308,16 +1308,17 @@ impl Approved {
     fn handle_their_key_info_event(
         &mut self,
         core: &Core,
+        prefix: Prefix<XorName>,
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
-        self.shared_state.sections.update_keys(&key_info);
+        self.shared_state.sections.update_keys(prefix, &key_info);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
         self.vote_for_send_ack_message(SendAckMessagePayload {
-            ack_prefix: key_info.prefix,
+            ack_prefix: prefix,
             ack_version: key_info.version,
         });
         Ok(())
@@ -1411,7 +1412,7 @@ impl Approved {
                 | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo(_)
-                | AccumulatingEvent::TheirKeyInfo(_)
+                | AccumulatingEvent::TheirKeyInfo { .. }
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => false,
             })
@@ -1447,7 +1448,7 @@ impl Approved {
                     }
 
                     // Keep: Still relevant after prefix change.
-                    AccumulatingEvent::TheirKeyInfo(_)
+                    AccumulatingEvent::TheirKeyInfo { .. }
                     | AccumulatingEvent::SendAckMessage(_)
                     | AccumulatingEvent::User(_) => true,
                 }
@@ -1478,7 +1479,7 @@ impl Approved {
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SectionInfo(_, _)
             | AccumulatingEvent::NeighbourInfo(_)
-            | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::SendAckMessage(_)
             | AccumulatingEvent::User(_) => {
                 log_or_panic!(log::Level::Error, "unexpected event {:?}", event.payload);
@@ -1561,7 +1562,7 @@ impl Approved {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        let key_info = SectionKeyInfo::new(elders_info.prefix, elders_info.version, section_key);
+        let key_info = SectionKeyInfo::new(elders_info.version, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
             &self.section_keys_provider.secret_key_share()?.key,
             &key_info,
@@ -1574,8 +1575,8 @@ impl Approved {
     }
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.shared_state.sections.keys().any(|(_, info)| {
-            info.prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
+        let has_their_keys = self.shared_state.sections.keys().any(|(prefix, info)| {
+            *prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
         });
 
         if has_their_keys {
@@ -1947,8 +1948,8 @@ impl Approved {
     }
 
     pub fn update_our_knowledge(&mut self, msg: &Message) {
-        let key_info = if let Some(key_info) = msg.source_section_key_info() {
-            key_info
+        let (prefix, key_info) = if let Some(pair) = msg.source_section_key_info() {
+            pair
         } else {
             return;
         };
@@ -1957,11 +1958,14 @@ impl Approved {
             .shared_state
             .sections
             .keys()
-            .find(|(prefix, _)| prefix.is_compatible(&key_info.prefix))
+            .find(|(known_prefix, _)| known_prefix.is_compatible(prefix))
             .map_or(false, |(_, info)| info.version < key_info.version);
 
         if new_key_info {
-            self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
+            self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
+                prefix: *prefix,
+                key_info: key_info.clone(),
+            });
         }
     }
 

@@ -225,7 +225,6 @@ impl Env {
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
         let section_key_info = SectionKeyInfo::new(
-            new_info.new_elders_info.prefix,
             new_info.new_elders_info.version,
             new_info.new_pk_set.public_key(),
         );
