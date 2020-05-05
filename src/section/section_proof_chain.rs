@@ -6,14 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    error::Result,
-    xor_space::{Prefix, XorName},
-};
+use crate::xor_space::{Prefix, XorName};
+use std::{collections::HashSet, iter};
 
-#[cfg(test)]
-use std::iter;
-
+/// Block of the section proof chain. Contains the section BLS public key and is signed by the
+/// previous block.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key_info: SectionKeyInfo,
@@ -21,28 +18,22 @@ pub struct SectionProofBlock {
 }
 
 impl SectionProofBlock {
+    /// Creates new section proof block.
     pub fn new(key_info: SectionKeyInfo, sig: bls::Signature) -> Self {
         Self { key_info, sig }
     }
 
-    pub fn key_info(&self) -> &SectionKeyInfo {
+    pub(crate) fn key_info(&self) -> &SectionKeyInfo {
         &self.key_info
     }
 
-    pub fn verify_with_pk(&self, pk: bls::PublicKey) -> bool {
-        if let Ok(to_verify) = self.key_info.serialise_for_signature() {
-            pk.verify(&self.sig, to_verify)
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub(crate) fn verify(&self, public_key: &bls::PublicKey) -> bool {
+        if let Ok(to_verify) = bincode::serialize(&self.key_info) {
+            public_key.verify(&self.sig, to_verify)
         } else {
             false
         }
-    }
-
-    pub fn prefix(&self) -> &Prefix<XorName> {
-        &self.key_info.prefix
-    }
-
-    pub fn version(&self) -> u64 {
-        self.key_info.version
     }
 }
 
@@ -63,31 +54,9 @@ impl SectionProofChain {
         }
     }
 
-    pub(crate) fn push(&mut self, block: SectionProofBlock) {
-        if !validate_next_block(self.last_key_info(), &block) {
-            log_or_panic!(
-                log::Level::Error,
-                "Invalid next block: {:?} -> {:?}",
-                self.last_key_info(),
-                block
-            );
-            return;
-        }
-
+    /// Pushes a new block into the chain. No validation is performed.
+    pub fn push(&mut self, block: SectionProofBlock) {
         self.tail.push(block)
-    }
-
-    #[cfg(test)]
-    pub fn self_validate(&self) -> bool {
-        let mut current = &self.head;
-        for block in &self.tail {
-            if !validate_next_block(current, block) {
-                return false;
-            }
-
-            current = block.key_info();
-        }
-        true
     }
 
     pub(crate) fn first_key_info(&self) -> &SectionKeyInfo {
@@ -101,7 +70,6 @@ impl SectionProofChain {
             .unwrap_or(&self.head)
     }
 
-    #[cfg(test)]
     pub(crate) fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
         iter::once(&self.head).chain(self.tail.iter().map(|block| block.key_info()))
     }
@@ -124,88 +92,64 @@ impl SectionProofChain {
         1 + self.tail.len()
     }
 
+    /// Check that all the blocks in the chain except the first one have valid signatures.
+    /// The first one cannot be verified and requires matching against already trusted keys. Thus
+    /// this function alone cannot be used to determine whether this chain is trusted. Use
+    /// `check_trust` for that.
+    pub(crate) fn self_verify(&self) -> bool {
+        let mut current_key = &self.head.key;
+        for block in &self.tail {
+            if !block.verify(current_key) {
+                return false;
+            }
+
+            current_key = &block.key_info().key;
+        }
+        true
+    }
+
     /// Verify this proof chain against the given trusted key infos.
-    pub(crate) fn check_trust<'a, I>(&'a self, trusted_key_infos: I) -> TrustStatus<'a>
+    pub(crate) fn check_trust<'a, I>(&self, trusted_key_infos: I) -> TrustStatus
     where
         I: IntoIterator<Item = &'a SectionKeyInfo>,
     {
-        let first_version = self.head.version;
-        let last_key_info = self.last_key_info();
-        let inclusive_range = first_version..=last_key_info.version;
-
-        let mut max_known_version = 0;
-        let mut found_prefix_keys = false;
-
-        for trusted_key_info in trusted_key_infos {
-            max_known_version = std::cmp::max(max_known_version, trusted_key_info.version);
-            found_prefix_keys = true;
-
-            if inclusive_range.contains(&trusted_key_info.version) {
-                // We can validate trust with that key: we are done.
-                if let Some(new_trusted_key_info) = self.last_trusted_key_info(trusted_key_info) {
-                    return TrustStatus::Trusted(&new_trusted_key_info.key);
-                } else {
-                    return TrustStatus::ProofInvalid;
+        if let Some((index, mut trusted_key)) = self.latest_trusted_key(trusted_key_infos) {
+            for block in &self.tail[index..] {
+                if !block.verify(trusted_key) {
+                    return TrustStatus::Invalid;
                 }
-            }
-        }
 
-        if found_prefix_keys && self.head.version > max_known_version {
-            TrustStatus::ProofTooNew
+                trusted_key = &block.key_info().key;
+            }
+
+            TrustStatus::Trusted
+        } else if self.self_verify() {
+            TrustStatus::Unknown
         } else {
-            TrustStatus::ProofInvalid
+            TrustStatus::Invalid
         }
     }
 
-    fn last_trusted_key_info<'a>(
+    // Returns the latest key in this chain that is among the trusted keys, together with its index.
+    fn latest_trusted_key<'a, 'b, I>(
         &'a self,
-        last_trusted: &'a SectionKeyInfo,
-    ) -> Option<&'a SectionKeyInfo> {
-        let block_offset = last_trusted.version.saturating_sub(self.head.version) as usize;
-
-        if block_offset == 0 {
-            if last_trusted.version != self.head.version || last_trusted.prefix != self.head.prefix
-            {
-                return None;
-            }
-        } else if let Some(block) = self.tail.get(block_offset - 1) {
-            if block.key_info() != last_trusted {
-                return None;
-            }
-        } else {
-            // Root of trust not found
-            return None;
-        }
-
-        let mut current = last_trusted;
-        for block in &self.tail[block_offset..] {
-            if !validate_next_block(current, block) {
-                return None;
-            }
-
-            current = block.key_info();
-        }
-
-        Some(current)
-    }
-}
-
-fn validate_next_block(last: &SectionKeyInfo, next: &SectionProofBlock) -> bool {
-    if next.version() != last.version + 1 {
-        return false;
-    }
-
-    if !next.prefix().is_compatible(&last.prefix)
-        || next.prefix().bit_count() > last.prefix.bit_count() + 1
+        trusted_key_infos: I,
+    ) -> Option<(usize, &'a bls::PublicKey)>
+    where
+        I: IntoIterator<Item = &'b SectionKeyInfo>,
     {
-        return false;
-    }
+        let trusted_keys: HashSet<_> = trusted_key_infos
+            .into_iter()
+            .map(|info| &info.key)
+            .collect();
+        let last_index = self.len() - 1;
 
-    if !next.verify_with_pk(last.key) {
-        return false;
+        self.key_infos()
+            .rev()
+            .enumerate()
+            .map(|(rev_index, info)| (last_index - rev_index, &info.key))
+            .find(|(_, key)| trusted_keys.contains(key))
     }
-
-    true
 }
 
 /// Section BLS public key together with the section prefix and version.
@@ -229,22 +173,18 @@ impl SectionKeyInfo {
             key,
         }
     }
-
-    pub(crate) fn serialise_for_signature(&self) -> Result<Vec<u8>> {
-        Ok(bincode::serialize(&self)?)
-    }
 }
 
 // Result of a message trust check.
-#[derive(Debug)]
-pub enum TrustStatus<'a> {
-    // Message is trusted. Contains the latest section public key.
-    Trusted(&'a bls::PublicKey),
-    // Message is untrusted because the proof is invalid.
-    ProofInvalid,
-    // Message trust cannot be determined because the proof starts at version that is newer than
-    // our latest one.
-    ProofTooNew,
+#[derive(Debug, Eq, PartialEq)]
+pub enum TrustStatus {
+    // Proof chain is trusted.
+    Trusted,
+    // Proof chain is untrusted because one or more blocks in the chain have invalid signatures.
+    Invalid,
+    // Proof chain is self-validated but its trust cannot be determined because none of the keys
+    // in the chain is among the trusted keys.
+    Unknown,
 }
 
 #[cfg(test)]
@@ -261,10 +201,10 @@ mod tests {
 
         // If any key in the chain is already trusted, the whole chain is trusted.
         for key_info in chain.key_infos() {
-            match chain.check_trust(iter::once(key_info)) {
-                TrustStatus::Trusted(_) => (),
-                status => panic!("unexpected trust check outcome: {:?}", status),
-            }
+            assert_eq!(
+                chain.check_trust(iter::once(key_info)),
+                TrustStatus::Trusted
+            )
         }
     }
 
@@ -277,7 +217,7 @@ mod tests {
         // Add a block with invalid signature to the chain.
         let (_, invalid_secret_key) = gen_key_info(&mut rng, prefix, 101);
         let (block, secret_key) = gen_block(&mut rng, prefix, 102, &invalid_secret_key);
-        chain.tail.push(block); // SectionProofChain::push panics on invalid blocks
+        chain.push(block);
 
         // Add another block with valid signature by the previous block.
         let (block, _) = gen_block(&mut rng, prefix, 103, &secret_key);
@@ -286,19 +226,19 @@ mod tests {
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
         // because the rest of the chain contains invalid block.
         for key_info in chain.key_infos().take(2) {
-            match chain.check_trust(iter::once(key_info)) {
-                TrustStatus::ProofInvalid => (),
-                status => panic!("unexpected trust check outcome: {:?}", status),
-            }
+            assert_eq!(
+                chain.check_trust(iter::once(key_info)),
+                TrustStatus::Invalid
+            )
         }
 
         // But if any key at or after the invalid block is trusted, the rest of the chain is
         // trusted as well.
         for key_info in chain.key_infos().skip(2) {
-            match chain.check_trust(iter::once(key_info)) {
-                TrustStatus::Trusted(_) => (),
-                status => panic!("unexpected trust check outcome: {:?}", status),
-            }
+            assert_eq!(
+                chain.check_trust(iter::once(key_info)),
+                TrustStatus::Trusted
+            )
         }
     }
 
@@ -312,10 +252,10 @@ mod tests {
         // cannot be determined.
         let (trusted_key_info, _) = gen_key_info(&mut rng, prefix, 99);
 
-        match chain.check_trust(iter::once(&trusted_key_info)) {
-            TrustStatus::ProofTooNew => (),
-            status => panic!("unexpected trust check outcome: {:?}", status),
-        }
+        assert_eq!(
+            chain.check_trust(iter::once(&trusted_key_info)),
+            TrustStatus::Unknown
+        )
     }
 
     fn gen_key_info(
@@ -337,7 +277,7 @@ mod tests {
         prev_secret_key: &bls::SecretKey,
     ) -> (SectionProofBlock, bls::SecretKey) {
         let (key_info, secret_key) = gen_key_info(rng, prefix, version);
-        let signature = prev_secret_key.sign(key_info.serialise_for_signature().unwrap());
+        let signature = prev_secret_key.sign(&bincode::serialize(&key_info).unwrap());
 
         (SectionProofBlock::new(key_info, signature), secret_key)
     }

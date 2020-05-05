@@ -679,7 +679,10 @@ impl Approved {
             | Variant::Ping => false,
             Variant::MemberKnowledge(_) if !is_self_elder => false,
 
-            _ => unreachable!("unexpected unhandled message: {:?}", msg),
+            _ => {
+                debug!("unexpected unhandled message: {:?}", msg);
+                false
+            }
         };
 
         if bounce {
@@ -1966,13 +1969,13 @@ impl Approved {
     fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
         match msg.verify(self.shared_state.sections.keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
-            Ok(VerifyStatus::ProofTooNew) if msg.dst.is_multiple() => {
+            Ok(VerifyStatus::Unknown) if msg.dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
                 // lagging behind (or the sender is faulty/malicious). We can't handle the
                 // message ourselves but the other elders likely can.
                 Ok(false)
             }
-            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Ok(VerifyStatus::Unknown) => Err(RoutingError::UntrustedMessage),
             Err(error) => Err(error),
         }
     }
