@@ -127,21 +127,29 @@ fn create_invalid_proof_chain(
     first_version: u64,
     last_pk: bls::PublicKey,
 ) -> SectionProofChain {
-    let block0_pk = generate_bls_threshold_secret_key(rng, 1)
-        .public_keys()
-        .public_key();
-    let block0_key_info = SectionKeyInfo::new(prefix, first_version, block0_pk);
+    let block0_key_info = {
+        let pk = generate_bls_threshold_secret_key(rng, 1)
+            .public_keys()
+            .public_key();
+        SectionKeyInfo::new(prefix, first_version, pk)
+    };
 
-    let block1_key_info = SectionKeyInfo::new(prefix, first_version + 1, last_pk);
-    let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
-    let invalid_sk_share = invalid_sk_set.secret_key_share(0);
-    let block1_sig_share = invalid_sk_share.sign(&bincode::serialize(&block1_key_info).unwrap());
-    let block1_sig = invalid_sk_set
-        .public_keys()
-        .combine_signatures(iter::once((0, &block1_sig_share)))
-        .unwrap();
+    let block1 = {
+        let key_info = SectionKeyInfo::new(prefix, first_version + 1, last_pk);
+        let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
+        let invalid_sk_share = invalid_sk_set.secret_key_share(0);
+        let signature_share = invalid_sk_share.sign(&bincode::serialize(&key_info).unwrap());
+        let signature = invalid_sk_set
+            .public_keys()
+            .combine_signatures(iter::once((0, &signature_share)))
+            .unwrap();
+        SectionProofBlock {
+            key_info,
+            signature,
+        }
+    };
 
     let mut chain = SectionProofChain::new(block0_key_info);
-    chain.push(SectionProofBlock::new(block1_key_info, block1_sig));
+    chain.push(block1);
     chain
 }

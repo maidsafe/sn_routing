@@ -152,7 +152,10 @@ impl SectionKeysProvider {
         let signature = self
             .check_and_combine_signatures(our_elders, &key_info, proofs)
             .ok_or(RoutingError::InvalidNewSectionInfo)?;
-        Ok(SectionProofBlock::new(key_info, signature))
+        Ok(SectionProofBlock {
+            key_info,
+            signature,
+        })
     }
 
     pub fn check_and_combine_signatures<S: Serialize + Debug>(
