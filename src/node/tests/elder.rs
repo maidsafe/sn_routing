@@ -19,8 +19,8 @@ use crate::{
     node::{Node, NodeConfig},
     quic_p2p,
     rng::{self, MainRng},
+    section::EldersInfo,
     section::MIN_AGE,
-    section::{EldersInfo, SectionKeyInfo},
     utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;
@@ -113,10 +113,7 @@ impl Env {
                 .for_each(|(full_id, bls_id)| {
                     let sig_event =
                         if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
-                            Some(
-                                EventSigPayload::new_for_section_key_info(bls_id, section_key)
-                                    .unwrap(),
-                            )
+                            Some(EventSigPayload::new(bls_id, section_key))
                         } else {
                             None
                         };
@@ -224,12 +221,12 @@ impl Env {
     }
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let section_key_info = SectionKeyInfo::new(new_info.new_pk_set.public_key());
+        let section_key = new_info.new_pk_set.public_key();
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             iter::once(AccumulatingEvent::SectionInfo(
                 new_info.new_elders_info.clone(),
-                section_key_info,
+                section_key,
             )),
         );
     }

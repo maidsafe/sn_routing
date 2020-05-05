@@ -8,10 +8,9 @@
 
 use crate::{
     consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
-    error::RoutingError,
     id::{P2pNode, PublicId},
     relocation::RelocateDetails,
-    section::{EldersInfo, SectionKeyInfo, SectionMap},
+    section::{EldersInfo, SectionMap},
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -51,17 +50,14 @@ pub struct EventSigPayload {
 
 impl EventSigPayload {
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn new_for_section_key_info(
-        key_share: &bls::SecretKeyShare,
-        section_key_info: &SectionKeyInfo,
-    ) -> Result<Self, RoutingError> {
-        let sig_share = key_share.sign(&bincode::serialize(&section_key_info)?);
+    pub fn new(key_share: &bls::SecretKeyShare, section_key: &bls::PublicKey) -> Self {
+        let sig_share = key_share.sign(&section_key.to_bytes()[..]);
         let pub_key_share = key_share.public_key_share();
 
-        Ok(Self {
+        Self {
             pub_key_share,
             sig_share,
-        })
+        }
     }
 }
 
@@ -100,7 +96,7 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
-    SectionInfo(EldersInfo, SectionKeyInfo),
+    SectionInfo(EldersInfo, bls::PublicKey),
 
     // Voted for received message with info to update neighbour_info.
     NeighbourInfo(EldersInfo),
@@ -108,7 +104,7 @@ pub enum AccumulatingEvent {
     // Voted for received message with keys to update their_keys
     TheirKeyInfo {
         prefix: Prefix<XorName>,
-        key_info: SectionKeyInfo,
+        key: bls::PublicKey,
     },
 
     // Voted for received AckMessage to update their_knowledge
@@ -172,10 +168,10 @@ impl Debug for AccumulatingEvent {
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
             Self::NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
-            Self::TheirKeyInfo { prefix, key_info } => write!(
+            Self::TheirKeyInfo { prefix, key } => write!(
                 formatter,
-                "TheirKeyInfo {{ prefix: {:?}, key_info: {:?} }}",
-                prefix, key_info
+                "TheirKeyInfo {{ prefix: {:?}, key: {:?} }}",
+                prefix, key
             ),
             Self::AckMessage(payload) => write!(formatter, "AckMessage({:?})", payload),
             Self::SendAckMessage(payload) => write!(formatter, "SendAckMessage({:?})", payload),

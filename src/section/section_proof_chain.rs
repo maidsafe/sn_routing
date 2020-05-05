@@ -12,20 +12,16 @@ use std::{collections::HashSet, iter};
 /// previous block.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
-    /// The `SectionKeyInfo` containing the section key of this block.
-    pub key_info: SectionKeyInfo,
-    /// Signature of the above, using the previous block.
+    /// The section key.
+    pub key: bls::PublicKey,
+    /// Signature of the above key, using the previous block.
     pub signature: bls::Signature,
 }
 
 impl SectionProofBlock {
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn verify(&self, public_key: &bls::PublicKey) -> bool {
-        if let Ok(to_verify) = bincode::serialize(&self.key_info) {
-            public_key.verify(&self.signature, to_verify)
-        } else {
-            false
-        }
+        public_key.verify(&self.signature, &self.key.to_bytes()[..])
     }
 }
 
@@ -33,13 +29,13 @@ impl SectionProofBlock {
 /// first one.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
-    head: SectionKeyInfo,
+    head: bls::PublicKey,
     tail: Vec<SectionProofBlock>,
 }
 
 impl SectionProofChain {
     /// Creates new chain consisting of only one block.
-    pub fn new(first: SectionKeyInfo) -> Self {
+    pub fn new(first: bls::PublicKey) -> Self {
         Self {
             head: first,
             tail: Vec::new(),
@@ -51,33 +47,33 @@ impl SectionProofChain {
         self.tail.push(block)
     }
 
-    pub(crate) fn first_key_info(&self) -> &SectionKeyInfo {
+    pub(crate) fn first_key(&self) -> &bls::PublicKey {
         &self.head
     }
 
-    pub(crate) fn last_key_info(&self) -> &SectionKeyInfo {
+    pub(crate) fn last_key(&self) -> &bls::PublicKey {
         self.tail
             .last()
-            .map(|block| &block.key_info)
+            .map(|block| &block.key)
             .unwrap_or(&self.head)
     }
 
-    pub(crate) fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
-        iter::once(&self.head).chain(self.tail.iter().map(|block| &block.key_info))
+    pub(crate) fn keys(&self) -> impl DoubleEndedIterator<Item = &bls::PublicKey> {
+        iter::once(&self.head).chain(self.tail.iter().map(|block| &block.key))
     }
 
     /// Returns whether this chain contains the given key.
     #[cfg(all(test, feature = "mock"))]
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.key_infos().any(|info| info.key == *key)
+        self.keys().any(|existing_key| existing_key == key)
     }
 
     /// Returns the index of the key in the chain or `None` if not present in the chain.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn index_of(&self, key: &bls::PublicKey) -> Option<u64> {
-        self.key_infos()
-            .position(|info| info.key == *key)
+        self.keys()
+            .position(|existing_key| existing_key == key)
             .map(|index| index as u64)
     }
 
@@ -88,7 +84,7 @@ impl SectionProofChain {
         }
 
         let head_index = std::cmp::min(first_index as usize, self.tail.len()) - 1;
-        let head = self.tail[head_index].key_info;
+        let head = self.tail[head_index].key;
         let tail = self.tail[head_index + 1..].to_vec();
 
         Self { head, tail }
@@ -104,29 +100,29 @@ impl SectionProofChain {
     /// this function alone cannot be used to determine whether this chain is trusted. Use
     /// `check_trust` for that.
     pub(crate) fn self_verify(&self) -> bool {
-        let mut current_key = &self.head.key;
+        let mut current_key = &self.head;
         for block in &self.tail {
             if !block.verify(current_key) {
                 return false;
             }
 
-            current_key = &block.key_info.key;
+            current_key = &block.key;
         }
         true
     }
 
-    /// Verify this proof chain against the given trusted key infos.
-    pub(crate) fn check_trust<'a, I>(&self, trusted_key_infos: I) -> TrustStatus
+    /// Verify this proof chain against the given trusted keys.
+    pub(crate) fn check_trust<'a, I>(&self, trusted_keys: I) -> TrustStatus
     where
-        I: IntoIterator<Item = &'a SectionKeyInfo>,
+        I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        if let Some((index, mut trusted_key)) = self.latest_trusted_key(trusted_key_infos) {
+        if let Some((index, mut trusted_key)) = self.latest_trusted_key(trusted_keys) {
             for block in &self.tail[index..] {
                 if !block.verify(trusted_key) {
                     return TrustStatus::Invalid;
                 }
 
-                trusted_key = &block.key_info.key;
+                trusted_key = &block.key;
             }
 
             TrustStatus::Trusted
@@ -140,36 +136,19 @@ impl SectionProofChain {
     // Returns the latest key in this chain that is among the trusted keys, together with its index.
     fn latest_trusted_key<'a, 'b, I>(
         &'a self,
-        trusted_key_infos: I,
+        trusted_keys: I,
     ) -> Option<(usize, &'a bls::PublicKey)>
     where
-        I: IntoIterator<Item = &'b SectionKeyInfo>,
+        I: IntoIterator<Item = &'b bls::PublicKey>,
     {
-        let trusted_keys: HashSet<_> = trusted_key_infos
-            .into_iter()
-            .map(|info| &info.key)
-            .collect();
+        let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
         let last_index = self.len() - 1;
 
-        self.key_infos()
+        self.keys()
             .rev()
             .enumerate()
-            .map(|(rev_index, info)| (last_index - rev_index, &info.key))
+            .map(|(rev_index, key)| (last_index - rev_index, key))
             .find(|(_, key)| trusted_keys.contains(key))
-    }
-}
-
-/// Section BLS public key together with the section prefix and version.
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Serialize, Deserialize)]
-pub struct SectionKeyInfo {
-    /// The section BLS public key set
-    pub key: bls::PublicKey,
-}
-
-impl SectionKeyInfo {
-    /// Creates new `SectionKeyInfo` for a section with the given prefix and version.
-    pub fn new(key: bls::PublicKey) -> Self {
-        Self { key }
     }
 }
 
@@ -197,11 +176,8 @@ mod tests {
         let chain = gen_chain(&mut rng, 4);
 
         // If any key in the chain is already trusted, the whole chain is trusted.
-        for key_info in chain.key_infos() {
-            assert_eq!(
-                chain.check_trust(iter::once(key_info)),
-                TrustStatus::Trusted
-            )
+        for key in chain.keys() {
+            assert_eq!(chain.check_trust(iter::once(key)), TrustStatus::Trusted)
         }
     }
 
@@ -211,7 +187,7 @@ mod tests {
         let mut chain = gen_chain(&mut rng, 2);
 
         // Add a block with invalid signature to the chain.
-        let (_, invalid_secret_key) = gen_key_info(&mut rng);
+        let (_, invalid_secret_key) = gen_keys(&mut rng);
         let (block, secret_key) = gen_block(&mut rng, &invalid_secret_key);
         chain.push(block);
 
@@ -221,20 +197,14 @@ mod tests {
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
         // because the rest of the chain contains invalid block.
-        for key_info in chain.key_infos().take(2) {
-            assert_eq!(
-                chain.check_trust(iter::once(key_info)),
-                TrustStatus::Invalid
-            )
+        for key in chain.keys().take(2) {
+            assert_eq!(chain.check_trust(iter::once(key)), TrustStatus::Invalid)
         }
 
         // But if any key at or after the invalid block is trusted, the rest of the chain is
         // trusted as well.
-        for key_info in chain.key_infos().skip(2) {
-            assert_eq!(
-                chain.check_trust(iter::once(key_info)),
-                TrustStatus::Trusted
-            )
+        for key in chain.keys().skip(2) {
+            assert_eq!(chain.check_trust(iter::once(key)), TrustStatus::Trusted)
         }
     }
 
@@ -245,32 +215,32 @@ mod tests {
 
         // None of the keys in the chain is trusted - the chain might be valid, but its trust status
         // cannot be determined.
-        let (trusted_key_info, _) = gen_key_info(&mut rng);
+        let (trusted_key, _) = gen_keys(&mut rng);
 
         assert_eq!(
-            chain.check_trust(iter::once(&trusted_key_info)),
+            chain.check_trust(iter::once(&trusted_key)),
             TrustStatus::Unknown
         )
     }
 
-    fn gen_key_info(rng: &mut MainRng) -> (SectionKeyInfo, bls::SecretKey) {
+    fn gen_keys(rng: &mut MainRng) -> (bls::PublicKey, bls::SecretKey) {
         let mut rng = RngCompat(rng);
         let secret_key: bls::SecretKey = rng.gen();
-        let key_info = SectionKeyInfo::new(secret_key.public_key());
+        let public_key = secret_key.public_key();
 
-        (key_info, secret_key)
+        (public_key, secret_key)
     }
 
     fn gen_block(
         rng: &mut MainRng,
         prev_secret_key: &bls::SecretKey,
     ) -> (SectionProofBlock, bls::SecretKey) {
-        let (key_info, secret_key) = gen_key_info(rng);
-        let signature = prev_secret_key.sign(&bincode::serialize(&key_info).unwrap());
+        let (public_key, secret_key) = gen_keys(rng);
+        let signature = prev_secret_key.sign(&bincode::serialize(&public_key).unwrap());
 
         (
             SectionProofBlock {
-                key_info,
+                key: public_key,
                 signature,
             },
             secret_key,
@@ -278,8 +248,8 @@ mod tests {
     }
 
     fn gen_chain(rng: &mut MainRng, len: usize) -> SectionProofChain {
-        let (key_info, mut current_secret_key) = gen_key_info(rng);
-        let mut chain = SectionProofChain::new(key_info);
+        let (key, mut current_secret_key) = gen_keys(rng);
+        let mut chain = SectionProofChain::new(key);
 
         for _ in 1..len {
             let (new_block, new_secret_key) = gen_block(rng, &current_secret_key);

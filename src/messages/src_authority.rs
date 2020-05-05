@@ -12,7 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    section::{SectionKeyInfo, SectionProofChain, TrustStatus},
+    section::{SectionProofChain, TrustStatus},
     xor_space::{Prefix, XorName},
 };
 use std::net::SocketAddr;
@@ -65,7 +65,7 @@ impl SrcAuthority {
         trusted_key_infos: I,
     ) -> Result<VerifyStatus>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
     {
         match self {
             Self::Node {
@@ -94,7 +94,7 @@ impl SrcAuthority {
                 };
 
                 let bytes = super::serialize_for_section_signing(dst, variant)?;
-                if !proof.last_key_info().key.verify(signature, &bytes) {
+                if !proof.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
             }

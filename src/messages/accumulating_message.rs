@@ -168,24 +168,23 @@ mod tests {
         consensus::generate_bls_threshold_secret_key,
         messages::VerifyStatus,
         rng::{self, MainRng},
-        section::SectionKeyInfo,
         unwrap, Prefix,
     };
     use rand::{self, Rng};
-    use std::{collections::BTreeMap, iter};
+    use std::iter;
 
     #[test]
     fn combine_signatures() {
         let mut rng = rng::new();
         let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
         let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
-        let their_key_infos = make_their_key_infos(&pk_set);
 
         let mut msg_0 = unwrap!(AccumulatingMessage::new(
             content.clone(),
@@ -205,7 +204,10 @@ mod tests {
         assert!(msg_0.check_fully_signed());
 
         let msg = unwrap!(msg_0.combine_signatures());
-        assert_eq!(unwrap!(msg.verify(&their_key_infos)), VerifyStatus::Full);
+        assert_eq!(
+            unwrap!(msg.verify(iter::once((&Prefix::default(), &pk)))),
+            VerifyStatus::Full
+        );
     }
 
     #[test]
@@ -213,6 +215,7 @@ mod tests {
         let mut rng = rng::new();
         let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
         let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
@@ -220,7 +223,6 @@ mod tests {
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
-        let their_key_infos = make_their_key_infos(&pk_set);
 
         // Message with valid signature
         let mut msg_0 = unwrap!(AccumulatingMessage::new(
@@ -258,22 +260,14 @@ mod tests {
         assert!(msg_0.check_fully_signed());
 
         let msg = unwrap!(msg_0.combine_signatures());
-        assert_eq!(unwrap!(msg.verify(&their_key_infos)), VerifyStatus::Full);
-    }
-
-    fn make_section_key_info(pk_set: &bls::PublicKeySet) -> SectionKeyInfo {
-        SectionKeyInfo::new(pk_set.public_key())
+        assert_eq!(
+            unwrap!(msg.verify(iter::once((&Prefix::default(), &pk)))),
+            VerifyStatus::Full
+        );
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
-        SectionProofChain::new(make_section_key_info(pk_set))
-    }
-
-    fn make_their_key_infos(
-        pk_set: &bls::PublicKeySet,
-    ) -> BTreeMap<Prefix<XorName>, SectionKeyInfo> {
-        let key_info = make_section_key_info(pk_set);
-        iter::once((Prefix::default(), key_info)).collect()
+        SectionProofChain::new(pk_set.public_key())
     }
 
     fn gen_message(rng: &mut MainRng) -> PlainMessage {

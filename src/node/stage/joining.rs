@@ -13,7 +13,7 @@ use crate::{
     id::P2pNode,
     messages::{self, BootstrapResponse, JoinRequest, Message, MessageHash, Variant, VerifyStatus},
     relocation::RelocatePayload,
-    section::{EldersInfo, SectionKeyInfo},
+    section::EldersInfo,
     xor_space::Prefix,
 };
 use bytes::Bytes;
@@ -165,8 +165,7 @@ impl Joining {
         match (&msg.variant, &self.join_type) {
             (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
                 let details = payload.relocate_details();
-                let key_info = &details.destination_key_info;
-                verify_message_full(msg, Some(key_info))
+                verify_message_full(msg, Some(&details.destination_key))
             }
             (Variant::NodeApproval(_), JoinType::First { .. }) => {
                 // We don't have any trusted keys to verify this message, but we still need to
@@ -220,15 +219,15 @@ enum JoinType {
     Relocate(RelocatePayload),
 }
 
-fn verify_message_full(msg: &Message, key_info: Option<&SectionKeyInfo>) -> Result<bool> {
+fn verify_message_full(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> Result<bool> {
     // The message verification will use only those trusted keys whose prefix is compatible with
-    // the message source. By using empty prefix, we make sure `key_info` is always be used.
+    // the message source. By using empty prefix, we make sure `trusted_key` is always used.
     let prefix = Prefix::default();
 
-    msg.verify(key_info.map(|key_info| (&prefix, key_info)))
+    msg.verify(trusted_key.map(|key| (&prefix, key)))
         .and_then(VerifyStatus::require_full)
         .map_err(|error| {
-            messages::log_verify_failure(msg, &error, key_info.map(|key_info| (&prefix, key_info)));
+            messages::log_verify_failure(msg, &error, trusted_key.map(|key| (&prefix, key)));
             error
         })?;
 

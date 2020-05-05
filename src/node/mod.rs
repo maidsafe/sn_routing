@@ -1067,7 +1067,7 @@ impl Node {
     pub fn section_key(&self) -> Option<&bls::PublicKey> {
         self.stage
             .approved()
-            .map(|stage| &stage.shared_state.our_history.last_key_info().key)
+            .map(|stage| stage.shared_state.our_history.last_key())
     }
 
     fn shared_state(&self) -> Option<&SharedState> {

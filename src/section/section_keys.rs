@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    elders_info::EldersInfo,
-    section_proof_chain::{SectionKeyInfo, SectionProofBlock},
-};
+use super::{elders_info::EldersInfo, section_proof_chain::SectionProofBlock};
 use crate::{
     consensus::{AccumulatingProof, DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
@@ -146,16 +143,13 @@ impl SectionKeysProvider {
     pub fn combine_signatures_for_section_proof_block(
         &self,
         our_elders: &EldersInfo,
-        key_info: SectionKeyInfo,
+        key: bls::PublicKey,
         proofs: AccumulatingProof,
     ) -> Result<SectionProofBlock, RoutingError> {
         let signature = self
-            .check_and_combine_signatures(our_elders, &key_info, proofs)
+            .check_and_combine_signatures(our_elders, &key, proofs)
             .ok_or(RoutingError::InvalidNewSectionInfo)?;
-        Ok(SectionProofBlock {
-            key_info,
-            signature,
-        })
+        Ok(SectionProofBlock { key, signature })
     }
 
     pub fn check_and_combine_signatures<S: Serialize + Debug>(
