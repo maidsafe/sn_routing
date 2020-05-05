@@ -13,24 +13,17 @@ use std::{collections::HashSet, iter};
 /// previous block.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
-    key_info: SectionKeyInfo,
-    sig: bls::Signature,
+    /// The `SectionKeyInfo` containing the section key of this block.
+    pub key_info: SectionKeyInfo,
+    /// Signature of the above, using the previous block.
+    pub signature: bls::Signature,
 }
 
 impl SectionProofBlock {
-    /// Creates new section proof block.
-    pub fn new(key_info: SectionKeyInfo, sig: bls::Signature) -> Self {
-        Self { key_info, sig }
-    }
-
-    pub(crate) fn key_info(&self) -> &SectionKeyInfo {
-        &self.key_info
-    }
-
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn verify(&self, public_key: &bls::PublicKey) -> bool {
         if let Ok(to_verify) = bincode::serialize(&self.key_info) {
-            public_key.verify(&self.sig, to_verify)
+            public_key.verify(&self.signature, to_verify)
         } else {
             false
         }
@@ -66,12 +59,12 @@ impl SectionProofChain {
     pub(crate) fn last_key_info(&self) -> &SectionKeyInfo {
         self.tail
             .last()
-            .map(|block| block.key_info())
+            .map(|block| &block.key_info)
             .unwrap_or(&self.head)
     }
 
     pub(crate) fn key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
-        iter::once(&self.head).chain(self.tail.iter().map(|block| block.key_info()))
+        iter::once(&self.head).chain(self.tail.iter().map(|block| &block.key_info))
     }
 
     /// Returns a slice of this chain starting at the given index.
@@ -81,7 +74,7 @@ impl SectionProofChain {
         }
 
         let head_index = std::cmp::min(first_index, self.tail.len()) - 1;
-        let head = self.tail[head_index].key_info().clone();
+        let head = self.tail[head_index].key_info.clone();
         let tail = self.tail[head_index + 1..].to_vec();
 
         Self { head, tail }
@@ -103,7 +96,7 @@ impl SectionProofChain {
                 return false;
             }
 
-            current_key = &block.key_info().key;
+            current_key = &block.key_info.key;
         }
         true
     }
@@ -119,7 +112,7 @@ impl SectionProofChain {
                     return TrustStatus::Invalid;
                 }
 
-                trusted_key = &block.key_info().key;
+                trusted_key = &block.key_info.key;
             }
 
             TrustStatus::Trusted
@@ -279,7 +272,13 @@ mod tests {
         let (key_info, secret_key) = gen_key_info(rng, prefix, version);
         let signature = prev_secret_key.sign(&bincode::serialize(&key_info).unwrap());
 
-        (SectionProofBlock::new(key_info, signature), secret_key)
+        (
+            SectionProofBlock {
+                key_info,
+                signature,
+            },
+            secret_key,
+        )
     }
 
     fn gen_chain(
