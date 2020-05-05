@@ -28,7 +28,7 @@ const MAX_RECENT_KEYS: usize = 20;
 /// Container for storing information about sections in the network.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
-    // Our section including its whole history.
+    // Our section.
     our: EldersInfo,
     // Other sections: maps section prefixes to their latest signed elders infos.
     // Note that after a split, the section's latest section info could be the one from the

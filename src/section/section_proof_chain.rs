@@ -114,13 +114,7 @@ impl SectionProofChain {
 
         let head_index = std::cmp::min(first_index, self.tail.len()) - 1;
         let head = self.tail[head_index].key_info().clone();
-
-        let tail_first_index = head_index + 1;
-        let tail = if tail_first_index >= self.tail.len() {
-            vec![]
-        } else {
-            self.tail[tail_first_index..].to_vec()
-        };
+        let tail = self.tail[head_index + 1..].to_vec();
 
         Self { head, tail }
     }
