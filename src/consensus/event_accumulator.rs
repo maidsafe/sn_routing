@@ -354,7 +354,7 @@ mod test {
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
                 let (sig_payload, keys) = random_section_info_sig_payload(rng);
-                let key_info = SectionKeyInfo::new(elders_info.version, keys.public_key());
+                let key_info = SectionKeyInfo::new(keys.public_key());
                 let event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
                 TestData {

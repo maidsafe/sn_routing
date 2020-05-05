@@ -367,7 +367,7 @@ impl Approved {
     pub fn handle_ack_message(
         &mut self,
         src_prefix: Prefix<XorName>,
-        ack_version: u64,
+        ack_key: bls::PublicKey,
         _src: Prefix<XorName>,
         dst: XorName,
     ) -> Result<()> {
@@ -376,7 +376,7 @@ impl Approved {
         self.vote_for_event(AccumulatingEvent::AckMessage(AckMessagePayload {
             dst_name: dst,
             src_prefix,
-            ack_version,
+            ack_key,
         }));
         Ok(())
     }
@@ -562,7 +562,7 @@ impl Approved {
                 return;
             }
 
-            (details.age, Some(details.destination_key_info.version))
+            (details.age, Some(details.destination_key_info.key))
         } else {
             (MIN_AGE, None)
         };
@@ -583,10 +583,11 @@ impl Approved {
         trace!("Received {:?} from {:?}", payload, p2p_node);
 
         if self.shared_state.our_members.is_active(p2p_node.name()) {
-            self.members_knowledge
+            let _ = self
+                .members_knowledge
                 .entry(*p2p_node.name())
-                .or_default()
-                .update(payload);
+                .and_modify(|old| old.update(&payload))
+                .or_insert(payload);
         }
 
         let version = payload
@@ -1086,7 +1087,7 @@ impl Approved {
             node_knowledge,
             self.shared_state
                 .sections
-                .trusted_key_version(&DstLocation::Section(details.destination)),
+                .trusted_key_index(&DstLocation::Section(details.destination)),
         );
 
         let src = SrcLocation::Section(*self.shared_state.our_prefix());
@@ -1135,7 +1136,7 @@ impl Approved {
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         let neighbour_elders_removed =
-            if self.add_new_elders_info(core.id(), elders_info, key_info, proof)? {
+            if self.add_new_elders_info(core.id(), elders_info, key_info.clone(), proof)? {
                 neighbour_elders_removed.build(&self.shared_state.sections)
             } else {
                 return Ok(());
@@ -1143,7 +1144,6 @@ impl Approved {
 
         let elders_info = self.shared_state.our_info();
         let info_prefix = elders_info.prefix;
-        let info_version = elders_info.version;
         let is_elder = elders_info.elders.contains_key(core.name());
         let is_split = info_prefix.is_extension_of(&old_prefix);
 
@@ -1189,7 +1189,7 @@ impl Approved {
         // Vote to update our self messages proof
         self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: info_prefix,
-            ack_version: info_version,
+            ack_key: key_info.key,
         });
 
         self.print_network_stats();
@@ -1319,15 +1319,21 @@ impl Approved {
 
         self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: prefix,
-            ack_version: key_info.version,
+            ack_key: key_info.key,
         });
         Ok(())
     }
 
     fn handle_ack_message_event(&mut self, payload: AckMessagePayload) {
+        let index = self
+            .shared_state
+            .our_history
+            .index_of(&payload.ack_key)
+            .unwrap_or(0);
+
         self.shared_state
             .sections
-            .update_knowledge(payload.src_prefix, payload.ack_version)
+            .update_knowledge(payload.src_prefix, index)
     }
 
     fn handle_send_ack_message_event(
@@ -1343,7 +1349,7 @@ impl Approved {
         let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let variant = Variant::AckMessage {
             src_prefix: *self.shared_state.our_prefix(),
-            ack_version: ack_payload.ack_version,
+            ack_key: ack_payload.ack_key,
         };
 
         self.send_routing_message(core, src, dst, variant, None)
@@ -1562,7 +1568,7 @@ impl Approved {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        let key_info = SectionKeyInfo::new(elders_info.version, section_key);
+        let key_info = SectionKeyInfo::new(section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
             &self.section_keys_provider.secret_key_share()?.key,
             &key_info,
@@ -1576,7 +1582,7 @@ impl Approved {
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
         let has_their_keys = self.shared_state.sections.keys().any(|(prefix, info)| {
-            *prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
+            *prefix == ack_payload.ack_prefix && info.key == ack_payload.ack_key
         });
 
         if has_their_keys {
@@ -1595,7 +1601,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         p2p_node: P2pNode,
-        their_knowledge: Option<u64>,
+        their_knowledge: Option<bls::PublicKey>,
     ) {
         info!(
             "Our section with {:?} has approved candidate {}.",
@@ -1607,6 +1613,9 @@ impl Approved {
         let dst = DstLocation::Node(*p2p_node.name());
 
         let variant = Variant::NodeApproval(Box::new(self.genesis_prefix_info.clone()));
+        let their_knowledge =
+            their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
+
         if let Err(error) = self.send_routing_message(core, src, dst, variant, their_knowledge) {
             debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
         }
@@ -1648,13 +1657,17 @@ impl Approved {
             .filter_map(|recipient| {
                 let variant = Variant::GenesisUpdate(Box::new(self.genesis_prefix_info.clone()));
                 let dst = DstLocation::Node(*recipient.name());
-                let version = self
+                let index = self
                     .members_knowledge
                     .get(recipient.name())
-                    .map(|knowledge| knowledge.elders_version)
+                    .and_then(|knowledge| {
+                        self.shared_state
+                            .our_history
+                            .index_of(&knowledge.section_key)
+                    })
                     .unwrap_or(0);
 
-                match self.to_accumulating_message(dst, variant, Some(version)) {
+                match self.to_accumulating_message(dst, variant, Some(index)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("Failed to create signed message: {:?}", error);
@@ -1728,7 +1741,7 @@ impl Approved {
 
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
-            elders_version: self.shared_state.our_info().version,
+            section_key: self.shared_state.our_history.last_key_info().key,
             parsec_version: self.consensus_engine.parsec_version(),
         };
 
@@ -1948,23 +1961,17 @@ impl Approved {
     }
 
     pub fn update_our_knowledge(&mut self, msg: &Message) {
-        let (prefix, key_info) = if let Some(pair) = msg.source_section_key_info() {
+        let (prefix, new_key_info) = if let Some(pair) = msg.source_section_key_info() {
             pair
         } else {
             return;
         };
 
-        let new_key_info = self
-            .shared_state
-            .sections
-            .keys()
-            .find(|(known_prefix, _)| known_prefix.is_compatible(prefix))
-            .map_or(false, |(_, info)| info.version < key_info.version);
-
-        if new_key_info {
+        // Only vote if we don't have this key yet.
+        if !self.shared_state.sections.has_key(&new_key_info.key) {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
                 prefix: *prefix,
-                key_info: key_info.clone(),
+                key_info: *new_key_info,
             });
         }
     }

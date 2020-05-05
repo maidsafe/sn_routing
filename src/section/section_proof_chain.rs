@@ -66,14 +66,29 @@ impl SectionProofChain {
         iter::once(&self.head).chain(self.tail.iter().map(|block| &block.key_info))
     }
 
+    /// Returns whether this chain contains the given key.
+    #[cfg(all(test, feature = "mock"))]
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub(crate) fn has_key(&self, key: &bls::PublicKey) -> bool {
+        self.key_infos().any(|info| info.key == *key)
+    }
+
+    /// Returns the index of the key in the chain or `None` if not present in the chain.
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub(crate) fn index_of(&self, key: &bls::PublicKey) -> Option<u64> {
+        self.key_infos()
+            .position(|info| info.key == *key)
+            .map(|index| index as u64)
+    }
+
     /// Returns a slice of this chain starting at the given index.
-    pub(crate) fn slice_from(&self, first_index: usize) -> Self {
+    pub(crate) fn slice_from(&self, first_index: u64) -> Self {
         if first_index == 0 || self.tail.is_empty() {
             return self.clone();
         }
 
-        let head_index = std::cmp::min(first_index, self.tail.len()) - 1;
-        let head = self.tail[head_index].key_info.clone();
+        let head_index = std::cmp::min(first_index as usize, self.tail.len()) - 1;
+        let head = self.tail[head_index].key_info;
         let tail = self.tail[head_index + 1..].to_vec();
 
         Self { head, tail }
@@ -145,19 +160,16 @@ impl SectionProofChain {
 }
 
 /// Section BLS public key together with the section prefix and version.
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
-    /// The section version. This increases monotonically whenever the set of elders changes.
-    /// Identical to `ElderInfo`'s.
-    pub version: u64,
     /// The section BLS public key set
     pub key: bls::PublicKey,
 }
 
 impl SectionKeyInfo {
     /// Creates new `SectionKeyInfo` for a section with the given prefix and version.
-    pub fn new(version: u64, key: bls::PublicKey) -> Self {
-        Self { version, key }
+    pub fn new(key: bls::PublicKey) -> Self {
+        Self { key }
     }
 }
 
@@ -182,7 +194,7 @@ mod tests {
     #[test]
     fn check_trust_trusted() {
         let mut rng = rng::new();
-        let chain = gen_chain(&mut rng, 100, 4);
+        let chain = gen_chain(&mut rng, 4);
 
         // If any key in the chain is already trusted, the whole chain is trusted.
         for key_info in chain.key_infos() {
@@ -196,15 +208,15 @@ mod tests {
     #[test]
     fn check_trust_invalid() {
         let mut rng = rng::new();
-        let mut chain = gen_chain(&mut rng, 100, 2);
+        let mut chain = gen_chain(&mut rng, 2);
 
         // Add a block with invalid signature to the chain.
-        let (_, invalid_secret_key) = gen_key_info(&mut rng, 101);
-        let (block, secret_key) = gen_block(&mut rng, 102, &invalid_secret_key);
+        let (_, invalid_secret_key) = gen_key_info(&mut rng);
+        let (block, secret_key) = gen_block(&mut rng, &invalid_secret_key);
         chain.push(block);
 
         // Add another block with valid signature by the previous block.
-        let (block, _) = gen_block(&mut rng, 103, &secret_key);
+        let (block, _) = gen_block(&mut rng, &secret_key);
         chain.push(block);
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
@@ -229,11 +241,11 @@ mod tests {
     #[test]
     fn check_trust_unknown() {
         let mut rng = rng::new();
-        let chain = gen_chain(&mut rng, 100, 2);
+        let chain = gen_chain(&mut rng, 2);
 
         // None of the keys in the chain is trusted - the chain might be valid, but its trust status
         // cannot be determined.
-        let (trusted_key_info, _) = gen_key_info(&mut rng, 99);
+        let (trusted_key_info, _) = gen_key_info(&mut rng);
 
         assert_eq!(
             chain.check_trust(iter::once(&trusted_key_info)),
@@ -241,20 +253,19 @@ mod tests {
         )
     }
 
-    fn gen_key_info(rng: &mut MainRng, version: u64) -> (SectionKeyInfo, bls::SecretKey) {
+    fn gen_key_info(rng: &mut MainRng) -> (SectionKeyInfo, bls::SecretKey) {
         let mut rng = RngCompat(rng);
         let secret_key: bls::SecretKey = rng.gen();
-        let key_info = SectionKeyInfo::new(version, secret_key.public_key());
+        let key_info = SectionKeyInfo::new(secret_key.public_key());
 
         (key_info, secret_key)
     }
 
     fn gen_block(
         rng: &mut MainRng,
-        version: u64,
         prev_secret_key: &bls::SecretKey,
     ) -> (SectionProofBlock, bls::SecretKey) {
-        let (key_info, secret_key) = gen_key_info(rng, version);
+        let (key_info, secret_key) = gen_key_info(rng);
         let signature = prev_secret_key.sign(&bincode::serialize(&key_info).unwrap());
 
         (
@@ -266,13 +277,12 @@ mod tests {
         )
     }
 
-    fn gen_chain(rng: &mut MainRng, first_version: u64, len: usize) -> SectionProofChain {
-        let (key_info, mut current_secret_key) = gen_key_info(rng, first_version);
+    fn gen_chain(rng: &mut MainRng, len: usize) -> SectionProofChain {
+        let (key_info, mut current_secret_key) = gen_key_info(rng);
         let mut chain = SectionProofChain::new(key_info);
 
-        for n in 1..len {
-            let (new_block, new_secret_key) =
-                gen_block(rng, first_version + n as u64, &current_secret_key);
+        for _ in 1..len {
+            let (new_block, new_secret_key) = gen_block(rng, &current_secret_key);
             chain.push(new_block);
             current_secret_key = new_secret_key;
         }

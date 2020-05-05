@@ -262,8 +262,7 @@ mod tests {
     }
 
     fn make_section_key_info(pk_set: &bls::PublicKeySet) -> SectionKeyInfo {
-        let version = 0u64;
-        SectionKeyInfo::new(version, pk_set.public_key())
+        SectionKeyInfo::new(pk_set.public_key())
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {

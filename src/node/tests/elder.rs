@@ -20,7 +20,7 @@ use crate::{
     quic_p2p,
     rng::{self, MainRng},
     section::MIN_AGE,
-    section::{EldersInfo, SectionKeyInfo, SectionProofChain},
+    section::{EldersInfo, SectionKeyInfo},
     utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;
@@ -224,10 +224,7 @@ impl Env {
     }
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let section_key_info = SectionKeyInfo::new(
-            new_info.new_elders_info.version,
-            new_info.new_pk_set.public_key(),
-        );
+        let section_key_info = SectionKeyInfo::new(new_info.new_pk_set.public_key());
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             iter::once(AccumulatingEvent::SectionInfo(
@@ -256,12 +253,18 @@ impl Env {
         );
     }
 
+    fn section_key(&self) -> &bls::PublicKey {
+        self.subject
+            .section_key()
+            .unwrap_or_else(|| unreachable!("subject is not approved"))
+    }
+
     // Accumulate `AckMessage` for the latest version of our own section.
     fn accumulate_self_ack_message(&mut self) {
         let event = AccumulatingEvent::AckMessage(AckMessagePayload {
             dst_name: self.elders_info.prefix.name(),
             src_prefix: self.elders_info.prefix,
-            ack_version: self.elders_info.version,
+            ack_key: *self.section_key(),
         });
 
         // This event needs total consensus.
@@ -484,7 +487,7 @@ fn handle_bootstrap() {
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 
-    let orig_elders_version = env.elders_info.version;
+    let orig_section_key = *env.section_key();
 
     let adult0 = env.gen_peer();
     let adult1 = env.gen_peer();
@@ -502,12 +505,12 @@ fn send_genesis_update() {
     assert_eq!(message.0, adult1.to_p2p_node());
 
     let proof = &message.1.proof;
-    verify_proof_chain_contains(proof, orig_elders_version);
+    assert!(proof.has_key(&orig_section_key));
 
     // Receive MemberKnowledge from the adult
     let parsec_version = env.subject.parsec_last_version();
     let variant = Variant::MemberKnowledge(MemberKnowledge {
-        elders_version: env.elders_info.version,
+        section_key: *env.section_key(),
         parsec_version,
     });
     let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
@@ -517,30 +520,8 @@ fn send_genesis_update() {
     // contain the previous version.
     let message = utils::exactly_one(env.subject.create_genesis_updates());
     let proof = &message.1.proof;
-    verify_proof_chain_contains(proof, env.elders_info.version);
-    verify_proof_chain_does_not_contain(proof, orig_elders_version);
-}
-
-fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version: u64) {
-    assert!(
-        proof_chain
-            .key_infos()
-            .any(|info| info.version == expected_version),
-        "{:?} doesn't contain expected version {}",
-        proof_chain,
-        expected_version,
-    );
-}
-
-fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpected_version: u64) {
-    assert!(
-        proof_chain
-            .key_infos()
-            .all(|info| info.version != unexpected_version),
-        "{:?} contains unexpected version {}",
-        proof_chain,
-        unexpected_version,
-    );
+    assert!(proof.has_key(env.section_key()));
+    assert!(!proof.has_key(&orig_section_key));
 }
 
 struct JoiningPeer {

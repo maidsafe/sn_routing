@@ -662,11 +662,11 @@ impl Node {
                 }
                 Variant::AckMessage {
                     src_prefix,
-                    ack_version,
+                    ack_key,
                 } => {
                     stage.handle_ack_message(
                         src_prefix,
-                        ack_version,
+                        ack_key,
                         *msg.src.as_section()?,
                         *msg.dst.as_section()?,
                     )?;
@@ -1061,6 +1061,13 @@ impl Node {
             .filter(|stage| stage.is_our_elder(self.core.id()))
             .and_then(|stage| stage.shared_state.our_members.get(name))
             .map(|info| info.age_counter_value())
+    }
+
+    /// Returns the latest BLS public key of our section or `None` if we are not joined yet.
+    pub fn section_key(&self) -> Option<&bls::PublicKey> {
+        self.stage
+            .approved()
+            .map(|stage| &stage.shared_state.our_history.last_key_info().key)
     }
 
     fn shared_state(&self) -> Option<&SharedState> {
