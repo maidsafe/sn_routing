@@ -254,23 +254,68 @@ mod tests {
     use rand_crypto::Rng;
 
     #[test]
-    fn smoke() {
+    fn check_trust_trusted() {
         let mut rng = rng::new();
-        let prefix: Prefix<_> = "10".parse().unwrap();
-        let chain = gen_chain(&mut rng, prefix, 100, 10);
+        let prefix: Prefix<_> = "00".parse().unwrap();
+        let chain = gen_chain(&mut rng, prefix, 100, 4);
 
+        // If any key in the chain is already trusted, the whole chain is trusted.
         for key_info in chain.key_infos() {
-            assert!(matches!(
-                chain.check_trust(iter::once(key_info)),
-                TrustStatus::Trusted(_)
-            ))
+            match chain.check_trust(iter::once(key_info)) {
+                TrustStatus::Trusted(_) => (),
+                status => panic!("unexpected trust check outcome: {:?}", status),
+            }
+        }
+    }
+
+    #[test]
+    fn check_trust_invalid() {
+        let mut rng = rng::new();
+        let prefix: Prefix<_> = "01".parse().unwrap();
+        let mut chain = gen_chain(&mut rng, prefix, 100, 2);
+
+        // Add a block with invalid signature to the chain.
+        let (_, invalid_secret_key) = gen_key_info(&mut rng, prefix, 101);
+        let (block, secret_key) = gen_block(&mut rng, prefix, 102, &invalid_secret_key);
+        chain.tail.push(block); // SectionProofChain::push panics on invalid blocks
+
+        // Add another block with valid signature by the previous block.
+        let (block, _) = gen_block(&mut rng, prefix, 103, &secret_key);
+        chain.push(block);
+
+        // If we only trust the keys up to, but excluding the invalid block, the trust check fails
+        // because the rest of the chain contains invalid block.
+        for key_info in chain.key_infos().take(2) {
+            match chain.check_trust(iter::once(key_info)) {
+                TrustStatus::ProofInvalid => (),
+                status => panic!("unexpected trust check outcome: {:?}", status),
+            }
         }
 
-        let (invalid_key_info, _) = gen_key_info(&mut rng, prefix, 100);
-        assert!(matches!(
-            chain.check_trust(iter::once(&invalid_key_info)),
-            TrustStatus::ProofInvalid
-        ))
+        // But if any key at or after the invalid block is trusted, the rest of the chain is
+        // trusted as well.
+        for key_info in chain.key_infos().skip(2) {
+            match chain.check_trust(iter::once(key_info)) {
+                TrustStatus::Trusted(_) => (),
+                status => panic!("unexpected trust check outcome: {:?}", status),
+            }
+        }
+    }
+
+    #[test]
+    fn check_trust_unknown() {
+        let mut rng = rng::new();
+        let prefix: Prefix<_> = "10".parse().unwrap();
+        let chain = gen_chain(&mut rng, prefix, 100, 2);
+
+        // None of the keys in the chain is trusted - the chain might be valid, but its trust status
+        // cannot be determined.
+        let (trusted_key_info, _) = gen_key_info(&mut rng, prefix, 99);
+
+        match chain.check_trust(iter::once(&trusted_key_info)) {
+            TrustStatus::ProofTooNew => (),
+            status => panic!("unexpected trust check outcome: {:?}", status),
+        }
     }
 
     fn gen_key_info(
@@ -285,6 +330,18 @@ mod tests {
         (key_info, secret_key)
     }
 
+    fn gen_block(
+        rng: &mut MainRng,
+        prefix: Prefix<XorName>,
+        version: u64,
+        prev_secret_key: &bls::SecretKey,
+    ) -> (SectionProofBlock, bls::SecretKey) {
+        let (key_info, secret_key) = gen_key_info(rng, prefix, version);
+        let signature = prev_secret_key.sign(key_info.serialise_for_signature().unwrap());
+
+        (SectionProofBlock::new(key_info, signature), secret_key)
+    }
+
     fn gen_chain(
         rng: &mut MainRng,
         prefix: Prefix<XorName>,
@@ -295,11 +352,8 @@ mod tests {
         let mut chain = SectionProofChain::new(key_info);
 
         for n in 1..len {
-            let (new_key_info, new_secret_key) =
-                gen_key_info(rng, prefix, first_version + n as u64);
-            let signature =
-                current_secret_key.sign(new_key_info.serialise_for_signature().unwrap());
-            let new_block = SectionProofBlock::new(new_key_info, signature);
+            let (new_block, new_secret_key) =
+                gen_block(rng, prefix, first_version + n as u64, &current_secret_key);
             chain.push(new_block);
             current_secret_key = new_secret_key;
         }
