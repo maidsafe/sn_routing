@@ -29,16 +29,16 @@ pub struct AckMessagePayload {
     pub dst_name: XorName,
     /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
     pub src_prefix: Prefix<XorName>,
-    /// The version acknowledged.
-    pub ack_version: u64,
+    /// The key acknowledged.
+    pub ack_key: bls::PublicKey,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct SendAckMessagePayload {
     /// The prefix acknowledged.
     pub ack_prefix: Prefix<XorName>,
-    /// The version acknowledged.
-    pub ack_version: u64,
+    /// The key acknowledged.
+    pub ack_key: bls::PublicKey,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -50,6 +50,7 @@ pub struct EventSigPayload {
 }
 
 impl EventSigPayload {
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn new_for_section_key_info(
         key_share: &bls::SecretKeyShare,
         section_key_info: &SectionKeyInfo,
@@ -70,8 +71,8 @@ pub struct OnlinePayload {
     pub p2p_node: P2pNode,
     // The age the node should have after joining.
     pub age: u8,
-    // The version of the destination section that the joining node knows, if any.
-    pub their_knowledge: Option<u64>,
+    // The key of the destination section that the joining node knows, if any.
+    pub their_knowledge: Option<bls::PublicKey>,
 }
 
 /// Routing Network events

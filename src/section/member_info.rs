@@ -102,7 +102,7 @@ impl MemberInfo {
 pub enum MemberState {
     Joined,
     Relocating {
-        // Node knowledge of us
+        // The latest index of our section key that this node knows about.
         node_knowledge: u64,
     },
     // TODO: we should track how long the node has been away. If longer than some limit, remove it

@@ -86,7 +86,7 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .prove(&DstLocation::Prefix(their_prefix))
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
-                create_invalid_proof_chain(&mut rng, 0, bls_keys.public_keys().public_key())
+                create_invalid_proof_chain(&mut rng, bls_keys.public_keys().public_key())
             }
         };
         let pk_set = bls_keys.public_keys();
@@ -115,20 +115,16 @@ fn message_with_invalid_proof() {
     message_with_invalid_security(FailType::UntrustedProofValidSig);
 }
 
-fn create_invalid_proof_chain(
-    rng: &mut MainRng,
-    first_version: u64,
-    last_pk: bls::PublicKey,
-) -> SectionProofChain {
+fn create_invalid_proof_chain(rng: &mut MainRng, last_pk: bls::PublicKey) -> SectionProofChain {
     let block0_key_info = {
         let pk = generate_bls_threshold_secret_key(rng, 1)
             .public_keys()
             .public_key();
-        SectionKeyInfo::new(first_version, pk)
+        SectionKeyInfo::new(pk)
     };
 
     let block1 = {
-        let key_info = SectionKeyInfo::new(first_version + 1, last_pk);
+        let key_info = SectionKeyInfo::new(last_pk);
         let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
         let invalid_sk_share = invalid_sk_set.secret_key_share(0);
         let signature_share = invalid_sk_share.sign(&bincode::serialize(&key_info).unwrap());

@@ -41,7 +41,7 @@ pub struct SectionMap {
     keys: BTreeMap<Prefix<XorName>, SectionKeyInfo>,
     // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
     recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
-    // Version of our section that other sections know about
+    // Indices of our section keys that are trusted by other sections.
     knowledge: BTreeMap<Prefix<XorName>, u64>,
 }
 
@@ -289,42 +289,55 @@ impl SectionMap {
             .chain(self.recent_keys.iter().map(|(p, k)| (p, k)))
     }
 
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub fn has_key(&self, key: &bls::PublicKey) -> bool {
+        self.keys.values().any(|key_info| key_info.key == *key)
+    }
+
     pub fn latest_compatible_key(&self, name: &XorName) -> Option<&SectionKeyInfo> {
+        // `keys` is already ordered newest to oldest.
         self.keys()
-            .filter(|(prefix, _)| prefix.matches(name))
+            .find(|(prefix, _)| prefix.matches(name))
             .map(|(_, info)| info)
-            .max_by_key(|info| info.version)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
-    pub fn update_keys(&mut self, prefix: Prefix<XorName>, key_info: &SectionKeyInfo) {
-        trace!("attempts to update keys for {:?}: {:?}", prefix, key_info);
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key_info: &SectionKeyInfo) {
+        trace!(
+            "attempts to update keys for {:?}: {:?}",
+            prefix,
+            new_key_info
+        );
 
-        if let Some((&old_prefix, old_version)) = self
+        if self
+            .recent_keys
+            .iter()
+            .any(|(_, old_key_info)| old_key_info.key == new_key_info.key)
+        {
+            return;
+        }
+
+        if let Some((&old_prefix, &old_key_info)) = self
             .keys
             .iter()
             .find(|(old_prefix, _)| old_prefix.is_compatible(&prefix))
-            .map(|(old_prefix, info)| (old_prefix, info.version))
         {
-            if old_version >= key_info.version || old_prefix.is_extension_of(&prefix) {
-                // Do not overwrite newer version or prefix extensions
+            if old_key_info.key == new_key_info.key || old_prefix.is_extension_of(&prefix) {
+                // Do not overwrite existing keys or prefix extensions
                 return;
             }
 
-            let old_key_info = self
-                .keys
-                .remove(&old_prefix)
-                .expect("Bug in BTreeMap for update_keys");
+            let _ = self.keys.remove(&old_prefix);
 
-            self.recent_keys
-                .push_front((old_prefix, old_key_info.clone()));
+            self.recent_keys.push_front((old_prefix, old_key_info));
             if self.recent_keys.len() > MAX_RECENT_KEYS {
                 let _ = self.recent_keys.pop_back();
             }
 
-            trace!("    from {:?} to {:?}", old_key_info, key_info);
+            trace!("    from {:?} to {:?}", old_key_info, new_key_info);
 
             let old_prefix_sibling = old_prefix.sibling();
             let mut current_prefix = prefix.sibling();
@@ -333,21 +346,21 @@ impl SectionMap {
                 current_prefix = current_prefix.popped().sibling();
             }
         }
-        let _ = self.keys.insert(prefix, key_info.clone());
+        let _ = self.keys.insert(prefix, new_key_info.clone());
     }
 
     pub fn get_knowledge(&self, prefix: &Prefix<XorName>) -> Option<u64> {
         self.knowledge.get(prefix).copied()
     }
 
-    /// Returns the version of the public key in our_history that will be trusted by the target
+    /// Returns the the index of the public key in our_history that will be trusted by the target
     /// location
-    pub fn trusted_key_version(&self, target: &DstLocation) -> u64 {
+    pub fn trusted_key_index(&self, target: &DstLocation) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .knowledge
             .iter()
             .filter(|(prefix, _)| target.is_compatible(prefix))
-            .min_by_key(|(_, index)| *index)
+            .min_by_key(|(_, &index)| index)
         {
             pair
         } else {
@@ -364,34 +377,34 @@ impl SectionMap {
         }
     }
 
-    /// Updates the entry in `knowledge` for `prefix` to the `version`; if a split
-    /// occurred in the meantime, the versions for sections covering the rest of the address space
-    /// are initialised to the old version that was stored for their common ancestor
-    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
+    /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
+    /// occurred in the meantime, the index for sections covering the rest of the address space
+    /// are initialised to the old index that was stored for their common ancestor
+    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, new_index: u64) {
         trace!(
-            "update knowledge of section ({:b}) about our section to v{}",
+            "update knowledge of section ({:b}) about our section to {}",
             prefix,
-            version,
+            new_index,
         );
 
-        if let Some((&old_prefix, &old_version)) = self
+        if let Some((&old_prefix, &old_index)) = self
             .knowledge
             .iter()
             .find(|(other_prefix, _)| other_prefix.is_compatible(&prefix))
         {
-            if old_version >= version || old_prefix.is_extension_of(&prefix) {
-                // Do not overwrite newer version or prefix extensions
+            if old_prefix.is_extension_of(&prefix) || old_index > new_index {
+                // Do not overwrite newer index or prefix extensions
                 return;
             }
 
             let _ = self.knowledge.remove(&old_prefix);
 
             trace!(
-                "    from ({:b}) v{} to ({:b}) v{}",
+                "    from ({:b}): {} to ({:b}): {}",
                 old_prefix,
-                old_version,
+                old_index,
                 prefix,
-                version
+                new_index
             );
 
             let old_prefix_sibling = old_prefix.sibling();
@@ -399,11 +412,11 @@ impl SectionMap {
             while !self.knowledge.contains_key(&current_prefix)
                 && current_prefix != old_prefix_sibling
             {
-                let _ = self.knowledge.insert(current_prefix, old_version);
+                let _ = self.knowledge.insert(current_prefix, old_index);
                 current_prefix = current_prefix.popped().sibling();
             }
         }
-        let _ = self.knowledge.insert(prefix, version);
+        let _ = self.knowledge.insert(prefix, new_index);
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our

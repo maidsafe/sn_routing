@@ -79,7 +79,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng,
-        section::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
+        section::{SectionKeyInfo, SectionKeyShare, SectionProofChain},
         unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
@@ -94,7 +94,6 @@ mod tests {
     impl MessageAndSignatures {
         fn new(
             secret_ids: &BTreeMap<XorName, FullId>,
-            all_nodes: &BTreeMap<XorName, P2pNode>,
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
@@ -107,9 +106,7 @@ mod tests {
             let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
             let other_ids = secret_ids.values().zip(secret_bls_ids.values()).skip(1);
 
-            let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
-            let elders_info = EldersInfo::new(all_nodes.clone(), prefix, 0);
-            let key_info = SectionKeyInfo::new(elders_info.version, pk_set.public_key());
+            let key_info = SectionKeyInfo::new(pk_set.public_key());
             let proof = SectionProofChain::new(key_info);
 
             let signed_msg = unwrap!(AccumulatingMessage::new(
@@ -176,7 +173,7 @@ mod tests {
             let pk_set = keys.public_keys();
 
             let msgs_and_sigs = (0..5)
-                .map(|_| MessageAndSignatures::new(&full_ids, &pub_ids, &secret_ids, &pk_set))
+                .map(|_| MessageAndSignatures::new(&full_ids, &secret_ids, &pk_set))
                 .collect();
             Self { msgs_and_sigs }
         }

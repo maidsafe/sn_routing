@@ -31,14 +31,14 @@ pub enum Variant {
     /// Approves the joining node as a routing node.
     /// Section X -> Node joining X
     NodeApproval(Box<GenesisPrefixInfo>),
-    /// Acknowledgement that the src section knows that the dst section is at the specified
-    /// version.
+    /// Acknowledgement that the src section knows that the dst section has the specified
+    /// key.
     /// Section X -> Section Y
     AckMessage {
         /// The prefix of our section when we acknowledge their version.
         src_prefix: Prefix<XorName>,
-        /// The version acknowledged.
-        ack_version: u64,
+        /// The key acknowledged.
+        ack_key: bls::PublicKey,
     },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(Box<GenesisPrefixInfo>),
@@ -85,11 +85,11 @@ impl Debug for Variant {
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::AckMessage {
                 src_prefix,
-                ack_version,
+                ack_key,
             } => f
                 .debug_struct("AckMessage")
                 .field("src_prefix", src_prefix)
-                .field("ack_version", ack_version)
+                .field("ack_key", ack_key)
                 .finish(),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
@@ -150,15 +150,17 @@ impl Debug for JoinRequest {
 }
 
 /// Node's knowledge about its own section.
-#[derive(Default, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub struct MemberKnowledge {
-    pub elders_version: u64,
+    pub section_key: bls::PublicKey,
     pub parsec_version: u64,
 }
 
 impl MemberKnowledge {
-    pub fn update(&mut self, other: MemberKnowledge) {
-        self.elders_version = self.elders_version.max(other.elders_version);
-        self.parsec_version = self.parsec_version.max(other.parsec_version);
+    pub fn update(&mut self, other: &MemberKnowledge) {
+        if other.parsec_version > self.parsec_version {
+            self.section_key = other.section_key;
+            self.parsec_version = other.parsec_version;
+        }
     }
 }
