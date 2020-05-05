@@ -450,3 +450,235 @@ impl SectionMap {
         &self.knowledge
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        id::FullId,
+        location::DstLocation,
+        rng::{self, MainRng, RngCompat},
+    };
+    use rand::Rng;
+
+    #[test]
+    fn update_keys_single_prefix_multiple_updates() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+        let k3 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k3)],
+            vec![("0", &k0), ("1", &k3), ("1", &k2), ("1", &k1)],
+        );
+    }
+
+    #[test]
+    fn update_keys_existing_old_key() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k1)],
+            vec![("0", &k0), ("1", &k2), ("1", &k1)],
+        );
+    }
+
+    #[test]
+    fn update_keys_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+        let k3 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            vec![("0", &k0), ("10", &k1), ("11", &k2), ("101", &k3)],
+            vec![
+                ("0", &k0),
+                ("100", &k1),
+                ("101", &k3),
+                ("11", &k2),
+                ("10", &k1),
+            ],
+        );
+    }
+
+    #[test]
+    fn update_keys_our_section_not_sibling_of_ancestor() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        // 01 Not the sibling of the single bit parent prefix of 111
+        update_keys_and_check(
+            &mut rng::new(),
+            vec![("01", &k0), ("1", &k1), ("111", &k2)],
+            vec![
+                ("01", &k0),
+                ("10", &k1),
+                ("110", &k1),
+                ("111", &k2),
+                ("1", &k1),
+            ],
+        );
+    }
+
+    #[test]
+    fn update_keys_multiple_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng::new(),
+            vec![("0", &k0), ("1", &k1), ("1011001", &k2)],
+            vec![
+                ("0", &k0),
+                ("100", &k1),
+                ("1010", &k1),
+                ("1011000", &k1),
+                ("1011001", &k2),
+                ("101101", &k1),
+                ("10111", &k1),
+                ("11", &k1),
+                ("1", &k1),
+            ],
+        );
+    }
+
+    #[test]
+    fn update_keys_split_out_of_order() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+        let k3 = gen_key(&mut rng);
+        let k4 = gen_key(&mut rng);
+
+        // Late keys ignored
+        update_keys_and_check(
+            &mut rng,
+            vec![
+                ("0", &k0),
+                ("10", &k1),
+                ("11", &k2),
+                ("101", &k3),
+                ("10", &k4),
+            ],
+            vec![
+                ("0", &k0),
+                ("100", &k1),
+                ("101", &k3),
+                ("11", &k2),
+                ("10", &k1),
+            ],
+        );
+    }
+
+    #[test]
+    fn update_their_knowledge_after_split_from_one_sibling() {
+        let mut rng = rng::new();
+        update_their_knowledge_and_check_proving_index(
+            &mut rng,
+            vec![("1", 1), ("10", 2)],
+            vec![("10", 1), ("11", 1)],
+        )
+    }
+
+    #[test]
+    fn update_their_knowledge_after_split_from_both_siblings() {
+        let mut rng = rng::new();
+        update_their_knowledge_and_check_proving_index(
+            &mut rng,
+            vec![("1", 1), ("10", 2), ("11", 2)],
+            vec![("10", 2), ("11", 2)],
+        )
+    }
+
+    // Create a `SectionMap` and apply a series of `update_keys` calls to it, then verify the stored
+    // keys are as expected.
+    //
+    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs. The first pair
+    //           is our section and its initial key. The following ones are then applied in sequence
+    //           by calling `update_keys`
+    // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
+    //           order.
+    fn update_keys_and_check(
+        rng: &mut MainRng,
+        mut updates: Vec<(&str, &bls::PublicKey)>,
+        expected: Vec<(&str, &bls::PublicKey)>,
+    ) {
+        let (our_prefix, our_key) = updates.remove(0);
+        let elders_info = gen_elders_info(rng, our_prefix.parse().unwrap());
+        let mut map = SectionMap::new(elders_info, *our_key);
+
+        for (prefix, key) in updates {
+            map.update_keys(prefix.parse().unwrap(), *key);
+        }
+
+        let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
+        let expected: Vec<(Prefix<_>, _)> = expected
+            .into_iter()
+            .map(|(prefix, key)| (prefix.parse().unwrap(), key))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    // Perform a series of updates to `knowledge`, then verify that the proving indices for
+    // the given dst locations are as expected.
+    //
+    // - `updates` - pairs of (prefix, version) to pass to `update_knowledge`
+    // - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is
+    //   generated such that it matches `prefix` and `version` is the expected trusted key version.
+    fn update_their_knowledge_and_check_proving_index(
+        rng: &mut MainRng,
+        updates: Vec<(&str, u64)>,
+        expected_trusted_key_indices: Vec<(&str, u64)>,
+    ) {
+        let mut map = SectionMap::new(gen_elders_info(rng, Default::default()), gen_key(rng));
+
+        for (prefix_str, version) in updates {
+            let prefix = prefix_str.parse().unwrap();
+            map.update_knowledge(prefix, version);
+        }
+
+        for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {
+            let dst_name_prefix: Prefix<_> = dst_name_prefix_str.parse().unwrap();
+            let dst_name = dst_name_prefix.substituted_in(rng.gen());
+            let dst = DstLocation::Section(dst_name);
+
+            assert_eq!(map.trusted_key_index(&dst), expected_index);
+        }
+    }
+
+    fn gen_elders_info(rng: &mut MainRng, prefix: Prefix<XorName>) -> EldersInfo {
+        let sec_size = 5;
+        let members = (0..sec_size)
+            .map(|index| {
+                let pub_id = *FullId::within_range(rng, &prefix.range_inclusive()).public_id();
+                (
+                    *pub_id.name(),
+                    P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
+                )
+            })
+            .collect();
+        let version = 101;
+
+        EldersInfo::new(members, prefix, version)
+    }
+
+    fn gen_key(rng: &mut MainRng) -> bls::PublicKey {
+        let secret_key: bls::SecretKey = rand_crypto::Rng::gen(&mut RngCompat(rng));
+        secret_key.public_key()
+    }
+}
