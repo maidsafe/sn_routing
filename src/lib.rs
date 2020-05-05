@@ -173,7 +173,7 @@ const QUORUM_DENOMINATOR: usize = 3;
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
-const RECOMMENDED_SECTION_SIZE: usize = 100;
+const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
