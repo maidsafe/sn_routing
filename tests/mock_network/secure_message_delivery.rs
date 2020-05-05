@@ -8,9 +8,9 @@
 
 use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
-    generate_bls_threshold_secret_key, mock::Environment, AccumulatingMessage, DstLocation,
-    EldersInfo, FullId, Message, NetworkParams, P2pNode, PlainMessage, Prefix, SectionKeyInfo,
-    SectionKeyShare, SectionProofChain, Variant, XorName,
+    generate_bls_threshold_secret_key, mock::Environment, rng::MainRng, AccumulatingMessage,
+    DstLocation, EldersInfo, FullId, Message, NetworkParams, P2pNode, PlainMessage, Prefix,
+    SectionKeyInfo, SectionKeyShare, SectionProofBlock, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -87,11 +87,12 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
-                SectionProofChain::new(SectionKeyInfo::new(
+                create_invalid_proof_chain(
+                    &mut rng,
                     invalid_prefix,
                     0,
                     bls_keys.public_keys().public_key(),
-                ))
+                )
             }
         };
         let pk_set = bls_keys.public_keys();
@@ -118,4 +119,29 @@ fn message_with_invalid_signature() {
 #[should_panic(expected = "UntrustedMessage")]
 fn message_with_invalid_proof() {
     message_with_invalid_security(FailType::UntrustedProofValidSig);
+}
+
+fn create_invalid_proof_chain(
+    rng: &mut MainRng,
+    prefix: Prefix<XorName>,
+    first_version: u64,
+    last_pk: bls::PublicKey,
+) -> SectionProofChain {
+    let block0_pk = generate_bls_threshold_secret_key(rng, 1)
+        .public_keys()
+        .public_key();
+    let block0_key_info = SectionKeyInfo::new(prefix, first_version, block0_pk);
+
+    let block1_key_info = SectionKeyInfo::new(prefix, first_version + 1, last_pk);
+    let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
+    let invalid_sk_share = invalid_sk_set.secret_key_share(0);
+    let block1_sig_share = invalid_sk_share.sign(&bincode::serialize(&block1_key_info).unwrap());
+    let block1_sig = invalid_sk_set
+        .public_keys()
+        .combine_signatures(iter::once((0, &block1_sig_share)))
+        .unwrap();
+
+    let mut chain = SectionProofChain::new(block0_key_info);
+    chain.push(SectionProofBlock::new(block1_key_info, block1_sig));
+    chain
 }

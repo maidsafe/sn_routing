@@ -54,7 +54,7 @@ impl EventSigPayload {
         key_share: &bls::SecretKeyShare,
         section_key_info: &SectionKeyInfo,
     ) -> Result<Self, RoutingError> {
-        let sig_share = key_share.sign(&section_key_info.serialise_for_signature()?);
+        let sig_share = key_share.sign(&bincode::serialize(&section_key_info)?);
         let pub_key_share = key_share.public_key_share();
 
         Ok(Self {

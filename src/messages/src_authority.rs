@@ -86,14 +86,15 @@ impl SrcAuthority {
                     .into_iter()
                     .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
                     .map(|(_, key_info)| key_info);
-                let public_key = match proof.check_trust(trusted_key_infos) {
-                    TrustStatus::Trusted(key) => key,
-                    TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
-                    TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
+
+                match proof.check_trust(trusted_key_infos) {
+                    TrustStatus::Trusted => (),
+                    TrustStatus::Unknown => return Ok(VerifyStatus::Unknown),
+                    TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
                 };
 
                 let bytes = super::serialize_for_section_signing(dst, variant)?;
-                if !public_key.verify(signature, &bytes) {
+                if !proof.last_key_info().key.verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
             }

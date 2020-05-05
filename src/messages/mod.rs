@@ -127,16 +127,17 @@ impl Debug for Message {
 pub enum VerifyStatus {
     // The message has been fully verified.
     Full,
-    // The message trust and integrity cannot be verified because it's proof is too new. It should
-    // be relayed to other nodes who might be able to verify it.
-    ProofTooNew,
+    // The message trust and integrity cannot be verified because it's proof is not trusted by us,
+    // even though it is valid. The message should be relayed to other nodes who might be able to
+    // verify it.
+    Unknown,
 }
 
 impl VerifyStatus {
     pub fn require_full(self) -> Result<(), RoutingError> {
         match self {
             Self::Full => Ok(()),
-            Self::ProofTooNew => Err(RoutingError::UntrustedMessage),
+            Self::Unknown => Err(RoutingError::UntrustedMessage),
         }
     }
 }
