@@ -79,7 +79,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng,
-        section::{SectionKeyInfo, SectionKeyShare, SectionProofChain},
+        section::{SectionKeyShare, SectionProofChain},
         unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
@@ -106,8 +106,7 @@ mod tests {
             let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
             let other_ids = secret_ids.values().zip(secret_bls_ids.values()).skip(1);
 
-            let key_info = SectionKeyInfo::new(pk_set.public_key());
-            let proof = SectionProofChain::new(key_info);
+            let proof = SectionProofChain::new(pk_set.public_key());
 
             let signed_msg = unwrap!(AccumulatingMessage::new(
                 content.clone(),
@@ -118,16 +117,20 @@ mod tests {
 
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
-                    unwrap!(Message::single_src(
+                    Message::single_src(
                         id,
                         DstLocation::Direct,
-                        Variant::MessageSignature(Box::new(unwrap!(AccumulatingMessage::new(
-                            content.clone(),
-                            bls_id,
-                            pk_set.clone(),
-                            proof.clone(),
-                        ))))
-                    ))
+                        Variant::MessageSignature(Box::new(
+                            AccumulatingMessage::new(
+                                content.clone(),
+                                bls_id,
+                                pk_set.clone(),
+                                proof.clone(),
+                            )
+                            .unwrap(),
+                        )),
+                    )
+                    .unwrap()
                 })
                 .collect();
 

@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
-    SectionProofBlock, SectionProofChain,
+    AgeCounter, EldersInfo, MemberState, SectionMap, SectionMembers, SectionProofBlock,
+    SectionProofChain,
 };
 use crate::{
     consensus::AccumulatingEvent,
@@ -48,15 +48,12 @@ impl SharedState {
         section_pk: bls::PublicKey,
         ages: BTreeMap<XorName, AgeCounter>,
     ) -> Self {
-        let pk_info = SectionKeyInfo::new(section_pk);
-        let our_history = SectionProofChain::new(pk_info);
-        let our_key_info = *our_history.last_key_info();
         let our_members = SectionMembers::new(&elders_info, &ages);
 
         Self {
             handled_genesis_event: false,
-            our_history,
-            sections: SectionMap::new(elders_info, our_key_info),
+            our_history: SectionProofChain::new(section_pk),
+            sections: SectionMap::new(elders_info, section_pk),
             our_members,
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
@@ -249,7 +246,7 @@ impl SharedState {
         self.our_history.push(proof_block);
         self.sections.set_our(elders_info);
         self.sections
-            .update_keys(self.sections.our().prefix, self.our_history.last_key_info());
+            .update_keys(self.sections.our().prefix, *self.our_history.last_key());
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
@@ -410,7 +407,7 @@ impl SharedState {
         }
 
         let relocating_state = self.create_relocating_state();
-        let first_key_info = self.our_history.first_key_info();
+        let first_key = self.our_history.first_key();
 
         for member_info in self.our_members.joined_mut() {
             if member_info.p2p_node.name() == trigger_node {
@@ -447,15 +444,15 @@ impl SharedState {
             );
             member_info.state = relocating_state;
 
-            let destination_key_info = *self
+            let destination_key = *self
                 .sections
                 .latest_compatible_key(&destination)
-                .unwrap_or(first_key_info);
+                .unwrap_or(first_key);
 
             let details = RelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,
-                destination_key_info,
+                destination_key,
                 // TODO: why the +1 ?
                 age: member_info.age() + 1,
             };
@@ -527,8 +524,8 @@ mod test {
                 let prefix = Prefix::<XorName>::from_str(prefix_str).unwrap();
                 let elders_info = gen_elders_info(rng, prefix, version as u64);
                 let bls_keys = generate_bls_threshold_secret_key(rng, 1).public_keys();
-                let key_info = SectionKeyInfo::new(bls_keys.public_key());
-                (key_info, elders_info, bls_keys)
+                let public_key = bls_keys.public_key();
+                (public_key, elders_info, bls_keys)
             })
             .collect::<Vec<_>>();
         let expected_keys = expected
@@ -548,8 +545,8 @@ mod test {
 
         // Act
         //
-        for (key_info, elders_info, _) in keys_to_update.iter().skip(1) {
-            state.sections.update_keys(elders_info.prefix, key_info);
+        for (key, elders_info, _) in keys_to_update.iter().skip(1) {
+            state.sections.update_keys(elders_info.prefix, *key);
         }
 
         // Assert
@@ -557,12 +554,12 @@ mod test {
         let actual_keys = state
             .sections
             .keys()
-            .map(|(p, info)| {
+            .map(|(p, actual_key)| {
                 (
                     *p,
                     keys_to_update
                         .iter()
-                        .position(|(key_info, _, _)| key_info == info),
+                        .position(|(key, _, _)| key == actual_key),
                 )
             })
             .collect::<Vec<_>>();

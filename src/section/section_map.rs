@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    elders_info::EldersInfo, network_stats::NetworkStats, section_proof_chain::SectionKeyInfo,
-};
+use super::{elders_info::EldersInfo, network_stats::NetworkStats};
 use crate::{
     id::P2pNode,
     location::DstLocation,
@@ -38,15 +36,15 @@ pub struct SectionMap {
     // until we get the immediate successor, then moved to `other`.
     other_queued: VecDeque<EldersInfo>,
     // BLS public keys of known sections
-    keys: BTreeMap<Prefix<XorName>, SectionKeyInfo>,
+    keys: BTreeMap<Prefix<XorName>, bls::PublicKey>,
     // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
-    recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
+    recent_keys: VecDeque<(Prefix<XorName>, bls::PublicKey)>,
     // Indices of our section keys that are trusted by other sections.
     knowledge: BTreeMap<Prefix<XorName>, u64>,
 }
 
 impl SectionMap {
-    pub fn new(our_info: EldersInfo, our_key: SectionKeyInfo) -> Self {
+    pub fn new(our_info: EldersInfo, our_key: bls::PublicKey) -> Self {
         let prefix = our_info.prefix;
 
         Self {
@@ -283,7 +281,7 @@ impl SectionMap {
     }
 
     /// Returns the known section keys and any recent keys we still hold.
-    pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+    pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
         self.keys
             .iter()
             .chain(self.recent_keys.iter().map(|(p, k)| (p, k)))
@@ -291,10 +289,10 @@ impl SectionMap {
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.values().any(|key_info| key_info.key == *key)
+        self.keys.values().any(|known_key| known_key == key)
     }
 
-    pub fn latest_compatible_key(&self, name: &XorName) -> Option<&SectionKeyInfo> {
+    pub fn latest_compatible_key(&self, name: &XorName) -> Option<&bls::PublicKey> {
         // `keys` is already ordered newest to oldest.
         self.keys()
             .find(|(prefix, _)| prefix.matches(name))
@@ -305,48 +303,44 @@ impl SectionMap {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key_info: &SectionKeyInfo) {
-        trace!(
-            "attempts to update keys for {:?}: {:?}",
-            prefix,
-            new_key_info
-        );
+    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey) {
+        trace!("attempts to update keys for {:?}: {:?}", prefix, new_key);
 
         if self
             .recent_keys
             .iter()
-            .any(|(_, old_key_info)| old_key_info.key == new_key_info.key)
+            .any(|(_, old_key)| *old_key == new_key)
         {
             return;
         }
 
-        if let Some((&old_prefix, &old_key_info)) = self
+        if let Some((&old_prefix, &old_key)) = self
             .keys
             .iter()
             .find(|(old_prefix, _)| old_prefix.is_compatible(&prefix))
         {
-            if old_key_info.key == new_key_info.key || old_prefix.is_extension_of(&prefix) {
+            if old_key == new_key || old_prefix.is_extension_of(&prefix) {
                 // Do not overwrite existing keys or prefix extensions
                 return;
             }
 
             let _ = self.keys.remove(&old_prefix);
 
-            self.recent_keys.push_front((old_prefix, old_key_info));
+            self.recent_keys.push_front((old_prefix, old_key));
             if self.recent_keys.len() > MAX_RECENT_KEYS {
                 let _ = self.recent_keys.pop_back();
             }
 
-            trace!("    from {:?} to {:?}", old_key_info, new_key_info);
+            trace!("    from {:?} to {:?}", old_key, new_key);
 
             let old_prefix_sibling = old_prefix.sibling();
             let mut current_prefix = prefix.sibling();
             while !self.keys.contains_key(&current_prefix) && current_prefix != old_prefix_sibling {
-                let _ = self.keys.insert(current_prefix, old_key_info.clone());
+                let _ = self.keys.insert(current_prefix, old_key);
                 current_prefix = current_prefix.popped().sibling();
             }
         }
-        let _ = self.keys.insert(prefix, new_key_info.clone());
+        let _ = self.keys.insert(prefix, new_key);
     }
 
     pub fn get_knowledge(&self, prefix: &Prefix<XorName>) -> Option<u64> {

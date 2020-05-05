@@ -23,7 +23,6 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::DstLocation,
-    section::SectionKeyInfo,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
@@ -85,19 +84,19 @@ impl Message {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub(crate) fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<VerifyStatus>
+    pub(crate) fn verify<'a, I>(&'a self, their_keys: I) -> Result<VerifyStatus>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
     {
-        self.src.verify(&self.dst, &self.variant, their_key_infos)
+        self.src.verify(&self.dst, &self.variant, their_keys)
     }
 
     /// If this message is from a section, returns its prefix and the latest section key from the
     /// message proof. Otherwise `None`.
-    pub fn source_section_key_info(&self) -> Option<(&Prefix<XorName>, &SectionKeyInfo)> {
+    pub fn source_section_key_info(&self) -> Option<(&Prefix<XorName>, &bls::PublicKey)> {
         match &self.src {
             SrcAuthority::Node { .. } => None,
-            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key_info())),
+            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key())),
         }
     }
 
@@ -148,17 +147,17 @@ pub struct QueuedMessage {
     pub sender: Option<SocketAddr>,
 }
 
-pub fn log_verify_failure<'a, T, I>(msg: &T, error: &RoutingError, their_key_infos: I)
+pub fn log_verify_failure<'a, T, I>(msg: &T, error: &RoutingError, their_keys: I)
 where
     T: Debug,
-    I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
 {
     log_or_panic!(
         log::Level::Error,
         "Verification failed: {:?} - {:?} --- [{:?}]",
         msg,
         error,
-        their_key_infos.into_iter().format(", ")
+        their_keys.into_iter().format(", ")
     )
 }
 

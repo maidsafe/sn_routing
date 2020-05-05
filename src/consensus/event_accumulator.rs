@@ -279,7 +279,7 @@ mod test {
         consensus::generate_bls_threshold_secret_key,
         id::FullId,
         rng::{self, MainRng},
-        section::{EldersInfo, SectionKeyInfo},
+        section::EldersInfo,
         unwrap,
     };
     use parsec::SecretId;
@@ -354,8 +354,7 @@ mod test {
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
                 let (sig_payload, keys) = random_section_info_sig_payload(rng);
-                let key_info = SectionKeyInfo::new(keys.public_key());
-                let event = AccumulatingEvent::SectionInfo(elders_info, key_info);
+                let event = AccumulatingEvent::SectionInfo(elders_info, keys.public_key());
 
                 TestData {
                     our_id: *id.public_id(),

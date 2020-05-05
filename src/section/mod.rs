@@ -22,7 +22,7 @@ pub use self::{
     section_keys::{SectionKeyShare, SectionKeys, SectionKeysProvider},
     section_map::SectionMap,
     section_members::SectionMembers,
-    section_proof_chain::{SectionKeyInfo, SectionProofBlock, SectionProofChain, TrustStatus},
+    section_proof_chain::{SectionProofBlock, SectionProofChain, TrustStatus},
     shared_state::SharedState,
 };
 
@@ -31,6 +31,6 @@ use crate::consensus::AccumulatingProof;
 #[derive(Debug, PartialEq, Eq)]
 pub struct SplitCache {
     pub elders_info: EldersInfo,
-    pub key_info: SectionKeyInfo,
+    pub section_key: bls::PublicKey,
     pub proofs: AccumulatingProof,
 }

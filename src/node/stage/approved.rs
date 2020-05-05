@@ -27,8 +27,8 @@ use crate::{
     rng::MainRng,
     routing_table,
     section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeysProvider, SharedState,
-        SplitCache, MIN_AGE, MIN_AGE_COUNTER,
+        EldersInfo, MemberState, SectionKeyShare, SectionKeysProvider, SharedState, SplitCache,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -562,7 +562,7 @@ impl Approved {
                 return;
             }
 
-            (details.age, Some(details.destination_key_info.key))
+            (details.age, Some(details.destination_key))
         } else {
             (MIN_AGE, None)
         };
@@ -927,8 +927,8 @@ impl Approved {
             AccumulatingEvent::NeighbourInfo(elders_info) => {
                 self.handle_neighbour_info_event(core, elders_info)?
             }
-            AccumulatingEvent::TheirKeyInfo { prefix, key_info } => {
-                self.handle_their_key_info_event(core, prefix, key_info)?
+            AccumulatingEvent::TheirKeyInfo { prefix, key } => {
+                self.handle_their_key_info_event(core, prefix, key)?
             }
             AccumulatingEvent::AckMessage(payload) => self.handle_ack_message_event(payload),
             AccumulatingEvent::SendAckMessage(payload) => {
@@ -1128,7 +1128,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
+        section_key: bls::PublicKey,
         proof: AccumulatingProof,
     ) -> Result<()> {
         let old_prefix = *self.shared_state.our_prefix();
@@ -1136,7 +1136,7 @@ impl Approved {
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         let neighbour_elders_removed =
-            if self.add_new_elders_info(core.id(), elders_info, key_info.clone(), proof)? {
+            if self.add_new_elders_info(core.id(), elders_info, section_key, proof)? {
                 neighbour_elders_removed.build(&self.shared_state.sections)
             } else {
                 return Ok(());
@@ -1189,7 +1189,7 @@ impl Approved {
         // Vote to update our self messages proof
         self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: info_prefix,
-            ack_key: key_info.key,
+            ack_key: section_key,
         });
 
         self.print_network_stats();
@@ -1213,7 +1213,7 @@ impl Approved {
         &mut self,
         our_id: &PublicId,
         elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
+        section_key: bls::PublicKey,
         proofs: AccumulatingProof,
     ) -> Result<bool> {
         // Split handling alone. wouldn't cater to merge
@@ -1225,7 +1225,7 @@ impl Approved {
                 None => {
                     self.split_cache = Some(SplitCache {
                         elders_info,
-                        key_info,
+                        section_key,
                         proofs,
                     });
                     Ok(false)
@@ -1239,19 +1239,19 @@ impl Approved {
                         self.add_our_elders_info(
                             our_id,
                             cached.elders_info,
-                            cached.key_info,
+                            cached.section_key,
                             cached.proofs,
                         )?;
                         self.shared_state.sections.add_neighbour(elders_info);
                     } else {
-                        self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
+                        self.add_our_elders_info(our_id, elders_info, section_key, proofs)?;
                         self.shared_state.sections.add_neighbour(cached.elders_info);
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
+            self.add_our_elders_info(our_id, elders_info, section_key, proofs)?;
             Ok(true)
         }
     }
@@ -1260,14 +1260,14 @@ impl Approved {
         &mut self,
         our_id: &PublicId,
         elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
+        section_key: bls::PublicKey,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let proof_block = self
             .section_keys_provider
             .combine_signatures_for_section_proof_block(
                 self.shared_state.sections.our(),
-                key_info,
+                section_key,
                 proofs,
             )?;
         self.section_keys_provider
@@ -1309,9 +1309,9 @@ impl Approved {
         &mut self,
         core: &Core,
         prefix: Prefix<XorName>,
-        key_info: SectionKeyInfo,
+        key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        self.shared_state.sections.update_keys(prefix, &key_info);
+        self.shared_state.sections.update_keys(prefix, key);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1319,7 +1319,7 @@ impl Approved {
 
         self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: prefix,
-            ack_key: key_info.key,
+            ack_key: key,
         });
         Ok(())
     }
@@ -1568,22 +1568,21 @@ impl Approved {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        let key_info = SectionKeyInfo::new(section_key);
-        let signature_payload = EventSigPayload::new_for_section_key_info(
+        let signature_payload = EventSigPayload::new(
             &self.section_keys_provider.secret_key_share()?.key,
-            &key_info,
-        )?;
-        let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
-
-        let event = acc_event.into_network_event_with(Some(signature_payload));
+            &section_key,
+        );
+        let event = AccumulatingEvent::SectionInfo(elders_info, section_key);
+        let event = event.into_network_event_with(Some(signature_payload));
         self.consensus_engine.vote_for(event);
         Ok(())
     }
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.shared_state.sections.keys().any(|(prefix, info)| {
-            *prefix == ack_payload.ack_prefix && info.key == ack_payload.ack_key
-        });
+        let has_their_keys =
+            self.shared_state.sections.keys().any(|(prefix, key)| {
+                *prefix == ack_payload.ack_prefix && *key == ack_payload.ack_key
+            });
 
         if has_their_keys {
             self.vote_for_event(AccumulatingEvent::SendAckMessage(ack_payload));
@@ -1741,7 +1740,7 @@ impl Approved {
 
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
-            section_key: self.shared_state.our_history.last_key_info().key,
+            section_key: *self.shared_state.our_history.last_key(),
             parsec_version: self.consensus_engine.parsec_version(),
         };
 
@@ -1961,17 +1960,17 @@ impl Approved {
     }
 
     pub fn update_our_knowledge(&mut self, msg: &Message) {
-        let (prefix, new_key_info) = if let Some(pair) = msg.source_section_key_info() {
+        let (prefix, new_key) = if let Some(pair) = msg.source_section_key_info() {
             pair
         } else {
             return;
         };
 
         // Only vote if we don't have this key yet.
-        if !self.shared_state.sections.has_key(&new_key_info.key) {
+        if !self.shared_state.sections.has_key(new_key) {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
                 prefix: *prefix,
-                key_info: *new_key_info,
+                key: *new_key,
             });
         }
     }

@@ -112,8 +112,7 @@ pub use self::{
     relocation::Overrides as RelocationOverrides,
     routing_table::delivery_group_size,
     section::{
-        quorum_count, EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofBlock,
-        SectionProofChain, MIN_AGE,
+        quorum_count, EldersInfo, SectionKeyShare, SectionProofBlock, SectionProofChain, MIN_AGE,
     },
     xor_space::Xorable,
 };
