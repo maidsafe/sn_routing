@@ -92,11 +92,12 @@ impl Message {
         self.src.verify(&self.dst, &self.variant, their_key_infos)
     }
 
-    /// Returns the latest section key from the message proof.
-    pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
+    /// If this message is from a section, returns its prefix and the latest section key from the
+    /// message proof. Otherwise `None`.
+    pub fn source_section_key_info(&self) -> Option<(&Prefix<XorName>, &SectionKeyInfo)> {
         match &self.src {
             SrcAuthority::Node { .. } => None,
-            SrcAuthority::Section { proof, .. } => Some(proof.last_key_info()),
+            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key_info())),
         }
     }
 

@@ -105,7 +105,10 @@ pub enum AccumulatingEvent {
     NeighbourInfo(EldersInfo),
 
     // Voted for received message with keys to update their_keys
-    TheirKeyInfo(SectionKeyInfo),
+    TheirKeyInfo {
+        prefix: Prefix<XorName>,
+        key_info: SectionKeyInfo,
+    },
 
     // Voted for received AckMessage to update their_knowledge
     AckMessage(AckMessagePayload),
@@ -168,7 +171,11 @@ impl Debug for AccumulatingEvent {
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
             Self::NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
-            Self::TheirKeyInfo(payload) => write!(formatter, "TheirKeyInfo({:?})", payload),
+            Self::TheirKeyInfo { prefix, key_info } => write!(
+                formatter,
+                "TheirKeyInfo {{ prefix: {:?}, key_info: {:?} }}",
+                prefix, key_info
+            ),
             Self::AckMessage(payload) => write!(formatter, "AckMessage({:?})", payload),
             Self::SendAckMessage(payload) => write!(formatter, "SendAckMessage({:?})", payload),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),

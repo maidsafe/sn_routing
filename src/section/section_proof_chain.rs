@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::{Prefix, XorName};
 use std::{collections::HashSet, iter};
 
 /// Block of the section proof chain. Contains the section BLS public key and is signed by the
@@ -148,8 +147,6 @@ impl SectionProofChain {
 /// Section BLS public key together with the section prefix and version.
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
-    /// The section prefix. It matches all the members' names.
-    pub prefix: Prefix<XorName>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Identical to `ElderInfo`'s.
     pub version: u64,
@@ -159,12 +156,8 @@ pub struct SectionKeyInfo {
 
 impl SectionKeyInfo {
     /// Creates new `SectionKeyInfo` for a section with the given prefix and version.
-    pub fn new(prefix: Prefix<XorName>, version: u64, key: bls::PublicKey) -> Self {
-        Self {
-            prefix,
-            version,
-            key,
-        }
+    pub fn new(version: u64, key: bls::PublicKey) -> Self {
+        Self { version, key }
     }
 }
 
@@ -189,8 +182,7 @@ mod tests {
     #[test]
     fn check_trust_trusted() {
         let mut rng = rng::new();
-        let prefix: Prefix<_> = "00".parse().unwrap();
-        let chain = gen_chain(&mut rng, prefix, 100, 4);
+        let chain = gen_chain(&mut rng, 100, 4);
 
         // If any key in the chain is already trusted, the whole chain is trusted.
         for key_info in chain.key_infos() {
@@ -204,16 +196,15 @@ mod tests {
     #[test]
     fn check_trust_invalid() {
         let mut rng = rng::new();
-        let prefix: Prefix<_> = "01".parse().unwrap();
-        let mut chain = gen_chain(&mut rng, prefix, 100, 2);
+        let mut chain = gen_chain(&mut rng, 100, 2);
 
         // Add a block with invalid signature to the chain.
-        let (_, invalid_secret_key) = gen_key_info(&mut rng, prefix, 101);
-        let (block, secret_key) = gen_block(&mut rng, prefix, 102, &invalid_secret_key);
+        let (_, invalid_secret_key) = gen_key_info(&mut rng, 101);
+        let (block, secret_key) = gen_block(&mut rng, 102, &invalid_secret_key);
         chain.push(block);
 
         // Add another block with valid signature by the previous block.
-        let (block, _) = gen_block(&mut rng, prefix, 103, &secret_key);
+        let (block, _) = gen_block(&mut rng, 103, &secret_key);
         chain.push(block);
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
@@ -238,12 +229,11 @@ mod tests {
     #[test]
     fn check_trust_unknown() {
         let mut rng = rng::new();
-        let prefix: Prefix<_> = "10".parse().unwrap();
-        let chain = gen_chain(&mut rng, prefix, 100, 2);
+        let chain = gen_chain(&mut rng, 100, 2);
 
         // None of the keys in the chain is trusted - the chain might be valid, but its trust status
         // cannot be determined.
-        let (trusted_key_info, _) = gen_key_info(&mut rng, prefix, 99);
+        let (trusted_key_info, _) = gen_key_info(&mut rng, 99);
 
         assert_eq!(
             chain.check_trust(iter::once(&trusted_key_info)),
@@ -251,25 +241,20 @@ mod tests {
         )
     }
 
-    fn gen_key_info(
-        rng: &mut MainRng,
-        prefix: Prefix<XorName>,
-        version: u64,
-    ) -> (SectionKeyInfo, bls::SecretKey) {
+    fn gen_key_info(rng: &mut MainRng, version: u64) -> (SectionKeyInfo, bls::SecretKey) {
         let mut rng = RngCompat(rng);
         let secret_key: bls::SecretKey = rng.gen();
-        let key_info = SectionKeyInfo::new(prefix, version, secret_key.public_key());
+        let key_info = SectionKeyInfo::new(version, secret_key.public_key());
 
         (key_info, secret_key)
     }
 
     fn gen_block(
         rng: &mut MainRng,
-        prefix: Prefix<XorName>,
         version: u64,
         prev_secret_key: &bls::SecretKey,
     ) -> (SectionProofBlock, bls::SecretKey) {
-        let (key_info, secret_key) = gen_key_info(rng, prefix, version);
+        let (key_info, secret_key) = gen_key_info(rng, version);
         let signature = prev_secret_key.sign(&bincode::serialize(&key_info).unwrap());
 
         (
@@ -281,18 +266,13 @@ mod tests {
         )
     }
 
-    fn gen_chain(
-        rng: &mut MainRng,
-        prefix: Prefix<XorName>,
-        first_version: u64,
-        len: usize,
-    ) -> SectionProofChain {
-        let (key_info, mut current_secret_key) = gen_key_info(rng, prefix, first_version);
+    fn gen_chain(rng: &mut MainRng, first_version: u64, len: usize) -> SectionProofChain {
+        let (key_info, mut current_secret_key) = gen_key_info(rng, first_version);
         let mut chain = SectionProofChain::new(key_info);
 
         for n in 1..len {
             let (new_block, new_secret_key) =
-                gen_block(rng, prefix, first_version + n as u64, &current_secret_key);
+                gen_block(rng, first_version + n as u64, &current_secret_key);
             chain.push(new_block);
             current_secret_key = new_secret_key;
         }

@@ -86,13 +86,7 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .prove(&DstLocation::Prefix(their_prefix))
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
-                let invalid_prefix = our_prefix;
-                create_invalid_proof_chain(
-                    &mut rng,
-                    invalid_prefix,
-                    0,
-                    bls_keys.public_keys().public_key(),
-                )
+                create_invalid_proof_chain(&mut rng, 0, bls_keys.public_keys().public_key())
             }
         };
         let pk_set = bls_keys.public_keys();
@@ -123,7 +117,6 @@ fn message_with_invalid_proof() {
 
 fn create_invalid_proof_chain(
     rng: &mut MainRng,
-    prefix: Prefix<XorName>,
     first_version: u64,
     last_pk: bls::PublicKey,
 ) -> SectionProofChain {
@@ -131,11 +124,11 @@ fn create_invalid_proof_chain(
         let pk = generate_bls_threshold_secret_key(rng, 1)
             .public_keys()
             .public_key();
-        SectionKeyInfo::new(prefix, first_version, pk)
+        SectionKeyInfo::new(first_version, pk)
     };
 
     let block1 = {
-        let key_info = SectionKeyInfo::new(prefix, first_version + 1, last_pk);
+        let key_info = SectionKeyInfo::new(first_version + 1, last_pk);
         let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
         let invalid_sk_share = invalid_sk_set.secret_key_share(0);
         let signature_share = invalid_sk_share.sign(&bincode::serialize(&key_info).unwrap());
