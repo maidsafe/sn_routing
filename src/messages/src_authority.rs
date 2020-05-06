@@ -61,6 +61,7 @@ impl SrcAuthority {
     pub fn verify<'a, I>(
         &'a self,
         dst: &DstLocation,
+        dst_key: Option<&bls::PublicKey>,
         variant: &Variant,
         trusted_key_infos: I,
     ) -> Result<VerifyStatus>
@@ -72,7 +73,7 @@ impl SrcAuthority {
                 public_id,
                 signature,
             } => {
-                let bytes = super::serialize_for_node_signing(public_id, dst, variant)?;
+                let bytes = super::serialize_for_node_signing(public_id, dst, dst_key, variant)?;
                 if !public_id.verify(&bytes, signature) {
                     return Err(RoutingError::FailedSignature);
                 }
@@ -93,7 +94,7 @@ impl SrcAuthority {
                     TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
                 };
 
-                let bytes = super::serialize_for_section_signing(dst, variant)?;
+                let bytes = super::serialize_for_section_signing(dst, dst_key, variant)?;
                 if !proof.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }

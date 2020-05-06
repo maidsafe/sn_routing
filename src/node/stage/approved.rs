@@ -1860,10 +1860,11 @@ impl Approved {
         let content = PlainMessage {
             src: *self.shared_state.our_prefix(),
             dst,
+            dst_key,
             variant,
         };
 
-        AccumulatingMessage::new(content, sk_share, pk_set, proof, dst_key)
+        AccumulatingMessage::new(content, sk_share, pk_set, proof)
     }
 
     ////////////////////////////////////////////////////////////////////////////

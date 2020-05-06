@@ -101,6 +101,7 @@ mod tests {
             let content = PlainMessage {
                 src: Prefix::default(),
                 dst: DstLocation::Section(rng.gen()),
+                dst_key: gen_secret_key(rng).public_key(),
                 variant: Variant::UserMessage(rng.sample_iter(Standard).take(3).collect()),
             };
 
@@ -111,14 +112,12 @@ mod tests {
             let other_ids = secret_ids.values().zip(secret_key_shares.values()).skip(1);
 
             let proof = SectionProofChain::new(pk_set.public_key());
-            let dst_key = gen_secret_key(rng).public_key();
 
             let signed_msg = AccumulatingMessage::new(
                 content.clone(),
                 msg_sender_secret_key_share,
                 pk_set.clone(),
                 proof.clone(),
-                dst_key,
             )
             .unwrap();
 
@@ -133,7 +132,6 @@ mod tests {
                                 bls_id,
                                 pk_set.clone(),
                                 proof.clone(),
-                                dst_key,
                             )
                             .unwrap(),
                         )),

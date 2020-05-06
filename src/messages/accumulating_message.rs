@@ -25,8 +25,6 @@ pub struct AccumulatingMessage {
     pub proof: SectionProofChain,
     pub public_key_set: bls::PublicKeySet,
     pub signature_shares: BTreeSet<(usize, bls::SignatureShare)>,
-    // The latest key of the destination section according to our knowledge.
-    pub dst_key: bls::PublicKey,
 }
 
 impl AccumulatingMessage {
@@ -36,7 +34,6 @@ impl AccumulatingMessage {
         secret_key_share: &IndexedSecretKeyShare,
         public_key_set: bls::PublicKeySet,
         proof: SectionProofChain,
-        dst_key: bls::PublicKey,
     ) -> Result<Self> {
         let bytes = content.serialize_for_signing()?;
         let mut signature_shares = BTreeSet::new();
@@ -48,7 +45,6 @@ impl AccumulatingMessage {
             proof,
             public_key_set,
             signature_shares,
-            dst_key,
         })
     }
 
@@ -115,7 +111,7 @@ impl AccumulatingMessage {
             },
             dst: self.content.dst,
             variant: self.content.variant,
-            dst_key: Some(self.dst_key),
+            dst_key: Some(self.content.dst_key),
         })
     }
 
@@ -156,13 +152,15 @@ pub struct PlainMessage {
     pub src: Prefix<XorName>,
     /// Destination location.
     pub dst: DstLocation,
+    /// The latest key of the destination section according to the sender's knowledge.
+    pub dst_key: bls::PublicKey,
     /// Message body.
     pub variant: Variant,
 }
 
 impl PlainMessage {
     fn serialize_for_signing(&self) -> Result<Vec<u8>> {
-        super::serialize_for_section_signing(&self.dst, &self.variant)
+        super::serialize_for_section_signing(&self.dst, Some(&self.dst_key), &self.variant)
     }
 }
 
@@ -190,20 +188,14 @@ mod tests {
         let sk_share_1 = IndexedSecretKeyShare::from_set(&sk_set, 1);
 
         let content = gen_message(&mut rng);
-        let dst_key = gen_secret_key(&mut rng).public_key();
         let proof = make_proof_chain(&pk_set);
 
-        let mut msg_0 = AccumulatingMessage::new(
-            content.clone(),
-            &sk_share_0,
-            pk_set.clone(),
-            proof.clone(),
-            dst_key,
-        )
-        .unwrap();
+        let mut msg_0 =
+            AccumulatingMessage::new(content.clone(), &sk_share_0, pk_set.clone(), proof.clone())
+                .unwrap();
         assert!(!msg_0.check_fully_signed());
 
-        let msg_1 = AccumulatingMessage::new(content, &sk_share_1, pk_set, proof, dst_key).unwrap();
+        let msg_1 = AccumulatingMessage::new(content, &sk_share_1, pk_set, proof).unwrap();
         msg_0.add_signature_shares(msg_1);
         assert!(msg_0.check_fully_signed());
 
@@ -228,18 +220,12 @@ mod tests {
         let sk_share_2 = IndexedSecretKeyShare::from_set(&sk_set, 2);
 
         let content = gen_message(&mut rng);
-        let dst_key = gen_secret_key(&mut rng).public_key();
         let proof = make_proof_chain(&pk_set);
 
         // Message with valid signature
-        let mut msg_0 = AccumulatingMessage::new(
-            content.clone(),
-            &sk_share_0,
-            pk_set.clone(),
-            proof.clone(),
-            dst_key,
-        )
-        .unwrap();
+        let mut msg_0 =
+            AccumulatingMessage::new(content.clone(), &sk_share_0, pk_set.clone(), proof.clone())
+                .unwrap();
 
         // Message with invalid signature
         let invalid_signature_share = sk_share_1.key.sign(b"bad message");
@@ -248,7 +234,6 @@ mod tests {
             proof: proof.clone(),
             public_key_set: pk_set.clone(),
             signature_shares: iter::once((1, invalid_signature_share)).collect(),
-            dst_key,
         };
 
         msg_0.add_signature_shares(msg_1);
@@ -258,7 +243,7 @@ mod tests {
         assert!(!msg_0.check_fully_signed());
 
         // Another valid signature
-        let msg_2 = AccumulatingMessage::new(content, &sk_share_2, pk_set, proof, dst_key).unwrap();
+        let msg_2 = AccumulatingMessage::new(content, &sk_share_2, pk_set, proof).unwrap();
         msg_0.add_signature_shares(msg_2);
 
         // There are now two valid signatures which is enough.
@@ -283,6 +268,7 @@ mod tests {
         PlainMessage {
             src: gen_prefix(rng),
             dst: DstLocation::Section(rng.gen()),
+            dst_key: gen_secret_key(rng).public_key(),
             variant: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }

@@ -150,18 +150,19 @@ fn genesis_update_accumulating_message(
     dst: XorName,
     genesis_prefix_info: GenesisPrefixInfo,
 ) -> Result<AccumulatingMessage> {
+    let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
+    let public_key_set = sender.section_keys_provider.public_key_set().clone();
+
     let content = PlainMessage {
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
+        dst_key: public_key_set.public_key(),
         variant: Variant::GenesisUpdate(Box::new(genesis_prefix_info)),
     };
 
-    let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
-    let public_key_set = sender.section_keys_provider.public_key_set().clone();
     let proof = sender.state.prove(&content.dst, None);
-    let dst_key = public_key_set.public_key();
 
-    AccumulatingMessage::new(content, secret_key, public_key_set, proof, dst_key)
+    AccumulatingMessage::new(content, secret_key, public_key_set, proof)
 }
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
