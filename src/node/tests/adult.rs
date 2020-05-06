@@ -16,7 +16,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{SectionKeyShare, SectionKeysProvider, SharedState},
+    section::{IndexedSecretKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -121,11 +121,7 @@ fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elde
             );
             let section_keys_provider = SectionKeysProvider::new(
                 genesis_prefix_info.public_keys.clone(),
-                SectionKeyShare::new(
-                    Some(secret_key_set.secret_key_share(index)),
-                    full_id.public_id(),
-                    &genesis_prefix_info.elders_info,
-                ),
+                Some(IndexedSecretKeyShare::from_set(&secret_key_set, index)),
             );
 
             let addr = network.gen_addr();

@@ -19,32 +19,37 @@ use std::{
     fmt::Debug,
 };
 
-/// The secret share of the section key.
+/// Secret key share with its index.
 #[derive(Clone)]
-pub struct SectionKeyShare {
+pub struct IndexedSecretKeyShare {
     /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
     pub index: usize,
     /// Secret Key share
     pub key: bls::SecretKeyShare,
 }
 
-impl SectionKeyShare {
-    /// Create a new share with associated share index.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub const fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
-        Self { index, key }
-    }
-
-    /// create a new share finding the position wihtin the elders.
+impl IndexedSecretKeyShare {
+    /// Create a new share finding the index within the elders.
     pub fn new(
-        key: Option<bls::SecretKeyShare>,
-        our_id: &PublicId,
-        new_elders_info: &EldersInfo,
+        key: bls::SecretKeyShare,
+        our_name: &XorName,
+        elders_info: &EldersInfo,
     ) -> Option<Self> {
-        let key = key?;
-        let index = new_elders_info.elder_ids().position(|id| id == our_id)?;
+        let index = elders_info
+            .elders
+            .keys()
+            .position(|name| name == our_name)?;
 
         Some(Self { index, key })
+    }
+
+    /// Extracts the `index`-th share from `secret_key_set`.
+    #[cfg(any(test, feature = "mock_base"))]
+    pub fn from_set(secret_key_set: &bls::SecretKeySet, index: usize) -> Self {
+        Self {
+            index,
+            key: secret_key_set.secret_key_share(index),
+        }
     }
 }
 
@@ -54,13 +59,13 @@ pub struct SectionKeys {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
     /// Secret Key share and index. None if the node was not participating in the DKG.
-    pub secret_key_share: Option<SectionKeyShare>,
+    pub secret_key_share: Option<IndexedSecretKeyShare>,
 }
 
 impl SectionKeys {
     pub fn new(
         public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<SectionKeyShare>,
+        secret_key_share: Option<IndexedSecretKeyShare>,
     ) -> Self {
         Self {
             public_key_set,
@@ -83,7 +88,7 @@ pub struct SectionKeysProvider {
 impl SectionKeysProvider {
     pub fn new(
         public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<SectionKeyShare>,
+        secret_key_share: Option<IndexedSecretKeyShare>,
     ) -> Self {
         Self {
             keys: SectionKeys::new(public_key_set, secret_key_share),
@@ -95,7 +100,7 @@ impl SectionKeysProvider {
         &self.keys.public_key_set
     }
 
-    pub fn secret_key_share(&self) -> Result<&SectionKeyShare> {
+    pub fn secret_key_share(&self) -> Result<&IndexedSecretKeyShare> {
         self.keys
             .secret_key_share
             .as_ref()
@@ -121,7 +126,7 @@ impl SectionKeysProvider {
         Ok(())
     }
 
-    pub fn finalise_dkg(&mut self, our_id: &PublicId, elders_info: &EldersInfo) -> Result<()> {
+    pub fn finalise_dkg(&mut self, our_name: &XorName, elders_info: &EldersInfo) -> Result<()> {
         let first_name = elders_info
             .elders
             .keys()
@@ -131,8 +136,9 @@ impl SectionKeysProvider {
             .new_keys
             .remove(first_name)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
-        let secret_key_share =
-            SectionKeyShare::new(dkg_result.secret_key_share, our_id, elders_info);
+        let secret_key_share = dkg_result
+            .secret_key_share
+            .and_then(|key| IndexedSecretKeyShare::new(key, our_name, elders_info));
 
         self.keys = SectionKeys::new(dkg_result.public_key_set, secret_key_share);
         self.new_keys.clear();
