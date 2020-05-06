@@ -16,8 +16,8 @@ pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{
-        AccumulatingEvent, AckMessagePayload, EventSigPayload, IntoAccumulatingEvent,
-        NeighbourEldersRemoved, NetworkEvent, OnlinePayload, SendAckMessagePayload,
+        AccumulatingEvent, EventSigPayload, IntoAccumulatingEvent, NeighbourEldersRemoved,
+        NetworkEvent, OnlinePayload,
     },
     parsec::{
         generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
@@ -193,17 +193,10 @@ impl ConsensusEngine {
             | AccumulatingEvent::NeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::User(_) => our_elders.is_quorum(proofs),
-
-            AccumulatingEvent::SendAckMessage(_) => {
-                // We may not reach consensus if malicious peer, but when we do we know all our
-                // nodes have updated `their_keys`.
-                our_elders.is_total_consensus(proofs)
-            }
 
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)

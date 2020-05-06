@@ -84,7 +84,6 @@ impl Joining {
             | Variant::Bounce { .. } => true,
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
-            | Variant::AckMessage { .. }
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)

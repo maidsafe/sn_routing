@@ -55,15 +55,6 @@ impl EldersInfo {
             >= quorum_count(self.elders.len())
     }
 
-    /// Returns `true` if the proofs are from all members of this section.
-    pub(crate) fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs
-            .ids()
-            .filter(|id| self.elders.contains_key(id.name()))
-            .count()
-            == self.elders.len()
-    }
-
     /// Returns whether this `EldersInfo` is compatible and newer than the other.
     pub(crate) fn is_newer(&self, other: &Self) -> bool {
         self.prefix.is_compatible(&other.prefix) && self.version > other.version

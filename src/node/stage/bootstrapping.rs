@@ -67,7 +67,6 @@ impl Bootstrapping {
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::NodeApproval(_)
-            | Variant::AckMessage { .. }
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
