@@ -1935,6 +1935,11 @@ impl Approved {
         let proof = self.shared_state.prove(&dst, node_knowledge_override);
         let pk_set = self.section_keys_provider.public_key_set().clone();
         let sk_share = self.section_keys_provider.secret_key_share()?;
+        let dst_key = *self
+            .shared_state
+            .sections
+            .key_by_location(&dst)
+            .unwrap_or_else(|| self.shared_state.our_history.first_key());
 
         let content = PlainMessage {
             src: *self.shared_state.our_prefix(),
@@ -1942,7 +1947,7 @@ impl Approved {
             variant,
         };
 
-        AccumulatingMessage::new(content, sk_share, pk_set, proof)
+        AccumulatingMessage::new(content, sk_share, pk_set, proof, dst_key)
     }
 
     ////////////////////////////////////////////////////////////////////////////

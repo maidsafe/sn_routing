@@ -26,6 +26,9 @@ pub use self::{
     shared_state::SharedState,
 };
 
+#[cfg(test)]
+pub use self::section_keys::gen_secret_key;
+
 use crate::consensus::AccumulatingProof;
 
 #[derive(Debug, PartialEq, Eq)]

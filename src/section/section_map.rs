@@ -302,6 +302,13 @@ impl SectionMap {
             .map(|(_, info)| info)
     }
 
+    pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
+        self.keys
+            .iter()
+            .find(|(prefix, _)| dst.is_compatible(prefix))
+            .map(|(_, key)| key)
+    }
+
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor

@@ -57,6 +57,7 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let their_node_pos = 0;
     let their_prefix = get_prefix(&nodes[their_node_pos]);
+    let their_key = *nodes[their_node_pos].inner.section_key().unwrap();
 
     let our_node_pos = get_position_with_other_prefix(&nodes, &their_prefix);
     let our_prefix = get_prefix(&nodes[our_node_pos]);
@@ -91,7 +92,9 @@ fn message_with_invalid_security(fail_type: FailType) {
         };
         let pk_set = bls_keys.public_keys();
 
-        let msg = AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof).unwrap();
+        let msg =
+            AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof, their_key)
+                .unwrap();
         msg.combine_signatures().unwrap()
     };
 
