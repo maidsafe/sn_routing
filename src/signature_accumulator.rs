@@ -79,7 +79,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng,
-        section::{SectionKeyShare, SectionProofChain},
+        section::{IndexedSecretKeyShare, SectionProofChain},
         unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
@@ -94,7 +94,7 @@ mod tests {
     impl MessageAndSignatures {
         fn new(
             secret_ids: &BTreeMap<XorName, FullId>,
-            secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
+            secret_bls_ids: &BTreeMap<XorName, IndexedSecretKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
             let content = PlainMessage {
@@ -168,7 +168,7 @@ mod tests {
                 .keys()
                 .enumerate()
                 .map(|(idx, name)| {
-                    let share = SectionKeyShare::new_with_position(idx, keys.secret_key_share(idx));
+                    let share = IndexedSecretKeyShare::from_set(&keys, idx);
                     (*name, share)
                 })
                 .collect();

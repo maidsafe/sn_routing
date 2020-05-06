@@ -9,7 +9,7 @@
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
     error::Result,
-    section::{SectionKeyShare, SectionProofChain},
+    section::{IndexedSecretKeyShare, SectionProofChain},
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -31,14 +31,14 @@ impl AccumulatingMessage {
     /// Create new `AccumulatingMessage`
     pub fn new(
         content: PlainMessage,
-        section_share: &SectionKeyShare,
+        secret_key_share: &IndexedSecretKeyShare,
         public_key_set: bls::PublicKeySet,
         proof: SectionProofChain,
     ) -> Result<Self> {
         let bytes = content.serialize_for_signing()?;
         let mut signature_shares = BTreeSet::new();
-        let sig_share = section_share.key.sign(&bytes);
-        let _ = signature_shares.insert((section_share.index, sig_share));
+        let sig_share = secret_key_share.key.sign(&bytes);
+        let _ = signature_shares.insert((secret_key_share.index, sig_share));
 
         Ok(Self {
             content,
@@ -180,8 +180,8 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
-        let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
+        let sk_share_0 = IndexedSecretKeyShare::from_set(&sk_set, 0);
+        let sk_share_1 = IndexedSecretKeyShare::from_set(&sk_set, 1);
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
@@ -217,9 +217,9 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
-        let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
-        let sk_share_2 = SectionKeyShare::new_with_position(2, sk_set.secret_key_share(2));
+        let sk_share_0 = IndexedSecretKeyShare::from_set(&sk_set, 0);
+        let sk_share_1 = IndexedSecretKeyShare::from_set(&sk_set, 1);
+        let sk_share_2 = IndexedSecretKeyShare::from_set(&sk_set, 2);
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);

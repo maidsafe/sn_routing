@@ -27,8 +27,8 @@ use crate::{
     rng::MainRng,
     routing_table,
     section::{
-        EldersInfo, MemberState, SectionKeyShare, SectionKeysProvider, SharedState, SplitCache,
-        MIN_AGE, MIN_AGE_COUNTER,
+        EldersInfo, IndexedSecretKeyShare, MemberState, SectionKeysProvider, SharedState,
+        SplitCache, MIN_AGE, MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -108,11 +108,9 @@ impl Approved {
 
         let section_keys_provider = SectionKeysProvider::new(
             genesis_prefix_info.public_keys.clone(),
-            SectionKeyShare::new(
-                secret_key_share,
-                core.id(),
-                &genesis_prefix_info.elders_info,
-            ),
+            secret_key_share.and_then(|key| {
+                IndexedSecretKeyShare::new(key, core.name(), &genesis_prefix_info.elders_info)
+            }),
         );
 
         let consensus_engine = ConsensusEngine::new(
@@ -1161,7 +1159,7 @@ impl Approved {
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         let neighbour_elders_removed =
-            if self.add_new_elders_info(core.id(), elders_info, section_key, proof)? {
+            if self.add_new_elders_info(core.name(), elders_info, section_key, proof)? {
                 neighbour_elders_removed.build(&self.shared_state.sections)
             } else {
                 return Ok(());
@@ -1244,7 +1242,7 @@ impl Approved {
     // Returns whether the event should be handled by the caller.
     fn add_new_elders_info(
         &mut self,
-        our_id: &PublicId,
+        our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         proofs: AccumulatingProof,
@@ -1268,30 +1266,30 @@ impl Approved {
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
-                    if cached_prefix.matches(our_id.name()) {
+                    if cached_prefix.matches(our_name) {
                         self.add_our_elders_info(
-                            our_id,
+                            our_name,
                             cached.elders_info,
                             cached.section_key,
                             cached.proofs,
                         )?;
                         self.shared_state.sections.add_neighbour(elders_info);
                     } else {
-                        self.add_our_elders_info(our_id, elders_info, section_key, proofs)?;
+                        self.add_our_elders_info(our_name, elders_info, section_key, proofs)?;
                         self.shared_state.sections.add_neighbour(cached.elders_info);
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.add_our_elders_info(our_id, elders_info, section_key, proofs)?;
+            self.add_our_elders_info(our_name, elders_info, section_key, proofs)?;
             Ok(true)
         }
     }
 
     fn add_our_elders_info(
         &mut self,
-        our_id: &PublicId,
+        our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         proofs: AccumulatingProof,
@@ -1302,7 +1300,7 @@ impl Approved {
             proofs,
         )?;
         self.section_keys_provider
-            .finalise_dkg(our_id, &elders_info)?;
+            .finalise_dkg(our_name, &elders_info)?;
         self.shared_state
             .update_our_section(elders_info, section_key, signature);
         self.churn_in_progress = false;
