@@ -192,6 +192,7 @@ impl ConsensusEngine {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::NeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
+            | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::Relocate(_)

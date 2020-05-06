@@ -619,7 +619,7 @@ impl Node {
 
     fn handle_message(&mut self, sender: Option<SocketAddr>, msg: Message) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_our_knowledge(&msg);
+            stage.update_section_knowledge(&msg);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(sender));

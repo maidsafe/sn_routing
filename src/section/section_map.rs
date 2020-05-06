@@ -353,13 +353,15 @@ impl SectionMap {
         let _ = self.keys.insert(prefix, new_key);
     }
 
-    pub fn get_knowledge(&self, prefix: &Prefix<XorName>) -> Option<u64> {
-        self.knowledge.get(prefix).copied()
+    /// Returns the the index of the public key in our_history that will be trusted by the given
+    /// section.
+    pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
+        self.knowledge.get(prefix).copied().unwrap_or(0)
     }
 
-    /// Returns the the index of the public key in our_history that will be trusted by the target
+    /// Returns the the index of the public key in our_history that will be trusted by the given
     /// location
-    pub fn trusted_key_index(&self, target: &DstLocation) -> u64 {
+    pub fn knowledge_by_location(&self, target: &DstLocation) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .knowledge
             .iter()
@@ -667,7 +669,7 @@ mod tests {
             let dst_name = dst_name_prefix.substituted_in(rng.gen());
             let dst = DstLocation::Section(dst_name);
 
-            assert_eq!(map.trusted_key_index(&dst), expected_index);
+            assert_eq!(map.knowledge_by_location(&dst), expected_index);
         }
     }
 

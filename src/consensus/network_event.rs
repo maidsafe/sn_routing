@@ -107,6 +107,12 @@ pub enum AccumulatingEvent {
         key: bls::PublicKey,
     },
 
+    // Voted to update their knowledge of our section.
+    TheirKnowledge {
+        prefix: Prefix<XorName>,
+        knowledge: u64,
+    },
+
     // Voted for received AckMessage to update their_knowledge
     AckMessage(AckMessagePayload),
 
@@ -172,6 +178,11 @@ impl Debug for AccumulatingEvent {
                 formatter,
                 "TheirKeyInfo {{ prefix: {:?}, key: {:?} }}",
                 prefix, key
+            ),
+            Self::TheirKnowledge { prefix, knowledge } => write!(
+                formatter,
+                "TheirKnowledge {{ prefix: {:?}, knowledge: {} }}",
+                prefix, knowledge
             ),
             Self::AckMessage(payload) => write!(formatter, "AckMessage({:?})", payload),
             Self::SendAckMessage(payload) => write!(formatter, "SendAckMessage({:?})", payload),
