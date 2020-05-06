@@ -96,15 +96,6 @@ impl Message {
         self.src.verify(&self.dst, &self.variant, their_keys)
     }
 
-    /// If this message is from a section, returns its prefix and the latest section key from the
-    /// message proof. Otherwise `None`.
-    pub fn source_section_key_info(&self) -> Option<(&Prefix<XorName>, &bls::PublicKey)> {
-        match &self.src {
-            SrcAuthority::Node { .. } => None,
-            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key())),
-        }
-    }
-
     pub(crate) fn into_queued(self, sender: Option<SocketAddr>) -> QueuedMessage {
         QueuedMessage {
             message: self,

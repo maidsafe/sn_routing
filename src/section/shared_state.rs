@@ -297,7 +297,7 @@ impl SharedState {
     ) -> SectionProofChain {
         let index = match (target, node_knowledge_override) {
             (DstLocation::Node(_), Some(knowledge)) => knowledge,
-            _ => self.sections.trusted_key_index(target),
+            _ => self.sections.knowledge_by_location(target),
         };
 
         self.our_history.slice_from(index)
@@ -469,7 +469,7 @@ impl SharedState {
     // Return a relocating state of a node relocating now.
     // Ensure that node knows enough to trust node_knowledge proving index.
     fn create_relocating_state(&self) -> MemberState {
-        let node_knowledge = self.sections.get_knowledge(self.our_prefix()).unwrap_or(0);
+        let node_knowledge = self.sections.knowledge_by_section(self.our_prefix());
         MemberState::Relocating { node_knowledge }
     }
 }

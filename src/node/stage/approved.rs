@@ -943,6 +943,9 @@ impl Approved {
             AccumulatingEvent::TheirKeyInfo { prefix, key } => {
                 self.handle_their_key_info_event(core, prefix, key)?
             }
+            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
+                self.handle_their_knowledge_event(prefix, knowledge)
+            }
             AccumulatingEvent::AckMessage(payload) => self.handle_ack_message_event(payload),
             AccumulatingEvent::SendAckMessage(payload) => {
                 self.handle_send_ack_message_event(core, payload)?
@@ -1112,7 +1115,7 @@ impl Approved {
             node_knowledge,
             self.shared_state
                 .sections
-                .trusted_key_index(&DstLocation::Section(details.destination)),
+                .knowledge_by_location(&DstLocation::Section(details.destination)),
         );
 
         let src = SrcLocation::Section(*self.shared_state.our_prefix());
@@ -1355,6 +1358,12 @@ impl Approved {
         Ok(())
     }
 
+    fn handle_their_knowledge_event(&mut self, prefix: Prefix<XorName>, knowledge: u64) {
+        self.shared_state
+            .sections
+            .update_knowledge(prefix, knowledge)
+    }
+
     fn handle_ack_message_event(&mut self, payload: AckMessagePayload) {
         let index = self
             .shared_state
@@ -1450,6 +1459,7 @@ impl Approved {
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo { .. }
+                | AccumulatingEvent::TheirKnowledge { .. }
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => false,
             })
@@ -1486,6 +1496,7 @@ impl Approved {
 
                     // Keep: Still relevant after prefix change.
                     AccumulatingEvent::TheirKeyInfo { .. }
+                    | AccumulatingEvent::TheirKnowledge { .. }
                     | AccumulatingEvent::SendAckMessage(_)
                     | AccumulatingEvent::User(_) => true,
                 }
@@ -1517,6 +1528,7 @@ impl Approved {
             | AccumulatingEvent::SectionInfo(_, _)
             | AccumulatingEvent::NeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
+            | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::SendAckMessage(_)
             | AccumulatingEvent::User(_) => {
                 log_or_panic!(log::Level::Error, "unexpected event {:?}", event.payload);
@@ -1995,19 +2007,49 @@ impl Approved {
         }
     }
 
-    pub fn update_our_knowledge(&mut self, msg: &Message) {
-        let (prefix, new_key) = if let Some(pair) = msg.source_section_key_info() {
-            pair
-        } else {
-            return;
+    // Update our knowledge of their (sender's) section and their knowledge of our section.
+    pub fn update_section_knowledge(&mut self, msg: &Message) {
+        self.update_our_knowledge_of_them(msg);
+        self.update_their_knowledge_of_us(msg);
+    }
+
+    fn update_our_knowledge_of_them(&mut self, msg: &Message) {
+        let (prefix, new_key) = match &msg.src {
+            SrcAuthority::Section { prefix, proof, .. } => (prefix, proof.last_key()),
+            SrcAuthority::Node { .. } => return,
         };
 
-        // Only vote if we don't have this key yet.
         if !self.shared_state.sections.has_key(new_key) {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
                 prefix: *prefix,
                 key: *new_key,
-            });
+            })
+        }
+    }
+
+    fn update_their_knowledge_of_us(&mut self, msg: &Message) {
+        let dst_key = if let Some(key) = &msg.dst_key {
+            key
+        } else {
+            return;
+        };
+
+        let src_prefix = match &msg.src {
+            SrcAuthority::Section { prefix, .. } => *prefix,
+            SrcAuthority::Node { .. } => {
+                // We don't trust messages sent by a single node.
+                return;
+            }
+        };
+
+        let latest_index = self.shared_state.sections.knowledge_by_section(&src_prefix);
+        let new_index = self.shared_state.our_history.index_of(dst_key).unwrap_or(0);
+
+        if new_index > latest_index {
+            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
+                prefix: src_prefix,
+                knowledge: new_index,
+            })
         }
     }
 
