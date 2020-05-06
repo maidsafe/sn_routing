@@ -684,7 +684,7 @@ impl Node {
                     // Ensure the src and dst are what we expect.
                     let _: &Prefix<_> = msg.src.as_section()?;
                     let _: &Prefix<_> = msg.dst.as_prefix()?;
-                    stage.handle_neighbour_info(elders_info, msg.src, msg.dst)?;
+                    stage.handle_neighbour_info(elders_info, msg.src, msg.dst, msg.dst_key)?;
                 }
                 Variant::AckMessage {
                     src_prefix,

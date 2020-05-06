@@ -115,6 +115,7 @@ impl AccumulatingMessage {
             },
             dst: self.content.dst,
             variant: self.content.variant,
+            dst_key: Some(self.dst_key),
         })
     }
 
