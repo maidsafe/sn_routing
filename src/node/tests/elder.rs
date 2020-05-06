@@ -9,8 +9,8 @@
 use super::utils as test_utils;
 use crate::{
     consensus::{
-        generate_bls_threshold_secret_key, AccumulatingEvent, AckMessagePayload, EventSigPayload,
-        OnlinePayload, ParsecRequest,
+        generate_bls_threshold_secret_key, AccumulatingEvent, EventSigPayload, OnlinePayload,
+        ParsecRequest,
     },
     error::Result,
     id::{FullId, P2pNode, PublicId},
@@ -250,19 +250,17 @@ impl Env {
         );
     }
 
-    fn section_key(&self) -> &bls::PublicKey {
-        self.subject
-            .section_key()
-            .unwrap_or_else(|| unreachable!("subject is not approved"))
-    }
-
-    // Accumulate `AckMessage` for the latest version of our own section.
-    fn accumulate_self_ack_message(&mut self) {
-        let event = AccumulatingEvent::AckMessage(AckMessagePayload {
-            dst_name: self.elders_info.prefix.name(),
-            src_prefix: self.elders_info.prefix,
-            ack_key: *self.section_key(),
-        });
+    // Accumulate `TheirKnowledge` for the latest version of our own section.
+    fn accumulate_self_their_knowledge(&mut self) {
+        let event = AccumulatingEvent::TheirKnowledge {
+            prefix: self.elders_info.prefix,
+            knowledge: self
+                .subject
+                .our_history()
+                .expect("subject is not approved")
+                .len() as u64
+                - 1,
+        };
 
         // This event needs total consensus.
         self.subject.vote_for_event(event.clone()).unwrap();
@@ -365,7 +363,7 @@ impl Env {
         self.accumulate_voted_unconsensused_events();
         self.elders_info = new_info.new_elders_info;
         self.other_ids = new_info.new_other_ids;
-        self.accumulate_self_ack_message();
+        self.accumulate_self_their_knowledge();
     }
 }
 
@@ -484,7 +482,7 @@ fn handle_bootstrap() {
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 
-    let orig_section_key = *env.section_key();
+    let orig_section_key = *env.subject.section_key().expect("subject is not approved");
 
     let adult0 = env.gen_peer();
     let adult1 = env.gen_peer();
@@ -507,7 +505,7 @@ fn send_genesis_update() {
     // Receive MemberKnowledge from the adult
     let parsec_version = env.subject.parsec_last_version();
     let variant = Variant::MemberKnowledge(MemberKnowledge {
-        section_key: *env.section_key(),
+        section_key: *env.subject.section_key().expect("subject is not approved"),
         parsec_version,
     });
     let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
@@ -517,7 +515,7 @@ fn send_genesis_update() {
     // contain the previous version.
     let message = utils::exactly_one(env.subject.create_genesis_updates());
     let proof = &message.1.proof;
-    assert!(proof.has_key(env.section_key()));
+    assert!(proof.has_key(env.subject.section_key().expect("subject is not approved")));
     assert!(!proof.has_key(&orig_section_key));
 }
 

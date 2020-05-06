@@ -11,7 +11,7 @@ use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
-    xor_space::{Prefix, XorName},
+    xor_space::XorName,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -31,15 +31,6 @@ pub enum Variant {
     /// Approves the joining node as a routing node.
     /// Section X -> Node joining X
     NodeApproval(Box<GenesisPrefixInfo>),
-    /// Acknowledgement that the src section knows that the dst section has the specified
-    /// key.
-    /// Section X -> Section Y
-    AckMessage {
-        /// The prefix of our section when we acknowledge their version.
-        src_prefix: Prefix<XorName>,
-        /// The key acknowledged.
-        ack_key: bls::PublicKey,
-    },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(Box<GenesisPrefixInfo>),
     /// Send from a section to the node being relocated.
@@ -83,14 +74,6 @@ impl Debug for Variant {
             Self::NeighbourInfo(payload) => write!(f, "NeighbourInfo({:?})", payload),
             Self::UserMessage(payload) => write!(f, "UserMessage({})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::AckMessage {
-                src_prefix,
-                ack_key,
-            } => f
-                .debug_struct("AckMessage")
-                .field("src_prefix", src_prefix)
-                .field("ack_key", ack_key)
-                .finish(),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),

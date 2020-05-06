@@ -8,10 +8,9 @@
 
 use crate::{
     consensus::{
-        self, AccumulatingEvent, AccumulatingProof, AckMessagePayload, ConsensusEngine,
-        DkgResultWrapper, EventSigPayload, GenesisPrefixInfo, IntoAccumulatingEvent,
-        NeighbourEldersRemoved, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
-        SendAckMessagePayload,
+        self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
+        EventSigPayload, GenesisPrefixInfo, IntoAccumulatingEvent, NeighbourEldersRemoved,
+        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -311,7 +310,7 @@ impl Approved {
             Variant::UserMessage(_) => self.should_handle_user_message(our_id, &msg.dst),
             Variant::JoinRequest(req) => self.should_handle_join_request(our_id, req),
 
-            Variant::NeighbourInfo(_) | Variant::AckMessage { .. } => self.is_our_elder(our_id),
+            Variant::NeighbourInfo(_) => self.is_our_elder(our_id),
 
             Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
 
@@ -320,7 +319,6 @@ impl Approved {
                     Variant::NeighbourInfo(_)
                     | Variant::UserMessage(_)
                     | Variant::NodeApproval(_)
-                    | Variant::AckMessage { .. }
                     | Variant::Relocate(_) => true,
 
                     Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
@@ -374,23 +372,6 @@ impl Approved {
         } else {
             trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
         }
-        Ok(())
-    }
-
-    pub fn handle_ack_message(
-        &mut self,
-        src_prefix: Prefix<XorName>,
-        ack_key: bls::PublicKey,
-        _src: Prefix<XorName>,
-        dst: XorName,
-    ) -> Result<()> {
-        // Prefix doesn't need to match, as we may get an ack for the section where we were before
-        // splitting.
-        self.vote_for_event(AccumulatingEvent::AckMessage(AckMessagePayload {
-            dst_name: dst,
-            src_prefix,
-            ack_key,
-        }));
         Ok(())
     }
 
@@ -682,11 +663,7 @@ impl Approved {
             },
             Variant::JoinRequest(_) => true,
             Variant::Relocate(_) if is_self_elder => true,
-            Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. }
-                if !is_self_elder =>
-            {
-                true
-            }
+            Variant::NeighbourInfo(_) | Variant::UserMessage(_) if !is_self_elder => true,
             Variant::GenesisUpdate(_)
             | Variant::BootstrapResponse(_)
             | Variant::NodeApproval(_)
@@ -941,14 +918,10 @@ impl Approved {
                 self.handle_neighbour_info_event(core, elders_info)?
             }
             AccumulatingEvent::TheirKeyInfo { prefix, key } => {
-                self.handle_their_key_info_event(core, prefix, key)?
+                self.handle_their_key_info_event(prefix, key)
             }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
                 self.handle_their_knowledge_event(prefix, knowledge)
-            }
-            AccumulatingEvent::AckMessage(payload) => self.handle_ack_message_event(payload),
-            AccumulatingEvent::SendAckMessage(payload) => {
-                self.handle_send_ack_message_event(core, payload)?
             }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(core, payload)?,
@@ -1215,12 +1188,6 @@ impl Approved {
         self.send_genesis_updates(core);
         self.send_member_knowledge(core);
 
-        // Vote to update our self messages proof
-        self.vote_for_send_ack_message(SendAckMessagePayload {
-            ack_prefix: info_prefix,
-            ack_key: section_key,
-        });
-
         self.print_network_stats();
 
         if !was_elder {
@@ -1339,60 +1306,14 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_their_key_info_event(
-        &mut self,
-        core: &Core,
-        prefix: Prefix<XorName>,
-        key: bls::PublicKey,
-    ) -> Result<(), RoutingError> {
+    fn handle_their_key_info_event(&mut self, prefix: Prefix<XorName>, key: bls::PublicKey) {
         self.shared_state.sections.update_keys(prefix, key);
-
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
-
-        self.vote_for_send_ack_message(SendAckMessagePayload {
-            ack_prefix: prefix,
-            ack_key: key,
-        });
-        Ok(())
     }
 
     fn handle_their_knowledge_event(&mut self, prefix: Prefix<XorName>, knowledge: u64) {
         self.shared_state
             .sections
             .update_knowledge(prefix, knowledge)
-    }
-
-    fn handle_ack_message_event(&mut self, payload: AckMessagePayload) {
-        let index = self
-            .shared_state
-            .our_history
-            .index_of(&payload.ack_key)
-            .unwrap_or(0);
-
-        self.shared_state
-            .sections
-            .update_knowledge(payload.src_prefix, index)
-    }
-
-    fn handle_send_ack_message_event(
-        &mut self,
-        core: &mut Core,
-        ack_payload: SendAckMessagePayload,
-    ) -> Result<(), RoutingError> {
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
-
-        let src = SrcLocation::Section(*self.shared_state.our_prefix());
-        let dst = DstLocation::Section(ack_payload.ack_prefix.name());
-        let variant = Variant::AckMessage {
-            src_prefix: *self.shared_state.our_prefix(),
-            ack_key: ack_payload.ack_key,
-        };
-
-        self.send_routing_message(core, src, dst, variant, None)
     }
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<(), RoutingError> {
@@ -1450,7 +1371,6 @@ impl Approved {
                 // Events to re-insert
                 AccumulatingEvent::Genesis { .. }
                 | AccumulatingEvent::Offline(_)
-                | AccumulatingEvent::AckMessage(_)
                 | AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::DkgResult { .. }
                 | AccumulatingEvent::ParsecPrune
@@ -1460,7 +1380,6 @@ impl Approved {
                 | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo { .. }
                 | AccumulatingEvent::TheirKnowledge { .. }
-                | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => false,
             })
             .cloned()
@@ -1475,9 +1394,6 @@ impl Approved {
                         our_prefix.matches(payload.p2p_node.name())
                     }
                     AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
-                    AccumulatingEvent::AckMessage(ref payload) => {
-                        our_prefix.matches(&payload.dst_name)
-                    }
                     AccumulatingEvent::Relocate(ref details)
                     | AccumulatingEvent::RelocatePrepare(ref details, _) => {
                         our_prefix.matches(details.pub_id.name())
@@ -1497,7 +1413,6 @@ impl Approved {
                     // Keep: Still relevant after prefix change.
                     AccumulatingEvent::TheirKeyInfo { .. }
                     | AccumulatingEvent::TheirKnowledge { .. }
-                    | AccumulatingEvent::SendAckMessage(_)
                     | AccumulatingEvent::User(_) => true,
                 }
             })
@@ -1519,7 +1434,6 @@ impl Approved {
         to_process.iter().for_each(|event| match &event.payload {
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::DkgResult { .. }
             | AccumulatingEvent::ParsecPrune
@@ -1529,7 +1443,6 @@ impl Approved {
             | AccumulatingEvent::NeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::SendAckMessage(_)
             | AccumulatingEvent::User(_) => {
                 log_or_panic!(log::Level::Error, "unexpected event {:?}", event.payload);
             }
@@ -1619,17 +1532,6 @@ impl Approved {
         let event = event.into_network_event_with(Some(signature_payload));
         self.consensus_engine.vote_for(event);
         Ok(())
-    }
-
-    fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys =
-            self.shared_state.sections.keys().any(|(prefix, key)| {
-                *prefix == ack_payload.ack_prefix && *key == ack_payload.ack_key
-            });
-
-        if has_their_keys {
-            self.vote_for_event(AccumulatingEvent::SendAckMessage(ack_payload));
-        }
     }
 
     ////////////////////////////////////////////////////////////////////////////

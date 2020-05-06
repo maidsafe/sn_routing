@@ -686,17 +686,6 @@ impl Node {
                     let _: &Prefix<_> = msg.dst.as_prefix()?;
                     stage.handle_neighbour_info(elders_info, msg.src, msg.dst, msg.dst_key)?;
                 }
-                Variant::AckMessage {
-                    src_prefix,
-                    ack_key,
-                } => {
-                    stage.handle_ack_message(
-                        src_prefix,
-                        ack_key,
-                        *msg.src.as_section()?,
-                        *msg.dst.as_section()?,
-                    )?;
-                }
                 Variant::GenesisUpdate(info) => {
                     let _: &Prefix<_> = msg.src.as_section()?;
                     stage.handle_genesis_update(&mut self.core, *info)?;
@@ -1094,6 +1083,13 @@ impl Node {
         self.stage
             .approved()
             .map(|stage| stage.shared_state.our_history.last_key())
+    }
+
+    /// Returns our section proof chain, or `None` if we are not joined yet.
+    pub fn our_history(&self) -> Option<&SectionProofChain> {
+        self.stage
+            .approved()
+            .map(|stage| &stage.shared_state.our_history)
     }
 
     fn shared_state(&self) -> Option<&SharedState> {
