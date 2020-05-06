@@ -74,7 +74,7 @@ impl Message {
 
     /// Creates a message from single node.
     pub(crate) fn single_src(src: &FullId, dst: DstLocation, variant: Variant) -> Result<Self> {
-        let serialized = serialize_for_node_signing(src.public_id(), &dst, &variant)?;
+        let serialized = serialize_for_node_signing(src.public_id(), &dst, None, &variant)?;
         let signature = src.sign(&serialized);
 
         Ok(Self {
@@ -93,7 +93,8 @@ impl Message {
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
     {
-        self.src.verify(&self.dst, &self.variant, their_keys)
+        self.src
+            .verify(&self.dst, self.dst_key.as_ref(), &self.variant, their_keys)
     }
 
     pub(crate) fn into_queued(self, sender: Option<SocketAddr>) -> QueuedMessage {
@@ -157,14 +158,19 @@ where
     )
 }
 
-fn serialize_for_section_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(&(dst, variant))?)
+fn serialize_for_section_signing(
+    dst: &DstLocation,
+    dst_key: Option<&bls::PublicKey>,
+    variant: &Variant,
+) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(&(dst, dst_key, variant))?)
 }
 
 fn serialize_for_node_signing(
     src: &PublicId,
     dst: &DstLocation,
+    dst_key: Option<&bls::PublicKey>,
     variant: &Variant,
 ) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(&(src, dst, variant))?)
+    Ok(bincode::serialize(&(src, dst, dst_key, variant))?)
 }

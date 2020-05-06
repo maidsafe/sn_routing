@@ -77,6 +77,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     let content = PlainMessage {
         src: our_prefix,
         dst: DstLocation::Prefix(their_prefix),
+        dst_key: their_key,
         variant: Variant::NeighbourInfo(new_info),
     };
 
@@ -92,9 +93,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         };
         let pk_set = bls_keys.public_keys();
 
-        let msg =
-            AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof, their_key)
-                .unwrap();
+        let msg = AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof).unwrap();
         msg.combine_signatures().unwrap()
     };
 
