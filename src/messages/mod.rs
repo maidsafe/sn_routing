@@ -41,6 +41,10 @@ pub struct Message {
     pub src: SrcAuthority,
     /// The body of the message.
     pub variant: Variant,
+    /// Source's knowledge of the destination section key. If present, the destination can use it
+    /// to determine the length of the proof of messages sent to the source so the source would
+    /// trust it (the proof needs to start at this key).
+    pub dst_key: Option<bls::PublicKey>,
 }
 
 /// Partially deserialized message.
@@ -80,6 +84,7 @@ impl Message {
                 signature,
             },
             variant,
+            dst_key: None,
         })
     }
 

@@ -354,6 +354,7 @@ impl Approved {
         elders_info: EldersInfo,
         src: SrcAuthority,
         dst: DstLocation,
+        dst_key: Option<bls::PublicKey>,
     ) -> Result<()> {
         if self.shared_state.sections.is_new_neighbour(&elders_info) {
             let _ = self
@@ -366,6 +367,7 @@ impl Approved {
                     src,
                     dst,
                     variant: Variant::NeighbourInfo(elders_info.clone()),
+                    dst_key,
                 });
 
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
