@@ -180,8 +180,10 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rng::{self, MainRng, RngCompat};
-    use rand_crypto::Rng;
+    use crate::{
+        rng::{self, MainRng},
+        section::gen_secret_key,
+    };
 
     #[test]
     fn check_trust_trusted() {
@@ -237,11 +239,8 @@ mod tests {
     }
 
     fn gen_keys(rng: &mut MainRng) -> (bls::PublicKey, bls::SecretKey) {
-        let mut rng = RngCompat(rng);
-        let secret_key: bls::SecretKey = rng.gen();
-        let public_key = secret_key.public_key();
-
-        (public_key, secret_key)
+        let secret_key = gen_secret_key(rng);
+        (secret_key.public_key(), secret_key)
     }
 
     fn gen_block(

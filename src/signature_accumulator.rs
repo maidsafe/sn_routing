@@ -78,12 +78,12 @@ mod tests {
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
-        rng,
-        section::{IndexedSecretKeyShare, SectionProofChain},
-        unwrap, Prefix, XorName,
+        rng::{self, MainRng},
+        section::{gen_secret_key, IndexedSecretKeyShare, SectionProofChain},
+        Prefix, XorName,
     };
     use itertools::Itertools;
-    use rand;
+    use rand::{distributions::Standard, Rng};
     use std::{collections::BTreeMap, net::SocketAddr};
 
     struct MessageAndSignatures {
@@ -93,27 +93,34 @@ mod tests {
 
     impl MessageAndSignatures {
         fn new(
+            rng: &mut MainRng,
             secret_ids: &BTreeMap<XorName, FullId>,
-            secret_bls_ids: &BTreeMap<XorName, IndexedSecretKeyShare>,
+            secret_key_shares: &BTreeMap<XorName, IndexedSecretKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
             let content = PlainMessage {
                 src: Prefix::default(),
-                dst: DstLocation::Section(rand::random()),
-                variant: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
+                dst: DstLocation::Section(rng.gen()),
+                variant: Variant::UserMessage(rng.sample_iter(Standard).take(3).collect()),
             };
 
-            let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
-            let other_ids = secret_ids.values().zip(secret_bls_ids.values()).skip(1);
+            let msg_sender_secret_key_share = secret_key_shares
+                .values()
+                .next()
+                .expect("secret_key_shares can't be empty");
+            let other_ids = secret_ids.values().zip(secret_key_shares.values()).skip(1);
 
             let proof = SectionProofChain::new(pk_set.public_key());
+            let dst_key = gen_secret_key(rng).public_key();
 
-            let signed_msg = unwrap!(AccumulatingMessage::new(
+            let signed_msg = AccumulatingMessage::new(
                 content.clone(),
-                msg_sender_secret_bls,
+                msg_sender_secret_key_share,
                 pk_set.clone(),
                 proof.clone(),
-            ));
+                dst_key,
+            )
+            .unwrap();
 
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
@@ -126,6 +133,7 @@ mod tests {
                                 bls_id,
                                 pk_set.clone(),
                                 proof.clone(),
+                                dst_key,
                             )
                             .unwrap(),
                         )),
@@ -176,7 +184,7 @@ mod tests {
             let pk_set = keys.public_keys();
 
             let msgs_and_sigs = (0..5)
-                .map(|_| MessageAndSignatures::new(&full_ids, &secret_ids, &pk_set))
+                .map(|_| MessageAndSignatures::new(&mut rng, &full_ids, &secret_ids, &pk_set))
                 .collect();
             Self { msgs_and_sigs }
         }
@@ -210,7 +218,7 @@ mod tests {
                 };
 
                 if let Some(mut returned_msg) = result {
-                    let returned_msg = unwrap!(returned_msg.take_or_deserialize_message());
+                    let returned_msg = returned_msg.take_or_deserialize_message().unwrap();
 
                     // the message hash is not being removed upon accumulation, only when it
                     // expires
