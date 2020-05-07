@@ -376,7 +376,7 @@ fn check_close_names_for_elder_size_nodes() {
 }
 
 #[test]
-fn check_section_info_ack() {
+fn sibling_knowledge_update_after_split() {
     let elder_size = 8;
     let recommended_section_size = 8;
     let env = Environment::new(NetworkParams {
