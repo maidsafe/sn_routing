@@ -124,7 +124,11 @@ pub fn count_sections(nodes: &[TestNode]) -> usize {
 }
 
 pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefix<XorName>> + 'a {
-    nodes.iter().flat_map(|n| n.inner.prefixes()).unique()
+    nodes
+        .iter()
+        .filter_map(|n| n.inner.our_prefix())
+        .copied()
+        .unique()
 }
 
 pub struct TestNodeBuilder<'a> {
@@ -259,7 +263,7 @@ pub fn node_left(nodes: &[TestNode], name: &XorName) -> bool {
                 return false;
             }
 
-            if node.inner.is_peer_elder(name) {
+            if node.inner.is_peer_our_elder(name) {
                 trace!("Node {} is still elder according to {}", name, node.name());
                 return false;
             }
@@ -281,11 +285,6 @@ pub fn section_split(nodes: &[TestNode], prefix: &Prefix<XorName>) -> bool {
                 && *node.our_prefix() != sub_prefix1
             {
                 // The node hasn't progressed through the split of its own section yet.
-                return true;
-            }
-
-            if node.inner.prefixes().contains(prefix) {
-                // The node still has the pre-split section among its neighbours.
                 return true;
             }
 
@@ -383,10 +382,7 @@ pub fn create_connected_nodes_until_split(
     }
 
     // Gather all the actual prefixes and check they are as expected.
-    let actual_prefixes: BTreeSet<_> = nodes
-        .iter()
-        .flat_map(|node| node.inner.prefixes())
-        .collect();
+    let actual_prefixes: BTreeSet<_> = current_sections(&nodes).collect();
     assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect());
 
     let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).sorted();
