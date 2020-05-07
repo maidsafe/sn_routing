@@ -32,8 +32,8 @@ pub struct SectionMap {
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     other: BTreeMap<Prefix<XorName>, EldersInfo>,
-    // Other section infos that are not immediate successors of the ones we have. Stored here
-    // until we get the immediate successor, then moved to `other`.
+    // Other section infos that are not immediate successors of the ones we have. Stored here until
+    // we get the immediate successor, then moved to `other`.
     other_queued: VecDeque<EldersInfo>,
     // BLS public keys of known sections
     keys: BTreeMap<Prefix<XorName>, bls::PublicKey>,
@@ -107,11 +107,6 @@ impl SectionMap {
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
         iter::once((&self.our.prefix, &self.our)).chain(&self.other)
-    }
-
-    /// Returns iterator over all known sections excluding ours.
-    pub fn other(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.other.iter()
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
@@ -455,6 +450,12 @@ impl SectionMap {
             total_elders,
             total_elders_exact,
         }
+    }
+
+    /// Returns iterator over all known sections excluding ours.
+    #[cfg(any(test, feature = "mock_base"))]
+    pub fn other(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+        self.other.iter()
     }
 
     #[cfg(feature = "mock_base")]

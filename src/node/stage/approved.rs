@@ -1205,7 +1205,6 @@ impl Approved {
         self.process_post_reset_events(core, old_prefix, complete_data.to_process);
 
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
-        self.send_neighbour_infos(core);
         self.send_genesis_updates(core);
         self.send_member_knowledge(core);
 
@@ -1266,10 +1265,10 @@ impl Approved {
                             cached.section_key,
                             cached.proofs,
                         )?;
-                        self.shared_state.sections.add_neighbour(elders_info);
+                        self.add_sibling_elders_info(elders_info, section_key);
                     } else {
                         self.add_our_elders_info(our_name, elders_info, section_key, proofs)?;
-                        self.shared_state.sections.add_neighbour(cached.elders_info);
+                        self.add_sibling_elders_info(cached.elders_info, cached.section_key);
                     }
                     Ok(true)
                 }
@@ -1298,6 +1297,18 @@ impl Approved {
             .update_our_section(elders_info, section_key, signature);
         self.churn_in_progress = false;
         Ok(())
+    }
+
+    fn add_sibling_elders_info(&mut self, elders_info: EldersInfo, section_key: bls::PublicKey) {
+        let prefix = elders_info.prefix;
+        self.shared_state.sections.add_neighbour(elders_info);
+        self.shared_state.sections.update_keys(prefix, section_key);
+
+        // We can update their knowledge already because we know they also reached consensus on
+        // our `SectionInfo` so they know our latest key.
+        self.shared_state
+            .sections
+            .update_knowledge(prefix, self.shared_state.our_history.last_key_index());
     }
 
     fn handle_neighbour_info_event(
@@ -1412,7 +1423,7 @@ impl Approved {
                 | AccumulatingEvent::Relocate(_)
                 | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
-                | AccumulatingEvent::NeighbourInfo(_)
+                | AccumulatingEvent::NeighbourInfo { .. }
                 | AccumulatingEvent::SendNeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo { .. }
                 | AccumulatingEvent::TheirKnowledge { .. }
@@ -1481,7 +1492,7 @@ impl Approved {
             | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SectionInfo(_, _)
-            | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::NeighbourInfo { .. }
             | AccumulatingEvent::SendNeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
@@ -1604,18 +1615,6 @@ impl Approved {
 
         if let Err(error) = self.send_routing_message(core, src, dst, variant, their_knowledge) {
             debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
-        }
-    }
-
-    fn send_neighbour_infos(&mut self, core: &mut Core) {
-        for prefix in self.shared_state.neighbour_prefixes() {
-            let src = SrcLocation::Section(*self.shared_state.our_prefix());
-            let dst = DstLocation::Prefix(prefix);
-            let variant = Variant::NeighbourInfo(self.shared_state.our_info().clone());
-
-            if let Err(err) = self.send_routing_message(core, src, dst, variant, None) {
-                debug!("Failed to send NeighbourInfo: {:?}", err);
-            }
         }
     }
 
@@ -1967,6 +1966,9 @@ impl Approved {
             return;
         }
 
+        // TODO: if `msg` is NeighbourInfo and the sender is our neighbour, don't vote for
+        // `TheirKeyInfo` here because we are going to vote `NeighbourInfo` which also updates
+        // the their keys.
         self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
             prefix: *src_prefix,
             key: *new_key,

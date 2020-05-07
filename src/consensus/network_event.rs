@@ -150,7 +150,9 @@ impl Debug for AccumulatingEvent {
             Self::Online(payload) => write!(formatter, "Online({:?})", payload),
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
-            Self::NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
+            Self::NeighbourInfo(elders_info) => {
+                write!(formatter, "NeighbourInfo({:?})", elders_info)
+            }
             Self::SendNeighbourInfo(prefix) => write!(formatter, "SendNeighbourInfo({:?})", prefix),
             Self::TheirKeyInfo { prefix, key } => write!(
                 formatter,

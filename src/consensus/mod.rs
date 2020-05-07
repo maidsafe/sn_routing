@@ -190,7 +190,7 @@ impl ConsensusEngine {
             AccumulatingEvent::SectionInfo(..)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::NeighbourInfo { .. }
             | AccumulatingEvent::SendNeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
