@@ -22,7 +22,7 @@ pub use self::{
     section_keys::{SectionKeyShare, SectionKeys, SectionKeysProvider},
     section_map::SectionMap,
     section_members::SectionMembers,
-    section_proof_chain::{SectionProofBlock, SectionProofChain, TrustStatus},
+    section_proof_chain::{SectionProofChain, TrustStatus},
     shared_state::SharedState,
 };
 

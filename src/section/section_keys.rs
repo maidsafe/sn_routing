@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{elders_info::EldersInfo, section_proof_chain::SectionProofBlock};
+use super::elders_info::EldersInfo;
 use crate::{
     consensus::{AccumulatingProof, DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
@@ -140,35 +140,21 @@ impl SectionKeysProvider {
         Ok(())
     }
 
-    pub fn combine_signatures_for_section_proof_block(
-        &self,
-        our_elders: &EldersInfo,
-        key: bls::PublicKey,
-        proofs: AccumulatingProof,
-    ) -> Result<SectionProofBlock, RoutingError> {
-        let signature = self
-            .check_and_combine_signatures(our_elders, &key, proofs)
-            .ok_or(RoutingError::InvalidNewSectionInfo)?;
-        Ok(SectionProofBlock { key, signature })
-    }
-
     pub fn check_and_combine_signatures<S: Serialize + Debug>(
         &self,
         our_elders: &EldersInfo,
         signed_payload: &S,
         proofs: AccumulatingProof,
-    ) -> Option<bls::Signature> {
-        let signed_bytes = bincode::serialize(signed_payload)
-            .map_err(|err| {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Failed to serialise accumulated event: {:?} for {:?}",
-                    err,
-                    signed_payload
-                );
-                err
-            })
-            .ok()?;
+    ) -> Result<bls::Signature> {
+        let signed_bytes = bincode::serialize(signed_payload).map_err(|err| {
+            log_or_panic!(
+                log::Level::Error,
+                "Failed to serialise accumulated event: {:?} for {:?}",
+                err,
+                signed_payload
+            );
+            err
+        })?;
 
         proofs
             .check_and_combine_signatures(our_elders, self.public_key_set(), &signed_bytes)
@@ -180,5 +166,6 @@ impl SectionKeysProvider {
                 );
                 None
             })
+            .ok_or(RoutingError::InvalidNewSectionInfo)
     }
 }

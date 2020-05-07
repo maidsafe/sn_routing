@@ -1263,17 +1263,15 @@ impl Approved {
         section_key: bls::PublicKey,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let proof_block = self
-            .section_keys_provider
-            .combine_signatures_for_section_proof_block(
-                self.shared_state.sections.our(),
-                section_key,
-                proofs,
-            )?;
+        let signature = self.section_keys_provider.check_and_combine_signatures(
+            self.shared_state.sections.our(),
+            &section_key,
+            proofs,
+        )?;
         self.section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
         self.shared_state
-            .update_our_section(elders_info, proof_block);
+            .update_our_section(elders_info, section_key, signature);
         self.churn_in_progress = false;
         Ok(())
     }
