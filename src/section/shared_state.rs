@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    AgeCounter, EldersInfo, MemberState, SectionMap, SectionMembers, SectionProofBlock,
-    SectionProofChain,
-};
+use super::{AgeCounter, EldersInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::AccumulatingEvent,
     id::{P2pNode, PublicId},
@@ -240,13 +237,18 @@ impl SharedState {
         }
     }
 
-    pub fn update_our_section(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
+    pub fn update_our_section(
+        &mut self,
+        elders_info: EldersInfo,
+        section_key: bls::PublicKey,
+        signature: bls::Signature,
+    ) {
         self.our_members
             .remove_not_matching_our_prefix(&elders_info.prefix);
-        self.our_history.push(proof_block);
+        self.our_history.push(section_key, signature);
         self.sections.set_our(elders_info);
         self.sections
-            .update_keys(self.sections.our().prefix, *self.our_history.last_key());
+            .update_keys(self.sections.our().prefix, section_key);
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {

@@ -10,7 +10,7 @@ use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDE
 use routing::{
     generate_bls_threshold_secret_key, mock::Environment, rng::MainRng, AccumulatingMessage,
     DstLocation, EldersInfo, FullId, Message, NetworkParams, P2pNode, PlainMessage, Prefix,
-    SectionKeyShare, SectionProofBlock, SectionProofChain, Variant, XorName,
+    SectionKeyShare, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -120,21 +120,17 @@ fn create_invalid_proof_chain(rng: &mut MainRng, last_pk: bls::PublicKey) -> Sec
         .public_keys()
         .public_key();
 
-    let block1 = {
+    let block1_signature = {
         let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
         let invalid_sk_share = invalid_sk_set.secret_key_share(0);
         let signature_share = invalid_sk_share.sign(&last_pk.to_bytes()[..]);
-        let signature = invalid_sk_set
+        invalid_sk_set
             .public_keys()
             .combine_signatures(iter::once((0, &signature_share)))
-            .unwrap();
-        SectionProofBlock {
-            key: last_pk,
-            signature,
-        }
+            .unwrap()
     };
 
     let mut chain = SectionProofChain::new(block0_key);
-    chain.push(block1);
+    chain.push_without_validation(last_pk, block1_signature);
     chain
 }

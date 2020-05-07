@@ -8,29 +8,12 @@
 
 use std::{collections::HashSet, iter};
 
-/// Block of the section proof chain. Contains the section BLS public key and is signed by the
-/// previous block.
-#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SectionProofBlock {
-    /// The section key.
-    pub key: bls::PublicKey,
-    /// Signature of the above key, using the previous block.
-    pub signature: bls::Signature,
-}
-
-impl SectionProofBlock {
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub(crate) fn verify(&self, public_key: &bls::PublicKey) -> bool {
-        public_key.verify(&self.signature, &self.key.to_bytes()[..])
-    }
-}
-
 /// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
 /// first one.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
     head: bls::PublicKey,
-    tail: Vec<SectionProofBlock>,
+    tail: Vec<Block>,
 }
 
 impl SectionProofChain {
@@ -42,9 +25,23 @@ impl SectionProofChain {
         }
     }
 
-    /// Pushes a new block into the chain. No validation is performed.
-    pub fn push(&mut self, block: SectionProofBlock) {
-        self.tail.push(block)
+    /// Pushes a new key into the chain but only if the signature is valid.
+    pub(crate) fn push(&mut self, key: bls::PublicKey, signature: bls::Signature) {
+        if self.last_key().verify(&signature, &key.to_bytes()[..]) {
+            self.tail.push(Block { key, signature })
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "invalid SectionProofChain block signature"
+            )
+        }
+    }
+
+    /// Pushed a new key into the chain without validating the signature. For testing only.
+    #[cfg(any(test, feature = "mock_base"))]
+    #[allow(unused)]
+    pub fn push_without_validation(&mut self, key: bls::PublicKey, signature: bls::Signature) {
+        self.tail.push(Block { key, signature })
     }
 
     pub(crate) fn first_key(&self) -> &bls::PublicKey {
@@ -164,6 +161,22 @@ pub enum TrustStatus {
     Unknown,
 }
 
+// Block of the section proof chain. Contains the section BLS public key and is signed by the
+// previous block. Note that the first key in the chain is not signed and so is not stored in
+// `Block`.
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+struct Block {
+    key: bls::PublicKey,
+    signature: bls::Signature,
+}
+
+impl Block {
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    fn verify(&self, public_key: &bls::PublicKey) -> bool {
+        public_key.verify(&self.signature, &self.key.to_bytes()[..])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,12 +201,12 @@ mod tests {
 
         // Add a block with invalid signature to the chain.
         let (_, invalid_secret_key) = gen_keys(&mut rng);
-        let (block, secret_key) = gen_block(&mut rng, &invalid_secret_key);
-        chain.push(block);
+        let (key, signature, secret_key) = gen_block(&mut rng, &invalid_secret_key);
+        chain.push_without_validation(key, signature);
 
         // Add another block with valid signature by the previous block.
-        let (block, _) = gen_block(&mut rng, &secret_key);
-        chain.push(block);
+        let (key, signature, _) = gen_block(&mut rng, &secret_key);
+        chain.push(key, signature);
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
         // because the rest of the chain contains invalid block.
@@ -234,17 +247,11 @@ mod tests {
     fn gen_block(
         rng: &mut MainRng,
         prev_secret_key: &bls::SecretKey,
-    ) -> (SectionProofBlock, bls::SecretKey) {
+    ) -> (bls::PublicKey, bls::Signature, bls::SecretKey) {
         let (public_key, secret_key) = gen_keys(rng);
         let signature = prev_secret_key.sign(&bincode::serialize(&public_key).unwrap());
 
-        (
-            SectionProofBlock {
-                key: public_key,
-                signature,
-            },
-            secret_key,
-        )
+        (public_key, signature, secret_key)
     }
 
     fn gen_chain(rng: &mut MainRng, len: usize) -> SectionProofChain {
@@ -252,8 +259,9 @@ mod tests {
         let mut chain = SectionProofChain::new(key);
 
         for _ in 1..len {
-            let (new_block, new_secret_key) = gen_block(rng, &current_secret_key);
-            chain.push(new_block);
+            let (new_public_key, new_signature, new_secret_key) =
+                gen_block(rng, &current_secret_key);
+            chain.push(new_public_key, new_signature);
             current_secret_key = new_secret_key;
         }
 
