@@ -92,6 +92,11 @@ impl SectionProofChain {
         1 + self.tail.len()
     }
 
+    /// Index of the last key in the chain.
+    pub(crate) fn last_key_index(&self) -> u64 {
+        self.tail.len() as u64
+    }
+
     /// Check that all the blocks in the chain except the first one have valid signatures.
     /// The first one cannot be verified and requires matching against already trusted keys. Thus
     /// this function alone cannot be used to determine whether this chain is trusted. Use

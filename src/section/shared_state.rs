@@ -194,11 +194,6 @@ impl SharedState {
             .map(|info| &info.p2p_node)
     }
 
-    /// Return prefixes of all our neighbours
-    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.sections.other().map(|(prefix, _)| *prefix).collect()
-    }
-
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
     pub fn promote_and_demote_elders(
@@ -550,19 +545,10 @@ mod test {
         state.sections.add_neighbour(neighbour_info)
     }
 
-    fn gen_state<T>(
-        rng: &mut MainRng,
-        sections: T,
-    ) -> (
-        SharedState,
-        PublicId,
-        HashMap<PublicId, FullId>,
-        bls::SecretKeySet,
-    )
+    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
-        let mut full_ids = HashMap::new();
         let mut our_id = None;
         let mut section_members = vec![];
         for (prefix, size) in sections {
@@ -570,7 +556,7 @@ mod test {
             if our_id.is_none() {
                 our_id = ids.values().next().cloned();
             }
-            full_ids.extend(ids);
+
             section_members.push(info);
         }
 
@@ -591,21 +577,14 @@ mod test {
 
         let mut state = SharedState::new(elders_info, public_key, ages);
 
-        for neighbour_info in sections_iter {
-            add_neighbour_elders_info(&mut state, &our_pub_id, neighbour_info);
+        for info in sections_iter {
+            add_neighbour_elders_info(&mut state, &our_pub_id, info);
         }
 
-        (state, our_pub_id, full_ids, secret_key_set)
+        (state, our_pub_id)
     }
 
-    fn gen_00_state(
-        rng: &mut MainRng,
-    ) -> (
-        SharedState,
-        PublicId,
-        HashMap<PublicId, FullId>,
-        bls::SecretKeySet,
-    ) {
+    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId) {
         let elder_size: usize = 7;
         gen_state(
             rng,
@@ -634,7 +613,7 @@ mod test {
     fn generate_state() {
         let mut rng = rng::new();
 
-        let (state, our_id, _, _) = gen_00_state(&mut rng);
+        let (state, our_id) = gen_00_state(&mut rng);
 
         assert_eq!(
             state
@@ -651,9 +630,9 @@ mod test {
     #[test]
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
-        let (mut state, our_id, _, _) = gen_00_state(&mut rng);
+        let (mut state, our_id) = gen_00_state(&mut rng);
         for _ in 0..100 {
-            let (new_info, _new_ids) = {
+            let (new_info, _) = {
                 let old_info: Vec<_> = state.sections.other().map(|(_, info)| info).collect();
                 let info = old_info.choose(&mut rng).expect("neighbour infos");
                 if rng.gen_bool(0.5) {
