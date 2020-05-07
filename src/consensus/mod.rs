@@ -191,6 +191,7 @@ impl ConsensusEngine {
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::SendNeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::ParsecPrune

@@ -935,6 +935,9 @@ impl Approved {
             AccumulatingEvent::NeighbourInfo(elders_info) => {
                 self.handle_neighbour_info_event(core, elders_info)?
             }
+            AccumulatingEvent::SendNeighbourInfo(prefix) => {
+                self.handle_send_neighbour_info_event(core, prefix)?
+            }
             AccumulatingEvent::TheirKeyInfo { prefix, key } => {
                 self.handle_their_key_info_event(prefix, key)
             }
@@ -1324,6 +1327,20 @@ impl Approved {
         Ok(())
     }
 
+    fn handle_send_neighbour_info_event(
+        &mut self,
+        core: &mut Core,
+        prefix: Prefix<XorName>,
+    ) -> Result<()> {
+        self.send_routing_message(
+            core,
+            SrcLocation::Section(*self.shared_state.our_prefix()),
+            DstLocation::Prefix(prefix),
+            Variant::NeighbourInfo(self.shared_state.our_info().clone()),
+            None,
+        )
+    }
+
     fn handle_their_key_info_event(&mut self, prefix: Prefix<XorName>, key: bls::PublicKey) {
         self.shared_state.sections.update_keys(prefix, key);
     }
@@ -1396,6 +1413,7 @@ impl Approved {
                 | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo(_)
+                | AccumulatingEvent::SendNeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo { .. }
                 | AccumulatingEvent::TheirKnowledge { .. }
                 | AccumulatingEvent::User(_) => false,
@@ -1426,6 +1444,11 @@ impl Approved {
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
                     | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
                         our_prefix.is_neighbour(&elders_info.prefix)
+                    }
+
+                    // Only revote if the recipient is still our neighbour
+                    AccumulatingEvent::SendNeighbourInfo(ref prefix) => {
+                        our_prefix.is_neighbour(prefix)
                     }
 
                     // Keep: Still relevant after prefix change.
@@ -1459,6 +1482,7 @@ impl Approved {
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SectionInfo(_, _)
             | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::SendNeighbourInfo(_)
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::User(_) => {
@@ -1933,16 +1957,25 @@ impl Approved {
     }
 
     fn update_our_knowledge_of_them(&mut self, msg: &Message) {
-        let (prefix, new_key) = match &msg.src {
+        let (src_prefix, new_key) = match &msg.src {
             SrcAuthority::Section { prefix, proof, .. } => (prefix, proof.last_key()),
             SrcAuthority::Node { .. } => return,
         };
 
-        if !self.shared_state.sections.has_key(new_key) {
-            self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
-                prefix: *prefix,
-                key: *new_key,
-            })
+        if self.shared_state.sections.has_key(new_key) {
+            // We already have their latest key - we are up to date.
+            return;
+        }
+
+        self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
+            prefix: *src_prefix,
+            key: *new_key,
+        });
+
+        // They are ahead of our knowledge. If they are our neighbour, send them our `NeighbourInfo`
+        // which they will respond with a `NeighbourInfo` of their own to update us.
+        if self.shared_state.our_prefix().is_neighbour(src_prefix) {
+            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo(*src_prefix))
         }
     }
 
@@ -1969,6 +2002,14 @@ impl Approved {
                 prefix: src_prefix,
                 knowledge: new_index,
             })
+        }
+
+        // If they are our neighbour and we are ahead of their knowledge, send them `NeighbourInfo`
+        // to update them.
+        if self.shared_state.our_prefix().is_neighbour(&src_prefix)
+            && new_index < self.shared_state.our_history.len() as u64 - 1
+        {
+            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo(src_prefix))
         }
     }
 
