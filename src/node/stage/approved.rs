@@ -1951,67 +1951,12 @@ impl Approved {
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
     pub fn update_section_knowledge(&mut self, msg: &Message) {
-        self.update_our_knowledge_of_them(msg);
-        self.update_their_knowledge_of_us(msg);
-    }
+        let events = self
+            .shared_state
+            .update_section_knowledge(&msg.src, msg.dst_key.as_ref());
 
-    fn update_our_knowledge_of_them(&mut self, msg: &Message) {
-        let (src_prefix, new_key) = match &msg.src {
-            SrcAuthority::Section { prefix, proof, .. } => (prefix, proof.last_key()),
-            SrcAuthority::Node { .. } => return,
-        };
-
-        if self.shared_state.sections.has_key(new_key) {
-            // We already have their latest key - we are up to date.
-            return;
-        }
-
-        // TODO: if `msg` is NeighbourInfo and the sender is our neighbour, don't vote for
-        // `TheirKeyInfo` here because we are going to vote `NeighbourInfo` which also updates
-        // the their keys.
-        self.vote_for_event(AccumulatingEvent::TheirKeyInfo {
-            prefix: *src_prefix,
-            key: *new_key,
-        });
-
-        // They are ahead of our knowledge. If they are our neighbour, send them our `NeighbourInfo`
-        // which they will respond with a `NeighbourInfo` of their own to update us.
-        if self.shared_state.our_prefix().is_neighbour(src_prefix) {
-            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo(*src_prefix))
-        }
-    }
-
-    fn update_their_knowledge_of_us(&mut self, msg: &Message) {
-        let dst_key = if let Some(key) = &msg.dst_key {
-            key
-        } else {
-            return;
-        };
-
-        let src_prefix = match &msg.src {
-            SrcAuthority::Section { prefix, .. } => *prefix,
-            SrcAuthority::Node { .. } => {
-                // We don't trust messages sent by a single node.
-                return;
-            }
-        };
-
-        let latest_index = self.shared_state.sections.knowledge_by_section(&src_prefix);
-        let new_index = self.shared_state.our_history.index_of(dst_key).unwrap_or(0);
-
-        if new_index > latest_index {
-            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
-                prefix: src_prefix,
-                knowledge: new_index,
-            })
-        }
-
-        // If they are our neighbour and we are ahead of their knowledge, send them `NeighbourInfo`
-        // to update them.
-        if self.shared_state.our_prefix().is_neighbour(&src_prefix)
-            && new_index < self.shared_state.our_history.len() as u64 - 1
-        {
-            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo(src_prefix))
+        for event in events {
+            self.vote_for_event(event)
         }
     }
 

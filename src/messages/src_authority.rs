@@ -103,4 +103,12 @@ impl SrcAuthority {
 
         Ok(VerifyStatus::Full)
     }
+
+    // If this is `Section`, returns the prefix and the latest key, otherwise `None`.
+    pub(crate) fn section_prefix_and_key(&self) -> Option<(&Prefix<XorName>, &bls::PublicKey)> {
+        match self {
+            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key())),
+            SrcAuthority::Node { .. } => None,
+        }
+    }
 }
