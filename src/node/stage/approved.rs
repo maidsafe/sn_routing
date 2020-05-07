@@ -19,7 +19,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
+        MessageAction, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -298,32 +298,69 @@ impl Approved {
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn should_handle_message(&self, our_id: &PublicId, msg: &Message) -> bool {
+    pub fn decide_message_action(&self, our_id: &PublicId, msg: &Message) -> Result<MessageAction> {
+        let is_self_elder = self.is_our_elder(our_id);
+
         match &msg.variant {
-            Variant::Relocate(_)
-            | Variant::BootstrapRequest(_)
-            | Variant::MemberKnowledge(_)
-            | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..)
-            | Variant::Bounce { .. } => true,
+            Variant::NeighbourInfo(_) => {
+                if is_self_elder && self.verify_message(msg)? {
+                    Ok(MessageAction::Handle)
+                } else {
+                    Ok(MessageAction::Bounce)
+                }
+            }
+            Variant::UserMessage(_) => {
+                if !self.should_handle_user_message(our_id, &msg.dst) {
+                    return Ok(MessageAction::Discard);
+                }
 
-            Variant::UserMessage(_) => self.should_handle_user_message(our_id, &msg.dst),
-            Variant::JoinRequest(req) => self.should_handle_join_request(our_id, req),
+                if self.verify_message(msg)? {
+                    Ok(MessageAction::Handle)
+                } else {
+                    Ok(MessageAction::Bounce)
+                }
+            }
+            Variant::NodeApproval(_) => Ok(MessageAction::Discard),
+            Variant::GenesisUpdate(info) => {
+                if !self.should_handle_genesis_update(our_id, info) {
+                    return Ok(MessageAction::Discard);
+                }
 
-            Variant::NeighbourInfo(_) => self.is_our_elder(our_id),
-
-            Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
-
+                if self.verify_message(msg)? {
+                    Ok(MessageAction::Handle)
+                } else {
+                    Ok(MessageAction::Bounce)
+                }
+            }
+            Variant::Relocate(_) => {
+                if self.verify_message(msg)? {
+                    Ok(MessageAction::Handle)
+                } else {
+                    Ok(MessageAction::Bounce)
+                }
+            }
             Variant::MessageSignature(accumulating_msg) => {
+                if !self.verify_message(msg)? {
+                    return Ok(MessageAction::Discard);
+                }
+
                 match &accumulating_msg.content.variant {
                     Variant::NeighbourInfo(_)
                     | Variant::UserMessage(_)
                     | Variant::NodeApproval(_)
-                    | Variant::Relocate(_) => true,
+                    | Variant::Relocate(_) => Ok(MessageAction::Handle),
 
-                    Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
+                    Variant::GenesisUpdate(info) => {
+                        if self.should_handle_genesis_update(our_id, info) {
+                            Ok(MessageAction::Handle)
+                        } else if is_self_elder {
+                            Ok(MessageAction::Bounce)
+                        } else {
+                            Ok(MessageAction::Discard)
+                        }
+                    }
 
-                    // These variants are not be signature-accumulated
+                    // These variants are not to be signature-accumulated
                     Variant::MessageSignature(_)
                     | Variant::BootstrapRequest(_)
                     | Variant::BootstrapResponse(_)
@@ -332,15 +369,37 @@ impl Approved {
                     | Variant::ParsecRequest(..)
                     | Variant::ParsecResponse(..)
                     | Variant::Ping
-                    | Variant::Bounce { .. } => false,
+                    | Variant::Bounce { .. } => Ok(MessageAction::Discard),
                 }
             }
+            Variant::JoinRequest(req) => {
+                if !self.should_handle_join_request(our_id, req) {
+                    return Ok(MessageAction::Bounce);
+                }
 
-            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => false,
+                if !self.verify_message(msg)? {
+                    return Ok(MessageAction::Discard);
+                }
+
+                Ok(MessageAction::Handle)
+            }
+            Variant::BootstrapResponse(_) => Ok(MessageAction::Discard),
+            Variant::BootstrapRequest(_)
+            | Variant::MemberKnowledge(_)
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::Bounce { .. } => {
+                if self.verify_message(msg)? {
+                    Ok(MessageAction::Handle)
+                } else {
+                    Ok(MessageAction::Discard)
+                }
+            }
+            Variant::Ping => Ok(MessageAction::Discard),
         }
     }
 
-    pub fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
+    pub fn verify_message(&self, msg: &Message) -> Result<bool> {
         self.verify_message_quiet(msg).map_err(|error| {
             messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
             error
@@ -648,52 +707,6 @@ impl Approved {
         }
     }
 
-    pub fn unhandled_message(
-        &mut self,
-        core: &mut Core,
-        sender: Option<SocketAddr>,
-        msg: Message,
-        msg_bytes: Bytes,
-    ) {
-        let is_self_elder = self.is_our_elder(core.id());
-        let bounce = match &msg.variant {
-            Variant::MessageSignature(accumulating_msg) => match accumulating_msg.content.variant {
-                Variant::GenesisUpdate(_) => is_self_elder,
-                _ => true,
-            },
-            Variant::JoinRequest(_) => true,
-            Variant::Relocate(_) if is_self_elder => true,
-            Variant::NeighbourInfo(_) | Variant::UserMessage(_) if !is_self_elder => true,
-            Variant::GenesisUpdate(_)
-            | Variant::BootstrapResponse(_)
-            | Variant::NodeApproval(_)
-            | Variant::Ping => false,
-            Variant::MemberKnowledge(_) if !is_self_elder => false,
-
-            _ => {
-                debug!("unexpected unhandled message: {:?}", msg);
-                false
-            }
-        };
-
-        if bounce {
-            if let Some(sender) = sender {
-                debug!(
-                    "Unhandled message from {} - bouncing: {:?}, hash: {:?}",
-                    sender,
-                    msg,
-                    MessageHash::from_bytes(&msg_bytes)
-                );
-
-                self.send_bounce(core, &sender, msg_bytes);
-            } else {
-                trace!("Unhandled accumulated message, discarding: {:?}", msg);
-            }
-        } else {
-            debug!("Unhandled message from {:?}, discarding: {:?}", sender, msg);
-        }
-    }
-
     fn try_relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         if !msg
             .message_dst()
@@ -733,11 +746,16 @@ impl Approved {
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-        if self.should_handle_message(core.id(), &msg) && self.verify_message(&msg)? {
-            core.msg_filter.insert_incoming(&msg_with_bytes);
-            core.msg_queue.push_back(msg.into_queued(None));
-        } else {
-            self.unhandled_message(core, None, msg, msg_with_bytes.full_bytes().clone());
+        match self.decide_message_action(core.id(), &msg)? {
+            MessageAction::Handle => {
+                core.msg_filter.insert_incoming(&msg_with_bytes);
+                core.msg_queue.push_back(msg.into_queued(None));
+            }
+            MessageAction::Bounce | MessageAction::Discard => {
+                // We can't bounce accumulated messages because we don't have access to the sender
+                // anymore - discarding instead.
+                trace!("Unhandled accumulated message, discarding: {:?}", msg);
+            }
         }
 
         Ok(())
@@ -1699,13 +1717,11 @@ impl Approved {
         }
     }
 
-    fn send_bounce(&mut self, core: &mut Core, recipient: &SocketAddr, msg_bytes: Bytes) {
-        let variant = Variant::Bounce {
+    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
+        Variant::Bounce {
             elders_version: Some(self.shared_state.our_info().version),
             message: msg_bytes,
-        };
-
-        core.send_direct_message(recipient, variant)
+        }
     }
 
     // Resend the response with ours or our sibling's info in case of split.

@@ -22,7 +22,10 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, QueuedMessage, Variant},
+    messages::{
+        BootstrapResponse, Message, MessageAction, MessageHash, MessageWithBytes, QueuedMessage,
+        Variant,
+    },
     network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
@@ -489,7 +492,7 @@ impl Node {
             }
         };
 
-        if let Err(error) = self.try_handle_message(Some(sender), msg) {
+        if let Err(error) = self.try_handle_message(sender, msg) {
             debug!("Failed to handle message: {:?}", error);
         }
     }
@@ -535,7 +538,7 @@ impl Node {
 
     fn try_handle_message(
         &mut self,
-        sender: Option<SocketAddr>,
+        sender: SocketAddr,
         mut msg_with_bytes: MessageWithBytes,
     ) -> Result<()> {
         trace!("try handle message {:?}", msg_with_bytes);
@@ -556,20 +559,30 @@ impl Node {
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
-            self.core.msg_filter.insert_incoming(&msg_with_bytes);
-            self.handle_message(sender, msg)
-        } else {
-            self.unhandled_message(sender, msg, msg_with_bytes.full_bytes().clone());
-            Ok(())
+        match self.decide_message_action(&msg)? {
+            MessageAction::Handle => {
+                self.core.msg_filter.insert_incoming(&msg_with_bytes);
+                self.handle_message(sender, msg)
+            }
+            MessageAction::Bounce => {
+                debug!(
+                    "Unhandled message from {} - bouncing: {:?}, hash: {:?}",
+                    sender,
+                    msg,
+                    msg_with_bytes.full_crypto_hash(),
+                );
+
+                self.send_bounce(&sender, msg_with_bytes.full_bytes().clone());
+                Ok(())
+            }
+            MessageAction::Discard => {
+                debug!("Unhandled message from {:?}, discarding: {:?}", sender, msg);
+                Ok(())
+            }
         }
     }
 
-    fn try_relay_message(
-        &mut self,
-        sender: Option<SocketAddr>,
-        msg: &MessageWithBytes,
-    ) -> Result<()> {
+    fn try_relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
         if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.relay_message(sender, msg)
@@ -578,20 +591,11 @@ impl Node {
         }
     }
 
-    fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
         match &mut self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) => {
-                let sender = sender.expect("sender missing");
-
                 trace!("Message not for us, bouncing: {:?}", msg);
-
-                let variant = Variant::Bounce {
-                    elders_version: None,
-                    message: msg.full_bytes().clone(),
-                };
-
-                self.core.send_direct_message(&sender, variant);
-
+                self.send_bounce(&sender, msg.full_bytes().clone());
                 Ok(())
             }
             Stage::Approved(stage) => stage.send_signed_message(&mut self.core, msg),
@@ -599,30 +603,21 @@ impl Node {
         }
     }
 
-    fn should_handle_message(&self, msg: &Message) -> bool {
+    fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
         match &self.stage {
-            Stage::Bootstrapping(stage) => stage.should_handle_message(msg),
-            Stage::Joining(stage) => stage.should_handle_message(msg),
-            Stage::Approved(stage) => stage.should_handle_message(self.core.id(), msg),
-            Stage::Terminated => false,
+            Stage::Bootstrapping(stage) => stage.decide_message_action(msg),
+            Stage::Joining(stage) => stage.decide_message_action(msg),
+            Stage::Approved(stage) => stage.decide_message_action(self.core.id(), msg),
+            Stage::Terminated => Ok(MessageAction::Discard),
         }
     }
 
-    fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match &self.stage {
-            Stage::Bootstrapping(stage) => stage.verify_message(msg),
-            Stage::Joining(stage) => stage.verify_message(msg),
-            Stage::Approved(stage) => stage.verify_message(msg),
-            Stage::Terminated => unreachable!(),
-        }
-    }
-
-    fn handle_message(&mut self, sender: Option<SocketAddr>, msg: Message) -> Result<()> {
+    fn handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
             stage.update_section_knowledge(&msg);
         }
 
-        self.core.msg_queue.push_back(msg.into_queued(sender));
+        self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
 
         Ok(())
     }
@@ -810,19 +805,15 @@ impl Node {
         }
     }
 
-    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
-        match &mut self.stage {
-            Stage::Bootstrapping(stage) => {
-                stage.unhandled_message(&mut self.core, sender, msg, msg_bytes)
-            }
-            Stage::Joining(stage) => {
-                stage.unhandled_message(&mut self.core, sender, msg, msg_bytes)
-            }
-            Stage::Approved(stage) => {
-                stage.unhandled_message(&mut self.core, sender, msg, msg_bytes)
-            }
-            Stage::Terminated => {}
-        }
+    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
+        let variant = match &self.stage {
+            Stage::Bootstrapping(stage) => stage.create_bounce(msg_bytes),
+            Stage::Joining(stage) => stage.create_bounce(msg_bytes),
+            Stage::Approved(stage) => stage.create_bounce(msg_bytes),
+            Stage::Terminated => return,
+        };
+
+        self.core.send_direct_message(recipient, variant)
     }
 
     ////////////////////////////////////////////////////////////////////////////

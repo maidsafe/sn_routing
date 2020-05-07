@@ -10,7 +10,7 @@ use crate::{
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, Message, MessageHash, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, MessageAction, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     time::Duration,
@@ -61,9 +61,13 @@ impl Bootstrapping {
         }
     }
 
-    pub fn should_handle_message(&self, msg: &Message) -> bool {
+    pub fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
         match msg.variant {
-            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => true,
+            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => {
+                verify_message(msg)?;
+                Ok(MessageAction::Handle)
+            }
+
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::NodeApproval(_)
@@ -71,11 +75,19 @@ impl Bootstrapping {
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
-            | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge { .. }
+            | Variant::JoinRequest(_) => Ok(MessageAction::Bounce),
+
+            Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Ping => false,
+            | Variant::Ping => Ok(MessageAction::Discard),
+        }
+    }
+
+    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
+        Variant::Bounce {
+            elders_version: None,
+            message: msg_bytes,
         }
     }
 
@@ -115,38 +127,6 @@ impl Bootstrapping {
                 );
                 self.reconnect_to_new_section(core, new_conn_infos);
                 Ok(None)
-            }
-        }
-    }
-
-    pub fn unhandled_message(
-        &mut self,
-        core: &mut Core,
-        sender: Option<SocketAddr>,
-        msg: Message,
-        msg_bytes: Bytes,
-    ) {
-        match msg.variant {
-            Variant::MemberKnowledge { .. }
-            | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..)
-            | Variant::Ping => (),
-            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => unreachable!(),
-            _ => {
-                let sender = sender.expect("sender missing");
-
-                debug!(
-                    "Unhandled message - bouncing: {:?}, hash: {:?}",
-                    msg,
-                    MessageHash::from_bytes(&msg_bytes)
-                );
-
-                let variant = Variant::Bounce {
-                    elders_version: None,
-                    message: msg_bytes,
-                };
-
-                core.send_direct_message(&sender, variant)
             }
         }
     }
@@ -212,15 +192,14 @@ impl Bootstrapping {
             Ok(None)
         }
     }
-
-    pub fn verify_message(&self, msg: &Message) -> Result<bool> {
-        msg.verify(iter::empty())
-            .and_then(VerifyStatus::require_full)?;
-        Ok(true)
-    }
 }
 
 pub struct JoinParams {
     pub elders_info: EldersInfo,
     pub relocate_payload: Option<RelocatePayload>,
+}
+
+fn verify_message(msg: &Message) -> Result<()> {
+    msg.verify(iter::empty())
+        .and_then(VerifyStatus::require_full)
 }

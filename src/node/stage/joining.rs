@@ -11,13 +11,15 @@ use crate::{
     error::Result,
     event::Connected,
     id::P2pNode,
-    messages::{self, BootstrapResponse, JoinRequest, Message, MessageHash, Variant, VerifyStatus},
+    messages::{
+        self, BootstrapResponse, JoinRequest, Message, MessageAction, Variant, VerifyStatus,
+    },
     relocation::RelocatePayload,
     section::EldersInfo,
     xor_space::Prefix,
 };
 use bytes::Bytes;
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
@@ -77,11 +79,27 @@ impl Joining {
         }
     }
 
-    pub fn should_handle_message(&self, msg: &Message) -> bool {
+    pub fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
         match msg.variant {
-            Variant::NodeApproval(_)
-            | Variant::BootstrapResponse(BootstrapResponse::Join(_))
-            | Variant::Bounce { .. } => true,
+            Variant::NodeApproval(_) => {
+                match &self.join_type {
+                    JoinType::Relocate(payload) => {
+                        let details = payload.relocate_details();
+                        verify_message(msg, Some(&details.destination_key))?;
+                    }
+                    JoinType::First { .. } => {
+                        // We don't have any trusted keys to verify this message, but we still need to
+                        // handle it.
+                    }
+                }
+                Ok(MessageAction::Handle)
+            }
+
+            Variant::BootstrapResponse(BootstrapResponse::Join(_)) | Variant::Bounce { .. } => {
+                verify_message(msg, None)?;
+                Ok(MessageAction::Handle)
+            }
+
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::GenesisUpdate(_)
@@ -89,11 +107,19 @@ impl Joining {
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
-            | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge { .. }
+            | Variant::JoinRequest(_) => Ok(MessageAction::Bounce),
+
+            Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Ping => false,
+            | Variant::Ping => Ok(MessageAction::Discard),
+        }
+    }
+
+    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
+        Variant::Bounce {
+            elders_version: None,
+            message: msg_bytes,
         }
     }
 
@@ -124,57 +150,6 @@ impl Joining {
         }
 
         Ok(())
-    }
-
-    pub fn unhandled_message(
-        &mut self,
-        core: &mut Core,
-        sender: Option<SocketAddr>,
-        msg: Message,
-        msg_bytes: Bytes,
-    ) {
-        match msg.variant {
-            Variant::MemberKnowledge { .. }
-            | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..)
-            | Variant::Ping => (),
-            Variant::NodeApproval(_)
-            | Variant::BootstrapResponse(BootstrapResponse::Join(_))
-            | Variant::Bounce { .. } => unreachable!(),
-            _ => {
-                let sender = sender.expect("sender missing");
-
-                debug!(
-                    "Unhandled message - bouncing: {:?}, hash: {:?}",
-                    msg,
-                    MessageHash::from_bytes(&msg_bytes)
-                );
-
-                let variant = Variant::Bounce {
-                    elders_version: None,
-                    message: msg_bytes,
-                };
-
-                core.send_direct_message(&sender, variant)
-            }
-        }
-    }
-
-    pub fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match (&msg.variant, &self.join_type) {
-            (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
-                let details = payload.relocate_details();
-                verify_message_full(msg, Some(&details.destination_key))
-            }
-            (Variant::NodeApproval(_), JoinType::First { .. }) => {
-                // We don't have any trusted keys to verify this message, but we still need to
-                // handle it.
-                Ok(true)
-            }
-            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _)
-            | (Variant::Bounce { .. }, _) => verify_message_full(msg, None),
-            _ => unreachable!("unexpected message to verify: {:?}", msg),
-        }
     }
 
     // The EldersInfo of the section we are joining.
@@ -218,7 +193,7 @@ enum JoinType {
     Relocate(RelocatePayload),
 }
 
-fn verify_message_full(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> Result<bool> {
+fn verify_message(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> Result<()> {
     // The message verification will use only those trusted keys whose prefix is compatible with
     // the message source. By using empty prefix, we make sure `trusted_key` is always used.
     let prefix = Prefix::default();
@@ -228,7 +203,5 @@ fn verify_message_full(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> R
         .map_err(|error| {
             messages::log_verify_failure(msg, &error, trusted_key.map(|key| (&prefix, key)));
             error
-        })?;
-
-    Ok(true)
+        })
 }

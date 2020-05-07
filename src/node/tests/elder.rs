@@ -468,7 +468,7 @@ fn handle_bootstrap() {
     let addr = new_node.our_connection_info();
     let msg = new_node.bootstrap_request().unwrap();
 
-    test_utils::handle_message(&mut env.subject, Some(addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, addr, msg).unwrap();
     env.network.poll(&mut env.rng);
 
     let response = new_node.expect_bootstrap_response();
@@ -509,7 +509,7 @@ fn send_genesis_update() {
         parsec_version,
     });
     let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
-    test_utils::handle_message(&mut env.subject, Some(adult0.addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, adult0.addr, msg).unwrap();
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.

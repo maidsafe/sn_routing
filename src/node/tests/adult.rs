@@ -88,7 +88,7 @@ impl Env {
                 genesis_prefix_info.clone(),
             )?;
 
-            test_utils::handle_message(&mut self.subject, Some(elder.addr), msg)?;
+            test_utils::handle_message(&mut self.subject, elder.addr, msg)?;
         }
 
         Ok(())
@@ -213,7 +213,7 @@ fn genesis_update_message_successful_trust_check() {
     let msg =
         genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
             .unwrap();
-    test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr, msg).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
 
@@ -227,5 +227,5 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     let msg =
         genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
             .unwrap();
-    test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr, msg).unwrap();
 }
