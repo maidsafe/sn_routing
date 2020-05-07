@@ -158,6 +158,16 @@ where
     )
 }
 
+/// What to do with an incomming message.
+pub enum MessageAction {
+    /// Message will be handled
+    Handle,
+    /// Message will be bounced back to the sender
+    Bounce,
+    /// Message will be discarded
+    Discard,
+}
+
 fn serialize_for_section_signing(
     dst: &DstLocation,
     dst_key: Option<&bls::PublicKey>,
