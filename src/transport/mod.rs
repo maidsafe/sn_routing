@@ -11,7 +11,7 @@ mod sending_targets_cache;
 pub use sending_targets_cache::{Resend, RESEND_DELAY, RESEND_MAX_ATTEMPTS};
 
 use crate::{
-    quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
+    quic_p2p::{EventSenders, Peer, QuicP2p, QuicP2pError, Token},
     time::Duration,
     timer::Timer,
     TransportConfig,
@@ -32,6 +32,19 @@ pub struct Transport {
 }
 
 impl Transport {
+    pub fn new(event_tx: EventSenders, config: TransportConfig) -> Result<Self, QuicP2pError> {
+        {
+            let quic_p2p = QuicP2p::with_config(event_tx, Some(config), Default::default(), false)?;
+
+            Ok(Transport {
+                quic_p2p,
+                cache: Default::default(),
+                next_msg_token: 0,
+                scheduled_messages: Default::default(),
+            })
+        }
+    }
+
     pub fn bootstrap(&mut self) {
         self.quic_p2p.bootstrap()
     }
@@ -177,33 +190,6 @@ impl Transport {
                 target,
             },
         );
-    }
-}
-
-pub struct TransportBuilder {
-    quic_p2p: Builder,
-}
-
-impl TransportBuilder {
-    pub fn new(event_tx: EventSenders) -> Self {
-        Self {
-            quic_p2p: Builder::new(event_tx),
-        }
-    }
-
-    pub fn with_config(self, config: TransportConfig) -> Self {
-        Self {
-            quic_p2p: self.quic_p2p.with_config(config),
-        }
-    }
-
-    pub fn build(self) -> Result<Transport, QuicP2pError> {
-        Ok(Transport {
-            quic_p2p: self.quic_p2p.build()?,
-            cache: Default::default(),
-            next_msg_token: 0,
-            scheduled_messages: Default::default(),
-        })
     }
 }
 

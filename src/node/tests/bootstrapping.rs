@@ -11,7 +11,8 @@ use crate::{
     messages::{Message, Variant},
     mock::Environment,
     node::{Node, NodeConfig, BOOTSTRAP_TIMEOUT},
-    quic_p2p::{Builder, EventSenders, Peer},
+    quic_p2p::{EventSenders, Peer},
+    transport::Transport,
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::{self as mpmc, TryRecvError};
@@ -31,10 +32,7 @@ fn lose_proxy_connection() {
     };
     let node_a_endpoint = env.gen_addr();
     let node_a_config = TransportConfig::node().with_endpoint(node_a_endpoint);
-    let node_a_network_service = Builder::new(node_a_event_tx)
-        .with_config(node_a_config)
-        .build()
-        .unwrap();
+    let node_a_network_service = Transport::new(node_a_event_tx, node_a_config).unwrap();
 
     // Construct a node "B" which will start in the bootstrapping stage and bootstrap off the
     // network service above.
