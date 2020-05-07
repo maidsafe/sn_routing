@@ -19,7 +19,7 @@ use crate::{
     rng::{self, MainRng},
     time::Duration,
     timer::Timer,
-    transport::{PeerStatus, Transport, TransportBuilder},
+    transport::{PeerStatus, Transport},
     xor_space::XorName,
 };
 use bytes::Bytes;
@@ -49,10 +49,7 @@ impl Core {
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
 
         config.transport_config.our_type = OurType::Node;
-        let transport = match TransportBuilder::new(transport_event_tx)
-            .with_config(config.transport_config)
-            .build()
-        {
+        let transport = match Transport::new(transport_event_tx, config.transport_config) {
             Ok(transport) => transport,
             Err(err) => panic!("Unable to start network transport: {:?}", err),
         };

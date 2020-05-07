@@ -114,7 +114,7 @@ mod tests {
 
         let full_msg = unwrap!(Message::from_bytes(bytes));
         let partial_msg = unwrap!(PartialMessage::from_bytes(bytes));
-        let partial_msg_head = unwrap!(PartialMessage::from_bytes(&bytes.slice(0, 40)));
+        let partial_msg_head = unwrap!(PartialMessage::from_bytes(&bytes.slice(0..40)));
 
         let expected_partial = PartialMessage { dst: msg.dst };
 

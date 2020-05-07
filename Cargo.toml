@@ -13,8 +13,8 @@ edition = "2018"
 [dependencies]
 bincode = "1.1.4"
 bls = { package = "threshold_crypto", version = "~0.3.2" }
-bytes = "~0.4.12"
-crossbeam-channel = "~0.3.9"
+bytes = "~0.5.4"
+crossbeam-channel = "~0.4.2"
 ctrlc = { version = "~3", optional = true, features = ["termination"] }
 derive_more = "0.99.2"
 ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.3", features = ["serde"] }
@@ -28,10 +28,10 @@ itertools = "~0.6.1"
 lazy_static = { version = "~1", optional = true }
 log = "~0.4.8"
 lru_time_cache = "~0.8.1"
-mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", tag = "0.5.0", optional = true }
+mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
 num-bigint = "~0.1.40"
-parsec = "0.6.0"
-quic-p2p = "~0.5.0"
+parsec = "0.7.0"
+quic-p2p = { version = "0.6.0", features = ["upnp"] }
 # rand in the versions used for compatibility
 rand = "0.7.2"
 rand_crypto = { package = "rand", version = "~0.6.5" }

@@ -535,7 +535,7 @@ impl JoiningPeer {
             let (client_tx, _) = crossbeam_channel::unbounded();
             (quic_p2p::EventSenders { node_tx, client_tx }, node_rx)
         };
-        let network_service = quic_p2p::Builder::new(network_event_tx).build().unwrap();
+        let network_service = quic_p2p::QuicP2p::new(network_event_tx).unwrap();
 
         Self {
             network_service,
