@@ -13,6 +13,7 @@ use crate::{
     consensus::AccumulatingEvent,
     id::{P2pNode, PublicId},
     location::DstLocation,
+    messages::SrcAuthority,
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
     xor_space::{Prefix, XorName, Xorable},
@@ -307,6 +308,55 @@ impl SharedState {
                 false
             }
         })
+    }
+
+    /// Update our knowledge of their section and their knowledge of ours. Returns the events to
+    /// vote for (if any).
+    pub fn update_section_knowledge(
+        &mut self,
+        src: &SrcAuthority,
+        dst_key: Option<&bls::PublicKey>,
+    ) -> Vec<AccumulatingEvent> {
+        let (&prefix, new_key) = if let Some(pair) = src.section_prefix_and_key() {
+            pair
+        } else {
+            return vec![];
+        };
+
+        let mut events = Vec::with_capacity(3);
+
+        let outdated_us = if !self.sections.has_key(new_key) {
+            events.push(AccumulatingEvent::TheirKeyInfo {
+                prefix,
+                key: *new_key,
+            });
+
+            true
+        } else {
+            false
+        };
+
+        let outdated_them = if let Some(dst_key) = dst_key {
+            let old = self.sections.knowledge_by_section(&prefix);
+            let new = self.our_history.index_of(dst_key).unwrap_or(0);
+
+            if new > old {
+                events.push(AccumulatingEvent::TheirKnowledge {
+                    prefix,
+                    knowledge: new,
+                });
+            }
+
+            new < self.our_history.last_key_index()
+        } else {
+            false
+        };
+
+        if self.our_prefix().is_neighbour(&prefix) && (outdated_us || outdated_them) {
+            events.push(AccumulatingEvent::SendNeighbourInfo(prefix));
+        }
+
+        events
     }
 
     // Tries to split our section.
