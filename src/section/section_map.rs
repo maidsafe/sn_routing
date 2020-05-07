@@ -292,8 +292,11 @@ impl SectionMap {
         self.keys.values().any(|known_key| known_key == key)
     }
 
+    /// Returns the latest known key for the prefix that matches `name`.
     pub fn latest_compatible_key(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        // `keys` is already ordered newest to oldest.
+        // `keys()` yields the keys from newest to oldest because it is a `chain` of `keys` and
+        // `recent_keys` in that order, so in case of multiple compatible keys, the newest one
+        // is returned.
         self.keys()
             .find(|(prefix, _)| prefix.matches(name))
             .map(|(_, info)| info)
