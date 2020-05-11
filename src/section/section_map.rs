@@ -32,9 +32,6 @@ pub struct SectionMap {
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     other: BTreeMap<Prefix<XorName>, EldersInfo>,
-    // Other section infos that are not immediate successors of the ones we have. Stored here until
-    // we get the immediate successor, then moved to `other`.
-    other_queued: VecDeque<EldersInfo>,
     // BLS public keys of known sections
     keys: BTreeMap<Prefix<XorName>, bls::PublicKey>,
     // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
@@ -50,7 +47,6 @@ impl SectionMap {
         Self {
             our: our_info,
             other: Default::default(),
-            other_queued: Default::default(),
             keys: iter::once((prefix, our_key)).collect(),
             recent_keys: Default::default(),
             knowledge: Default::default(),
@@ -69,13 +65,6 @@ impl SectionMap {
         } else {
             self.other.get(prefix)
         }
-    }
-
-    /// Returns a known section whose prefix is compatible with the given prefix, if any.
-    pub fn compatible(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        self.all()
-            .find(move |(known_prefix, _)| known_prefix.is_compatible(prefix))
-            .map(|(_, info)| info)
     }
 
     /// Find other section containing the given elder.
@@ -169,47 +158,6 @@ impl SectionMap {
     }
 
     pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
-        // Add all queued infos (including the new one) if they are immediate successors of the ones
-        // we already have, otherwise keep them in the queue and try again next time.
-
-        self.other_queued.push_back(elders_info);
-        let mut remaining = self.other_queued.len();
-
-        loop {
-            if remaining == 0 {
-                break;
-            }
-
-            if let Some(info) = self.other_queued.pop_front() {
-                if self.is_immediate_successor(&info) {
-                    self.add_to_other(info);
-                    remaining = self.other_queued.len();
-                } else {
-                    self.other_queued.push_back(info);
-                    remaining -= 1;
-                }
-            } else {
-                break;
-            }
-        }
-
-        self.prune_neighbours();
-    }
-
-    // Is the given section immediate successor of a section we already know?
-    fn is_immediate_successor(&self, new_info: &EldersInfo) -> bool {
-        let not_follow = |old_info: &EldersInfo| {
-            new_info.prefix.is_compatible(&old_info.prefix)
-                && new_info.version != (old_info.version + 1)
-        };
-
-        !self
-            .compatible(&new_info.prefix)
-            .into_iter()
-            .any(not_follow)
-    }
-
-    fn add_to_other(&mut self, elders_info: EldersInfo) {
         let prefix = elders_info.prefix;
         let parent_prefix = elders_info.prefix.popped();
         let sibling_prefix = elders_info.prefix.sibling();
@@ -239,6 +187,8 @@ impl SectionMap {
         {
             let _ = self.other.insert(sibling_prefix, sinfo);
         }
+
+        self.prune_neighbours();
     }
 
     // Remove outdated neighbour infos.
