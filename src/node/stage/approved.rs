@@ -1351,12 +1351,12 @@ impl Approved {
     fn handle_send_neighbour_info_event(
         &mut self,
         core: &mut Core,
-        prefix: Prefix<XorName>,
+        dst: Prefix<XorName>,
     ) -> Result<()> {
         self.send_routing_message(
             core,
             SrcLocation::Section(*self.shared_state.our_prefix()),
-            DstLocation::Prefix(prefix),
+            DstLocation::Prefix(dst),
             Variant::NeighbourInfo(self.shared_state.our_info().clone()),
             None,
         )
@@ -1833,16 +1833,15 @@ impl Approved {
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
     //
-    // If `node_knowledge_override` is set and the destination is a single node, it will be used as
-    // the starting index of the proof. Otherwise the index is calculated using the knowledge
-    // stored in the shared state.
+    // If `proof_start_index_override` is set it will be used as the starting index of the proof.
+    // Otherwise the index is calculated using the knowledge stored in the section map.
     pub fn send_routing_message(
         &mut self,
         core: &mut Core,
         src: SrcLocation,
         dst: DstLocation,
         variant: Variant,
-        node_knowledge_override: Option<u64>,
+        proof_start_index_override: Option<u64>,
     ) -> Result<()> {
         if !src.contains(core.name()) {
             log_or_panic!(
@@ -1863,7 +1862,7 @@ impl Approved {
         }
 
         let accumulating_msg =
-            self.to_accumulating_message(dst, variant, node_knowledge_override)?;
+            self.to_accumulating_message(dst, variant, proof_start_index_override)?;
 
         let targets = routing_table::signature_targets(
             &dst,
@@ -1895,9 +1894,9 @@ impl Approved {
         &self,
         dst: DstLocation,
         variant: Variant,
-        node_knowledge_override: Option<u64>,
+        proof_start_index_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
-        let proof = self.shared_state.prove(&dst, node_knowledge_override);
+        let proof = self.shared_state.prove(&dst, proof_start_index_override);
         let pk_set = self.section_keys_provider.public_key_set().clone();
         let sk_share = self.section_keys_provider.secret_key_share()?;
 

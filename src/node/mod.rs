@@ -372,6 +372,8 @@ impl Node {
             return Err(RoutingError::BadLocation);
         }
 
+        let _log_ident = self.set_log_ident();
+
         match &mut self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => {
                 Err(RoutingError::InvalidState)
@@ -634,11 +636,7 @@ impl Node {
     }
 
     fn dispatch_message(&mut self, sender: Option<SocketAddr>, msg: Message) -> Result<()> {
-        // Common messages
-        match msg.variant {
-            Variant::UserMessage(_) => (),
-            _ => trace!("Got {:?}", msg),
-        }
+        trace!("Got {:?}", msg);
 
         match &mut self.stage {
             Stage::Bootstrapping(stage) => match msg.variant {

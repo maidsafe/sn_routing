@@ -547,3 +547,64 @@ fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedSt
 
     state
 }
+
+#[test]
+fn neighbour_update() {
+    // 1. Create two sections, A and B.
+    // 2. Change the set of elders of B.
+    // 3. Send a message from B to A to make A request an update from B.
+    // 4. Verify A's view of B is up to date.
+
+    let env = Environment::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+    });
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
+
+    let prefix_a = Prefix::default().pushed(rng.gen());
+    let prefix_b = prefix_a.sibling();
+
+    // A's view of B is initially up to date.
+    assert!(section_view_is_up_to_date(&nodes, &prefix_a, &prefix_b));
+
+    let num_elders_to_remove = rng.gen_range(1, LOWERED_ELDER_SIZE + 1);
+
+    // Add nodes that will replace the removed elders.
+    for _ in 0..num_elders_to_remove {
+        add_node_to_section(&env, &mut nodes, &prefix_b);
+    }
+    poll_until(&env, &mut nodes, |nodes| {
+        all_nodes_joined(nodes, 0..nodes.len())
+    });
+
+    // Remove some elders from B.
+    for _ in 0..num_elders_to_remove {
+        let name = remove_elder_from_section(&mut nodes, &prefix_b);
+        poll_until(&env, &mut nodes, |nodes| node_left(nodes, &name));
+    }
+
+    // Send a message from B to A to trigger the update request.
+    send_user_message(&mut nodes, prefix_b, prefix_a, gen_vec(&mut rng, 10));
+    poll_until(&env, &mut nodes, |nodes| {
+        section_view_is_up_to_date(nodes, &prefix_a, &prefix_b)
+    });
+}
+
+// Returns whether section A's view of section B is up to date.
+fn section_view_is_up_to_date(
+    nodes: &[TestNode],
+    a: &Prefix<XorName>,
+    b: &Prefix<XorName>,
+) -> bool {
+    for node_a in elders_with_prefix(nodes, a) {
+        for node_b in elders_with_prefix(nodes, b) {
+            if !node_a.inner.is_peer_elder(node_b.name()) {
+                trace!("Node {} doesn't know node {}", node_a.name(), node_b.name());
+                return false;
+            }
+        }
+    }
+
+    true
+}

@@ -476,8 +476,8 @@ fn random_churn(
     (added_indices, dropped_names)
 }
 
-fn progress_and_verify<R: Rng>(
-    rng: &mut R,
+fn progress_and_verify(
+    rng: &mut MainRng,
     env: &Environment,
     nodes: &mut [TestNode],
     message_schedule: MessageSchedule,
@@ -712,8 +712,8 @@ fn is_expected_recipient(node: &TestNode, dst: &DstLocation) -> bool {
     node.inner.is_elder() && node.inner.in_dst_location(dst)
 }
 
-fn setup_expectations<R: Rng>(
-    rng: &mut R,
+fn setup_expectations(
+    rng: &mut MainRng,
     nodes: &mut [TestNode],
     elder_size: usize,
 ) -> Expectations {

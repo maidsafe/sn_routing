@@ -17,8 +17,8 @@ use routing::{
     event::{Connected, Event},
     mock::Environment,
     rng::MainRng,
-    test_consts, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, RelocationOverrides,
-    TransportConfig, XorName, Xorable,
+    test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
+    RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
 };
 use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
@@ -379,6 +379,9 @@ pub fn create_connected_nodes_until_split(
 
     for prefix_to_split in split_sequence {
         trigger_split(env, &mut nodes, &prefix_to_split)
+
+        // TODO: send a random section message from the newly split sections to all the other
+        // sections in the network in order to trigger knowledge update
     }
 
     // Gather all the actual prefixes and check they are as expected.
@@ -622,6 +625,22 @@ pub fn indexed_nodes_with_prefix<'a>(
         .filter(move |(_, node)| prefix.matches(node.name()))
 }
 
+/// Iterator over all elder nodes that belong to the given prefix.
+pub fn elders_with_prefix<'a>(
+    nodes: &'a [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a TestNode> {
+    nodes_with_prefix(nodes, prefix).filter(|node| node.inner.is_elder())
+}
+
+/// Mutable iterator over all elder nodes that belong to the given prefix.
+pub fn elders_with_prefix_mut<'a>(
+    nodes: &'a mut [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a mut TestNode> {
+    nodes_with_prefix_mut(nodes, prefix).filter(|node| node.inner.is_elder())
+}
+
 pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     let our_prefix = node.our_prefix();
     let our_name = node.name();
@@ -739,8 +758,31 @@ pub fn verify_invariants_for_nodes(env: &Environment, nodes: &[TestNode]) {
     }
 }
 
+// Send an `UserMessage` with `content` from `src` to `dst`.
+pub fn send_user_message(
+    nodes: &mut [TestNode],
+    src: Prefix<XorName>,
+    dst: Prefix<XorName>,
+    content: Vec<u8>,
+) {
+    let src_location = SrcLocation::Section(src);
+    let dst_location = DstLocation::Prefix(dst);
+
+    trace!(
+        "sending user message {:?} -> {:?}",
+        src_location,
+        dst_location
+    );
+
+    for node in elders_with_prefix_mut(nodes, &src) {
+        node.inner
+            .send_message(src_location, dst_location, content.clone())
+            .unwrap()
+    }
+}
+
 // Generate a vector of random T of the given length.
-pub fn gen_vec<R: Rng, T>(rng: &mut R, size: usize) -> Vec<T>
+pub fn gen_vec<T>(rng: &mut MainRng, size: usize) -> Vec<T>
 where
     Standard: Distribution<T>,
 {
@@ -748,7 +790,7 @@ where
 }
 
 // Generate a vector of random bytes of the given length.
-pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
+pub fn gen_bytes(rng: &mut MainRng, size: usize) -> Vec<u8> {
     gen_vec(rng, size)
 }
 
@@ -769,6 +811,11 @@ pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix:
 
     info!("Add node {} to {:?}", node.name(), prefix);
     nodes.push(node);
+}
+
+// Removes one elder node from the given prefix. Returns the name of the removed node.
+pub fn remove_elder_from_section(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) -> XorName {
+    remove_elder_from_section_in_range(nodes, prefix, 0..nodes.len())
 }
 
 // Removes one elder node from the given prefix but only from nodes in the given index range.
