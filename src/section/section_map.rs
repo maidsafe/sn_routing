@@ -112,7 +112,9 @@ impl SectionMap {
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
     pub fn is_new(&self, elders_info: &EldersInfo) -> bool {
-        !self.all().any(|(_, info)| info.is_newer(elders_info))
+        self.all()
+            .filter(|(_, known_info)| known_info.prefix.is_compatible(&elders_info.prefix))
+            .all(|(_, known_info)| known_info.version < elders_info.version)
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.

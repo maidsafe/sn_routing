@@ -54,11 +54,6 @@ impl EldersInfo {
             .count()
             >= quorum_count(self.elders.len())
     }
-
-    /// Returns whether this `EldersInfo` is compatible and newer than the other.
-    pub(crate) fn is_newer(&self, other: &Self) -> bool {
-        self.prefix.is_compatible(&other.prefix) && self.version > other.version
-    }
 }
 
 impl Debug for EldersInfo {
