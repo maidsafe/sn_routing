@@ -24,6 +24,9 @@ use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
 };
 
+// The smallest number of elders which allows to reach consensus when one of them goes offline.
+pub const LOWERED_ELDER_SIZE: usize = 4;
+
 // Maximum number of iterations of the `poll_until` function. This is several orders higher than
 // the anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_UNTIL_ITERATIONS: usize = 2000;
@@ -769,9 +772,10 @@ pub fn send_user_message(
     let dst_location = DstLocation::Prefix(dst);
 
     trace!(
-        "sending user message {:?} -> {:?}",
+        "sending user message {:?} -> {:?}: {:?}",
         src_location,
-        dst_location
+        dst_location,
+        hex_fmt::HexFmt(&content)
     );
 
     for node in elders_with_prefix_mut(nodes, &src) {

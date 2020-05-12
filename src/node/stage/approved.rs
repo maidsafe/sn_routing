@@ -731,6 +731,8 @@ impl Approved {
         core: &mut Core,
         mut msg_with_bytes: MessageWithBytes,
     ) -> Result<()> {
+        trace!("accumulated message {:?}", msg_with_bytes);
+
         // TODO: this is almost the same as `Node::try_handle_message` - find a way
         // to avoid the duplication.
         self.try_relay_message(core, &msg_with_bytes)?;

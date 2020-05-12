@@ -12,9 +12,9 @@ mod drop;
 mod messages;
 mod node_ageing;
 mod secure_message_delivery;
-mod utils;
+pub mod utils;
 
-pub use self::utils::*;
+use self::utils::*;
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
@@ -23,9 +23,6 @@ use routing::{
     RelocationOverrides, TransportConfig, XorName,
 };
 use std::collections::BTreeMap;
-
-// The smallest number of elders which allows to reach consensus when one of them goes offline.
-pub const LOWERED_ELDER_SIZE: usize = 4;
 
 // -----  Miscellaneous tests below  -----
 

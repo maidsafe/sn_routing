@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
+use super::utils::*;
 use rand::Rng;
 use routing::{
     event::Event, mock::Environment, DstLocation, NetworkParams, Prefix, SrcLocation, XorName,
