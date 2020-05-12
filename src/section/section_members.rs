@@ -81,7 +81,7 @@ impl SectionMembers {
             .filter(|member| member.state == MemberState::Joined)
     }
 
-    /// Returns joined adults and elders from our section.
+    /// Returns nodes from our section with age greater than `MIN_AGE`
     pub fn mature(&self) -> impl Iterator<Item = &P2pNode> {
         self.joined()
             .filter(|info| info.is_mature())
