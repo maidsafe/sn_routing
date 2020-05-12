@@ -30,7 +30,7 @@ use crate::{
     rng::{self, MainRng},
     time::Duration,
     transport::PeerStatus,
-    xor_space::{Prefix, XorName},
+    xor_space::{Prefix, XorName, Xorable},
     TransportConfig, TransportEvent,
 };
 use bytes::Bytes;
@@ -304,7 +304,7 @@ impl Node {
     pub fn closest_known_elders_to<'a>(
         &'a self,
         name: &'a XorName,
-    ) -> impl Iterator<Item = &'a P2pNode> + 'a {
+    ) -> impl Iterator<Item = &'a P2pNode> {
         self.stage
             .approved()
             .into_iter()
@@ -317,6 +317,14 @@ impl Node {
             .approved()
             .into_iter()
             .flat_map(|stage| stage.shared_state.our_adults())
+    }
+
+    /// Returns the adults of our section sorted by their distance to `name` (closest first).
+    /// If we are not elder or if there are no adults in the section, returns empty vec.
+    pub fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
+        let mut output: Vec<_> = self.our_adults().collect();
+        output.sort_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()));
+        output
     }
 
     /// Checks whether the given location represents self.
