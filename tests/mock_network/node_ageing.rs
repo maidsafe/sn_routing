@@ -8,9 +8,9 @@
 
 use super::{
     add_connected_nodes_until_one_away_from_split, add_node_to_section,
-    create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix, node_joined,
-    node_left, nodes_with_prefix, poll_until, verify_invariants_for_nodes, TestNode,
-    LOWERED_ELDER_SIZE,
+    add_node_to_section_using_bootstrap_node, create_connected_nodes_until_split, current_sections,
+    indexed_nodes_with_prefix, node_joined, node_left, nodes_with_prefix, poll_until,
+    verify_invariants_for_nodes, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -296,7 +296,17 @@ fn churn_until_age_counter(
 
         match churn {
             Churn::Add => {
-                add_node_to_section(env, nodes, prefix);
+                // We are making lot of churn here and so it might happen that other section's view
+                // of this section could become so out-of-date that none of the nodes they know is
+                // still online. If we picked such node for the bootstrap node, the bootstrapping
+                // would fail because the node would keep redirecting the joining node to
+                // non-existing peers. To avoid this and to keep things simple, we make sure we
+                // bootstrap off a node from the same section.
+                let bootstrap_index = indexed_nodes_with_prefix(nodes, prefix)
+                    .choose(&mut rng)
+                    .map(|(index, _)| index)
+                    .unwrap();
+                add_node_to_section_using_bootstrap_node(env, nodes, prefix, bootstrap_index);
                 poll_until(env, nodes, |nodes| node_joined(nodes, nodes.len() - 1));
             }
             Churn::Remove => {
