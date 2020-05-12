@@ -14,7 +14,7 @@ use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised as node complete joining
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Connected {
     /// Node first joining the network
     First,
@@ -50,6 +50,20 @@ pub enum Event {
     Promoted,
     /// The node has been demoted from elder
     Demoted,
+    /// A node joined our section.
+    MemberJoined {
+        /// Name of the node
+        name: XorName,
+        /// Age of the node
+        age: u8,
+    },
+    /// A node left our section.
+    MemberLeft {
+        /// Name of the node
+        name: XorName,
+        /// Age of the node
+        age: u8,
+    },
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// Disconnected or failed to connect - restart required.
@@ -60,31 +74,31 @@ pub enum Event {
 
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Self::Connected(ref connect_type) => {
-                write!(formatter, "Event::Connected({:?})", connect_type)
-            }
-            Self::MessageReceived {
-                ref content,
-                ref src,
-                ref dst,
-            } => write!(
+        match self {
+            Self::Connected(connect_type) => write!(formatter, "Connected({:?})", connect_type),
+            Self::MessageReceived { content, src, dst } => write!(
                 formatter,
-                "Event::MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
+                "MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
                 HexFmt(content),
                 src,
                 dst
             ),
-            Self::Consensus(ref payload) => {
-                write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
-            }
-            Self::Promoted => write!(formatter, "Event::Promoted"),
-            Self::Demoted => write!(formatter, "Event::Demoted"),
-            Self::SectionSplit(ref prefix) => {
-                write!(formatter, "Event::SectionSplit({:?})", prefix)
-            }
-            Self::RestartRequired => write!(formatter, "Event::RestartRequired"),
-            Self::Terminated => write!(formatter, "Event::Terminated"),
+            Self::Consensus(payload) => write!(formatter, "Consensus({:<8})", HexFmt(payload)),
+            Self::Promoted => write!(formatter, "Promoted"),
+            Self::Demoted => write!(formatter, "Demoted"),
+            Self::MemberJoined { name, age } => formatter
+                .debug_struct("MemberJoined")
+                .field("name", name)
+                .field("age", age)
+                .finish(),
+            Self::MemberLeft { name, age } => formatter
+                .debug_struct("MemberLeft")
+                .field("name", name)
+                .field("age", age)
+                .finish(),
+            Self::SectionSplit(prefix) => write!(formatter, "SectionSplit({:?})", prefix),
+            Self::RestartRequired => write!(formatter, "RestartRequired"),
+            Self::Terminated => write!(formatter, "Terminated"),
         }
     }
 }

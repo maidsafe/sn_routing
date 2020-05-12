@@ -306,6 +306,17 @@ fn handle_event(
         Event::Demoted => {
             log::info!("Node #{} demoted", index);
         }
+        Event::MemberJoined { name, age } => {
+            log::info!(
+                "Node #{} member joined - name: {}, age: {}",
+                index,
+                name,
+                age
+            );
+        }
+        Event::MemberLeft { name, age } => {
+            log::info!("Node #{} member left - name: {}, age: {}", index, name, age);
+        }
         Event::SectionSplit(prefix) => {
             log::info!("Node #{} section split - new prefix: {:b}", index, prefix);
         }
