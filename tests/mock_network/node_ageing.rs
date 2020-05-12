@@ -6,12 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    add_connected_nodes_until_one_away_from_split, add_node_to_section,
-    add_node_to_section_using_bootstrap_node, create_connected_nodes_until_split, current_sections,
-    indexed_nodes_with_prefix, node_joined, node_left, nodes_with_prefix, poll_until,
-    verify_invariants_for_nodes, TestNode, LOWERED_ELDER_SIZE,
-};
+use super::utils::*;
 use rand::{
     distributions::{Distribution, Standard},
     seq::{IteratorRandom, SliceRandom},
@@ -91,6 +86,7 @@ fn relocate_causing_split() {
 
     // Trigger relocation.
     relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
+
     poll_until(&env, &mut nodes, |nodes| {
         node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix)
     });
@@ -335,11 +331,7 @@ fn node_relocated(
 ) -> bool {
     let relocated_name = nodes[node_index].name();
 
-    for node in nodes_with_prefix(nodes, source_prefix) {
-        if !node.inner.is_elder() {
-            continue;
-        }
-
+    for node in elders_with_prefix(nodes, source_prefix) {
         if node.inner.is_peer_our_member(&relocated_name) {
             trace!(
                 "Node {} is member of the source section {:?} according to {}",
@@ -351,11 +343,7 @@ fn node_relocated(
         }
     }
 
-    for node in nodes_with_prefix(nodes, target_prefix) {
-        if !node.inner.is_elder() {
-            continue;
-        }
-
+    for node in elders_with_prefix(nodes, target_prefix) {
         let node_prefix = node.inner.our_prefix().unwrap();
         if node_prefix.is_extension_of(target_prefix) && !node_prefix.matches(relocated_name) {
             // Target section has split and the relocated node is in the other sub-section than this node.
