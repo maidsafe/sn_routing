@@ -402,6 +402,15 @@ impl Node {
         Ok(())
     }
 
+    /// Returns the current BLS secret key share or `RoutingError::InvalidState` if we are not
+    /// elder.
+    pub fn secret_key_share(&self) -> Result<&bls::SecretKeyShare> {
+        self.stage
+            .approved()
+            .and_then(|stage| stage.secret_key_share())
+            .ok_or(RoutingError::InvalidState)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
