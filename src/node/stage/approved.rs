@@ -284,6 +284,14 @@ impl Approved {
             .contains_key(id.name())
     }
 
+    /// Returns the current BLS secret key share, if any
+    pub fn secret_key_share(&self) -> Option<&bls::SecretKeyShare> {
+        self.section_keys_provider
+            .secret_key_share()
+            .ok()
+            .map(|share| &share.key)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
