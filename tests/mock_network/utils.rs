@@ -796,13 +796,24 @@ pub fn gen_bytes(rng: &mut MainRng, size: usize) -> Vec<u8> {
 
 // Create new node in the given section.
 pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+    add_node_to_section_using_bootstrap_node(env, nodes, prefix, 0)
+}
+
+// Create new node in the given section, bootstrapping it off the node at the given index.
+pub fn add_node_to_section_using_bootstrap_node(
+    env: &Environment,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    bootstrap_node_index: usize,
+) {
     let mut rng = env.new_rng();
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
 
     let node = if nodes.is_empty() {
         TestNode::builder(env).first().full_id(full_id).create()
     } else {
-        let config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+        let bootstrap_contact = nodes[bootstrap_node_index].endpoint();
+        let config = TransportConfig::node().with_hard_coded_contact(bootstrap_contact);
         TestNode::builder(env)
             .transport_config(config)
             .full_id(full_id)
