@@ -987,6 +987,10 @@ impl Approved {
             self.members_changed = true;
 
             if self.is_our_elder(core.id()) {
+                core.send_event(Event::MemberJoined {
+                    name: *payload.p2p_node.name(),
+                    age: payload.age,
+                });
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
                 self.print_network_stats();
             }
@@ -1004,15 +1008,21 @@ impl Approved {
             return;
         }
 
-        if let (Some(addr), _) = self
+        if let Some(info) = self
             .shared_state
             .remove_member(&pub_id, core.network_params.recommended_section_size)
         {
             info!("handle Offline: {}", pub_id);
 
             self.members_changed = true;
-            core.transport.disconnect(addr);
+
+            core.transport.disconnect(*info.p2p_node.peer_addr());
             let _ = self.members_knowledge.remove(pub_id.name());
+
+            core.send_event(Event::MemberLeft {
+                name: *pub_id.name(),
+                age: info.age(),
+            });
         } else {
             info!("ignore Offline: {}", pub_id);
         }
@@ -1046,17 +1056,17 @@ impl Approved {
                 &details.pub_id,
                 core.network_params.recommended_section_size,
             )
-            .1
+            .map(|info| info.state)
         {
-            MemberState::Relocating { node_knowledge } => {
+            Some(MemberState::Relocating { node_knowledge }) => {
                 info!("handle Relocate: {:?}", details);
                 node_knowledge
             }
-            MemberState::Left => {
+            Some(MemberState::Left) | None => {
                 info!("ignore Relocate: {:?} - not a member", details);
                 return Ok(());
             }
-            MemberState::Joined => {
+            Some(MemberState::Joined) => {
                 log_or_panic!(
                     log::Level::Error,
                     "Expected the state of {} to be Relocating, but was Joined",

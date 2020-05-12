@@ -19,7 +19,6 @@ use std::{
     cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap},
     mem,
-    net::SocketAddr,
 };
 
 /// Container for storing information about members of our section.
@@ -182,22 +181,18 @@ impl SectionMembers {
         }
     }
 
-    /// Remove a member from our section. Returns the SocketAddr and the state of the member before
-    /// the removal.
-    pub fn remove(&mut self, name: &XorName) -> (Option<SocketAddr>, MemberState) {
+    /// Remove a member from our section. Returns the `MemberInfo` from before the removal.
+    pub fn remove(&mut self, name: &XorName) -> Option<MemberInfo> {
         if let Some(info) = self
             .members
             .get_mut(name)
             // TODO: Probably should actually remove them
             .filter(|info| info.state != MemberState::Left)
         {
-            let member_state = info.state;
-            let member_addr = *info.p2p_node.peer_addr();
-
+            let output = info.clone();
             info.state = MemberState::Left;
             self.increment_version();
-
-            (Some(member_addr), member_state)
+            Some(output)
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -205,7 +200,7 @@ impl SectionMembers {
                 name
             );
 
-            (None, MemberState::Left)
+            None
         }
     }
 

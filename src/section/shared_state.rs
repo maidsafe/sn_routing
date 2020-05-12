@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AgeCounter, EldersInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
+use super::{
+    AgeCounter, EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain,
+};
 use crate::{
     consensus::AccumulatingEvent,
     id::{P2pNode, PublicId},
@@ -153,17 +155,16 @@ impl SharedState {
     }
 
     /// Removes a member with the given pub_id.
-    /// Returns the member's socket address (or `None` if if wasn't a member) and the member state
-    /// before the removal.
+    /// Returns its `MemberInfo` from before the removal.
     pub fn remove_member(
         &mut self,
         pub_id: &PublicId,
         recommended_section_size: usize,
-    ) -> (Option<SocketAddr>, MemberState) {
+    ) -> Option<MemberInfo> {
         match self.our_members.get(pub_id.name()).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
                 trace!("not removing node {} - not a member", pub_id);
-                return (None, MemberState::Left);
+                return None;
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
