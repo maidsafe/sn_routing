@@ -414,6 +414,12 @@ impl Approved {
         dst_key: Option<bls::PublicKey>,
     ) -> Result<()> {
         if self.shared_state.sections.is_new_neighbour(&elders_info) {
+            let src_key = if let Some((_, key)) = src.section_prefix_and_key() {
+                *key
+            } else {
+                unreachable!()
+            };
+
             let _ = self
                 .pending_voted_msgs
                 .entry(PendingMessageKey::NeighbourInfo {
@@ -427,7 +433,7 @@ impl Approved {
                     dst_key,
                 });
 
-            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
+            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info, src_key));
         } else {
             trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
         }
@@ -929,14 +935,14 @@ impl Approved {
             } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
-            AccumulatingEvent::SectionInfo(elders_info, key_info) => {
-                self.handle_section_info_event(core, elders_info, key_info, proof)?
+            AccumulatingEvent::SectionInfo(elders_info, key) => {
+                self.handle_section_info_event(core, elders_info, key, proof)?
             }
-            AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(core, elders_info)?
+            AccumulatingEvent::NeighbourInfo(elders_info, key) => {
+                self.handle_neighbour_info_event(core, elders_info, key)?
             }
-            AccumulatingEvent::SendNeighbourInfo(prefix) => {
-                self.handle_send_neighbour_info_event(core, prefix)?
+            AccumulatingEvent::SendNeighbourInfo { dst, .. } => {
+                self.handle_send_neighbour_info_event(core, dst)?
             }
             AccumulatingEvent::TheirKeyInfo { prefix, key } => {
                 self.handle_their_key_info_event(prefix, key)
@@ -1315,10 +1321,14 @@ impl Approved {
         &mut self,
         core: &mut Core,
         elders_info: EldersInfo,
+        key: bls::PublicKey,
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
+        self.shared_state
+            .sections
+            .update_keys(elders_info.prefix, key);
         self.shared_state
             .sections
             .add_neighbour(elders_info.clone());
@@ -1424,7 +1434,7 @@ impl Approved {
                 | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo { .. }
-                | AccumulatingEvent::SendNeighbourInfo(_)
+                | AccumulatingEvent::SendNeighbourInfo { .. }
                 | AccumulatingEvent::TheirKeyInfo { .. }
                 | AccumulatingEvent::TheirKnowledge { .. }
                 | AccumulatingEvent::User(_) => false,
@@ -1453,13 +1463,13 @@ impl Approved {
 
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
-                    | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
+                    | AccumulatingEvent::NeighbourInfo(ref elders_info, _) => {
                         our_prefix.is_neighbour(&elders_info.prefix)
                     }
 
                     // Only revote if the recipient is still our neighbour
-                    AccumulatingEvent::SendNeighbourInfo(ref prefix) => {
-                        our_prefix.is_neighbour(prefix)
+                    AccumulatingEvent::SendNeighbourInfo { ref dst, .. } => {
+                        our_prefix.is_neighbour(dst)
                     }
 
                     // Keep: Still relevant after prefix change.
@@ -1493,7 +1503,7 @@ impl Approved {
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SectionInfo(_, _)
             | AccumulatingEvent::NeighbourInfo { .. }
-            | AccumulatingEvent::SendNeighbourInfo(_)
+            | AccumulatingEvent::SendNeighbourInfo { .. }
             | AccumulatingEvent::TheirKeyInfo { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::User(_) => {
@@ -1890,6 +1900,7 @@ impl Approved {
         let proof = self.shared_state.prove(&dst, node_knowledge_override);
         let pk_set = self.section_keys_provider.public_key_set().clone();
         let sk_share = self.section_keys_provider.secret_key_share()?;
+
         let dst_key = *self
             .shared_state
             .sections

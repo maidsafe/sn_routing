@@ -323,20 +323,25 @@ impl SharedState {
             return vec![];
         };
 
-        let mut events = Vec::with_capacity(3);
+        let is_neighbour = self.our_prefix().is_neighbour(&prefix);
 
-        let outdated_us = if !self.sections.has_key(new_key) {
-            events.push(AccumulatingEvent::TheirKeyInfo {
-                prefix,
-                key: *new_key,
-            });
+        let mut events = Vec::with_capacity(2);
+        let mut vote_send_neighbour_info = false;
 
-            true
-        } else {
-            false
-        };
+        if !self.sections.has_key(new_key) {
+            // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
+            // via `NeighbourInfo`.
+            if is_neighbour {
+                vote_send_neighbour_info = true;
+            } else {
+                events.push(AccumulatingEvent::TheirKeyInfo {
+                    prefix,
+                    key: *new_key,
+                });
+            }
+        }
 
-        let outdated_them = if let Some(dst_key) = dst_key {
+        if let Some(dst_key) = dst_key {
             let old = self.sections.knowledge_by_section(&prefix);
             let new = self.our_history.index_of(dst_key).unwrap_or(0);
 
@@ -344,16 +349,20 @@ impl SharedState {
                 events.push(AccumulatingEvent::TheirKnowledge {
                     prefix,
                     knowledge: new,
-                });
+                })
             }
 
-            new < self.our_history.last_key_index()
-        } else {
-            false
-        };
+            if is_neighbour && new < self.our_history.last_key_index() {
+                vote_send_neighbour_info = true;
+            }
+        }
 
-        if self.our_prefix().is_neighbour(&prefix) && (outdated_us || outdated_them) {
-            events.push(AccumulatingEvent::SendNeighbourInfo(prefix));
+        if vote_send_neighbour_info {
+            events.push(AccumulatingEvent::SendNeighbourInfo {
+                dst: prefix,
+                dst_key: *new_key,
+                our_key_index: self.our_history.last_key_index(),
+            })
         }
 
         events
@@ -492,11 +501,7 @@ impl SharedState {
             );
             member_info.state = relocating_state;
 
-            let destination_key = *self
-                .sections
-                .latest_compatible_key(&destination)
-                .unwrap_or(first_key);
-
+            let destination_key = *self.sections.key_by_name(&destination).unwrap_or(first_key);
             let details = RelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,

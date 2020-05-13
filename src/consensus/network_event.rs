@@ -79,10 +79,14 @@ pub enum AccumulatingEvent {
     SectionInfo(EldersInfo, bls::PublicKey),
 
     // Voted for received message with info about a neighbour section.
-    NeighbourInfo(EldersInfo),
+    NeighbourInfo(EldersInfo, bls::PublicKey),
 
     // Voted to send info about our section to a neighbour section.
-    SendNeighbourInfo(Prefix<XorName>),
+    SendNeighbourInfo {
+        dst: Prefix<XorName>,
+        dst_key: bls::PublicKey,
+        our_key_index: u64,
+    },
 
     // Voted for received message with keys to update their_keys
     TheirKeyInfo {
@@ -149,11 +153,19 @@ impl Debug for AccumulatingEvent {
             ),
             Self::Online(payload) => write!(formatter, "Online({:?})", payload),
             Self::Offline(id) => write!(formatter, "Offline({})", id),
-            Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
-            Self::NeighbourInfo(elders_info) => {
-                write!(formatter, "NeighbourInfo({:?})", elders_info)
+            Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?}, ..)", info),
+            Self::NeighbourInfo(elders_info, _) => {
+                write!(formatter, "NeighbourInfo({:?}, ..)", elders_info)
             }
-            Self::SendNeighbourInfo(prefix) => write!(formatter, "SendNeighbourInfo({:?})", prefix),
+            Self::SendNeighbourInfo {
+                dst,
+                dst_key,
+                our_key_index,
+            } => write!(
+                formatter,
+                "SendNeighbourInfo {{ dst: {:?}, dst_key: {:?}, our_key_index: {:?} }}",
+                dst, dst_key, our_key_index
+            ),
             Self::TheirKeyInfo { prefix, key } => write!(
                 formatter,
                 "TheirKeyInfo {{ prefix: {:?}, key: {:?} }}",
