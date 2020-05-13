@@ -181,7 +181,8 @@ impl SectionMembers {
         }
     }
 
-    /// Remove a member from our section. Returns the `MemberInfo` from before the removal.
+    /// Remove a member from our section. Returns the removed `MemberInfo` or `None` if there was
+    /// no such member.
     pub fn remove(&mut self, name: &XorName) -> Option<MemberInfo> {
         if let Some(info) = self
             .members
