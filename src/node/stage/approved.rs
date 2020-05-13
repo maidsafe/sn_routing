@@ -1027,10 +1027,12 @@ impl Approved {
             core.transport.disconnect(*info.p2p_node.peer_addr());
             let _ = self.members_knowledge.remove(pub_id.name());
 
-            core.send_event(Event::MemberLeft {
-                name: *pub_id.name(),
-                age: info.age(),
-            });
+            if self.is_our_elder(core.id()) {
+                core.send_event(Event::MemberLeft {
+                    name: *pub_id.name(),
+                    age: info.age(),
+                });
+            }
         } else {
             info!("ignore Offline: {}", pub_id);
         }

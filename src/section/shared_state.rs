@@ -155,7 +155,7 @@ impl SharedState {
     }
 
     /// Removes a member with the given pub_id.
-    /// Returns its `MemberInfo` from before the removal.
+    /// Returns the removed `MemberInfo` or `None` if there was no such member.
     pub fn remove_member(
         &mut self,
         pub_id: &PublicId,
