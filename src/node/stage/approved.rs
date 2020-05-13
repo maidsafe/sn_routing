@@ -1355,6 +1355,10 @@ impl Approved {
         core: &mut Core,
         dst: Prefix<XorName>,
     ) -> Result<()> {
+        if !self.is_our_elder(core.id()) {
+            return Ok(());
+        }
+
         self.send_routing_message(
             core,
             SrcLocation::Section(*self.shared_state.our_prefix()),

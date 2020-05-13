@@ -324,6 +324,30 @@ pub fn consensus_reached(
     *current_count >= expected_count
 }
 
+// Returns whether section A's view of section B is up to date.
+pub fn section_view_is_up_to_date(
+    nodes: &[TestNode],
+    a: &Prefix<XorName>,
+    b: &Prefix<XorName>,
+) -> bool {
+    for node_a in elders_with_prefix(nodes, a) {
+        for node_b in elders_with_prefix(nodes, b) {
+            if !node_a.inner.is_peer_elder(node_b.name()) {
+                trace!(
+                    "Node {} from {:?} doesn't know node {} from {:?}",
+                    node_a.name(),
+                    a,
+                    node_b.name(),
+                    b
+                );
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
@@ -504,12 +528,19 @@ pub fn add_mature_nodes(
 
     // Remove 16 mature nodes to trigger 16 age increments.
     info!("Removing {} mature nodes", remove_count);
-    for _ in 0..remove_count {
+
+    for i in 0..remove_count {
         // Note: removing only elders for simplicity. Also making sure we don't remove any of the
         // last `count0 + count1` nodes.
         let removed_id =
             remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
         poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
+
+        // Update neighbours while there is still at least one elder that is online and is known
+        // by the neighbours.
+        if (i + 1) % (env.elder_size() - 1) == 0 {
+            update_neighbours_and_poll(env, nodes, *prefix);
+        }
     }
 
     // Count the number of nodes in each sub-prefix and verify they are as expected.
@@ -785,6 +816,42 @@ pub fn send_user_message(
     }
 }
 
+// Send random message from `prefix` to its neighbours to trigger `NeighbourInfo`
+// exchange. Poll until the neighbours are updated.
+pub fn update_neighbours_and_poll(
+    env: &Environment,
+    nodes: &mut [TestNode],
+    prefix: Prefix<XorName>,
+) {
+    let mut rng = env.new_rng();
+    let content = gen_vec(&mut rng, 32);
+    let neighbour_prefixes: Vec<_> = current_sections(nodes)
+        .filter(|other_prefix| other_prefix.is_neighbour(&prefix))
+        .collect();
+
+    trace!(
+        "update neighbours start {:?} -> {:?}",
+        prefix,
+        neighbour_prefixes
+    );
+
+    for neighbour_prefix in &neighbour_prefixes {
+        send_user_message(nodes, prefix, *neighbour_prefix, content.clone());
+    }
+
+    poll_until(env, nodes, |nodes| {
+        neighbour_prefixes
+            .iter()
+            .all(|neighbour_prefix| section_view_is_up_to_date(nodes, neighbour_prefix, &prefix))
+    });
+
+    trace!(
+        "update neighbours finish {:?} -> {:?}",
+        prefix,
+        neighbour_prefixes
+    );
+}
+
 // Generate a vector of random T of the given length.
 pub fn gen_vec<T>(rng: &mut MainRng, size: usize) -> Vec<T>
 where
@@ -824,7 +891,7 @@ pub fn add_node_to_section_using_bootstrap_node(
             .create()
     };
 
-    info!("Add node {} to {:?}", node.name(), prefix);
+    info!("Adding node {} to {:?}", node.name(), prefix);
     nodes.push(node);
 }
 
@@ -845,7 +912,7 @@ fn remove_elder_from_section_in_range(
         .map(|(index, _)| index)
         .unwrap();
 
-    info!("Remove node {} from {:?}", nodes[index].name(), prefix);
+    info!("Removing node {} from {:?}", nodes[index].name(), prefix);
     *nodes.remove(index).name()
 }
 

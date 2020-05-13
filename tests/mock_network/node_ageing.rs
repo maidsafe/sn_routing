@@ -86,7 +86,6 @@ fn relocate_causing_split() {
 
     // Trigger relocation.
     relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
-
     poll_until(&env, &mut nodes, |nodes| {
         node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix)
     });
@@ -222,21 +221,21 @@ fn choose_other_prefix<'a, R: Rng>(
 }
 
 // Removes random node from the given section but makes sure it's not the node at the given index.
-// Returns the index and the name of the removed node.
+// Returns the index of the removed node, its name and whether it was elder.
 fn remove_random_node_from_section_except(
     rng: &mut MainRng,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     index_to_not_remove: usize,
-) -> (usize, XorName) {
+) -> (usize, XorName, bool) {
     if let Some(index) = indexed_nodes_with_prefix(nodes, prefix)
         .filter(|(index, _)| *index != index_to_not_remove)
         .map(|(index, _)| index)
         .choose(rng)
     {
         let node = nodes.remove(index);
-        info!("Remove node {} from {:?}", node.name(), prefix);
-        (index, *node.name())
+        info!("Removing node {} from {:?}", node.name(), prefix);
+        (index, *node.name(), node.inner.is_elder())
     } else {
         panic!(
             "Section {:?} does not have any nodes that can be removed",
@@ -266,6 +265,10 @@ fn churn_until_age_counter(
     let node_name = *nodes[node_index].name();
 
     let mut rng = env.new_rng();
+
+    // Track the number of elders we removed so we update the neighbours while they still know at
+    // least one online elder.
+    let mut removed_elder_count = 0;
 
     loop {
         let current_age_counter = node_age_counter(nodes, &node_name);
@@ -306,14 +309,23 @@ fn churn_until_age_counter(
                 poll_until(env, nodes, |nodes| node_joined(nodes, nodes.len() - 1));
             }
             Churn::Remove => {
-                let (removed_index, name) =
+                let (removed_index, removed_name, removed_was_elder) =
                     remove_random_node_from_section_except(&mut rng, nodes, prefix, node_index);
 
                 if removed_index < node_index {
                     node_index -= 1;
                 }
 
-                poll_until(env, nodes, |nodes| node_left(nodes, &name));
+                poll_until(env, nodes, |nodes| node_left(nodes, &removed_name));
+
+                if removed_was_elder {
+                    removed_elder_count += 1;
+                }
+
+                if removed_elder_count >= env.elder_size() - 1 {
+                    update_neighbours_and_poll(env, nodes, *prefix);
+                    removed_elder_count = 0;
+                }
             }
         }
     }
