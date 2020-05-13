@@ -587,21 +587,3 @@ fn neighbour_update() {
         section_view_is_up_to_date(nodes, &prefix_a, &prefix_b)
     });
 }
-
-// Returns whether section A's view of section B is up to date.
-fn section_view_is_up_to_date(
-    nodes: &[TestNode],
-    a: &Prefix<XorName>,
-    b: &Prefix<XorName>,
-) -> bool {
-    for node_a in elders_with_prefix(nodes, a) {
-        for node_b in elders_with_prefix(nodes, b) {
-            if !node_a.inner.is_peer_elder(node_b.name()) {
-                trace!("Node {} doesn't know node {}", node_a.name(), node_b.name());
-                return false;
-            }
-        }
-    }
-
-    true
-}
