@@ -719,7 +719,7 @@ fn setup_expectations(
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
 
-    let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
+    let prefix: Prefix<XorName> = current_sections(nodes).choose(rng).unwrap();
     let section_name = prefix.substituted_in(rng.gen());
 
     let src_n0 = SrcLocation::Node(*nodes[index0].name());

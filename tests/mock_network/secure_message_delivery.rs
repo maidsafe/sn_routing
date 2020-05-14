@@ -9,8 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
     generate_bls_threshold_secret_key, mock::Environment, rng::MainRng, AccumulatingMessage,
-    DstLocation, EldersInfo, FullId, IndexedSecretKeyShare, Message, NetworkParams, P2pNode,
-    PlainMessage, Prefix, SectionProofChain, Variant, XorName,
+    DstLocation, EldersInfo, FullId, IndexedSecretKeyShare, Message, MessageHash, NetworkParams,
+    P2pNode, PlainMessage, Prefix, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -78,7 +78,10 @@ fn message_with_invalid_security(fail_type: FailType) {
         src: our_prefix,
         dst: DstLocation::Prefix(their_prefix),
         dst_key: their_key,
-        variant: Variant::NeighbourInfo(new_info),
+        variant: Variant::NeighbourInfo {
+            elders_info: new_info,
+            nonce: MessageHash::from_bytes(b"hello"),
+        },
     };
 
     let message = {

@@ -564,7 +564,7 @@ impl Node {
         match self.decide_message_action(&msg)? {
             MessageAction::Handle => {
                 self.core.msg_filter.insert_incoming(&msg_with_bytes);
-                self.handle_message(sender, msg)
+                self.handle_message(sender, msg, msg_with_bytes.full_crypto_hash())
             }
             MessageAction::Bounce => {
                 debug!(
@@ -614,9 +614,14 @@ impl Node {
         }
     }
 
-    fn handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+    fn handle_message(
+        &mut self,
+        sender: SocketAddr,
+        msg: Message,
+        msg_hash: &MessageHash,
+    ) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(&msg);
+            stage.update_section_knowledge(&msg, msg_hash);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
@@ -673,11 +678,17 @@ impl Node {
                 _ => unreachable!(),
             },
             Stage::Approved(stage) => match msg.variant {
-                Variant::NeighbourInfo(elders_info) => {
+                Variant::NeighbourInfo { elders_info, nonce } => {
                     // Ensure the src and dst are what we expect.
                     let _: &Prefix<_> = msg.src.as_section()?;
                     let _: &Prefix<_> = msg.dst.as_prefix()?;
-                    stage.handle_neighbour_info(elders_info, msg.src, msg.dst, msg.dst_key)?;
+                    stage.handle_neighbour_info(
+                        elders_info,
+                        nonce,
+                        msg.src,
+                        msg.dst,
+                        msg.dst_key,
+                    )?;
                 }
                 Variant::GenesisUpdate(info) => {
                     let _: &Prefix<_> = msg.src.as_section()?;

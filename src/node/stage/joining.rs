@@ -100,7 +100,7 @@ impl Joining {
                 Ok(MessageAction::Handle)
             }
 
-            Variant::NeighbourInfo(_)
+            Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)

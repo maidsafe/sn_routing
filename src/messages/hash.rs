@@ -11,10 +11,11 @@ use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 
 /// Cryptographic hash of Message
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct MessageHash(Digest256);
 
 impl MessageHash {
+    /// Compute hash of the given message.
     pub fn from_bytes(bytes: &[u8]) -> Self {
         Self(crypto::sha3_256(bytes))
     }
