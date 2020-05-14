@@ -324,28 +324,50 @@ pub fn consensus_reached(
     *current_count >= expected_count
 }
 
-// Returns whether section A's view of section B is up to date.
-pub fn section_view_is_up_to_date(
+// Returns whether all elders of section `a` know at least `threshold` online nodes from
+// section `b`.
+pub fn section_knowledge_is_up_to_date(
     nodes: &[TestNode],
     a: &Prefix<XorName>,
     b: &Prefix<XorName>,
+    threshold: usize,
 ) -> bool {
+    let names_b: Vec<_> = nodes_with_prefix(nodes, b)
+        .map(|node| node.name())
+        .collect();
+
     for node_a in elders_with_prefix(nodes, a) {
-        for node_b in elders_with_prefix(nodes, b) {
-            if !node_a.inner.is_peer_elder(node_b.name()) {
-                trace!(
-                    "Node {} from {:?} doesn't know node {} from {:?}",
-                    node_a.name(),
-                    a,
-                    node_b.name(),
-                    b
-                );
-                return false;
-            }
+        let count = names_b
+            .iter()
+            .filter(|name_b| node_a.inner.is_peer_elder(name_b))
+            .take(threshold)
+            .count();
+
+        if count < threshold {
+            trace!(
+                "Node {}({:b}) knows only {}/{} online nodes from {:?}",
+                node_a.name(),
+                node_a.our_prefix(),
+                count,
+                threshold,
+                b
+            );
+            return false;
         }
     }
 
     true
+}
+
+// Returns whether `a`'s knowledge of `b` and `b`'s knowledge of `a` are both up to date.
+pub fn mutual_section_knowledge_is_up_to_date(
+    nodes: &[TestNode],
+    a: &Prefix<XorName>,
+    b: &Prefix<XorName>,
+    threshold: usize,
+) -> bool {
+    section_knowledge_is_up_to_date(nodes, a, b, threshold)
+        && section_knowledge_is_up_to_date(nodes, b, a, threshold)
 }
 
 pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
@@ -406,9 +428,6 @@ pub fn create_connected_nodes_until_split(
 
     for prefix_to_split in split_sequence {
         trigger_split(env, &mut nodes, &prefix_to_split)
-
-        // TODO: send a random section message from the newly split sections to all the other
-        // sections in the network in order to trigger knowledge update
     }
 
     // Gather all the actual prefixes and check they are as expected.
@@ -451,6 +470,8 @@ pub fn add_connected_nodes_until_one_away_from_split(
 
 /// Split the section by adding and/or removing nodes to/from it.
 pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+    info!("trigger_split start: {:?}", prefix);
+
     // To trigger split, we need the section to contain at least `recommended_section_size` *mature* nodes
     // from each sub-prefix.
     add_mature_nodes(
@@ -463,7 +484,7 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
 
     // Verify the split actually happened.
     poll_until(env, nodes, |nodes| section_split(nodes, prefix));
-    info!("Split finished");
+    info!("trigger_split done: {:?}", prefix);
 }
 
 /// Add/remove nodes to the given section until it has exactly `count0` mature nodes from the
@@ -529,18 +550,13 @@ pub fn add_mature_nodes(
     // Remove 16 mature nodes to trigger 16 age increments.
     info!("Removing {} mature nodes", remove_count);
 
-    for i in 0..remove_count {
+    for _ in 0..remove_count {
         // Note: removing only elders for simplicity. Also making sure we don't remove any of the
         // last `count0 + count1` nodes.
         let removed_id =
             remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
         poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-
-        // Update neighbours while there is still at least one elder that is online and is known
-        // by the neighbours.
-        if (i + 1) % (env.elder_size() - 1) == 0 {
-            update_neighbours_and_poll(env, nodes, *prefix);
-        }
+        update_neighbours_and_poll(env, nodes);
     }
 
     // Count the number of nodes in each sub-prefix and verify they are as expected.
@@ -803,7 +819,7 @@ pub fn send_user_message(
     let dst_location = DstLocation::Prefix(dst);
 
     trace!(
-        "sending user message {:?} -> {:?}: {:?}",
+        "send_user_message: {:?} -> {:?}: {:?}",
         src_location,
         dst_location,
         hex_fmt::HexFmt(&content)
@@ -816,40 +832,46 @@ pub fn send_user_message(
     }
 }
 
-// Send random message from `prefix` to its neighbours to trigger `NeighbourInfo`
-// exchange. Poll until the neighbours are updated.
-pub fn update_neighbours_and_poll(
-    env: &Environment,
-    nodes: &mut [TestNode],
-    prefix: Prefix<XorName>,
-) {
+// Poll until all sections have up-to-date knowledge of their neighbour sections.
+pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode]) {
+    // We want each node to know at least 2 online nodes from the neighbour section. If it knows
+    // less than that and the neighbour section would lose more nodes, the node risks being unable
+    // to communicate with it.
+    let threshold = 2;
+    let outdated: Vec<_> = neighbours_with_outdated_knowledge(nodes, threshold).collect();
+    if outdated.is_empty() {
+        return;
+    }
+
+    info!("update_neighbours start: {:?}", outdated);
+
     let mut rng = env.new_rng();
-    let content = gen_vec(&mut rng, 32);
-    let neighbour_prefixes: Vec<_> = current_sections(nodes)
-        .filter(|other_prefix| other_prefix.is_neighbour(&prefix))
-        .collect();
-
-    trace!(
-        "update neighbours start {:?} -> {:?}",
-        prefix,
-        neighbour_prefixes
-    );
-
-    for neighbour_prefix in &neighbour_prefixes {
-        send_user_message(nodes, prefix, *neighbour_prefix, content.clone());
+    for (a, b) in &outdated {
+        let content = gen_vec(&mut rng, 32);
+        send_user_message(nodes, *a, *b, content);
     }
 
     poll_until(env, nodes, |nodes| {
-        neighbour_prefixes
-            .iter()
-            .all(|neighbour_prefix| section_view_is_up_to_date(nodes, neighbour_prefix, &prefix))
+        neighbours_with_outdated_knowledge(nodes, threshold)
+            .next()
+            .is_none()
     });
 
-    trace!(
-        "update neighbours finish {:?} -> {:?}",
-        prefix,
-        neighbour_prefixes
-    );
+    trace!("update_neighbours done");
+}
+
+// Returns iterator over pairs of neighbour sections where at least one has outdated knowledge of
+// the other. See `section_knowledge_is_up_to_date` for the meaning of `threshold`.
+fn neighbours_with_outdated_knowledge<'a>(
+    nodes: &'a [TestNode],
+    threshold: usize,
+) -> impl Iterator<Item = (Prefix<XorName>, Prefix<XorName>)> + 'a {
+    let prefixes: Vec<_> = current_sections(nodes).collect();
+    prefixes
+        .into_iter()
+        .tuple_combinations()
+        .filter(|(a, b)| a.is_neighbour(b))
+        .filter(move |(a, b)| !mutual_section_knowledge_is_up_to_date(nodes, a, b, threshold))
 }
 
 // Generate a vector of random T of the given length.
@@ -912,7 +934,12 @@ fn remove_elder_from_section_in_range(
         .map(|(index, _)| index)
         .unwrap();
 
-    info!("Removing node {} from {:?}", nodes[index].name(), prefix);
+    info!(
+        "Removing node {} from {:?} (was elder: {})",
+        nodes[index].name(),
+        prefix,
+        nodes[index].inner.is_elder(),
+    );
     *nodes.remove(index).name()
 }
 
