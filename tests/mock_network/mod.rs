@@ -327,7 +327,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // The created sections
     let sections = current_sections(&nodes).collect_vec();
-    let small_prefix = *sections
+    let short_prefix = *sections
         .iter()
         .find(|prefix| prefix.bit_count() == 1)
         .unwrap();
@@ -337,21 +337,21 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         .unwrap();
     let long_prefix_1 = long_prefix_0.sibling();
 
-    // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.
-    let _ = add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &small_prefix);
+    // Setup the network so the short_prefix will split with one more node in short_prefix_to_add.
+    let _ = add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &short_prefix);
 
     // First node will trigger the split: src, destination and proxy together.
     // Other nodes validate getting relocated to a section with a proxy from section splitting
     // which will no longer be a neighbour after the split.
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
-            dst_section_prefix: small_prefix,
-            src_section_prefix: small_prefix,
-            proxy_prefix: small_prefix,
+            dst_section_prefix: short_prefix,
+            src_section_prefix: short_prefix,
+            proxy_prefix: short_prefix,
         },
         SimultaneousJoiningNode {
             dst_section_prefix: long_prefix_0,
-            src_section_prefix: small_prefix,
+            src_section_prefix: short_prefix,
             proxy_prefix: long_prefix_0.with_flipped_bit(0).with_flipped_bit(1),
         },
         SimultaneousJoiningNode {
@@ -569,7 +569,12 @@ fn neighbour_update() {
     let prefix_b = prefix_a.sibling();
 
     // A's view of B is initially up to date.
-    assert!(section_view_is_up_to_date(&nodes, &prefix_a, &prefix_b));
+    assert!(section_knowledge_is_up_to_date(
+        &nodes,
+        &prefix_a,
+        &prefix_b,
+        env.elder_size()
+    ));
 
     let num_elders_to_remove = rng.gen_range(1, LOWERED_ELDER_SIZE + 1);
 
@@ -590,6 +595,6 @@ fn neighbour_update() {
     // Send a message from B to A to trigger the update request.
     send_user_message(&mut nodes, prefix_b, prefix_a, gen_vec(&mut rng, 10));
     poll_until(&env, &mut nodes, |nodes| {
-        section_view_is_up_to_date(nodes, &prefix_a, &prefix_b)
+        section_knowledge_is_up_to_date(nodes, &prefix_a, &prefix_b, env.elder_size())
     });
 }

@@ -359,6 +359,9 @@ impl SharedState {
         }
 
         if vote_send_neighbour_info {
+            // TODO: if src has split, consider sending to all child prefixes that are still our
+            // neighbours.
+
             events.push(AccumulatingEvent::SendNeighbourInfo {
                 dst: prefix,
                 nonce: *hash,

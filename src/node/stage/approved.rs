@@ -311,11 +311,7 @@ impl Approved {
                 }
             }
             Variant::UserMessage(_) => {
-                if !self.should_handle_user_message(our_id, &msg.dst) {
-                    return Ok(MessageAction::Discard);
-                }
-
-                if self.verify_message(msg)? {
+                if self.should_handle_user_message(our_id, &msg.dst) && self.verify_message(msg)? {
                     Ok(MessageAction::Handle)
                 } else {
                     Ok(MessageAction::Bounce)
