@@ -60,7 +60,7 @@ fn disconnect_on_rebootstrap() {
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!env.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
 
-    expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
+    expect_next_event!(nodes.last_mut().unwrap(), Event::Terminated);
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn simultaneous_joining_nodes(
                     compatible_proxies.shuffle(&mut rng);
 
                     TransportConfig::node()
-                        .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
+                        .with_hard_coded_contact(nodes.first_mut().unwrap().endpoint())
                 };
 
                 let node = TestNode::builder(&env).transport_config(config).create();
@@ -327,8 +327,14 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // The created sections
     let sections = current_sections(&nodes).collect_vec();
-    let small_prefix = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 1));
-    let long_prefix_0 = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 2));
+    let small_prefix = *sections
+        .iter()
+        .find(|prefix| prefix.bit_count() == 1)
+        .unwrap();
+    let long_prefix_0 = *sections
+        .iter()
+        .find(|prefix| prefix.bit_count() == 2)
+        .unwrap();
     let long_prefix_1 = long_prefix_0.sibling();
 
     // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.

@@ -13,7 +13,7 @@ use crate::{
     consensus::AccumulatingEvent,
     id::{P2pNode, PublicId},
     location::DstLocation,
-    messages::SrcAuthority,
+    messages::{MessageHash, SrcAuthority},
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
     xor_space::{Prefix, XorName, Xorable},
@@ -316,6 +316,7 @@ impl SharedState {
         &mut self,
         src: &SrcAuthority,
         dst_key: Option<&bls::PublicKey>,
+        hash: &MessageHash,
     ) -> Vec<AccumulatingEvent> {
         let (&prefix, new_key) = if let Some(pair) = src.section_prefix_and_key() {
             pair
@@ -360,8 +361,7 @@ impl SharedState {
         if vote_send_neighbour_info {
             events.push(AccumulatingEvent::SendNeighbourInfo {
                 dst: prefix,
-                dst_key: *new_key,
-                our_key_index: self.our_history.last_key_index(),
+                nonce: *hash,
             })
         }
 

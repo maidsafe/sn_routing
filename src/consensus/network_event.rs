@@ -9,6 +9,7 @@
 use crate::{
     consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
     id::{P2pNode, PublicId},
+    messages::MessageHash,
     relocation::RelocateDetails,
     section::{EldersInfo, SectionMap},
     Prefix, XorName,
@@ -84,8 +85,9 @@ pub enum AccumulatingEvent {
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
         dst: Prefix<XorName>,
-        dst_key: bls::PublicKey,
-        our_key_index: u64,
+        // Hash of the incoming message that triggered this vote. It's purpose is to make the votes
+        // triggered by different message unique.
+        nonce: MessageHash,
     },
 
     // Voted for received message with keys to update their_keys
@@ -157,14 +159,10 @@ impl Debug for AccumulatingEvent {
             Self::NeighbourInfo(elders_info, _) => {
                 write!(formatter, "NeighbourInfo({:?}, ..)", elders_info)
             }
-            Self::SendNeighbourInfo {
-                dst,
-                dst_key,
-                our_key_index,
-            } => write!(
+            Self::SendNeighbourInfo { dst, nonce } => write!(
                 formatter,
-                "SendNeighbourInfo {{ dst: {:?}, dst_key: {:?}, our_key_index: {:?} }}",
-                dst, dst_key, our_key_index
+                "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
+                dst, nonce
             ),
             Self::TheirKeyInfo { prefix, key } => write!(
                 formatter,

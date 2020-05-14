@@ -68,7 +68,7 @@ impl Bootstrapping {
                 Ok(MessageAction::Handle)
             }
 
-            Variant::NeighbourInfo(_)
+            Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
             | Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)

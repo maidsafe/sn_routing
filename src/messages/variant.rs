@@ -25,7 +25,14 @@ use std::{
 /// Message variant
 pub enum Variant {
     /// Inform neighbours about our new section.
-    NeighbourInfo(EldersInfo),
+    NeighbourInfo {
+        /// `EldersInfo` of the neighbour section.
+        elders_info: EldersInfo,
+        /// Nonce that is derived from the incoming message that triggered sending this
+        /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are otherwise
+        /// identical but triggered by different messages are not filtered out.
+        nonce: MessageHash,
+    },
     /// User-facing message
     UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
@@ -71,7 +78,11 @@ pub enum Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::NeighbourInfo(payload) => write!(f, "NeighbourInfo({:?})", payload),
+            Self::NeighbourInfo { elders_info, nonce } => f
+                .debug_struct("NeighbourInfo")
+                .field("elders_info", elders_info)
+                .field("nonce", nonce)
+                .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),

@@ -107,7 +107,7 @@ pub mod rng;
 #[cfg(feature = "mock_base")]
 pub use self::{
     consensus::generate_bls_threshold_secret_key,
-    messages::{AccumulatingMessage, Message, PlainMessage, Variant},
+    messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
     routing_table::delivery_group_size,

@@ -19,7 +19,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageAction, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
+        MessageAction, MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant,
+        VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -302,7 +303,7 @@ impl Approved {
         let is_self_elder = self.is_our_elder(our_id);
 
         match &msg.variant {
-            Variant::NeighbourInfo(_) => {
+            Variant::NeighbourInfo { .. } => {
                 if is_self_elder && self.verify_message(msg)? {
                     Ok(MessageAction::Handle)
                 } else {
@@ -345,7 +346,7 @@ impl Approved {
                 }
 
                 match &accumulating_msg.content.variant {
-                    Variant::NeighbourInfo(_)
+                    Variant::NeighbourInfo { .. }
                     | Variant::UserMessage(_)
                     | Variant::NodeApproval(_)
                     | Variant::Relocate(_) => Ok(MessageAction::Handle),
@@ -409,6 +410,7 @@ impl Approved {
     pub fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
+        nonce: MessageHash,
         src: SrcAuthority,
         dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
@@ -429,7 +431,10 @@ impl Approved {
                 .or_insert_with(|| Message {
                     src,
                     dst,
-                    variant: Variant::NeighbourInfo(elders_info.clone()),
+                    variant: Variant::NeighbourInfo {
+                        elders_info: elders_info.clone(),
+                        nonce,
+                    },
                     dst_key,
                 });
 
@@ -943,8 +948,8 @@ impl Approved {
             AccumulatingEvent::NeighbourInfo(elders_info, key) => {
                 self.handle_neighbour_info_event(core, elders_info, key)?
             }
-            AccumulatingEvent::SendNeighbourInfo { dst, .. } => {
-                self.handle_send_neighbour_info_event(core, dst)?
+            AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
+                self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
             AccumulatingEvent::TheirKeyInfo { prefix, key } => {
                 self.handle_their_key_info_event(prefix, key)
@@ -1354,6 +1359,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         dst: Prefix<XorName>,
+        nonce: MessageHash,
     ) -> Result<()> {
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1363,7 +1369,10 @@ impl Approved {
             core,
             SrcLocation::Section(*self.shared_state.our_prefix()),
             DstLocation::Prefix(dst),
-            Variant::NeighbourInfo(self.shared_state.our_info().clone()),
+            Variant::NeighbourInfo {
+                elders_info: self.shared_state.our_info().clone(),
+                nonce,
+            },
             None,
         )
     }
@@ -1966,10 +1975,10 @@ impl Approved {
     }
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub fn update_section_knowledge(&mut self, msg: &Message) {
-        let events = self
-            .shared_state
-            .update_section_knowledge(&msg.src, msg.dst_key.as_ref());
+    pub fn update_section_knowledge(&mut self, msg: &Message, msg_hash: &MessageHash) {
+        let events =
+            self.shared_state
+                .update_section_knowledge(&msg.src, msg.dst_key.as_ref(), msg_hash);
 
         for event in events {
             self.vote_for_event(event)
