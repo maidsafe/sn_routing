@@ -29,12 +29,16 @@ pub const LOWERED_ELDER_SIZE: usize = 4;
 
 // Maximum number of iterations of the `poll_until` function. This is several orders higher than
 // the anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
-const MAX_POLL_UNTIL_ITERATIONS: usize = 2000;
+const POLL_UNTIL_MAX_ITERATIONS: usize = 2000;
+
+// Duration to advance the time after each iteration of poll_until.
+const POLL_UNTIL_TIME_STEP: Duration =
+    Duration::from_millis(test_consts::GOSSIP_PERIOD.as_millis() as u64 + 1);
 
 // Maximum number of iterations of the `poll_all` function. Hitting this limit does not necessarily
 // indicate an error. It just prevents infinite loops in case the time needs to be advanced to make
 // progress.
-const MAX_POLL_ALL_ITERATIONS: usize = 100;
+const POLL_ALL_MAX_ITERATIONS: usize = 100;
 
 // Maximum number of nodes that can join the network simultaneously. Trying to add more nodes might
 // cause some of them to timeout.
@@ -172,7 +176,7 @@ impl<'a> TestNodeBuilder<'a> {
 
 /// Polls the network until there are no more events to process.
 pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) {
-    for _ in 0..MAX_POLL_ALL_ITERATIONS {
+    for _ in 0..POLL_ALL_MAX_ITERATIONS {
         env.poll();
 
         let mut handled = false;
@@ -192,21 +196,18 @@ pub fn poll_until<F>(env: &Environment, nodes: &mut [TestNode], mut predicate: F
 where
     F: FnMut(&[TestNode]) -> bool,
 {
-    // Duration to advance the time after each iteration.
-    let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
-
-    for _ in 0..MAX_POLL_UNTIL_ITERATIONS {
+    for _ in 0..POLL_UNTIL_MAX_ITERATIONS {
         if predicate(nodes) {
             return;
         }
 
         poll_all(env, nodes);
-        advance_time(time_step);
+        advance_time(POLL_UNTIL_TIME_STEP);
     }
 
     panic!(
         "poll_until has been called {} times.",
-        MAX_POLL_UNTIL_ITERATIONS
+        POLL_UNTIL_MAX_ITERATIONS
     );
 }
 
@@ -357,17 +358,6 @@ pub fn section_knowledge_is_up_to_date(
     }
 
     true
-}
-
-// Returns whether `a`'s knowledge of `b` and `b`'s knowledge of `a` are both up to date.
-pub fn mutual_section_knowledge_is_up_to_date(
-    nodes: &[TestNode],
-    a: &Prefix<XorName>,
-    b: &Prefix<XorName>,
-    threshold: usize,
-) -> bool {
-    section_knowledge_is_up_to_date(nodes, a, b, threshold)
-        && section_knowledge_is_up_to_date(nodes, b, a, threshold)
 }
 
 pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
@@ -840,26 +830,41 @@ pub fn send_user_message(
 // We consider section A's knowledge of its neighbour section B as up-to-date if every elder from A
 // knows at least `threshold` online nodes from B.
 pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], threshold: usize) {
-    let outdated: Vec<_> = neighbours_with_outdated_knowledge(nodes, threshold).collect();
-    if outdated.is_empty() {
-        return;
-    }
-
-    info!("update_neighbours start: {:?}", outdated);
+    info!("update_neighbours_and_poll start");
 
     let mut rng = env.new_rng();
-    for (a, b) in &outdated {
-        let content = gen_vec(&mut rng, 32);
-        send_user_message(nodes, *a, *b, content);
+
+    // Max number of times we will try to send messages and wait until the knowledge gets updated.
+    let max_sends = 3;
+    // Number of iterations until we send new messages.
+    let mut send_countdown = 0;
+
+    for _ in 0..POLL_UNTIL_MAX_ITERATIONS {
+        let outdated: BTreeSet<_> = neighbours_with_outdated_knowledge(nodes, threshold).collect();
+        if outdated.is_empty() {
+            info!("update_neighbours_and_poll done");
+            return;
+        }
+
+        if send_countdown == 0 {
+            send_countdown = POLL_ALL_MAX_ITERATIONS / max_sends;
+
+            for (a, b) in outdated {
+                let content = gen_vec(&mut rng, 32);
+                send_user_message(nodes, a, b, content);
+            }
+        } else {
+            send_countdown -= 1;
+        }
+
+        poll_all(env, nodes);
+        advance_time(POLL_UNTIL_TIME_STEP);
     }
 
-    poll_until(env, nodes, |nodes| {
-        neighbours_with_outdated_knowledge(nodes, threshold)
-            .next()
-            .is_none()
-    });
-
-    trace!("update_neighbours done");
+    panic!(
+        "update_neighbours_and_poll failed after {} iterations",
+        POLL_UNTIL_MAX_ITERATIONS
+    );
 }
 
 // Returns iterator over pairs of neighbour sections where at least one has outdated knowledge of
@@ -873,7 +878,11 @@ fn neighbours_with_outdated_knowledge<'a>(
         .into_iter()
         .tuple_combinations()
         .filter(|(a, b)| a.is_neighbour(b))
-        .filter(move |(a, b)| !mutual_section_knowledge_is_up_to_date(nodes, a, b, threshold))
+        .filter(move |(a, b)| {
+            !section_knowledge_is_up_to_date(nodes, a, b, threshold)
+                || !section_knowledge_is_up_to_date(nodes, b, a, threshold)
+        })
+        .map(|(a, b)| if a < b { (a, b) } else { (b, a) })
 }
 
 // Generate a vector of random T of the given length.
