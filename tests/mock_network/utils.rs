@@ -694,7 +694,14 @@ pub fn elders_with_prefix_mut<'a>(
 pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     let our_prefix = node.our_prefix();
     let our_name = node.name();
-    let our_section_elders = node.inner.section_elders(our_prefix);
+    let our_section_elders: BTreeSet<_> = node
+        .inner
+        .our_section()
+        .expect("node is not joined")
+        .elders
+        .keys()
+        .copied()
+        .collect();
 
     assert!(
         our_prefix.matches(our_name),
@@ -728,52 +735,49 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
         return;
     }
 
-    let neighbour_prefixes = node.inner.neighbour_prefixes();
+    let neighbour_sections: BTreeSet<_> = node.inner.neighbour_sections().collect();
 
-    if let Some(compatible_prefix) = neighbour_prefixes
+    if let Some(compatible_prefix) = neighbour_sections
         .iter()
+        .map(|info| &info.prefix)
         .find(|prefix| prefix.is_compatible(our_prefix))
     {
         panic!(
-            "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_prefixes: {:?})",
+            "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_sections: {:?})",
             our_name,
             our_prefix,
             compatible_prefix,
-            neighbour_prefixes,
+            neighbour_sections,
         );
     }
 
-    if let Some(prefix) = neighbour_prefixes
+    if let Some(info) = neighbour_sections
         .iter()
-        .find(|prefix| node.inner.section_elders(prefix).len() < env.elder_size())
+        .find(|info| info.elders.len() < env.elder_size())
     {
         panic!(
-            "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_prefixes: {:?})",
+            "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_sections: {:?})",
             our_name,
             our_prefix,
-            prefix,
-            node.inner.section_elders(prefix).len(),
+            info.prefix,
+            info.elders.len(),
             env.elder_size(),
-            neighbour_prefixes,
+            neighbour_sections,
         );
     }
 
-    for prefix in &neighbour_prefixes {
-        if let Some(name) = node
-            .inner
-            .section_elders(prefix)
-            .iter()
-            .find(|name| !prefix.matches(name))
-        {
+    for info in &neighbour_sections {
+        if let Some(name) = info.elders.keys().find(|name| !info.prefix.matches(name)) {
             panic!(
                 "{}({:b}) A name in a section doesn't match its prefix: {:?}, {:?}",
-                our_name, our_prefix, name, prefix,
+                our_name, our_prefix, name, info.prefix,
             );
         }
     }
 
-    let non_neighbours: Vec<_> = neighbour_prefixes
+    let non_neighbours: Vec<_> = neighbour_sections
         .iter()
+        .map(|info| &info.prefix)
         .filter(|prefix| !our_prefix.is_neighbour(prefix))
         .collect();
     if !non_neighbours.is_empty() {
@@ -787,7 +791,7 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
         (0..our_prefix.bit_count()).all(|i| {
             our_prefix
                 .with_flipped_bit(i)
-                .is_covered_by(&neighbour_prefixes)
+                .is_covered_by(neighbour_sections.iter().map(|info| &info.prefix))
         })
     };
     if !all_neighbours_covered {
@@ -796,7 +800,7 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
             our_name,
             our_prefix,
             iter::once(*our_prefix)
-                .chain(neighbour_prefixes)
+                .chain(neighbour_sections.iter().map(|info| info.prefix))
                 .format(", ")
         );
     }

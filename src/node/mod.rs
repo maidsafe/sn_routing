@@ -47,7 +47,7 @@ use crate::{
 };
 #[cfg(feature = "mock_base")]
 use {
-    crate::section::{SectionProofChain, SharedState},
+    crate::section::{EldersInfo, SectionProofChain, SharedState},
     std::collections::{BTreeMap, BTreeSet},
 };
 
@@ -949,17 +949,16 @@ impl Node {
         src.contains(self.core.name())
     }
 
-    /// Returns the prefixes of all our neighbours
-    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+    /// Returns the info about our neighbour sections.
+    pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
         self.shared_state()
-            .map(|state| {
-                state
-                    .sections
-                    .other()
-                    .map(|(_, info)| info.prefix)
-                    .collect()
-            })
-            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|state| state.sections.other().map(|(_, info)| info))
+    }
+
+    /// Returns the info about our sections or `None` if we are not joined yet.
+    pub fn our_section(&self) -> Option<&EldersInfo> {
+        self.shared_state().map(|state| state.sections.our())
     }
 
     /// Returns the prefixes of all sections known to us
@@ -978,22 +977,8 @@ impl Node {
             .map(|info| info.version)
     }
 
-    /// Returns the elders of a section with the given prefix.
-    /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
-    pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
-        self.shared_state()
-            .and_then(|state| state.sections.get(prefix))
-            .map(|info| info.elders.keys().copied().collect())
-            .unwrap_or_default()
-    }
-
     /// Returns the elders in our and neighbouring sections.
-    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.elder_nodes().map(P2pNode::public_id)
-    }
-
-    /// Returns the elders in our and neighbouring sections.
-    pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.shared_state()
             .into_iter()
             .flat_map(|state| state.sections.elders())

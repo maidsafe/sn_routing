@@ -114,7 +114,10 @@ fn remove_unresponsive_node() {
     let still_has_unresponsive_elder = nodes
         .iter()
         .map(|n| &n.inner)
-        .filter(|n| n.elders().any(|id| *id.name() == non_responsive_name))
+        .filter(|n| {
+            n.known_elders()
+                .any(|p2p_node| *p2p_node.name() == non_responsive_name)
+        })
         .map(|n| n.name())
         .collect_vec();
     assert_eq!(still_has_unresponsive_elder, Vec::<&XorName>::new());
