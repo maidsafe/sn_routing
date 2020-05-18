@@ -556,7 +556,7 @@ pub fn add_mature_nodes(
         let removed_id =
             remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
         poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-        update_neighbours_and_poll(env, nodes);
+        update_neighbours_and_poll(env, nodes, 2);
     }
 
     // Count the number of nodes in each sub-prefix and verify they are as expected.
@@ -837,11 +837,9 @@ pub fn send_user_message(
 }
 
 // Poll until all sections have up-to-date knowledge of their neighbour sections.
-pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode]) {
-    // We want each node to know at least 2 online nodes from the neighbour section. If it knows
-    // less than that and the neighbour section would lose more nodes, the node risks being unable
-    // to communicate with it.
-    let threshold = 2;
+// We consider section A's knowledge of its neighbour section B as up-to-date if every elder from A
+// knows at least `threshold` online nodes from B.
+pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], threshold: usize) {
     let outdated: Vec<_> = neighbours_with_outdated_knowledge(nodes, threshold).collect();
     if outdated.is_empty() {
         return;

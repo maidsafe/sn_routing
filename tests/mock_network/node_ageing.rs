@@ -318,7 +318,10 @@ fn churn_until_age_counter(
                 }
 
                 poll_until(env, nodes, |nodes| node_left(nodes, &removed_name));
-                update_neighbours_and_poll(env, nodes);
+
+                // Using threshold of 3 because removing one node can trigger another one to be
+                // relocated, but we still want to be left with at least one known node.
+                update_neighbours_and_poll(env, nodes, 3);
             }
         }
     }
