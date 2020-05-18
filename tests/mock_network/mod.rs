@@ -576,7 +576,13 @@ fn neighbour_update() {
         env.elder_size()
     ));
 
-    let num_elders_to_remove = rng.gen_range(1, LOWERED_ELDER_SIZE + 1);
+    // Remove at most elder_size - 1 elders, so section A still knows at least one elder from B and
+    // so can still contact them.
+    let num_elders_to_remove = rng.gen_range(1, LOWERED_ELDER_SIZE);
+    info!(
+        "Removing {} elders from {:?}",
+        num_elders_to_remove, prefix_b
+    );
 
     // Add nodes that will replace the removed elders.
     for _ in 0..num_elders_to_remove {
