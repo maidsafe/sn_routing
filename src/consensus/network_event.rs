@@ -22,27 +22,6 @@ use std::{
 };
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct EventSigPayload {
-    /// The public key share for that signature share
-    pub pub_key_share: bls::PublicKeyShare,
-    /// The signature share signing the SectionInfo.
-    pub sig_share: bls::SignatureShare,
-}
-
-impl EventSigPayload {
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn new(key_share: &bls::SecretKeyShare, section_key: &bls::PublicKey) -> Self {
-        let sig_share = key_share.sign(&section_key.to_bytes()[..]);
-        let pub_key_share = key_share.public_key_share();
-
-        Self {
-            pub_key_share,
-            sig_share,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct OnlinePayload {
     // Identifier of the joining node.
     pub p2p_node: P2pNode,
@@ -116,7 +95,7 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<EventSigPayload>) {
+    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<bls::SignatureShare>) {
         (event.payload, event.signature)
     }
 
@@ -127,7 +106,7 @@ impl AccumulatingEvent {
         }
     }
 
-    pub fn into_network_event_with(self, signature: Option<EventSigPayload>) -> NetworkEvent {
+    pub fn into_network_event_with(self, signature: Option<bls::SignatureShare>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
@@ -192,7 +171,7 @@ pub trait IntoAccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<EventSigPayload>,
+    pub signature: Option<bls::SignatureShare>,
 }
 
 impl NetworkEvent {

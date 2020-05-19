@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    network_event::{AccumulatingEvent, EventSigPayload, NetworkEvent},
+    network_event::{AccumulatingEvent, NetworkEvent},
     proof::{Proof, ProofSet},
 };
 use crate::{id::PublicId, section::EldersInfo};
@@ -117,7 +117,7 @@ impl EventAccumulator {
         &mut self,
         event: AccumulatingEvent,
         proof: Proof,
-        signature: Option<EventSigPayload>,
+        signature_share: Option<bls::SignatureShare>,
     ) -> Result<(), InsertError> {
         if self.accumulated_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &proof.pub_id);
@@ -128,7 +128,7 @@ impl EventAccumulator {
             .unaccumulated_events
             .entry(event)
             .or_insert_with(AccumulatingProof::default)
-            .add_proof(proof, signature)
+            .add_proof(proof, signature_share)
         {
             return Err(InsertError::ReplacedAlreadyInserted);
         }
@@ -204,7 +204,7 @@ impl EventAccumulator {
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct AccumulatingProof {
     parsec_proofs: ProofSet,
-    sig_shares: BTreeMap<PublicId, EventSigPayload>,
+    sig_shares: BTreeMap<PublicId, bls::SignatureShare>,
 }
 
 impl AccumulatingProof {
@@ -217,8 +217,8 @@ impl AccumulatingProof {
     }
 
     /// Return false if share or proof is replaced
-    pub fn add_proof(&mut self, proof: Proof, info_sig: Option<EventSigPayload>) -> bool {
-        let new_share = info_sig.map_or(true, |share| {
+    pub fn add_proof(&mut self, proof: Proof, sig_share: Option<bls::SignatureShare>) -> bool {
+        let new_share = sig_share.map_or(true, |share| {
             self.sig_shares.insert(proof.pub_id, share).is_none()
         });
 
@@ -230,7 +230,7 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
-    pub fn into_sig_shares(self) -> BTreeMap<PublicId, EventSigPayload> {
+    pub fn into_sig_shares(self) -> BTreeMap<PublicId, bls::SignatureShare> {
         self.sig_shares
     }
 
@@ -246,7 +246,7 @@ impl AccumulatingProof {
             .filter_map(|(index, pub_id)| {
                 self.sig_shares
                     .get(pub_id)
-                    .map(|sig_payload| (index, &sig_payload.sig_share))
+                    .map(|sig_share| (index, sig_share))
             })
             .filter(|&(index, sig_share)| {
                 pk_set
@@ -294,7 +294,7 @@ mod test {
         pub first_proof: Proof,
         pub proofs: ProofSet,
         pub acc_proofs: AccumulatingProof,
-        pub signature: Option<EventSigPayload>,
+        pub signature: Option<bls::SignatureShare>,
     }
 
     enum EventType {
@@ -306,17 +306,16 @@ mod test {
         EldersInfo::new(Default::default(), Default::default(), Default::default())
     }
 
-    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, bls::PublicKeySet) {
+    fn random_section_info_sig_share(
+        rng: &mut MainRng,
+    ) -> (bls::SignatureShare, bls::PublicKeySet) {
         let participants = 2;
         let first_secret_key_index = 0;
         let bls_keys = generate_bls_threshold_secret_key(rng, participants);
         let bls_secret_key_share = bls_keys.secret_key_share(first_secret_key_index);
 
         (
-            EventSigPayload {
-                pub_key_share: bls_secret_key_share.public_key_share(),
-                sig_share: bls_secret_key_share.sign(&TEST_DATA_FOR_SIGN),
-            },
+            bls_secret_key_share.sign(&TEST_DATA_FOR_SIGN),
             bls_keys.public_keys(),
         )
     }
@@ -353,20 +352,20 @@ mod test {
             }
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
-                let (sig_payload, keys) = random_section_info_sig_payload(rng);
+                let (sig_share, keys) = random_section_info_sig_share(rng);
                 let event = AccumulatingEvent::SectionInfo(elders_info, keys.public_key());
 
                 TestData {
                     our_id: *id.public_id(),
                     event: event.clone(),
-                    network_event: event.into_network_event_with(Some(sig_payload.clone())),
+                    network_event: event.into_network_event_with(Some(sig_share.clone())),
                     first_proof,
                     proofs: proofs.clone(),
                     acc_proofs: AccumulatingProof {
                         parsec_proofs: proofs,
-                        sig_shares: iter::once((first_proof.pub_id, sig_payload.clone())).collect(),
+                        sig_shares: iter::once((first_proof.pub_id, sig_share.clone())).collect(),
                     },
-                    signature: Some(sig_payload),
+                    signature: Some(sig_share),
                 }
             }
         }
