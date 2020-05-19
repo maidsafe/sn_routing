@@ -9,8 +9,8 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
-        GenesisPrefixInfo, IntoAccumulatingEvent, NeighbourEldersRemoved, NetworkEvent,
-        OnlinePayload, ParsecRequest, ParsecResponse,
+        GenesisPrefixInfo, NeighbourEldersRemoved, NetworkEvent, OnlinePayload, ParsecRequest,
+        ParsecResponse,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -1539,7 +1539,7 @@ impl Approved {
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) {
         self.consensus_engine
-            .vote_for(details.into_accumulating_event().into_network_event())
+            .vote_for(AccumulatingEvent::Relocate(details).into_network_event())
     }
 
     fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
