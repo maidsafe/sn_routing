@@ -678,17 +678,11 @@ impl Node {
                 _ => unreachable!(),
             },
             Stage::Approved(stage) => match msg.variant {
-                Variant::NeighbourInfo { elders_info, nonce } => {
+                Variant::NeighbourInfo { elders_info, .. } => {
                     // Ensure the src and dst are what we expect.
-                    let _: &Prefix<_> = msg.src.as_section()?;
+                    let src_key = *msg.src.as_section_key()?;
                     let _: &Prefix<_> = msg.dst.as_prefix()?;
-                    stage.handle_neighbour_info(
-                        elders_info,
-                        nonce,
-                        msg.src,
-                        msg.dst,
-                        msg.dst_key,
-                    )?;
+                    stage.handle_neighbour_info(elders_info, src_key)?;
                 }
                 Variant::GenesisUpdate(info) => {
                     let _: &Prefix<_> = msg.src.as_section()?;

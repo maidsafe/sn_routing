@@ -52,6 +52,22 @@ impl SrcAuthority {
         }
     }
 
+    // If this is `Section`, return the last section key, otherwise error.
+    pub fn as_section_key(&self) -> Result<&bls::PublicKey> {
+        match self {
+            Self::Section { proof, .. } => Ok(proof.last_key()),
+            Self::Node { .. } => Err(RoutingError::BadLocation),
+        }
+    }
+
+    // If this is `Section`, returns the prefix and the latest key, otherwise error.
+    pub fn as_section_prefix_and_key(&self) -> Result<(&Prefix<XorName>, &bls::PublicKey)> {
+        match self {
+            SrcAuthority::Section { prefix, proof, .. } => Ok((prefix, proof.last_key())),
+            SrcAuthority::Node { .. } => Err(RoutingError::BadLocation),
+        }
+    }
+
     pub fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
         let pub_id = *self.as_node()?;
         let conn_info = sender.ok_or(RoutingError::InvalidSource)?;
@@ -102,13 +118,5 @@ impl SrcAuthority {
         }
 
         Ok(VerifyStatus::Full)
-    }
-
-    // If this is `Section`, returns the prefix and the latest key, otherwise `None`.
-    pub(crate) fn section_prefix_and_key(&self) -> Option<(&Prefix<XorName>, &bls::PublicKey)> {
-        match self {
-            SrcAuthority::Section { prefix, proof, .. } => Some((prefix, proof.last_key())),
-            SrcAuthority::Node { .. } => None,
-        }
     }
 }
