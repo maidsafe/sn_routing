@@ -9,8 +9,7 @@
 use super::utils as test_utils;
 use crate::{
     consensus::{
-        generate_bls_threshold_secret_key, AccumulatingEvent, EventSigPayload, OnlinePayload,
-        ParsecRequest,
+        generate_bls_threshold_secret_key, AccumulatingEvent, OnlinePayload, ParsecRequest,
     },
     error::Result,
     id::{FullId, P2pNode, PublicId},
@@ -110,17 +109,21 @@ impl Env {
             self.other_ids
                 .iter()
                 .take(count)
-                .for_each(|(full_id, bls_id)| {
-                    let sig_event =
+                .for_each(|(full_id, secret_key_share)| {
+                    let sig_payload =
                         if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
-                            Some(EventSigPayload::new(bls_id, section_key))
+                            let sig_share = secret_key_share.sign(&section_key.to_bytes()[..]);
+                            Some(sig_share)
                         } else {
                             None
                         };
 
                     info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                     parsec.vote_for_as(
-                        event.clone().into_network_event_with(sig_event).into_obs(),
+                        event
+                            .clone()
+                            .into_network_event_with(sig_payload)
+                            .into_obs(),
                         full_id,
                     );
                 });

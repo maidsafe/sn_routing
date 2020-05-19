@@ -9,8 +9,8 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
-        EventSigPayload, GenesisPrefixInfo, IntoAccumulatingEvent, NeighbourEldersRemoved,
-        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
+        GenesisPrefixInfo, IntoAccumulatingEvent, NeighbourEldersRemoved, NetworkEvent,
+        OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -1552,12 +1552,14 @@ impl Approved {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
-        let signature_payload = EventSigPayload::new(
-            &self.section_keys_provider.secret_key_share()?.key,
-            &section_key,
-        );
+        let signature_share = self
+            .section_keys_provider
+            .secret_key_share()?
+            .key
+            .sign(&section_key.to_bytes()[..]);
+
         let event = AccumulatingEvent::SectionInfo(elders_info, section_key);
-        let event = event.into_network_event_with(Some(signature_payload));
+        let event = event.into_network_event_with(Some(signature_share));
         self.consensus_engine.vote_for(event);
         Ok(())
     }
