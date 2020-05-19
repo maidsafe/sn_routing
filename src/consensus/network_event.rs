@@ -226,7 +226,7 @@ pub struct NeighbourEldersRemoved(pub BTreeSet<P2pNode>);
 
 impl NeighbourEldersRemoved {
     pub fn builder(sections: &SectionMap) -> NeighbourEldersRemovedBuilder {
-        NeighbourEldersRemovedBuilder(sections.other_elders().cloned().collect())
+        NeighbourEldersRemovedBuilder(sections.neighbour_elders().cloned().collect())
     }
 }
 
@@ -234,7 +234,7 @@ pub struct NeighbourEldersRemovedBuilder(BTreeSet<P2pNode>);
 
 impl NeighbourEldersRemovedBuilder {
     pub fn build(mut self, sections: &SectionMap) -> NeighbourEldersRemoved {
-        for p2p_node in sections.other_elders() {
+        for p2p_node in sections.neighbour_elders() {
             let _ = self.0.remove(p2p_node);
         }
 
