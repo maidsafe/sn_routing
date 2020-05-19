@@ -402,6 +402,15 @@ impl Node {
         Ok(())
     }
 
+    /// Returns the current BLS public key set or `RoutingError::InvalidState` if we are not joined
+    /// yet.
+    pub fn public_key_set(&self) -> Result<&bls::PublicKeySet> {
+        self.stage
+            .approved()
+            .map(|stage| stage.public_key_set())
+            .ok_or(RoutingError::InvalidState)
+    }
+
     /// Returns the current BLS secret key share or `RoutingError::InvalidState` if we are not
     /// elder.
     pub fn secret_key_share(&self) -> Result<&bls::SecretKeyShare> {
