@@ -11,7 +11,7 @@ use crate::{
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
-    section::{EldersInfo, SectionMap},
+    section::EldersInfo,
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -191,27 +191,5 @@ impl Debug for NetworkEvent {
         } else {
             self.payload.fmt(formatter)
         }
-    }
-}
-
-// Neighbour section elders that got removed/demoted.
-#[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NeighbourEldersRemoved(pub BTreeSet<P2pNode>);
-
-impl NeighbourEldersRemoved {
-    pub fn builder(sections: &SectionMap) -> NeighbourEldersRemovedBuilder {
-        NeighbourEldersRemovedBuilder(sections.neighbour_elders().cloned().collect())
-    }
-}
-
-pub struct NeighbourEldersRemovedBuilder(BTreeSet<P2pNode>);
-
-impl NeighbourEldersRemovedBuilder {
-    pub fn build(mut self, sections: &SectionMap) -> NeighbourEldersRemoved {
-        for p2p_node in sections.neighbour_elders() {
-            let _ = self.0.remove(p2p_node);
-        }
-
-        NeighbourEldersRemoved(self.0)
     }
 }
