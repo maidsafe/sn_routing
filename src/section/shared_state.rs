@@ -106,7 +106,7 @@ impl SharedState {
         self.our_members
             .active()
             .map(|info| &info.p2p_node)
-            .chain(self.sections.other_elders())
+            .chain(self.sections.neighbour_elders())
     }
 
     /// Returns whether we know the given peer.
@@ -183,7 +183,7 @@ impl SharedState {
         if self.our_members.contains(name) {
             Some(self.sections.our())
         } else {
-            self.sections.find_other_by_elder(name)
+            self.sections.find_neighbour_by_elder(name)
         }
     }
 
