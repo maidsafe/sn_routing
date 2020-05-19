@@ -19,8 +19,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageAction, MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant,
-        VerifyStatus,
+        MessageAction, MessageHash, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -41,7 +40,7 @@ use rand::Rng;
 use std::{
     cmp::{self, Ordering},
     collections::{BTreeMap, BTreeSet},
-    iter, mem,
+    iter,
     net::SocketAddr,
 };
 
@@ -70,8 +69,6 @@ pub struct Approved {
     // Flag indicating that our section members changed (a node joined or left) and we might need
     // to change our elders.
     members_changed: bool,
-    // Messages we received but not accumulated yet, so may need to re-swarm.
-    pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
     members_knowledge: BTreeMap<XorName, MemberKnowledge>,
 }
@@ -137,7 +134,6 @@ impl Approved {
             split_cache: None,
             churn_in_progress: false,
             members_changed: false,
-            pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         }
     }
@@ -199,7 +195,6 @@ impl Approved {
             dkg_cache: Default::default(),
             churn_in_progress: false,
             members_changed: false,
-            pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         };
 
@@ -406,34 +401,9 @@ impl Approved {
     pub fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
-        nonce: MessageHash,
-        src: SrcAuthority,
-        dst: DstLocation,
-        dst_key: Option<bls::PublicKey>,
+        src_key: bls::PublicKey,
     ) -> Result<()> {
         if self.shared_state.sections.is_new_neighbour(&elders_info) {
-            let src_key = if let Some((_, key)) = src.section_prefix_and_key() {
-                *key
-            } else {
-                unreachable!()
-            };
-
-            let _ = self
-                .pending_voted_msgs
-                .entry(PendingMessageKey::NeighbourInfo {
-                    version: elders_info.version,
-                    prefix: elders_info.prefix,
-                })
-                .or_insert_with(|| Message {
-                    src,
-                    dst,
-                    variant: Variant::NeighbourInfo {
-                        elders_info: elders_info.clone(),
-                        nonce,
-                    },
-                    dst_key,
-                });
-
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info, src_key));
         } else {
             trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
@@ -1197,7 +1167,7 @@ impl Approved {
         if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
-            self.process_post_reset_events(core, old_prefix, complete_data.to_process);
+            self.process_post_reset_events(core, complete_data.to_process);
             self.handle_elders_update(core, complete_data.genesis_prefix_info);
 
             info!("Demoted");
@@ -1211,7 +1181,7 @@ impl Approved {
             complete_data.genesis_prefix_info,
             complete_data.to_vote_again,
         )?;
-        self.process_post_reset_events(core, old_prefix, complete_data.to_process);
+        self.process_post_reset_events(core, complete_data.to_process);
 
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
         self.send_genesis_updates(core);
@@ -1332,21 +1302,13 @@ impl Approved {
         self.shared_state
             .sections
             .update_keys(elders_info.prefix, key);
-        self.shared_state
-            .sections
-            .add_neighbour(elders_info.clone());
+        self.shared_state.sections.add_neighbour(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
-        let _ = self
-            .pending_voted_msgs
-            .remove(&PendingMessageKey::NeighbourInfo {
-                version: elders_info.version,
-                prefix: elders_info.prefix,
-            });
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
         Ok(())
     }
@@ -1498,12 +1460,7 @@ impl Approved {
         })
     }
 
-    fn process_post_reset_events(
-        &mut self,
-        core: &mut Core,
-        old_prefix: Prefix<XorName>,
-        to_process: BTreeSet<NetworkEvent>,
-    ) {
+    fn process_post_reset_events(&mut self, core: &mut Core, to_process: BTreeSet<NetworkEvent>) {
         to_process.iter().for_each(|event| match &event.payload {
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::Offline(_)
@@ -1524,8 +1481,6 @@ impl Approved {
                 self.resend_bootstrap_response_join(core, &payload.p2p_node);
             }
         });
-
-        self.resend_pending_voted_messages(core, old_prefix);
     }
 
     // Finalise parsec reset and revotes for all previously unaccumulated events.
@@ -1791,24 +1746,6 @@ impl Approved {
         }
     }
 
-    // After parsec reset, resend any unaccumulated voted messages to everyone that needs
-    // them but possibly did not receive them already.
-    fn resend_pending_voted_messages(&mut self, core: &mut Core, _old_prefix: Prefix<XorName>) {
-        for (_, msg) in mem::take(&mut self.pending_voted_msgs) {
-            let msg = match MessageWithBytes::new(msg) {
-                Ok(msg) => msg,
-                Err(err) => {
-                    error!("Failed to make message {:?}", err);
-                    continue;
-                }
-            };
-            match self.send_signed_message(core, &msg) {
-                Ok(()) => trace!("Resend {:?}", msg),
-                Err(error) => debug!("Failed to resend {:?}: {:?}", msg, error),
-            }
-        }
-    }
-
     // Send message over the network.
     pub fn send_signed_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = routing_table::delivery_targets(
@@ -2014,14 +1951,6 @@ impl Approved {
     fn print_network_stats(&self) {
         self.shared_state.sections.network_stats().print()
     }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-enum PendingMessageKey {
-    NeighbourInfo {
-        version: u64,
-        prefix: Prefix<XorName>,
-    },
 }
 
 // Data needed to finalise parsec reset.

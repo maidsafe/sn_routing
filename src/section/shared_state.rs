@@ -318,7 +318,7 @@ impl SharedState {
         dst_key: Option<&bls::PublicKey>,
         hash: &MessageHash,
     ) -> Vec<AccumulatingEvent> {
-        let (&prefix, new_key) = if let Some(pair) = src.section_prefix_and_key() {
+        let (&prefix, new_key) = if let Ok(pair) = src.as_section_prefix_and_key() {
             pair
         } else {
             return vec![];
