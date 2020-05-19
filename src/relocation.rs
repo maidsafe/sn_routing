@@ -9,7 +9,6 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    consensus::{AccumulatingEvent, IntoAccumulatingEvent},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
@@ -35,12 +34,6 @@ pub struct RelocateDetails {
     pub destination_key: bls::PublicKey,
     /// The age the node will have post-relocation.
     pub age: u8,
-}
-
-impl IntoAccumulatingEvent for RelocateDetails {
-    fn into_accumulating_event(self) -> AccumulatingEvent {
-        AccumulatingEvent::Relocate(self)
-    }
 }
 
 /// SignedRoutingMessage with Relocate message content.

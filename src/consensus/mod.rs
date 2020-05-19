@@ -15,10 +15,7 @@ mod proof;
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
     genesis_prefix_info::GenesisPrefixInfo,
-    network_event::{
-        AccumulatingEvent, IntoAccumulatingEvent, NeighbourEldersRemoved, NetworkEvent,
-        OnlinePayload,
-    },
+    network_event::{AccumulatingEvent, NeighbourEldersRemoved, NetworkEvent, OnlinePayload},
     parsec::{
         generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
         DkgResult, DkgResultWrapper, Observation, ParsecNetworkEvent, Request as ParsecRequest,
