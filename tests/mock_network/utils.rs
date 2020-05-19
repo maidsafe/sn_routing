@@ -345,7 +345,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
 
         while let Some(event) = node.try_recv_event() {
             match event {
-                Event::SectionSplit(..)
+                Event::EldersChanged { .. }
                 | Event::RestartRequired
                 | Event::Connected(Connected::Relocate)
                 | Event::Promoted
