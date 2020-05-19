@@ -317,8 +317,18 @@ fn handle_event(
         Event::MemberLeft { name, age } => {
             log::info!("Node #{} member left - name: {}, age: {}", index, name, age);
         }
-        Event::SectionSplit(prefix) => {
-            log::info!("Node #{} section split - new prefix: {:b}", index, prefix);
+        Event::EldersChanged {
+            prefix,
+            key,
+            elders,
+        } => {
+            log::info!(
+                "Node #{} elders changed - prefix: {:b}, key: {:?}, elders: {:?}",
+                index,
+                prefix,
+                key,
+                elders
+            );
         }
         Event::MessageReceived { content, src, dst } => log::info!(
             "Node #{} received message - src: {:?}, dst: {:?}, content: {}",

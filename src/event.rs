@@ -11,7 +11,10 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use hex_fmt::HexFmt;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Formatter},
+};
 
 /// An Event raised as node complete joining
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -64,8 +67,15 @@ pub enum Event {
         /// Age of the node
         age: u8,
     },
-    /// Our own section has been split, resulting in the included `Prefix` for our new section.
-    SectionSplit(Prefix<XorName>),
+    /// The set of elders in our section has changed.
+    EldersChanged {
+        /// The prefix of our section.
+        prefix: Prefix<XorName>,
+        /// The BLS public key of our section.
+        key: bls::PublicKey,
+        /// The set of elders of our section.
+        elders: BTreeSet<XorName>,
+    },
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -96,7 +106,16 @@ impl Debug for Event {
                 .field("name", name)
                 .field("age", age)
                 .finish(),
-            Self::SectionSplit(prefix) => write!(formatter, "SectionSplit({:?})", prefix),
+            Self::EldersChanged {
+                prefix,
+                key,
+                elders,
+            } => formatter
+                .debug_struct("EldersChanged")
+                .field("prefix", prefix)
+                .field("key", key)
+                .field("elders", elders)
+                .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
             Self::Terminated => write!(formatter, "Terminated"),
         }

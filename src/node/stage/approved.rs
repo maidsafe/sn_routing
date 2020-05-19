@@ -1170,7 +1170,6 @@ impl Approved {
         let elders_info = self.shared_state.our_info();
         let info_prefix = elders_info.prefix;
         let is_elder = elders_info.elders.contains_key(core.name());
-        let is_split = info_prefix.is_extension_of(&old_prefix);
 
         core.msg_filter.reset();
 
@@ -1181,7 +1180,9 @@ impl Approved {
             return Ok(());
         }
 
-        if old_prefix.is_extension_of(&info_prefix) {
+        if info_prefix.is_extension_of(&old_prefix) {
+            info!("Split");
+        } else if old_prefix.is_extension_of(&info_prefix) {
             panic!("Merge not supported: {:?} -> {:?}", old_prefix, info_prefix);
         }
 
@@ -1219,15 +1220,22 @@ impl Approved {
 
         self.print_network_stats();
 
-        if is_split {
-            info!("Split");
-            core.send_event(Event::SectionSplit(*self.shared_state.our_prefix()));
-        }
-
         if !was_elder {
             info!("Promoted");
             core.send_event(Event::Promoted);
         }
+
+        core.send_event(Event::EldersChanged {
+            prefix: *self.shared_state.our_prefix(),
+            key: *self.shared_state.our_history.last_key(),
+            elders: self
+                .shared_state
+                .our_info()
+                .elders
+                .keys()
+                .copied()
+                .collect(),
+        });
 
         Ok(())
     }
