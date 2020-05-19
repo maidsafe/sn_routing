@@ -84,7 +84,7 @@ pub enum AccumulatingEvent {
 
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
-        dst: Prefix<XorName>,
+        dst: XorName,
         // Hash of the incoming message that triggered this vote. It's purpose is to make the votes
         // triggered by different message unique.
         nonce: MessageHash,

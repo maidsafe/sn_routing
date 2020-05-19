@@ -810,13 +810,13 @@ pub fn send_user_message(
     content: Vec<u8>,
 ) {
     let src_location = SrcLocation::Section(src);
-    let dst_location = DstLocation::Prefix(dst);
+    let dst_location = DstLocation::Section(dst.name());
 
     trace!(
         "send_user_message: {:?} -> {:?}: {:?}",
         src_location,
         dst_location,
-        hex_fmt::HexFmt(&content)
+        hex_fmt::HexFmt(&content),
     );
 
     for node in elders_with_prefix_mut(nodes, &src) {

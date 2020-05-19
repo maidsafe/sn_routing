@@ -335,7 +335,7 @@ impl Node {
         match &self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) => match dst {
                 DstLocation::Node(name) => name == self.core.name(),
-                DstLocation::Section(_) | DstLocation::Prefix(_) => false,
+                DstLocation::Section(_) => false,
                 DstLocation::Direct => true,
             },
             Stage::Approved(stage) => {
@@ -681,7 +681,7 @@ impl Node {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     // Ensure the src and dst are what we expect.
                     let src_key = *msg.src.as_section_key()?;
-                    let _: &Prefix<_> = msg.dst.as_prefix()?;
+                    let _: &XorName = msg.dst.as_section()?;
                     stage.handle_neighbour_info(elders_info, src_key)?;
                 }
                 Variant::GenesisUpdate(info) => {

@@ -110,6 +110,11 @@ impl SectionMap {
         self.all().map(|(prefix, _)| prefix)
     }
 
+    /// Returns whether the given name is in any of our neighbour sections.
+    pub fn is_in_neighbour(&self, name: &XorName) -> bool {
+        self.other.keys().any(|prefix| prefix.matches(name))
+    }
+
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
     pub fn is_new(&self, elders_info: &EldersInfo) -> bool {
         self.all()

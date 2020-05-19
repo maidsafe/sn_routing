@@ -51,8 +51,6 @@ pub enum DstLocation {
     Node(XorName),
     /// Destination are the nodes of the section whose prefix matches the given name.
     Section(XorName),
-    /// Destination are the nodes whose name is matched by the given prefix.
-    Prefix(Prefix<XorName>),
     /// Destination is the node at the `ConnectionInfo` the message is directly sent to.
     Direct,
 }
@@ -62,7 +60,7 @@ impl DstLocation {
     pub fn is_single(&self) -> bool {
         match self {
             Self::Node(_) | Self::Direct => true,
-            Self::Section(_) | Self::Prefix(_) => false,
+            Self::Section(_) => false,
         }
     }
 
@@ -75,7 +73,6 @@ impl DstLocation {
     pub fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
         match self {
             Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
-            Self::Prefix(prefix) => other_prefix.is_compatible(prefix),
             Self::Direct => false,
         }
     }
@@ -84,7 +81,7 @@ impl DstLocation {
     pub fn as_node(&self) -> Result<&XorName> {
         match self {
             Self::Node(name) => Ok(name),
-            Self::Section(_) | Self::Prefix(_) | Self::Direct => Err(RoutingError::BadLocation),
+            Self::Section(_) | Self::Direct => Err(RoutingError::BadLocation),
         }
     }
 
@@ -92,15 +89,7 @@ impl DstLocation {
     pub fn as_section(&self) -> Result<&XorName> {
         match self {
             Self::Section(name) => Ok(name),
-            Self::Node(_) | Self::Prefix(_) | Self::Direct => Err(RoutingError::BadLocation),
-        }
-    }
-
-    /// If this location is `Prefix`, returns it, otherwise error.
-    pub fn as_prefix(&self) -> Result<&Prefix<XorName>> {
-        match self {
-            Self::Prefix(prefix) => Ok(prefix),
-            Self::Node(_) | Self::Section(_) | Self::Direct => Err(RoutingError::BadLocation),
+            Self::Node(_) | Self::Direct => Err(RoutingError::BadLocation),
         }
     }
 
@@ -115,7 +104,6 @@ impl DstLocation {
         match self {
             DstLocation::Node(self_name) => name == self_name,
             DstLocation::Section(self_name) => prefix.matches(self_name),
-            DstLocation::Prefix(self_prefix) => prefix.is_compatible(self_prefix),
             DstLocation::Direct => true,
         }
     }

@@ -1316,7 +1316,7 @@ impl Approved {
     fn handle_send_neighbour_info_event(
         &mut self,
         core: &mut Core,
-        dst: Prefix<XorName>,
+        dst: XorName,
         nonce: MessageHash,
     ) -> Result<()> {
         if !self.is_our_elder(core.id()) {
@@ -1326,7 +1326,7 @@ impl Approved {
         self.send_routing_message(
             core,
             SrcLocation::Section(*self.shared_state.our_prefix()),
-            DstLocation::Prefix(dst),
+            DstLocation::Section(dst),
             Variant::NeighbourInfo {
                 elders_info: self.shared_state.our_info().clone(),
                 nonce,
@@ -1442,7 +1442,7 @@ impl Approved {
 
                     // Only revote if the recipient is still our neighbour
                     AccumulatingEvent::SendNeighbourInfo { ref dst, .. } => {
-                        our_prefix.is_neighbour(dst)
+                        self.shared_state.sections.is_in_neighbour(dst)
                     }
 
                     // Keep: Still relevant after prefix change.
@@ -1816,17 +1816,19 @@ impl Approved {
             &dst,
             self.shared_state.sections.our_elders().cloned(),
         );
+
+        trace!(
+            "Sending signatures for {:?} to {:?}",
+            accumulating_msg.content,
+            targets,
+        );
+
         for target in targets {
             if target.name() == core.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     self.handle_accumulated_message(core, msg)?;
                 }
             } else {
-                trace!(
-                    "Sending a signature for {:?} to {:?}",
-                    accumulating_msg.content,
-                    target,
-                );
                 core.send_direct_message(
                     target.peer_addr(),
                     Variant::MessageSignature(Box::new(accumulating_msg.clone())),
