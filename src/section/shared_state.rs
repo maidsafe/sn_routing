@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    AgeCounter, EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain,
-};
+use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::AccumulatingEvent,
     id::{P2pNode, PublicId},
@@ -43,24 +41,18 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(
-        elders_info: EldersInfo,
-        section_pk: bls::PublicKey,
-        ages: BTreeMap<XorName, AgeCounter>,
-    ) -> Self {
-        let our_members = SectionMembers::new(&elders_info, &ages);
-
+    pub fn new(elders_info: EldersInfo, section_pk: bls::PublicKey) -> Self {
         Self {
             handled_genesis_event: false,
             our_history: SectionProofChain::new(section_pk),
             sections: SectionMap::new(elders_info, section_pk),
-            our_members,
+            our_members: SectionMembers::default(),
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
         }
     }
 
-    pub fn update(&mut self, new: Option<Self>) {
+    pub fn update(&mut self, new: Self) {
         if self.handled_genesis_event {
             log_or_panic!(
                 log::Level::Error,
@@ -68,19 +60,16 @@ impl SharedState {
             );
         }
 
-        if let Some(new) = new {
-            if self.our_history.len() > 1 && *self != new {
-                log_or_panic!(
-                    log::Level::Error,
-                    "shared state update - mismatch: old: {:?} --- new: {:?}",
-                    self,
-                    new
-                );
-            }
-
-            *self = new;
+        if self.our_history.len() > 1 && *self != new {
+            log_or_panic!(
+                log::Level::Error,
+                "shared state update - mismatch: old: {:?} --- new: {:?}",
+                self,
+                new
+            );
         }
 
+        *self = new;
         self.handled_genesis_event = true;
     }
 
@@ -107,6 +96,15 @@ impl SharedState {
             .active()
             .map(|info| &info.p2p_node)
             .chain(self.sections.neighbour_elders())
+    }
+
+    /// Returns a section member `P2pNode`
+    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.sections
+            .our()
+            .elders
+            .get(name)
+            .or_else(|| self.our_members.get_p2p_node(name))
     }
 
     /// Returns whether we know the given peer.
@@ -541,7 +539,7 @@ mod test {
         consensus::generate_bls_threshold_secret_key,
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
-        section::{EldersInfo, MIN_AGE_COUNTER},
+        section::EldersInfo,
         xor_space::{Prefix, XorName},
     };
     use rand::{seq::SliceRandom, Rng};
@@ -630,17 +628,11 @@ mod test {
         let mut sections_iter = section_members.into_iter();
 
         let elders_info = sections_iter.next().expect("section members");
-        let ages = elders_info
-            .elders
-            .keys()
-            .map(|name| (*name, MIN_AGE_COUNTER))
-            .collect();
-
         let participants = elders_info.elders.len();
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
         let public_key = secret_key_set.public_keys().public_key();
 
-        let mut state = SharedState::new(elders_info, public_key, ages);
+        let mut state = SharedState::new(elders_info, public_key);
 
         for info in sections_iter {
             add_neighbour_elders_info(&mut state, &our_pub_id, info);

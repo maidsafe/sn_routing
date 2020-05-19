@@ -20,7 +20,7 @@ use crate::{
     messages::{Message, MessageWithBytes},
     node::Node,
     rng::MainRng,
-    section::{AgeCounter, EldersInfo, MIN_AGE_COUNTER},
+    section::EldersInfo,
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -57,24 +57,11 @@ pub fn create_genesis_prefix_info(
     public_keys: bls::PublicKeySet,
     parsec_version: u64,
 ) -> GenesisPrefixInfo {
-    let ages = elder_age_counters(elders_info.elders.keys());
-
     GenesisPrefixInfo {
         elders_info,
         public_keys,
-        ages,
         parsec_version,
     }
-}
-
-pub fn elder_age_counters<'a, I>(elders: I) -> BTreeMap<XorName, AgeCounter>
-where
-    I: IntoIterator<Item = &'a XorName>,
-{
-    elders
-        .into_iter()
-        .map(|name| (*name, MIN_AGE_COUNTER))
-        .collect()
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {

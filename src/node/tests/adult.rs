@@ -117,7 +117,6 @@ fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elde
             let state = SharedState::new(
                 genesis_prefix_info.elders_info.clone(),
                 genesis_prefix_info.public_keys.public_key(),
-                genesis_prefix_info.ages.clone(),
             );
             let section_keys_provider = SectionKeysProvider::new(
                 genesis_prefix_info.public_keys.clone(),

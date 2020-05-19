@@ -669,7 +669,7 @@ impl Node {
                     )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
                     let connect_type = stage.connect_type();
-                    self.approve(connect_type, *genesis_prefix_info)
+                    self.approve(connect_type, *genesis_prefix_info)?
                 }
                 Variant::Bounce {
                     elders_version,
@@ -833,15 +833,21 @@ impl Node {
     }
 
     // Transition from Joining to Approved
-    fn approve(&mut self, connect_type: Connected, genesis_prefix_info: GenesisPrefixInfo) {
+    fn approve(
+        &mut self,
+        connect_type: Connected,
+        genesis_prefix_info: GenesisPrefixInfo,
+    ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
             genesis_prefix_info.elders_info.prefix,
         );
 
-        let stage = Approved::new(&mut self.core, genesis_prefix_info, None);
+        let stage = Approved::new(&mut self.core, genesis_prefix_info, None)?;
         self.stage = Stage::Approved(stage);
         self.core.send_event(Event::Connected(connect_type));
+
+        Ok(())
     }
 
     // Transition from Approved to Bootstrapping on relocation
@@ -1089,11 +1095,8 @@ impl Node {
 
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Stage::Approved(Approved::new(
-            &mut core,
-            genesis_prefix_info,
-            secret_key_share,
-        ));
+        let stage = Approved::new(&mut core, genesis_prefix_info, secret_key_share).unwrap();
+        let stage = Stage::Approved(stage);
 
         let node = Self {
             stage,
