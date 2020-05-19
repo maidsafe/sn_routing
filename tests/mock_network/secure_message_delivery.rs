@@ -76,7 +76,7 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let content = PlainMessage {
         src: our_prefix,
-        dst: DstLocation::Prefix(their_prefix),
+        dst: DstLocation::Section(their_prefix.name()),
         dst_key: their_key,
         variant: Variant::NeighbourInfo {
             elders_info: new_info,
@@ -88,7 +88,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         let proof = match fail_type {
             FailType::TrustedProofInvalidSig => nodes[our_node_pos]
                 .inner
-                .prove(&DstLocation::Prefix(their_prefix))
+                .prove(&DstLocation::Section(their_prefix.name()))
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
                 create_invalid_proof_chain(&mut rng, bls_keys.public_keys().public_key())

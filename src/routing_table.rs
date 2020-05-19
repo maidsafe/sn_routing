@@ -33,14 +33,6 @@ pub const fn delivery_group_size(n: usize) -> usize {
 ///       the destination), returns all other members of our section; otherwise
 ///     - returns the `N/3` closest members to the target
 ///
-/// * If the destination is an `DstLocation::PrefixSection`:
-///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
-///       RT, returns all members in these prefixes except ourself; otherwise
-///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
-///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-///     - returns the `N/3` closest members of the RT to the lower bound of the target
-///       prefix
-///
 /// * If the destination is an individual node:
 ///     - if our name *is* the destination, returns an empty set; otherwise
 ///     - if the destination name is an entry in the routing table, returns it; otherwise
@@ -88,41 +80,6 @@ pub fn delivery_targets(
             }
 
             candidates(target_name, our_id, sections)?
-        }
-        DstLocation::Prefix(prefix) => {
-            if prefix.is_compatible(&sections.our().prefix)
-                || prefix.is_neighbour(&sections.our().prefix)
-            {
-                // only route the message when we have all the targets in our chain -
-                // this is to prevent spamming the network by sending messages with
-                // intentionally short prefixes
-                if prefix.is_compatible(&sections.our().prefix)
-                    && !prefix.is_covered_by(sections.prefixes())
-                {
-                    return Err(RoutingError::CannotRoute);
-                }
-
-                let is_compatible = |(other_prefix, section)| {
-                    if prefix.is_compatible(other_prefix) {
-                        Some(section)
-                    } else {
-                        None
-                    }
-                };
-
-                // Exclude our name since we don't need to send to ourself
-                let targets: Vec<_> = sections
-                    .all()
-                    .filter_map(is_compatible)
-                    .flat_map(|info| info.elders.values())
-                    .filter(|node| node.name() != our_id.name())
-                    .cloned()
-                    .collect();
-                let dg_size = targets.len();
-                return Ok((targets, dg_size));
-            }
-
-            candidates(&prefix.lower_bound(), our_id, sections)?
         }
         DstLocation::Direct => return Err(RoutingError::CannotRoute),
     };
@@ -187,7 +144,6 @@ where
     let dst_name = match dst {
         DstLocation::Node(name) => *name,
         DstLocation::Section(name) => *name,
-        DstLocation::Prefix(prefix) => prefix.name(),
         DstLocation::Direct => {
             log_or_panic!(
                 log::Level::Error,

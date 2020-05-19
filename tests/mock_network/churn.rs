@@ -658,22 +658,24 @@ impl Expectations {
             DstLocation::Node(name) => assert_eq!(
                 node.name(),
                 name,
-                "unexpected recipient name of message {}: {}",
-                key,
+                "{}({:b}) unexpected recipient name of message {}",
                 node.name(),
-            ),
-            DstLocation::Section(name) => assert!(
-                node.our_prefix().matches(name),
-                "unexpected recipient prefix of message {}: {:b}",
-                key,
                 node.our_prefix(),
-            ),
-            DstLocation::Prefix(prefix) => assert!(
-                node.our_prefix().is_compatible(prefix),
-                "unexpected recipient prefix of message {}: {:b}",
                 key,
-                node.our_prefix(),
             ),
+            DstLocation::Section(name) => {
+                // Accepting both the current and the parent prefix in case the node went through
+                // a split in between the time it received the message and now.
+                let matches =
+                    node.our_prefix().matches(name) || node.our_prefix().popped().matches(name);
+                assert!(
+                    matches,
+                    "{}({:b}) unexpected recipient prefix of message {}",
+                    node.name(),
+                    node.our_prefix(),
+                    key,
+                )
+            }
             DstLocation::Direct => panic!("unexpected received direct message {}", key),
         }
 

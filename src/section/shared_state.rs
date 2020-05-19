@@ -363,7 +363,7 @@ impl SharedState {
             // neighbours.
 
             events.push(AccumulatingEvent::SendNeighbourInfo {
-                dst: prefix,
+                dst: prefix.name(),
                 nonce: *hash,
             })
         }
