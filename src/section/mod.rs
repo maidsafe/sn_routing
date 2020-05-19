@@ -20,7 +20,7 @@ pub use self::{
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_stats::NetworkStats,
     section_keys::{IndexedSecretKeyShare, SectionKeys, SectionKeysProvider},
-    section_map::SectionMap,
+    section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
     section_proof_chain::{SectionProofChain, TrustStatus},
     shared_state::SharedState,

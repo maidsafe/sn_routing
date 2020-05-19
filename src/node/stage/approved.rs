@@ -9,8 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
-        GenesisPrefixInfo, NeighbourEldersRemoved, NetworkEvent, OnlinePayload, ParsecRequest,
-        ParsecResponse,
+        GenesisPrefixInfo, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -26,8 +25,8 @@ use crate::{
     rng::MainRng,
     routing_table,
     section::{
-        EldersInfo, IndexedSecretKeyShare, MemberState, SectionKeysProvider, SharedState,
-        SplitCache, MIN_AGE, MIN_AGE_COUNTER,
+        EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
+        SectionKeysProvider, SharedState, SplitCache, MIN_AGE, MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
