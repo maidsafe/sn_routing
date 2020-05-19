@@ -26,7 +26,7 @@ use crate::{
     routing_table,
     section::{
         EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
-        SectionKeysProvider, SharedState, SplitCache, MIN_AGE, MIN_AGE_COUNTER,
+        SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -77,21 +77,14 @@ impl Approved {
     pub fn first(core: &mut Core) -> Result<Self> {
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(*core.id(), connection_info);
-        let mut ages = BTreeMap::new();
-        let _ = ages.insert(*p2p_node.name(), MIN_AGE_COUNTER);
         let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: create_first_elders_info(p2p_node),
             public_keys: first_dkg_result.public_key_set,
-            ages,
             parsec_version: 0,
         };
 
-        Ok(Self::new(
-            core,
-            genesis_prefix_info,
-            first_dkg_result.secret_key_share,
-        ))
+        Self::new(core, genesis_prefix_info, first_dkg_result.secret_key_share)
     }
 
     // Create the approved stage for a regular node.
@@ -99,7 +92,7 @@ impl Approved {
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
-    ) -> Self {
+    ) -> Result<Self> {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let section_keys_provider = SectionKeysProvider::new(
@@ -109,20 +102,34 @@ impl Approved {
             }),
         );
 
+        let mut shared_state = SharedState::new(
+            genesis_prefix_info.elders_info.clone(),
+            genesis_prefix_info.public_keys.public_key(),
+        );
+
+        if genesis_prefix_info
+            .elders_info
+            .elders
+            .contains_key(core.name())
+        {
+            // We are being created already as elder so we need to insert all the section elders
+            // (including us) into our_members explicitly because we won't see their `Online`
+            // events. This only happens if we are the first node or in tests.
+            for p2p_node in genesis_prefix_info.elders_info.elders.values() {
+                shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
+            }
+        }
+
+        let serialised_state = bincode::serialize(&shared_state)?;
         let consensus_engine = ConsensusEngine::new(
             &mut core.rng,
             core.full_id.clone(),
             &genesis_prefix_info.elders_info,
-            vec![],
+            serialised_state,
             genesis_prefix_info.parsec_version,
         );
-        let shared_state = SharedState::new(
-            genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.public_key(),
-            genesis_prefix_info.ages.clone(),
-        );
 
-        Self {
+        Ok(Self {
             consensus_engine,
             shared_state,
             section_keys_provider,
@@ -134,7 +141,7 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             members_knowledge: Default::default(),
-        }
+        })
     }
 
     pub fn pause(self, core: Core) -> PausedState {
@@ -941,12 +948,7 @@ impl Approved {
         _group: &BTreeSet<PublicId>,
         related_info: &[u8],
     ) -> Result<()> {
-        // `related_info` is empty only if this is the `first` node.
-        let new_state = if !related_info.is_empty() {
-            Some(bincode::deserialize(related_info)?)
-        } else {
-            None
-        };
+        let new_state = bincode::deserialize(related_info)?;
 
         // On split membership may need to be checked again.
         self.members_changed = true;
@@ -1384,7 +1386,6 @@ impl Approved {
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: self.shared_state.our_info().clone(),
             public_keys: self.section_keys_provider.public_key_set().clone(),
-            ages: self.shared_state.our_members.get_age_counters(),
             parsec_version: self.consensus_engine.parsec_version() + 1,
         };
 
@@ -1520,7 +1521,6 @@ impl Approved {
         self.shared_state = SharedState::new(
             genesis_prefix_info.elders_info.clone(),
             genesis_prefix_info.public_keys.public_key(),
-            genesis_prefix_info.ages.clone(),
         );
         self.genesis_prefix_info = genesis_prefix_info;
     }
@@ -1684,7 +1684,7 @@ impl Approved {
 
         let mut p2p_recipients: Vec<_> = recipients
             .into_iter()
-            .filter_map(|pub_id| self.shared_state.our_members.get_p2p_node(pub_id.name()))
+            .filter_map(|pub_id| self.shared_state.get_p2p_node(pub_id.name()))
             .cloned()
             .collect();
 

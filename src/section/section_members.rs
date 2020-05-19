@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    elders_info::EldersInfo,
-    member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE_COUNTER},
-};
+use super::member_info::{MemberInfo, MemberState};
 use crate::{
     id::P2pNode,
     xor_space::{Prefix, XorName},
@@ -22,7 +19,7 @@ use std::{
 };
 
 /// Container for storing information about members of our section.
-#[derive(Debug, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Eq, Serialize, Deserialize)]
 pub struct SectionMembers {
     members: BTreeMap<XorName, MemberInfo>,
     // Number that gets incremented every time a node joins or leaves our section - that is, every
@@ -36,29 +33,6 @@ pub struct SectionMembers {
 }
 
 impl SectionMembers {
-    /// Constructs the container initially with the section elders.
-    pub fn new(elders_info: &EldersInfo, ages: &BTreeMap<XorName, AgeCounter>) -> Self {
-        let members = elders_info
-            .elders
-            .values()
-            .map(|p2p_node| {
-                let info = MemberInfo {
-                    age_counter: *ages.get(p2p_node.name()).unwrap_or(&MIN_AGE_COUNTER),
-                    state: MemberState::Joined,
-                    p2p_node: p2p_node.clone(),
-                    section_version: 0,
-                };
-                (*p2p_node.name(), info)
-            })
-            .collect();
-
-        Self {
-            members,
-            version: 0,
-            post_split_siblings: Default::default(),
-        }
-    }
-
     /// Returns an iterator over the members that are not in the `Left` state.
     pub fn active(&self) -> impl Iterator<Item = &MemberInfo> {
         self.members
@@ -140,14 +114,6 @@ impl SectionMembers {
             .get(name)
             .map(|info| info.is_mature())
             .unwrap_or(false)
-    }
-
-    /// Returns the age counters of all our members.
-    pub fn get_age_counters(&self) -> BTreeMap<XorName, AgeCounter> {
-        self.members
-            .values()
-            .map(|member_info| (*member_info.p2p_node.name(), member_info.age_counter))
-            .collect()
     }
 
     /// Adds a member to our section.
