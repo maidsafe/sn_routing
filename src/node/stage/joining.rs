@@ -22,7 +22,7 @@ use bytes::Bytes;
 use std::time::Duration;
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
 pub struct Joining {
@@ -30,6 +30,8 @@ pub struct Joining {
     elders_info: EldersInfo,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
+    // Token for the join request timeout.
+    timer_token: u64,
 }
 
 impl Joining {
@@ -40,42 +42,25 @@ impl Joining {
     ) -> Self {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
-            None => {
-                let timeout_token = core.timer.schedule(JOIN_TIMEOUT);
-                JoinType::First { timeout_token }
-            }
+            None => JoinType::First,
         };
+        let timer_token = core.timer.schedule(JOIN_TIMEOUT);
 
         let stage = Self {
             elders_info,
             join_type,
+            timer_token,
         };
         stage.send_join_requests(core);
         stage
     }
 
-    // Returns whether the timeout was handled.
-    pub fn handle_timeout(&mut self, core: &mut Core, token: u64) -> bool {
-        let join_token = match self.join_type {
-            JoinType::First { timeout_token } => timeout_token,
-            JoinType::Relocate(_) => return false,
-        };
-
-        if join_token == token {
-            debug!("Timeout when trying to join a section.");
-
-            for addr in self
-                .elders_info
-                .elders
-                .values()
-                .map(|node| *node.peer_addr())
-            {
-                core.transport.disconnect(addr);
-            }
-
-            true
-        } else {
-            false
+    pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
+        if token == self.timer_token {
+            debug!("Timeout when trying to join a section");
+            // Try again
+            self.send_join_requests(core);
+            self.timer_token = core.timer.schedule(JOIN_TIMEOUT);
         }
     }
 
@@ -188,7 +173,7 @@ impl Joining {
 #[allow(clippy::large_enum_variant)]
 enum JoinType {
     // Node joining the network for the first time.
-    First { timeout_token: u64 },
+    First,
     // Node being relocated.
     Relocate(RelocatePayload),
 }
