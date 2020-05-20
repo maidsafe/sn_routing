@@ -598,6 +598,14 @@ fn neighbour_update() {
         poll_until(&env, &mut nodes, |nodes| node_left(nodes, &name));
     }
 
+    // Now A's knowledge of B is out of date.
+    assert!(!section_knowledge_is_up_to_date(
+        &nodes,
+        &prefix_a,
+        &prefix_b,
+        env.elder_size()
+    ));
+
     // Send a message from B to A to trigger the update request.
     send_user_message(&mut nodes, prefix_b, prefix_a, gen_vec(&mut rng, 10));
     poll_until(&env, &mut nodes, |nodes| {
