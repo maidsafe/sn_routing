@@ -38,17 +38,17 @@ impl SrcAuthority {
         }
     }
 
+    pub fn check_is_section(&self) -> Result<()> {
+        match self {
+            Self::Section { .. } => Ok(()),
+            Self::Node { .. } => Err(RoutingError::BadLocation),
+        }
+    }
+
     pub fn as_node(&self) -> Result<&PublicId> {
         match self {
             Self::Node { public_id, .. } => Ok(public_id),
             Self::Section { .. } => Err(RoutingError::BadLocation),
-        }
-    }
-
-    pub fn as_section(&self) -> Result<&Prefix<XorName>> {
-        match self {
-            Self::Section { prefix, .. } => Ok(prefix),
-            Self::Node { .. } => Err(RoutingError::BadLocation),
         }
     }
 

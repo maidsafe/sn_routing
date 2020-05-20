@@ -308,13 +308,13 @@ impl SectionMap {
         let _ = self.keys.insert(prefix, new_key);
     }
 
-    /// Returns the the index of the public key in our_history that will be trusted by the given
+    /// Returns the index of the public key in our_history that will be trusted by the given
     /// section.
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
         self.knowledge.get(prefix).copied().unwrap_or(0)
     }
 
-    /// Returns the the index of the public key in our_history that will be trusted by the given
+    /// Returns the index of the public key in our_history that will be trusted by the given
     /// location
     pub fn knowledge_by_location(&self, target: &DstLocation) -> u64 {
         let (prefix, &index) = if let Some(pair) = self

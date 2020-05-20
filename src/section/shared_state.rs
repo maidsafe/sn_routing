@@ -326,6 +326,13 @@ impl SharedState {
 
         let is_neighbour = self.our_prefix().is_neighbour(&prefix);
 
+        // There will be at most two events returned because the only possible event combinations
+        // are these:
+        // - `[]`
+        // - `[TheirKeyInfo]`
+        // - `[TheirKeyInfo, TheirKnowledge]`
+        // - `[SendNeighbourInfo]`
+        // - `[SendNeighbourInfo, TheirKnowledge]`
         let mut events = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 

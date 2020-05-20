@@ -375,7 +375,6 @@ impl Approved {
 
                 Ok(MessageAction::Handle)
             }
-            Variant::BootstrapResponse(_) => Ok(MessageAction::Discard),
             Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
@@ -387,7 +386,7 @@ impl Approved {
                     Ok(MessageAction::Discard)
                 }
             }
-            Variant::Ping => Ok(MessageAction::Discard),
+            Variant::BootstrapResponse(_) | Variant::Ping => Ok(MessageAction::Discard),
         }
     }
 
@@ -688,7 +687,7 @@ impl Approved {
         if !msg
             .message_dst()
             .contains(core.name(), self.shared_state.our_prefix())
-            || msg.message_dst().is_multiple()
+            || msg.message_dst().is_section()
         {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.send_signed_message(core, msg)
@@ -1802,8 +1801,9 @@ impl Approved {
             return Ok(());
         }
 
-        // If the source is single, we don't even need to send signatures, so let's cut this short
-        if src.is_single() {
+        // If the source is a single node, we don't even need to send signatures, so let's cut this
+        // short
+        if !src.is_section() {
             let msg = Message::single_src(&core.full_id, dst, variant)?;
             let msg = MessageWithBytes::new(msg)?;
             return self.handle_accumulated_message(core, msg);
@@ -1924,7 +1924,7 @@ impl Approved {
     fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
         match msg.verify(self.shared_state.sections.keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
-            Ok(VerifyStatus::Unknown) if msg.dst.is_multiple() => {
+            Ok(VerifyStatus::Unknown) if msg.dst.is_section() => {
                 // Proof is too new which can only happen if we've been already demoted but are
                 // lagging behind (or the sender is faulty/malicious). We can't handle the
                 // message ourselves but the other elders likely can.

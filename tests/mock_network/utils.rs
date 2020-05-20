@@ -882,7 +882,6 @@ fn neighbours_with_outdated_knowledge<'a>(
             !section_knowledge_is_up_to_date(nodes, a, b, threshold)
                 || !section_knowledge_is_up_to_date(nodes, b, a, threshold)
         })
-        .map(|(a, b)| if a < b { (a, b) } else { (b, a) })
 }
 
 // Generate a vector of random T of the given length.

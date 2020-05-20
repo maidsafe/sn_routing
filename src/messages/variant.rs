@@ -29,8 +29,8 @@ pub enum Variant {
         /// `EldersInfo` of the neighbour section.
         elders_info: EldersInfo,
         /// Nonce that is derived from the incoming message that triggered sending this
-        /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are otherwise
-        /// identical but triggered by different messages are not filtered out.
+        /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are identical
+        /// but triggered by different messages are not filtered out.
         nonce: MessageHash,
     },
     /// User-facing message

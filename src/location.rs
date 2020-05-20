@@ -22,21 +22,16 @@ pub enum SrcLocation {
 }
 
 impl SrcLocation {
-    /// Returns `true` if the location is a single node, and `false` otherwise.
-    pub fn is_single(&self) -> bool {
+    /// Returns whether this location is a section.
+    pub fn is_section(&self) -> bool {
         match self {
-            Self::Node(_) => true,
-            Self::Section(_) => false,
+            Self::Section(_) => true,
+            Self::Node(_) => false,
         }
     }
 
-    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
-    pub fn is_multiple(&self) -> bool {
-        !self.is_single()
-    }
-
     /// Returns whether the given name is part of this location
-    pub fn contains(&self, name: &XorName) -> bool {
+    pub(crate) fn contains(&self, name: &XorName) -> bool {
         match self {
             SrcLocation::Node(self_name) => name == self_name,
             SrcLocation::Section(self_prefix) => self_prefix.matches(name),
@@ -56,39 +51,34 @@ pub enum DstLocation {
 }
 
 impl DstLocation {
-    /// Returns `true` if the location is a single node, and `false` otherwise.
-    pub fn is_single(&self) -> bool {
+    /// Returns whether this location is a section.
+    pub fn is_section(&self) -> bool {
         match self {
-            Self::Node(_) | Self::Direct => true,
-            Self::Section(_) => false,
+            Self::Section(_) => true,
+            Self::Node(_) | Self::Direct => false,
         }
     }
 
-    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
-    pub fn is_multiple(&self) -> bool {
-        !self.is_single()
-    }
-
     /// Returns if the location is compatible with that prefix
-    pub fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
+    pub(crate) fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
         match self {
             Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
             Self::Direct => false,
         }
     }
 
-    /// If this location is `Node`, returns its name, otherwise error.
-    pub fn as_node(&self) -> Result<&XorName> {
+    /// If this location is `Node`, returns its name, otherwise `Err(BadLocation)`.
+    pub(crate) fn as_node(&self) -> Result<&XorName> {
         match self {
             Self::Node(name) => Ok(name),
             Self::Section(_) | Self::Direct => Err(RoutingError::BadLocation),
         }
     }
 
-    /// If this location is `Section`, returns its name, otherwise error.
-    pub fn as_section(&self) -> Result<&XorName> {
+    /// Returns `Ok` if this location is section, `Err(BadLocation)` otherwise.
+    pub(crate) fn check_is_section(&self) -> Result<()> {
         match self {
-            Self::Section(name) => Ok(name),
+            Self::Section(_) => Ok(()),
             Self::Node(_) | Self::Direct => Err(RoutingError::BadLocation),
         }
     }
@@ -98,7 +88,7 @@ impl DstLocation {
     /// # Panics
     ///
     /// Panics if `prefix` does not match `name`.
-    pub fn contains(&self, name: &XorName, prefix: &Prefix<XorName>) -> bool {
+    pub(crate) fn contains(&self, name: &XorName, prefix: &Prefix<XorName>) -> bool {
         assert!(prefix.matches(name));
 
         match self {

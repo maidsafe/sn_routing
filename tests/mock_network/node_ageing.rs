@@ -301,7 +301,7 @@ fn churn_until_age_counter(
                 // still online. If we picked such node for the bootstrap node, the bootstrapping
                 // would fail because the node would keep redirecting the joining node to
                 // non-existing peers. To avoid this and to keep things simple, we make sure we
-                // bootstrap off a node from the same section.
+                // bootstrap off a node from the same section that we are joining.
                 let bootstrap_index = indexed_nodes_with_prefix(nodes, prefix)
                     .choose(&mut rng)
                     .map(|(index, _)| index)
