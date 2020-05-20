@@ -511,8 +511,8 @@ impl Approved {
         let response = if self.shared_state.our_prefix().matches(&destination) {
             let our_info = self.shared_state.our_info().clone();
             debug!(
-                "Sending BootstrapResponse::Join to {:?} ({:?})",
-                p2p_node, our_info
+                "Sending BootstrapResponse::Join({:?}) to {}",
+                our_info, p2p_node,
             );
             BootstrapResponse::Join(our_info)
         } else {
@@ -543,7 +543,14 @@ impl Approved {
         );
 
         if join_request.elders_version < self.shared_state.our_info().version {
-            self.resend_bootstrap_response_join(core, &p2p_node);
+            trace!(
+                "Resending BootstrapResponse::Join({:?}) to {}",
+                self.shared_state.our_info(),
+                p2p_node,
+            );
+
+            let response = BootstrapResponse::Join(self.shared_state.our_info().clone());
+            core.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
             return;
         }
 
@@ -1167,7 +1174,6 @@ impl Approved {
         if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
-            self.process_post_reset_events(core, complete_data.to_process);
             self.handle_elders_update(core, complete_data.genesis_prefix_info);
 
             info!("Demoted");
@@ -1181,7 +1187,6 @@ impl Approved {
             complete_data.genesis_prefix_info,
             complete_data.to_vote_again,
         )?;
-        self.process_post_reset_events(core, complete_data.to_process);
 
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
         self.send_genesis_updates(core);
@@ -1381,7 +1386,39 @@ impl Approved {
     /// Gets the data needed to initialise a new Parsec instance
     fn prepare_parsec_reset(&mut self, our_id: &PublicId) -> Result<ParsecResetData> {
         self.shared_state.handled_genesis_event = false;
-        let cached_events = self.consensus_engine.prepare_reset(our_id);
+        let our_prefix = *self.shared_state.our_prefix();
+
+        let mut to_vote_again = self.consensus_engine.prepare_reset(our_id);
+        to_vote_again.retain(|event| match event.payload {
+            // Only re-vote if still relevant to our new prefix.
+            AccumulatingEvent::Online(ref payload) => our_prefix.matches(payload.p2p_node.name()),
+            AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
+            AccumulatingEvent::Relocate(ref details)
+            | AccumulatingEvent::RelocatePrepare(ref details, _) => {
+                our_prefix.matches(details.pub_id.name())
+            }
+            // Drop: no longer relevant after prefix change.
+            AccumulatingEvent::Genesis { .. }
+            | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::DkgResult { .. }
+            | AccumulatingEvent::ParsecPrune => false,
+
+            // Keep: Additional signatures for neighbours for sec-msg-relay.
+            AccumulatingEvent::SectionInfo(ref elders_info, _)
+            | AccumulatingEvent::NeighbourInfo(ref elders_info, _) => {
+                our_prefix.is_neighbour(&elders_info.prefix)
+            }
+
+            // Only revote if the recipient is still our neighbour
+            AccumulatingEvent::SendNeighbourInfo { ref dst, .. } => {
+                self.shared_state.sections.is_in_neighbour(dst)
+            }
+
+            // Keep: Still relevant after prefix change.
+            AccumulatingEvent::TheirKeyInfo { .. }
+            | AccumulatingEvent::TheirKnowledge { .. }
+            | AccumulatingEvent::User(_) => true,
+        });
 
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: self.shared_state.our_info().clone(),
@@ -1389,97 +1426,10 @@ impl Approved {
             parsec_version: self.consensus_engine.parsec_version() + 1,
         };
 
-        let our_prefix = *self.shared_state.our_prefix();
-
-        let to_process = cached_events
-            .iter()
-            .filter(|event| match &event.payload {
-                // Events to re-process
-                AccumulatingEvent::Online(_) => true,
-                // Events to re-insert
-                AccumulatingEvent::Genesis { .. }
-                | AccumulatingEvent::Offline(_)
-                | AccumulatingEvent::StartDkg(_)
-                | AccumulatingEvent::DkgResult { .. }
-                | AccumulatingEvent::ParsecPrune
-                | AccumulatingEvent::Relocate(_)
-                | AccumulatingEvent::RelocatePrepare(_, _)
-                | AccumulatingEvent::SectionInfo(_, _)
-                | AccumulatingEvent::NeighbourInfo { .. }
-                | AccumulatingEvent::SendNeighbourInfo { .. }
-                | AccumulatingEvent::TheirKeyInfo { .. }
-                | AccumulatingEvent::TheirKnowledge { .. }
-                | AccumulatingEvent::User(_) => false,
-            })
-            .cloned()
-            .collect();
-
-        let to_vote_again = cached_events
-            .into_iter()
-            .filter(|event| {
-                match event.payload {
-                    // Only re-vote if still relevant to our new prefix.
-                    AccumulatingEvent::Online(ref payload) => {
-                        our_prefix.matches(payload.p2p_node.name())
-                    }
-                    AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
-                    AccumulatingEvent::Relocate(ref details)
-                    | AccumulatingEvent::RelocatePrepare(ref details, _) => {
-                        our_prefix.matches(details.pub_id.name())
-                    }
-                    // Drop: no longer relevant after prefix change.
-                    AccumulatingEvent::Genesis { .. }
-                    | AccumulatingEvent::StartDkg(_)
-                    | AccumulatingEvent::DkgResult { .. }
-                    | AccumulatingEvent::ParsecPrune => false,
-
-                    // Keep: Additional signatures for neighbours for sec-msg-relay.
-                    AccumulatingEvent::SectionInfo(ref elders_info, _)
-                    | AccumulatingEvent::NeighbourInfo(ref elders_info, _) => {
-                        our_prefix.is_neighbour(&elders_info.prefix)
-                    }
-
-                    // Only revote if the recipient is still our neighbour
-                    AccumulatingEvent::SendNeighbourInfo { ref dst, .. } => {
-                        self.shared_state.sections.is_in_neighbour(dst)
-                    }
-
-                    // Keep: Still relevant after prefix change.
-                    AccumulatingEvent::TheirKeyInfo { .. }
-                    | AccumulatingEvent::TheirKnowledge { .. }
-                    | AccumulatingEvent::User(_) => true,
-                }
-            })
-            .collect();
-
         Ok(ParsecResetData {
             genesis_prefix_info,
             to_vote_again,
-            to_process,
         })
-    }
-
-    fn process_post_reset_events(&mut self, core: &mut Core, to_process: BTreeSet<NetworkEvent>) {
-        to_process.iter().for_each(|event| match &event.payload {
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::DkgResult { .. }
-            | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::SectionInfo(_, _)
-            | AccumulatingEvent::NeighbourInfo { .. }
-            | AccumulatingEvent::SendNeighbourInfo { .. }
-            | AccumulatingEvent::TheirKeyInfo { .. }
-            | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::User(_) => {
-                log_or_panic!(log::Level::Error, "unexpected event {:?}", event.payload);
-            }
-            AccumulatingEvent::Online(payload) => {
-                self.resend_bootstrap_response_join(core, &payload.p2p_node);
-            }
-        });
     }
 
     // Finalise parsec reset and revotes for all previously unaccumulated events.
@@ -1487,7 +1437,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
-        to_vote_again: BTreeSet<NetworkEvent>,
+        to_vote_again: Vec<NetworkEvent>,
     ) -> Result<()> {
         let serialised_state = bincode::serialize(&self.shared_state)?;
 
@@ -1500,9 +1450,9 @@ impl Approved {
             self.genesis_prefix_info.parsec_version,
         );
 
-        to_vote_again.iter().for_each(|event| {
-            self.consensus_engine.vote_for(event.clone());
-        });
+        for event in to_vote_again {
+            self.consensus_engine.vote_for(event);
+        }
 
         Ok(())
     }
@@ -1723,29 +1673,6 @@ impl Approved {
         }
     }
 
-    // Resend the response with ours or our sibling's info in case of split.
-    fn resend_bootstrap_response_join(&mut self, core: &mut Core, p2p_node: &P2pNode) {
-        let our_info = self.shared_state.our_info();
-
-        let response_section = Some(our_info)
-            .filter(|info| info.prefix.matches(p2p_node.name()))
-            .or_else(|| self.shared_state.sections.get(&our_info.prefix.sibling()))
-            .filter(|info| info.prefix.matches(p2p_node.name()))
-            .cloned();
-
-        if let Some(response_section) = response_section {
-            trace!(
-                "Resend Join to {} with version {}",
-                p2p_node,
-                response_section.version
-            );
-            core.send_direct_message(
-                p2p_node.peer_addr(),
-                Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
-            );
-        }
-    }
-
     // Send message over the network.
     pub fn send_signed_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = routing_table::delivery_targets(
@@ -1962,10 +1889,7 @@ struct ParsecResetData {
     genesis_prefix_info: GenesisPrefixInfo,
     // The cached events that should be revoted. Not shared state: only the ones we voted for.
     // Also contains our votes that never reached consensus.
-    to_vote_again: BTreeSet<NetworkEvent>,
-    // The events to process. Not shared state: only the ones we voted for.
-    // Also contains our votes that never reached consensus.
-    to_process: BTreeSet<NetworkEvent>,
+    to_vote_again: Vec<NetworkEvent>,
 }
 
 pub struct RelocateParams {
