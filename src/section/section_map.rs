@@ -58,15 +58,6 @@ impl SectionMap {
         &self.our
     }
 
-    /// Get `EldersInfo` of a known section with the given prefix.
-    pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if *prefix == self.our.prefix {
-            Some(&self.our)
-        } else {
-            self.neighbours.get(prefix)
-        }
-    }
-
     /// Find neighbour section containing the given elder.
     pub fn find_neighbour_by_elder(&self, elder_name: &XorName) -> Option<&EldersInfo> {
         self.neighbours
@@ -409,6 +400,16 @@ impl SectionMap {
             known_elders: self.elders().count() as u64,
             total_elders,
             total_elders_exact,
+        }
+    }
+
+    /// Get `EldersInfo` of a known section with the given prefix.
+    #[cfg(any(test, feature = "mock_base"))]
+    pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
+        if *prefix == self.our.prefix {
+            Some(&self.our)
+        } else {
+            self.neighbours.get(prefix)
         }
     }
 
