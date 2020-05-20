@@ -518,11 +518,7 @@ impl Node {
 
         match &mut self.stage {
             Stage::Bootstrapping(stage) => stage.handle_timeout(&mut self.core, token),
-            Stage::Joining(stage) => {
-                if stage.handle_timeout(&mut self.core, token) {
-                    self.rebootstrap()
-                }
-            }
+            Stage::Joining(stage) => stage.handle_timeout(&mut self.core, token),
             Stage::Approved(stage) => stage.handle_timeout(&mut self.core, token),
             Stage::Terminated => {}
         }
@@ -864,14 +860,6 @@ impl Node {
         }
 
         self.stage = Stage::Bootstrapping(stage);
-    }
-
-    // Transition from Joining to Bootstrapping on join failure
-    fn rebootstrap(&mut self) {
-        // TODO: preserve relocation details
-        self.stage = Stage::Bootstrapping(Bootstrapping::new(None));
-        self.core.full_id = FullId::gen(&mut self.core.rng);
-        self.core.transport.bootstrap();
     }
 
     fn set_log_ident(&self) -> log_utils::Guard {
