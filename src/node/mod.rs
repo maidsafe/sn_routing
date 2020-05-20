@@ -585,7 +585,7 @@ impl Node {
     }
 
     fn try_relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
-        if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
+        if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_section() {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.relay_message(sender, msg)
         } else {
@@ -679,17 +679,16 @@ impl Node {
             },
             Stage::Approved(stage) => match msg.variant {
                 Variant::NeighbourInfo { elders_info, .. } => {
-                    // Ensure the src and dst are what we expect.
+                    msg.dst.check_is_section()?;
                     let src_key = *msg.src.as_section_key()?;
-                    let _: &XorName = msg.dst.as_section()?;
                     stage.handle_neighbour_info(elders_info, src_key)?;
                 }
                 Variant::GenesisUpdate(info) => {
-                    let _: &Prefix<_> = msg.src.as_section()?;
+                    msg.src.check_is_section()?;
                     stage.handle_genesis_update(&mut self.core, *info)?;
                 }
                 Variant::Relocate(_) => {
-                    let _: &Prefix<_> = msg.src.as_section()?;
+                    msg.src.check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
                     if let Some(params) = stage.handle_relocate(&mut self.core, signed_relocate) {
                         self.relocate(params)

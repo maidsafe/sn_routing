@@ -592,7 +592,7 @@ impl Expectations {
             sent_count += 1;
         }
 
-        if src.is_multiple() {
+        if src.is_section() {
             assert!(
                 sent_count >= quorum_count(elder_size),
                 "sent_count: {}. elder_size: {}",
@@ -622,10 +622,10 @@ impl Expectations {
         self.prune_expected_recipients(nodes);
 
         for (key, recipients) in &self.messages {
-            let required = if key.dst.is_single() {
-                recipients.len().min(1)
-            } else {
+            let required = if key.dst.is_section() {
                 quorum_count(recipients.len())
+            } else {
+                recipients.len().min(1)
             };
 
             let received = recipients.values().filter(|&&r| r).count();
