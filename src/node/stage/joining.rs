@@ -12,7 +12,7 @@ use crate::{
     event::Connected,
     id::P2pNode,
     messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageAction, Variant, VerifyStatus,
+        self, BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus,
     },
     relocation::RelocatePayload,
     section::EldersInfo,
@@ -64,7 +64,7 @@ impl Joining {
         }
     }
 
-    pub fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
+    pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant {
             Variant::NodeApproval(_) => {
                 match &self.join_type {
@@ -77,19 +77,19 @@ impl Joining {
                         // handle it.
                     }
                 }
-                Ok(MessageAction::Handle)
+                Ok(MessageStatus::Useful)
             }
 
             Variant::BootstrapResponse(BootstrapResponse::Join(_)) | Variant::Bounce { .. } => {
                 verify_message(msg, None)?;
-                Ok(MessageAction::Handle)
+                Ok(MessageStatus::Useful)
             }
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
-            | Variant::MessageSignature(_) => Ok(MessageAction::Bounce),
+            | Variant::MessageSignature(_) => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
@@ -97,7 +97,7 @@ impl Joining {
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Ping => Ok(MessageAction::Discard),
+            | Variant::Ping => Ok(MessageStatus::Useless),
         }
     }
 

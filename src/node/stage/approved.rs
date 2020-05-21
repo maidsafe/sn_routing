@@ -18,7 +18,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageAction, MessageHash, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
+        MessageHash, MessageStatus, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -300,60 +300,60 @@ impl Approved {
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn decide_message_action(&self, our_id: &PublicId, msg: &Message) -> Result<MessageAction> {
+    pub fn decide_message_status(&self, our_id: &PublicId, msg: &Message) -> Result<MessageStatus> {
         let is_self_elder = self.is_our_elder(our_id);
 
         match &msg.variant {
             Variant::NeighbourInfo { .. } => {
                 if is_self_elder && self.verify_message(msg)? {
-                    Ok(MessageAction::Handle)
+                    Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageAction::Bounce)
+                    Ok(MessageStatus::Unknown)
                 }
             }
             Variant::UserMessage(_) => {
                 if self.should_handle_user_message(our_id, &msg.dst) && self.verify_message(msg)? {
-                    Ok(MessageAction::Handle)
+                    Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageAction::Bounce)
+                    Ok(MessageStatus::Unknown)
                 }
             }
             Variant::GenesisUpdate(info) => {
                 if !self.should_handle_genesis_update(our_id, info) {
-                    return Ok(MessageAction::Discard);
+                    return Ok(MessageStatus::Useless);
                 }
 
                 if self.verify_message(msg)? {
-                    Ok(MessageAction::Handle)
+                    Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageAction::Bounce)
+                    Ok(MessageStatus::Unknown)
                 }
             }
             Variant::Relocate(_) => {
                 if self.verify_message(msg)? {
-                    Ok(MessageAction::Handle)
+                    Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageAction::Bounce)
+                    Ok(MessageStatus::Unknown)
                 }
             }
             Variant::MessageSignature(accumulating_msg) => {
                 if !self.verify_message(msg)? {
-                    return Ok(MessageAction::Discard);
+                    return Ok(MessageStatus::Useless);
                 }
 
                 match &accumulating_msg.content.variant {
                     Variant::NeighbourInfo { .. }
                     | Variant::UserMessage(_)
                     | Variant::NodeApproval(_)
-                    | Variant::Relocate(_) => Ok(MessageAction::Handle),
+                    | Variant::Relocate(_) => Ok(MessageStatus::Useful),
 
                     Variant::GenesisUpdate(info) => {
                         if self.should_handle_genesis_update(our_id, info) {
-                            Ok(MessageAction::Handle)
+                            Ok(MessageStatus::Useful)
                         } else if is_self_elder {
-                            Ok(MessageAction::Bounce)
+                            Ok(MessageStatus::Unknown)
                         } else {
-                            Ok(MessageAction::Discard)
+                            Ok(MessageStatus::Useless)
                         }
                     }
 
@@ -366,19 +366,19 @@ impl Approved {
                     | Variant::ParsecRequest(..)
                     | Variant::ParsecResponse(..)
                     | Variant::Ping
-                    | Variant::Bounce { .. } => Ok(MessageAction::Discard),
+                    | Variant::Bounce { .. } => Ok(MessageStatus::Useless),
                 }
             }
             Variant::JoinRequest(req) => {
                 if !self.should_handle_join_request(our_id, req) {
-                    return Ok(MessageAction::Bounce);
+                    return Ok(MessageStatus::Unknown);
                 }
 
                 if !self.verify_message(msg)? {
-                    return Ok(MessageAction::Discard);
+                    return Ok(MessageStatus::Useless);
                 }
 
-                Ok(MessageAction::Handle)
+                Ok(MessageStatus::Useful)
             }
             Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
@@ -386,13 +386,13 @@ impl Approved {
             | Variant::ParsecResponse(..)
             | Variant::Bounce { .. } => {
                 if self.verify_message(msg)? {
-                    Ok(MessageAction::Handle)
+                    Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageAction::Discard)
+                    Ok(MessageStatus::Useless)
                 }
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
-                Ok(MessageAction::Discard)
+                Ok(MessageStatus::Useless)
             }
         }
     }
@@ -738,14 +738,13 @@ impl Approved {
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-        match self.decide_message_action(core.id(), &msg)? {
-            MessageAction::Handle => {
+        match self.decide_message_status(core.id(), &msg)? {
+            MessageStatus::Useful => {
                 core.msg_filter.insert_incoming(&msg_with_bytes);
                 core.msg_queue.push_back(msg.into_queued(None));
             }
-            MessageAction::Bounce | MessageAction::Discard => {
-                // We can't bounce accumulated messages because we don't have access to the sender
-                // anymore - discarding instead.
+            MessageStatus::Useless | MessageStatus::Untrusted | MessageStatus::Unknown => {
+                // TODO: handle `Untrusted` and `Unknown` properly.
                 trace!("Unhandled accumulated message, discarding: {:?}", msg);
             }
         }
