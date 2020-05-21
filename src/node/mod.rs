@@ -541,7 +541,7 @@ impl Node {
     ) -> Result<()> {
         trace!("try handle message {:?}", msg_with_bytes);
 
-        self.try_relay_message(sender, &msg_with_bytes)?;
+        self.try_relay_message(&msg_with_bytes)?;
 
         if !self.in_dst_location(msg_with_bytes.message_dst()) {
             return Ok(());
@@ -579,7 +579,7 @@ impl Node {
                     msg_with_bytes.full_crypto_hash(),
                 );
 
-                self.handle_unknown_message(&sender, msg_with_bytes.full_bytes().clone());
+                self.handle_unknown_message(sender, msg, msg_with_bytes.full_bytes().clone());
                 Ok(())
             }
             MessageStatus::Useless => {
@@ -589,23 +589,19 @@ impl Node {
         }
     }
 
-    fn try_relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
+    fn try_relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_section() {
             // Relay closer to the destination or broadcast to the rest of our section.
-            self.relay_message(sender, msg)
+            self.relay_message(msg)
         } else {
             Ok(())
         }
     }
 
-    fn relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         match &mut self.stage {
-            Stage::Bootstrapping(_) | Stage::Joining(_) => {
-                self.handle_unknown_message(&sender, msg.full_bytes().clone());
-                Ok(())
-            }
             Stage::Approved(stage) => stage.relay_message(&mut self.core, msg),
-            Stage::Terminated => unreachable!(),
+            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => Ok(()),
         }
     }
 
@@ -673,7 +669,8 @@ impl Node {
                     )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
                     let connect_type = stage.connect_type();
-                    self.approve(connect_type, *genesis_prefix_info)?
+                    let msg_backlog = stage.take_message_backlog();
+                    self.approve(connect_type, *genesis_prefix_info, msg_backlog)?
                 }
                 Variant::Bounce {
                     elders_version,
@@ -811,15 +808,15 @@ impl Node {
         }
     }
 
-    fn handle_unknown_message(&mut self, sender: &SocketAddr, msg_bytes: Bytes) {
-        let variant = match &self.stage {
-            Stage::Bootstrapping(stage) => stage.create_bounce(msg_bytes),
-            Stage::Joining(stage) => stage.create_bounce(msg_bytes),
-            Stage::Approved(stage) => stage.create_bounce(msg_bytes),
-            Stage::Terminated => return,
-        };
-
-        self.core.send_direct_message(sender, variant)
+    fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message, msg_bytes: Bytes) {
+        match &mut self.stage {
+            Stage::Bootstrapping(stage) => stage.handle_unknown_message(sender, msg),
+            Stage::Joining(stage) => stage.handle_unknown_message(sender, msg),
+            Stage::Approved(stage) => {
+                stage.handle_unknown_message(&mut self.core, sender, msg_bytes)
+            }
+            Stage::Terminated => (),
+        }
     }
 
     fn handle_untrusted_message(&mut self, _sender: &SocketAddr, _msg: Message) -> Result<()> {
@@ -836,9 +833,15 @@ impl Node {
         let JoinParams {
             elders_info,
             relocate_payload,
+            msg_backlog,
         } = params;
 
-        self.stage = Stage::Joining(Joining::new(&mut self.core, elders_info, relocate_payload));
+        self.stage = Stage::Joining(Joining::new(
+            &mut self.core,
+            elders_info,
+            relocate_payload,
+            msg_backlog,
+        ));
     }
 
     // Transition from Joining to Approved
@@ -846,6 +849,7 @@ impl Node {
         &mut self,
         connect_type: Connected,
         genesis_prefix_info: GenesisPrefixInfo,
+        msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
@@ -854,6 +858,8 @@ impl Node {
 
         let stage = Approved::new(&mut self.core, genesis_prefix_info, None)?;
         self.stage = Stage::Approved(stage);
+
+        self.core.msg_queue.extend(msg_backlog);
         self.core.send_event(Event::Connected(connect_type));
 
         Ok(())
