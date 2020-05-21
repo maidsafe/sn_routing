@@ -89,12 +89,12 @@ impl Joining {
             | Variant::UserMessage(_)
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
-            | Variant::MessageSignature(_)
-            | Variant::BootstrapRequest(_)
-            | Variant::BootstrapResponse(_)
-            | Variant::JoinRequest(_) => Ok(MessageAction::Bounce),
+            | Variant::MessageSignature(_) => Ok(MessageAction::Bounce),
 
-            Variant::MemberKnowledge { .. }
+            Variant::BootstrapRequest(_)
+            | Variant::BootstrapResponse(_)
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping => Ok(MessageAction::Discard),
