@@ -68,16 +68,15 @@ impl Bootstrapping {
                 Ok(MessageAction::Handle)
             }
 
-            Variant::NeighbourInfo { .. }
-            | Variant::UserMessage(_)
-            | Variant::NodeApproval(_)
+            Variant::NeighbourInfo { .. } | Variant::UserMessage(_) => Ok(MessageAction::Bounce),
+
+            Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
-            | Variant::JoinRequest(_) => Ok(MessageAction::Bounce),
-
-            Variant::MemberKnowledge { .. }
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping => Ok(MessageAction::Discard),
