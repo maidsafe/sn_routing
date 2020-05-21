@@ -10,15 +10,14 @@ use crate::{
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, Message, MessageStatus, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     time::Duration,
     xor_space::Prefix,
 };
-use bytes::Bytes;
 use fxhash::FxHashSet;
-use std::{collections::HashMap, iter, net::SocketAddr};
+use std::{collections::HashMap, iter, mem, net::SocketAddr};
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -29,6 +28,7 @@ pub struct Bootstrapping {
     pending_requests: FxHashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
     relocate_details: Option<SignedRelocateDetails>,
+    msg_backlog: Vec<QueuedMessage>,
 }
 
 impl Bootstrapping {
@@ -37,6 +37,7 @@ impl Bootstrapping {
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             relocate_details,
+            msg_backlog: Vec::new(),
         }
     }
 
@@ -83,11 +84,8 @@ impl Bootstrapping {
         }
     }
 
-    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
-        Variant::Bounce {
-            elders_version: None,
-            message: msg_bytes,
-        }
+    pub fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message) {
+        self.msg_backlog.push(msg.into_queued(Some(sender)))
     }
 
     pub fn handle_bootstrap_response(
@@ -117,6 +115,7 @@ impl Bootstrapping {
                 Ok(Some(JoinParams {
                     elders_info,
                     relocate_payload,
+                    msg_backlog: mem::take(&mut self.msg_backlog),
                 }))
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
@@ -196,6 +195,7 @@ impl Bootstrapping {
 pub struct JoinParams {
     pub elders_info: EldersInfo,
     pub relocate_payload: Option<RelocatePayload>,
+    pub msg_backlog: Vec<QueuedMessage>,
 }
 
 fn verify_message(msg: &Message) -> Result<()> {

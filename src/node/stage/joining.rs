@@ -12,14 +12,14 @@ use crate::{
     event::Connected,
     id::P2pNode,
     messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus,
+        self, BootstrapResponse, JoinRequest, Message, MessageStatus, QueuedMessage, Variant,
+        VerifyStatus,
     },
     relocation::RelocatePayload,
     section::EldersInfo,
     xor_space::Prefix,
 };
-use bytes::Bytes;
-use std::time::Duration;
+use std::{mem, net::SocketAddr, time::Duration};
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
@@ -32,6 +32,8 @@ pub struct Joining {
     join_type: JoinType,
     // Token for the join request timeout.
     timer_token: u64,
+    // Message we can't handle until we are joined.
+    msg_backlog: Vec<QueuedMessage>,
 }
 
 impl Joining {
@@ -39,6 +41,7 @@ impl Joining {
         core: &mut Core,
         elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
+        msg_backlog: Vec<QueuedMessage>,
     ) -> Self {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
@@ -50,6 +53,7 @@ impl Joining {
             elders_info,
             join_type,
             timer_token,
+            msg_backlog,
         };
         stage.send_join_requests(core);
         stage
@@ -101,11 +105,8 @@ impl Joining {
         }
     }
 
-    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
-        Variant::Bounce {
-            elders_version: None,
-            message: msg_bytes,
-        }
+    pub fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message) {
+        self.msg_backlog.push(msg.into_queued(Some(sender)));
     }
 
     pub fn handle_bootstrap_response(
@@ -148,6 +149,11 @@ impl Joining {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(_) => Connected::Relocate,
         }
+    }
+
+    // Remove and return the message backlog.
+    pub fn take_message_backlog(&mut self) -> Vec<QueuedMessage> {
+        mem::take(&mut self.msg_backlog)
     }
 
     fn send_join_requests(&self, core: &mut Core) {

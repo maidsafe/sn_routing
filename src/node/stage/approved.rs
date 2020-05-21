@@ -404,6 +404,15 @@ impl Approved {
         })
     }
 
+    pub fn handle_unknown_message(&self, core: &mut Core, sender: SocketAddr, msg_bytes: Bytes) {
+        let variant = Variant::Bounce {
+            elders_version: Some(self.shared_state.our_info().version),
+            message: msg_bytes,
+        };
+
+        core.send_direct_message(&sender, variant)
+    }
+
     pub fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
@@ -1663,13 +1672,6 @@ impl Approved {
 
             trace!("Send {:?} to {:?}", payload, recipient);
             core.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
-        }
-    }
-
-    pub fn create_bounce(&self, msg_bytes: Bytes) -> Variant {
-        Variant::Bounce {
-            elders_version: Some(self.shared_state.our_info().version),
-            message: msg_bytes,
         }
     }
 
