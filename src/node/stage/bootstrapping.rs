@@ -10,7 +10,7 @@ use crate::{
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, Message, MessageAction, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, MessageStatus, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     time::Duration,
@@ -61,14 +61,14 @@ impl Bootstrapping {
         }
     }
 
-    pub fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
+    pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant {
             Variant::BootstrapResponse(_) | Variant::Bounce { .. } => {
                 verify_message(msg)?;
-                Ok(MessageAction::Handle)
+                Ok(MessageStatus::Useful)
             }
 
-            Variant::NeighbourInfo { .. } | Variant::UserMessage(_) => Ok(MessageAction::Bounce),
+            Variant::NeighbourInfo { .. } | Variant::UserMessage(_) => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)
@@ -79,7 +79,7 @@ impl Bootstrapping {
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Ping => Ok(MessageAction::Discard),
+            | Variant::Ping => Ok(MessageStatus::Useless),
         }
     }
 

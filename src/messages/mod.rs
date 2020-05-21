@@ -158,14 +158,17 @@ where
     )
 }
 
-/// What to do with an incomming message.
-pub enum MessageAction {
-    /// Message will be handled
-    Handle,
-    /// Message will be bounced back to the sender
-    Bounce,
-    /// Message will be discarded
-    Discard,
+/// Status of an incomming message.
+pub enum MessageStatus {
+    /// Message is useful and should be handled.
+    Useful,
+    /// Message is useless and should be discarded.
+    Useless,
+    /// Message trust can't be established.
+    Untrusted,
+    /// We don't know how to handle the message because we are not in the right state (e.g. it
+    /// needs elder but we are not)
+    Unknown,
 }
 
 fn serialize_for_section_signing(

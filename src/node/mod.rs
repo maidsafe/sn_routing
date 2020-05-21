@@ -23,7 +23,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     log_utils,
     messages::{
-        BootstrapResponse, Message, MessageAction, MessageHash, MessageWithBytes, QueuedMessage,
+        BootstrapResponse, Message, MessageHash, MessageStatus, MessageWithBytes, QueuedMessage,
         Variant,
     },
     network_params::NetworkParams,
@@ -557,24 +557,33 @@ impl Node {
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-        match self.decide_message_action(&msg)? {
-            MessageAction::Handle => {
+        match self.decide_message_status(&msg)? {
+            MessageStatus::Useful => {
                 self.core.msg_filter.insert_incoming(&msg_with_bytes);
                 self.handle_message(sender, msg, msg_with_bytes.full_crypto_hash())
             }
-            MessageAction::Bounce => {
+            MessageStatus::Untrusted => {
                 debug!(
-                    "Unhandled message from {} - bouncing: {:?}, hash: {:?}",
+                    "Untrusted message from {}: {:?} (hash: {:?})",
+                    sender,
+                    msg,
+                    msg_with_bytes.full_crypto_hash()
+                );
+                self.handle_untrusted_message(&sender, msg)
+            }
+            MessageStatus::Unknown => {
+                debug!(
+                    "Unknown message from {}: {:?} (hash: {:?})",
                     sender,
                     msg,
                     msg_with_bytes.full_crypto_hash(),
                 );
 
-                self.send_bounce(&sender, msg_with_bytes.full_bytes().clone());
+                self.handle_unknown_message(&sender, msg_with_bytes.full_bytes().clone());
                 Ok(())
             }
-            MessageAction::Discard => {
-                debug!("Unhandled message from {:?}, discarding: {:?}", sender, msg);
+            MessageStatus::Useless => {
+                debug!("Useless message from {}: {:?}", sender, msg);
                 Ok(())
             }
         }
@@ -592,8 +601,7 @@ impl Node {
     fn relay_message(&mut self, sender: SocketAddr, msg: &MessageWithBytes) -> Result<()> {
         match &mut self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) => {
-                trace!("Message not for us, bouncing: {:?}", msg);
-                self.send_bounce(&sender, msg.full_bytes().clone());
+                self.handle_unknown_message(&sender, msg.full_bytes().clone());
                 Ok(())
             }
             Stage::Approved(stage) => stage.relay_message(&mut self.core, msg),
@@ -601,12 +609,12 @@ impl Node {
         }
     }
 
-    fn decide_message_action(&self, msg: &Message) -> Result<MessageAction> {
+    fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match &self.stage {
-            Stage::Bootstrapping(stage) => stage.decide_message_action(msg),
-            Stage::Joining(stage) => stage.decide_message_action(msg),
-            Stage::Approved(stage) => stage.decide_message_action(self.core.id(), msg),
-            Stage::Terminated => Ok(MessageAction::Discard),
+            Stage::Bootstrapping(stage) => stage.decide_message_status(msg),
+            Stage::Joining(stage) => stage.decide_message_status(msg),
+            Stage::Approved(stage) => stage.decide_message_status(self.core.id(), msg),
+            Stage::Terminated => Ok(MessageStatus::Useless),
         }
     }
 
@@ -803,7 +811,7 @@ impl Node {
         }
     }
 
-    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
+    fn handle_unknown_message(&mut self, sender: &SocketAddr, msg_bytes: Bytes) {
         let variant = match &self.stage {
             Stage::Bootstrapping(stage) => stage.create_bounce(msg_bytes),
             Stage::Joining(stage) => stage.create_bounce(msg_bytes),
@@ -811,7 +819,12 @@ impl Node {
             Stage::Terminated => return,
         };
 
-        self.core.send_direct_message(recipient, variant)
+        self.core.send_direct_message(sender, variant)
+    }
+
+    fn handle_untrusted_message(&mut self, _sender: &SocketAddr, _msg: Message) -> Result<()> {
+        // TODO:
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
