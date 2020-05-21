@@ -234,6 +234,7 @@ impl SectionMap {
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
+        // TODO: should we use `self.keys()` instead of `self.keys` ?
         self.keys.values().any(|known_key| known_key == key)
     }
 
@@ -249,6 +250,7 @@ impl SectionMap {
 
     /// Returns the latest known key for the prefix that is compatible with `dst`.
     pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
+        // TODO: should we use `self.keys()` instead of `self.keys` ?
         self.keys
             .iter()
             .find(|(prefix, _)| dst.is_compatible(prefix))

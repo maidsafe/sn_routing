@@ -318,7 +318,6 @@ impl Approved {
                     Ok(MessageAction::Bounce)
                 }
             }
-            Variant::NodeApproval(_) => Ok(MessageAction::Discard),
             Variant::GenesisUpdate(info) => {
                 if !self.should_handle_genesis_update(our_id, info) {
                     return Ok(MessageAction::Discard);
@@ -392,7 +391,9 @@ impl Approved {
                     Ok(MessageAction::Discard)
                 }
             }
-            Variant::BootstrapResponse(_) | Variant::Ping => Ok(MessageAction::Discard),
+            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
+                Ok(MessageAction::Discard)
+            }
         }
     }
 
@@ -703,7 +704,7 @@ impl Approved {
             || msg.message_dst().is_section()
         {
             // Relay closer to the destination or broadcast to the rest of our section.
-            self.send_signed_message(core, msg)
+            self.relay_message(core, msg)
         } else {
             Ok(())
         }
@@ -1674,7 +1675,7 @@ impl Approved {
     }
 
     // Send message over the network.
-    pub fn send_signed_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
+    pub fn relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = routing_table::delivery_targets(
             msg.message_dst(),
             core.id(),
