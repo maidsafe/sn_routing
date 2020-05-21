@@ -596,7 +596,7 @@ impl Node {
                 self.send_bounce(&sender, msg.full_bytes().clone());
                 Ok(())
             }
-            Stage::Approved(stage) => stage.send_signed_message(&mut self.core, msg),
+            Stage::Approved(stage) => stage.relay_message(&mut self.core, msg),
             Stage::Terminated => unreachable!(),
         }
     }
