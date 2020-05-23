@@ -300,13 +300,13 @@ fn deconstruct_socket_addr(addr: &SocketAddr) -> (Ipv6Addr, u16, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{rng, unwrap};
+    use crate::rng;
 
     #[test]
     fn serialisation() {
         let full_id = FullId::gen(&mut rng::new());
-        let serialised = unwrap!(serialize(full_id.public_id()));
-        let parsed = unwrap!(deserialize(&serialised));
+        let serialised = serialize(full_id.public_id()).unwrap();
+        let parsed = deserialize(&serialised).unwrap();
         assert_eq!(*full_id.public_id(), parsed);
     }
 }

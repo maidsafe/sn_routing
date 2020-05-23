@@ -97,14 +97,14 @@ impl Debug for ProofSet {
 #[cfg(test)]
 mod tests {
     use super::Proof;
-    use crate::{consensus::AccumulatingEvent, id::FullId, rng, unwrap};
+    use crate::{consensus::AccumulatingEvent, id::FullId, rng};
 
     #[test]
     fn confirm_proof() {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
         let payload = AccumulatingEvent::User(vec![0]);
-        let proof = unwrap!(Proof::new(&full_id, &payload));
+        let proof = Proof::new(&full_id, &payload).unwrap();
         assert!(proof.validate_signature(&payload));
     }
 
@@ -116,7 +116,7 @@ mod tests {
         let pub_id = *full_id.public_id();
         let payload = AccumulatingEvent::User(vec![0]);
         let other_payload = AccumulatingEvent::Offline(pub_id);
-        let proof = unwrap!(Proof::new(&full_id, &payload));
+        let proof = Proof::new(&full_id, &payload).unwrap();
         assert!(!proof.validate_signature(&other_payload));
     }
 }
