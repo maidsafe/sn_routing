@@ -97,7 +97,7 @@ impl Debug for MessageWithBytes {
 #[cfg(test)]
 mod tests {
     use super::{super::Variant, *};
-    use crate::{id::FullId, rng, unwrap};
+    use crate::{id::FullId, rng};
     use rand::{distributions::Standard, Rng};
 
     #[test]
@@ -107,14 +107,14 @@ mod tests {
 
         let dst = DstLocation::Section(rng.gen());
         let variant = Variant::UserMessage(rng.sample_iter(Standard).take(6).collect());
-        let msg = unwrap!(Message::single_src(&full_id, dst, variant));
+        let msg = Message::single_src(&full_id, dst, variant).unwrap();
 
-        let msg_with_bytes = unwrap!(MessageWithBytes::new(msg.clone()));
+        let msg_with_bytes = MessageWithBytes::new(msg.clone()).unwrap();
         let bytes = msg_with_bytes.full_bytes();
 
-        let full_msg = unwrap!(Message::from_bytes(bytes));
-        let partial_msg = unwrap!(PartialMessage::from_bytes(bytes));
-        let partial_msg_head = unwrap!(PartialMessage::from_bytes(&bytes.slice(0..40)));
+        let full_msg = Message::from_bytes(bytes).unwrap();
+        let partial_msg = PartialMessage::from_bytes(bytes).unwrap();
+        let partial_msg_head = PartialMessage::from_bytes(&bytes.slice(0..40)).unwrap();
 
         let expected_partial = PartialMessage { dst: msg.dst };
 

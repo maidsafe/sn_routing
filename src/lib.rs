@@ -176,8 +176,6 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
 
-#[cfg(any(test, feature = "mock_base"))]
-use unwrap::unwrap;
 
 // Quic-p2p
 #[cfg(feature = "mock_base")]

@@ -280,7 +280,6 @@ mod test {
         id::FullId,
         rng::{self, MainRng},
         section::EldersInfo,
-        unwrap,
     };
     use parsec::SecretId;
     use std::iter;
@@ -409,7 +408,7 @@ mod test {
         let mut acc = EventAccumulator::default();
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
 
-        let event_to_poll = unwrap!(acc.unaccumulated_events().next()).0.clone();
+        let event_to_poll = acc.unaccumulated_events().next().unwrap().0.clone();
         let result = acc.poll_event(event_to_poll, Default::default());
 
         assert_eq!(result, Some((data.event, data.acc_proofs)));

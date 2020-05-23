@@ -98,7 +98,6 @@ mod implementation {
 
 #[cfg(any(test, feature = "mock_base"))]
 mod test {
-    use crate::unwrap;
     use rand::{
         distributions::{Distribution, Standard},
         CryptoRng, Rng, RngCore, SeedableRng,
@@ -201,7 +200,7 @@ mod test {
         /// Panics if the env variable is not empty but invalid.
         pub fn from_env() -> Option<Self> {
             if let Ok(value) = env::var(SEED_ENV_NAME) {
-                Some(unwrap!(value.parse()))
+                Some(value.parse().unwrap())
             } else {
                 None
             }

@@ -83,7 +83,7 @@ impl TestNode {
     }
 
     pub fn endpoint(&mut self) -> SocketAddr {
-        unwrap!(self.inner.our_connection_info(), "{}", self.name())
+        self.inner.our_connection_info().unwrap()
     }
 
     pub fn id(&self) -> &PublicId {
@@ -95,11 +95,11 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
-        unwrap!(self.inner.close_names(&self.name()), "{}", self.name())
+        self.inner.close_names(&self.name()).unwrap()
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        unwrap!(self.inner.our_prefix(), "{}", self.name())
+        self.inner.our_prefix().unwrap()
     }
 
     pub fn poll(&mut self) -> bool {

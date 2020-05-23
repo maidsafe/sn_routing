@@ -54,8 +54,6 @@
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate unwrap;
 
 // This module is a driver and defines macros. See `mock_network` modules for
 // tests.
