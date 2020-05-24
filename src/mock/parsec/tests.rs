@@ -31,16 +31,22 @@ fn smoke() {
     let genesis_group: BTreeSet<_> = vec![alice_id, bob_id].into_iter().collect();
 
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Supermajority);
-    alice.vote_for(Observation::OpaquePayload(Payload(1))).unwrap();
+    alice
+        .vote_for(Observation::OpaquePayload(Payload(1)))
+        .unwrap();
 
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
-    bob.vote_for(Observation::OpaquePayload(Payload(1))).unwrap();
+    bob.vote_for(Observation::OpaquePayload(Payload(1)))
+        .unwrap();
 
     let request = bob.create_gossip(&alice_id).unwrap();
     let response_0 = alice.handle_request(&bob_id, request).unwrap();
 
-    alice.vote_for(Observation::OpaquePayload(Payload(0))).unwrap();
-    bob.vote_for(Observation::OpaquePayload(Payload(0))).unwrap();
+    alice
+        .vote_for(Observation::OpaquePayload(Payload(0)))
+        .unwrap();
+    bob.vote_for(Observation::OpaquePayload(Payload(0)))
+        .unwrap();
 
     let request = bob.create_gossip(&alice_id).unwrap();
     let response_1 = alice.handle_request(&bob_id, request).unwrap();
@@ -144,10 +150,13 @@ fn consensus_mode_single() {
     // First start parsec and cast votes with different payloads.
     // They should all get consensused after Genesis block.
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Single);
-    alice.vote_for(Observation::OpaquePayload(Payload(0))).unwrap();
+    alice
+        .vote_for(Observation::OpaquePayload(Payload(0)))
+        .unwrap();
 
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
-    bob.vote_for(Observation::OpaquePayload(Payload(1))).unwrap();
+    bob.vote_for(Observation::OpaquePayload(Payload(1)))
+        .unwrap();
 
     exchange_gossip(&mut bob, &mut alice);
 
@@ -165,8 +174,11 @@ fn consensus_mode_single() {
     assert_eq!(alice_blocks, bob_blocks);
 
     // Now cast votes with the same payload. They should get consensused separately.
-    alice.vote_for(Observation::OpaquePayload(Payload(2))).unwrap();
-    bob.vote_for(Observation::OpaquePayload(Payload(2))).unwrap();
+    alice
+        .vote_for(Observation::OpaquePayload(Payload(2)))
+        .unwrap();
+    bob.vote_for(Observation::OpaquePayload(Payload(2)))
+        .unwrap();
 
     exchange_gossip(&mut bob, &mut alice);
 

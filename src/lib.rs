@@ -175,7 +175,6 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
 
-
 // Quic-p2p
 #[cfg(feature = "mock_base")]
 use mock_quic_p2p as quic_p2p;
