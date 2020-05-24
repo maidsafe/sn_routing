@@ -13,7 +13,7 @@ use super::{
     observation::{ObservationHolder, ObservationState},
     Block, ConsensusMode, DkgResult, NetworkEvent, PublicId, SecretId,
 };
-use crate::{crypto::Digest256, unwrap};
+use crate::crypto::Digest256;
 use rand::Rng;
 use std::{
     any::Any,
@@ -73,7 +73,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         //  only require a single vote do not become blocks before genesis.)
         for holder in mem::replace(&mut self.unconsensused_observations, Vec::new()) {
             if !unconsensused_genesis {
-                let state = unwrap!(self.observations.get_mut(&holder));
+                let state = self.observations.get_mut(&holder).unwrap();
                 if let Some(block) = state.compute_consensus(peers, consensus_mode, &holder) {
                     self.blocks.push((block, holder));
                     continue;
@@ -154,7 +154,7 @@ where
             }
             Some(dyn_network_state) => {
                 let network_state: &mut NetworkState<T, P> =
-                    unwrap!(dyn_network_state.downcast_mut());
+                    dyn_network_state.downcast_mut().unwrap();
                 let section_state = network_state
                     .entry(section_hash)
                     .or_insert_with(SectionState::new);

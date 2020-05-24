@@ -9,7 +9,6 @@
 pub use parsec::{ConsensusMode, Observation};
 
 use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
-use crate::unwrap;
 use bincode::serialize;
 use std::{
     collections::{BTreeSet, HashSet},
@@ -77,7 +76,7 @@ impl<P: PublicId> ObservationState<P> {
         our_secret_id: &S,
         observation: &Rc<Observation<T, P>>,
     ) -> bool {
-        let proof = our_secret_id.create_proof(&unwrap!(serialize(&**observation)));
+        let proof = our_secret_id.create_proof(&serialize(&**observation).unwrap());
         self.votes.insert(proof)
     }
 

@@ -452,7 +452,6 @@ mod tests {
         id::P2pNode,
         rng::MainRng,
         section::EldersInfo,
-        unwrap,
         xor_space::{Prefix, XorName},
     };
     use serde::Serialize;
@@ -534,7 +533,7 @@ mod tests {
         msg: &T,
         pub_id: &PublicId,
     ) {
-        let msg_size = unwrap!(bincode::serialized_size(&msg));
+        let msg_size = bincode::serialized_size(&msg).unwrap();
         let msg_size_limit = PARSEC_SIZE_LIMIT / msg_size;
 
         // Handle msg_size_limit msgs which should trigger pruning needed on the next
