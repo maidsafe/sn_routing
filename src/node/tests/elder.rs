@@ -14,7 +14,7 @@ use crate::{
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
-    messages::{BootstrapResponse, MemberKnowledge, Message, Variant},
+    messages::{BootstrapResponse, Message, Variant},
     node::{Node, NodeConfig},
     quic_p2p,
     rng::{self, MainRng},
@@ -486,7 +486,7 @@ fn handle_bootstrap() {
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 
-    let orig_section_key = *env.subject.section_key().expect("subject is not approved");
+    let old_section_key = *env.subject.section_key().expect("subject is not approved");
 
     let adult0 = env.gen_peer();
     let adult1 = env.gen_peer();
@@ -494,33 +494,20 @@ fn send_genesis_update() {
     env.accumulate_online(adult0.to_p2p_node());
     env.accumulate_online(adult1.to_p2p_node());
 
-    // Remove one existing elder and promote an adult to take its place. This increments the
-    // section version.
+    // Remove one existing elder and promote an adult to take its place. This created new section
+    // key.
     let dropped_id = *env.other_ids[0].0.public_id();
     env.perform_offline_and_promote(&dropped_id, adult0.to_p2p_node());
+    let new_section_key = *env.subject.section_key().expect("subject is not approved");
 
-    // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
+    // Create `GenesisUpdate` message and check its proof contains the previous key as well as the
+    // new key.
     let message = utils::exactly_one(env.subject.create_genesis_updates());
     assert_eq!(message.0, adult1.to_p2p_node());
 
     let proof = &message.1.proof;
-    assert!(proof.has_key(&orig_section_key));
-
-    // Receive MemberKnowledge from the adult
-    let parsec_version = env.subject.parsec_last_version();
-    let variant = Variant::MemberKnowledge(MemberKnowledge {
-        section_key: *env.subject.section_key().expect("subject is not approved"),
-        parsec_version,
-    });
-    let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, None, variant).unwrap();
-    test_utils::handle_message(&mut env.subject, adult0.addr, msg).unwrap();
-
-    // Create another `GenesisUpdate` and check the proof contains the updated version and does not
-    // contain the previous version.
-    let message = utils::exactly_one(env.subject.create_genesis_updates());
-    let proof = &message.1.proof;
-    assert!(proof.has_key(env.subject.section_key().expect("subject is not approved")));
-    assert!(!proof.has_key(&orig_section_key));
+    assert!(proof.has_key(&old_section_key));
+    assert!(proof.has_key(&new_section_key));
 }
 
 struct JoiningPeer {

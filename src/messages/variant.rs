@@ -154,12 +154,3 @@ pub struct MemberKnowledge {
     pub section_key: bls::PublicKey,
     pub parsec_version: u64,
 }
-
-impl MemberKnowledge {
-    pub fn update(&mut self, other: &MemberKnowledge) {
-        if other.parsec_version > self.parsec_version {
-            self.section_key = other.section_key;
-            self.parsec_version = other.parsec_version;
-        }
-    }
-}
