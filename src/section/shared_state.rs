@@ -285,7 +285,7 @@ impl SharedState {
             _ => self.sections.knowledge_by_location(target),
         };
 
-        self.our_history.slice_from(index)
+        self.our_history.slice(index..)
     }
 
     /// Check if we know this node but have not yet processed it.

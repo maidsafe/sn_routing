@@ -157,6 +157,7 @@ impl Env {
         let message = Message::single_src(
             other_full_id,
             DstLocation::Direct,
+            None,
             Variant::ParsecRequest(parsec_version, request),
         )
         .unwrap();
@@ -511,7 +512,7 @@ fn send_genesis_update() {
         section_key: *env.subject.section_key().expect("subject is not approved"),
         parsec_version,
     });
-    let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
+    let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, None, variant).unwrap();
     test_utils::handle_message(&mut env.subject, adult0.addr, msg).unwrap();
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
@@ -554,7 +555,7 @@ impl JoiningPeer {
 
     fn bootstrap_request(&self) -> Result<Message> {
         let variant = Variant::BootstrapRequest(*self.public_id().name());
-        Message::single_src(&self.full_id, DstLocation::Direct, variant)
+        Message::single_src(&self.full_id, DstLocation::Direct, None, variant)
     }
 
     fn expect_bootstrap_response(&self) -> BootstrapResponse {

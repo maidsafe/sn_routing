@@ -6,7 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::{collections::HashSet, iter};
+use std::{
+    collections::HashSet,
+    iter,
+    ops::{Bound, RangeBounds},
+};
 
 /// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
 /// first one.
@@ -60,7 +64,6 @@ impl SectionProofChain {
     }
 
     /// Returns whether this chain contains the given key.
-    #[cfg(all(test, feature = "mock"))]
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys().any(|existing_key| existing_key == key)
@@ -74,15 +77,28 @@ impl SectionProofChain {
             .map(|index| index as u64)
     }
 
-    /// Returns a slice of this chain starting at the given index.
-    pub(crate) fn slice_from(&self, first_index: u64) -> Self {
+    /// Returns a slice of this chain with the given index range.
+    pub(crate) fn slice<B: RangeBounds<u64>>(&self, range: B) -> Self {
+        let first_index = match range.start_bound() {
+            Bound::Included(index) => *index,
+            Bound::Excluded(index) => *index + 1,
+            Bound::Unbounded => 0,
+        };
+
         if first_index == 0 || self.tail.is_empty() {
             return self.clone();
         }
 
         let head_index = std::cmp::min(first_index as usize, self.tail.len()) - 1;
+
+        let tail_end_index = match range.end_bound() {
+            Bound::Included(index) => *index as usize,
+            Bound::Excluded(index) => *index as usize - 1,
+            Bound::Unbounded => self.tail.len(),
+        };
+
         let head = self.tail[head_index].key;
-        let tail = self.tail[head_index + 1..].to_vec();
+        let tail = self.tail[head_index + 1..tail_end_index].to_vec();
 
         Self { head, tail }
     }

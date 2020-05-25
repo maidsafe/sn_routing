@@ -107,7 +107,7 @@ mod tests {
 
         let dst = DstLocation::Section(rng.gen());
         let variant = Variant::UserMessage(rng.sample_iter(Standard).take(6).collect());
-        let msg = Message::single_src(&full_id, dst, variant).unwrap();
+        let msg = Message::single_src(&full_id, dst, None, variant).unwrap();
 
         let msg_with_bytes = MessageWithBytes::new(msg.clone()).unwrap();
         let bytes = msg_with_bytes.full_bytes();

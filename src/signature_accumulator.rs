@@ -126,6 +126,7 @@ mod tests {
                     Message::single_src(
                         id,
                         DstLocation::Direct,
+                        None,
                         Variant::MessageSignature(Box::new(
                             AccumulatingMessage::new(
                                 content.clone(),
