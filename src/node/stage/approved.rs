@@ -69,8 +69,6 @@ pub struct Approved {
     // Flag indicating that our section members changed (a node joined or left) and we might need
     // to change our elders.
     members_changed: bool,
-    /// The knowledge of the non-elder members about our section.
-    members_knowledge: BTreeMap<XorName, MemberKnowledge>,
 }
 
 impl Approved {
@@ -141,7 +139,6 @@ impl Approved {
             split_cache: None,
             churn_in_progress: false,
             members_changed: false,
-            members_knowledge: Default::default(),
         })
     }
 
@@ -202,7 +199,6 @@ impl Approved {
             dkg_cache: Default::default(),
             churn_in_progress: false,
             members_changed: false,
-            members_knowledge: Default::default(),
         };
 
         (stage, core)
@@ -745,14 +741,6 @@ impl Approved {
     ) {
         trace!("Received {:?} from {:?}", payload, p2p_node);
 
-        if self.shared_state.our_members.is_active(p2p_node.name()) {
-            let _ = self
-                .members_knowledge
-                .entry(*p2p_node.name())
-                .and_modify(|old| old.update(&payload))
-                .or_insert(payload);
-        }
-
         let version = payload
             .parsec_version
             .min(self.consensus_engine.parsec_version());
@@ -1133,7 +1121,6 @@ impl Approved {
             self.members_changed = true;
 
             core.transport.disconnect(*info.p2p_node.peer_addr());
-            let _ = self.members_knowledge.remove(pub_id.name());
 
             if self.is_our_elder(core.id()) {
                 core.send_event(Event::MemberLeft {
@@ -1195,7 +1182,6 @@ impl Approved {
         };
 
         self.members_changed = true;
-        let _ = self.members_knowledge.remove(details.pub_id.name());
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1688,17 +1674,13 @@ impl Approved {
             .filter_map(|recipient| {
                 let variant = Variant::GenesisUpdate(Box::new(self.genesis_prefix_info.clone()));
                 let dst = DstLocation::Node(*recipient.name());
-                let index = self
-                    .members_knowledge
-                    .get(recipient.name())
-                    .and_then(|knowledge| {
-                        self.shared_state
-                            .our_history
-                            .index_of(&knowledge.section_key)
-                    })
-                    .unwrap_or(0);
+                let proof_start_index = self
+                    .shared_state
+                    .our_history
+                    .last_key_index()
+                    .saturating_sub(1);
 
-                match self.to_accumulating_message(dst, variant, Some(index)) {
+                match self.to_accumulating_message(dst, variant, Some(proof_start_index)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("Failed to create signed message: {:?}", error);
