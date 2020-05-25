@@ -41,6 +41,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     iter,
     net::SocketAddr,
+    slice,
 };
 
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
@@ -301,21 +302,27 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     pub fn decide_message_status(&self, our_id: &PublicId, msg: &Message) -> Result<MessageStatus> {
-        let is_self_elder = self.is_our_elder(our_id);
-
         match &msg.variant {
             Variant::NeighbourInfo { .. } => {
-                if is_self_elder && self.verify_message(msg)? {
+                if !self.is_our_elder(our_id) {
+                    return Ok(MessageStatus::Unknown);
+                }
+
+                if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageStatus::Unknown)
+                    Ok(MessageStatus::Untrusted)
                 }
             }
             Variant::UserMessage(_) => {
-                if self.should_handle_user_message(our_id, &msg.dst) && self.verify_message(msg)? {
+                if !self.should_handle_user_message(our_id, &msg.dst) {
+                    return Ok(MessageStatus::Unknown);
+                }
+
+                if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageStatus::Unknown)
+                    Ok(MessageStatus::Untrusted)
                 }
             }
             Variant::GenesisUpdate(info) => {
@@ -326,65 +333,44 @@ impl Approved {
                 if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageStatus::Unknown)
+                    Ok(MessageStatus::Untrusted)
                 }
             }
             Variant::Relocate(_) => {
                 if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
                 } else {
-                    Ok(MessageStatus::Unknown)
+                    Ok(MessageStatus::Untrusted)
                 }
             }
-            Variant::MessageSignature(accumulating_msg) => {
-                if !self.verify_message(msg)? {
-                    return Ok(MessageStatus::Useless);
-                }
-
-                match &accumulating_msg.content.variant {
-                    Variant::NeighbourInfo { .. }
-                    | Variant::UserMessage(_)
-                    | Variant::NodeApproval(_)
-                    | Variant::Relocate(_) => Ok(MessageStatus::Useful),
-
-                    Variant::GenesisUpdate(info) => {
-                        if self.should_handle_genesis_update(our_id, info) {
-                            Ok(MessageStatus::Useful)
-                        } else if is_self_elder {
-                            Ok(MessageStatus::Unknown)
-                        } else {
-                            Ok(MessageStatus::Useless)
-                        }
-                    }
-
-                    // These variants are not to be signature-accumulated
-                    Variant::MessageSignature(_)
-                    | Variant::BootstrapRequest(_)
-                    | Variant::BootstrapResponse(_)
-                    | Variant::JoinRequest(_)
-                    | Variant::MemberKnowledge(_)
-                    | Variant::ParsecRequest(..)
-                    | Variant::ParsecResponse(..)
-                    | Variant::Ping
-                    | Variant::Bounce { .. } => Ok(MessageStatus::Useless),
+            Variant::MessageSignature(_) => {
+                if self.verify_message(msg)? {
+                    Ok(MessageStatus::Useful)
+                } else {
+                    Ok(MessageStatus::Useless)
                 }
             }
             Variant::JoinRequest(req) => {
                 if !self.should_handle_join_request(our_id, req) {
-                    return Ok(MessageStatus::Unknown);
-                }
-
-                if !self.verify_message(msg)? {
+                    // Note: We don't bounce this message because the current bounce-resend
+                    // mechanism wouldn't preserve the original SocketAddr which is needed for
+                    // properly handling this message.
+                    // This is OK because in the worst case the join request just timeouts and the
+                    // joining node sends it again.
                     return Ok(MessageStatus::Useless);
                 }
 
-                Ok(MessageStatus::Useful)
+                if self.verify_message(msg)? {
+                    Ok(MessageStatus::Useful)
+                } else {
+                    Ok(MessageStatus::Useless)
+                }
             }
             Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Bounce { .. } => {
+            | Variant::BouncedUnknownMessage { .. } => {
                 if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
                 } else {
@@ -397,20 +383,106 @@ impl Approved {
         }
     }
 
-    pub fn verify_message(&self, msg: &Message) -> Result<bool> {
+    // Ignore stale GenesisUpdates
+    fn should_handle_genesis_update(
+        &self,
+        our_id: &PublicId,
+        genesis_prefix_info: &GenesisPrefixInfo,
+    ) -> bool {
+        !self.is_our_elder(our_id)
+            && genesis_prefix_info.parsec_version > self.genesis_prefix_info.parsec_version
+    }
+
+    // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
+    // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
+    fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
+        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version
+    }
+
+    // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
+    // as a node.
+    fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
+        self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
         self.verify_message_quiet(msg).map_err(|error| {
             messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
             error
         })
     }
 
-    pub fn handle_unknown_message(&self, core: &mut Core, sender: SocketAddr, msg_bytes: Bytes) {
-        let variant = Variant::Bounce {
-            elders_version: Some(self.shared_state.our_info().version),
+    /// Handle message that is "unknown" because we are not in the correct state (e.g. we are adult
+    /// and the message is for elders). We bounce the message to our elders who have more
+    /// information to decide what to do with it.
+    pub fn handle_unknown_message(
+        &self,
+        core: &mut Core,
+        sender: SocketAddr,
+        msg_bytes: Bytes,
+    ) -> Result<()> {
+        let variant = Variant::BouncedUnknownMessage {
             message: msg_bytes,
+            parsec_version: self.consensus_engine.parsec_version(),
         };
+        let msg = Message::single_src(&core.full_id, DstLocation::Direct, variant)?;
+        let msg = msg.to_bytes()?;
 
-        core.send_direct_message(&sender, variant)
+        // If the message came from one of our elders then bounce it only to them to avoid message
+        // explosion.
+        if self
+            .shared_state
+            .sections
+            .our_elders()
+            .any(|p2p_node| *p2p_node.peer_addr() == sender)
+        {
+            core.send_message_to_targets(slice::from_ref(&sender), 1, msg)
+        } else {
+            // TODO: consider sending this only to a subset of the elders to save bandwidth.
+            let targets: Vec<_> = self
+                .shared_state
+                .sections
+                .our_elders()
+                .map(P2pNode::peer_addr)
+                .copied()
+                .collect();
+
+            core.send_message_to_targets(&targets, targets.len(), msg)
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_bounced_unknown_message(
+        &mut self,
+        core: &mut Core,
+        sender: P2pNode,
+        bounced_msg_bytes: Bytes,
+        sender_parsec_version: u64,
+    ) {
+        if sender_parsec_version >= self.consensus_engine.parsec_version() {
+            trace!(
+                "Received BouncedUnknownMessage of {:?} from {} - peer is up to date or ahead of \
+                 us, discarding",
+                MessageHash::from_bytes(&bounced_msg_bytes),
+                sender
+            );
+        }
+
+        trace!(
+            "Received BouncedUnknownMessage of {:?} from {} - peer is lagging behind, \
+             resending with parsec gossip",
+            MessageHash::from_bytes(&bounced_msg_bytes),
+            sender,
+        );
+
+        // First send parsec gossip to update the peer, the resend the message itself. If the
+        // messages arrive in the same order they were sent, the gossip should update the peer so
+        // they will then be able to handle the resent message. If not, the peer will bounce the
+        // message again.
+
+        self.send_parsec_gossip(core, Some((sender_parsec_version, sender.clone())));
+        core.send_message_to_targets(slice::from_ref(sender.peer_addr()), 1, bounced_msg_bytes)
     }
 
     pub fn handle_neighbour_info(
@@ -1799,28 +1871,6 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
-
-    // Ignore stale GenesisUpdates
-    fn should_handle_genesis_update(
-        &self,
-        our_id: &PublicId,
-        genesis_prefix_info: &GenesisPrefixInfo,
-    ) -> bool {
-        !self.is_our_elder(our_id)
-            && genesis_prefix_info.parsec_version > self.genesis_prefix_info.parsec_version
-    }
-
-    // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
-    // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
-    fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
-        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version
-    }
-
-    // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
-    // as a node.
-    fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
-        self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
-    }
 
     // Disconnect from peers that are no longer elders of neighbour sections.
     fn prune_neighbour_connections(

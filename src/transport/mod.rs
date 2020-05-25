@@ -18,7 +18,7 @@ use crate::{
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
-use std::{collections::HashMap, net::SocketAddr, slice};
+use std::{collections::HashMap, net::SocketAddr};
 
 use sending_targets_cache::SendingTargetsCache;
 
@@ -80,18 +80,6 @@ impl Transport {
 
         self.cache
             .insert_message(token, conn_infos, delivery_group_size);
-    }
-
-    pub fn send_message_to_target_later(
-        &mut self,
-        target: &SocketAddr,
-        content: Bytes,
-        timer: &Timer,
-        delay: Duration,
-    ) {
-        let token = self.next_msg_token();
-        self.send_later(*target, content, token, timer, delay);
-        self.cache.insert_message(token, slice::from_ref(target), 1);
     }
 
     pub fn send_message_to_client(&mut self, target: SocketAddr, msg: Bytes, token: Token) {

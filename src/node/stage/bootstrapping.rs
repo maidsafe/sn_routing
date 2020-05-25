@@ -64,7 +64,7 @@ impl Bootstrapping {
 
     pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant {
-            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => {
+            Variant::BootstrapResponse(_) => {
                 verify_message(msg)?;
                 Ok(MessageStatus::Useful)
             }
@@ -80,7 +80,8 @@ impl Bootstrapping {
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::Ping => Ok(MessageStatus::Useless),
+            | Variant::Ping
+            | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Useless),
         }
     }
 

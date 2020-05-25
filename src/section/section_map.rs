@@ -58,14 +58,6 @@ impl SectionMap {
         &self.our
     }
 
-    /// Find neighbour section containing the given elder.
-    pub fn find_neighbour_by_elder(&self, elder_name: &XorName) -> Option<&EldersInfo> {
-        self.neighbours
-            .iter()
-            .find(|(_, info)| info.elders.contains_key(elder_name))
-            .map(|(_, info)| info)
-    }
-
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
     pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
