@@ -17,8 +17,8 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{
-        self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageHash, MessageStatus, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
+        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageHash,
+        MessageStatus, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -248,7 +248,7 @@ impl Approved {
                 self.consensus_engine.reset_gossip_period();
             } else {
                 // TODO: send this only when the knowledge changes, not periodically.
-                self.send_member_knowledge(core);
+                self.send_parsec_poke(core);
                 self.timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
             }
         }
@@ -363,7 +363,7 @@ impl Approved {
                 }
             }
             Variant::BootstrapRequest(_)
-            | Variant::MemberKnowledge(_)
+            | Variant::ParsecPoke(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::BouncedUntrustedMessage(_)
@@ -733,17 +733,10 @@ impl Approved {
         }))
     }
 
-    pub fn handle_member_knowledge(
-        &mut self,
-        core: &mut Core,
-        p2p_node: P2pNode,
-        payload: MemberKnowledge,
-    ) {
-        trace!("Received {:?} from {:?}", payload, p2p_node);
+    pub fn handle_parsec_poke(&mut self, core: &mut Core, p2p_node: P2pNode, version: u64) {
+        trace!("Received parsec poke v{} from {}", version, p2p_node);
 
-        let version = payload
-            .parsec_version
-            .min(self.consensus_engine.parsec_version());
+        let version = version.min(self.consensus_engine.parsec_version());
         self.send_parsec_gossip(core, Some((version, p2p_node)))
     }
 
@@ -1296,7 +1289,7 @@ impl Approved {
 
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
         self.send_genesis_updates(core);
-        self.send_member_knowledge(core);
+        self.send_parsec_poke(core);
 
         self.print_network_stats();
 
@@ -1475,7 +1468,7 @@ impl Approved {
             complete_data.to_vote_again,
         )?;
         self.send_genesis_updates(core);
-        self.send_member_knowledge(core);
+        self.send_parsec_poke(core);
         Ok(())
     }
 
@@ -1752,19 +1745,16 @@ impl Approved {
         Some(p2p_recipients.swap_remove(rand_index))
     }
 
-    fn send_member_knowledge(&mut self, core: &mut Core) {
-        let payload = MemberKnowledge {
-            section_key: *self.shared_state.our_history.last_key(),
-            parsec_version: self.consensus_engine.parsec_version(),
-        };
+    fn send_parsec_poke(&mut self, core: &mut Core) {
+        let version = self.consensus_engine.parsec_version();
 
         for recipient in self.shared_state.sections.our_elders() {
             if recipient.public_id() == core.id() {
                 continue;
             }
 
-            trace!("Send {:?} to {:?}", payload, recipient);
-            core.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
+            trace!("send parsec poke v{} to {}", version, recipient);
+            core.send_direct_message(recipient.peer_addr(), Variant::ParsecPoke(version))
         }
     }
 

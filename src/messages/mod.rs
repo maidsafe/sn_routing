@@ -16,7 +16,7 @@ pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     hash::MessageHash,
     src_authority::SrcAuthority,
-    variant::{BootstrapResponse, JoinRequest, MemberKnowledge, Variant},
+    variant::{BootstrapResponse, JoinRequest, Variant},
     with_bytes::MessageWithBytes,
 };
 use crate::{
