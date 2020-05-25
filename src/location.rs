@@ -37,6 +37,14 @@ impl SrcLocation {
             SrcLocation::Section(self_prefix) => self_prefix.matches(name),
         }
     }
+
+    /// Returns this location as `DstLocation`
+    pub(crate) fn to_dst(&self) -> DstLocation {
+        match self {
+            Self::Node(name) => DstLocation::Node(*name),
+            Self::Section(prefix) => DstLocation::Section(prefix.name()),
+        }
+    }
 }
 
 /// Message destination location.

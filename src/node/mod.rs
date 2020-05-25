@@ -37,7 +37,7 @@ use crate::{
 };
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, slice};
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{
@@ -727,6 +727,9 @@ impl Node {
                         dst: msg.dst,
                     });
                 }
+                Variant::BouncedUntrustedMessage(message) => {
+                    stage.handle_bounced_untrusted_message(&mut self.core, msg.dst_key, *message)?
+                }
                 Variant::BouncedUnknownMessage {
                     message,
                     parsec_version,
@@ -764,8 +767,34 @@ impl Node {
         Ok(())
     }
 
-    fn handle_untrusted_message(&mut self, _sender: &SocketAddr, _msg: Message) -> Result<()> {
-        todo!()
+    fn handle_untrusted_message(&mut self, sender: &SocketAddr, msg: Message) -> Result<()> {
+        let src = msg.src.location();
+        let bounce_dst = src.to_dst();
+        let bounce_dst_key = match &self.stage {
+            Stage::Approved(stage) => stage
+                .shared_state
+                .sections
+                .key_by_location(&bounce_dst)
+                .copied(),
+            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => None,
+        };
+
+        if bounce_dst_key.is_none() {
+            trace!("Untrusted message from unknown src {:?} - discarding", src);
+            return Ok(());
+        }
+
+        let bounce_msg = Message::single_src(
+            &self.core.full_id,
+            bounce_dst,
+            bounce_dst_key,
+            Variant::BouncedUntrustedMessage(Box::new(msg)),
+        )?;
+        let bounce_msg = bounce_msg.to_bytes()?;
+        self.core
+            .send_message_to_targets(slice::from_ref(sender), 1, bounce_msg);
+
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////

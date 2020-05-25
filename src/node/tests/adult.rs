@@ -166,7 +166,7 @@ fn genesis_update_accumulating_message(
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
     let variant = Variant::MessageSignature(Box::new(msg));
-    Message::single_src(sender_id, DstLocation::Direct, variant)
+    Message::single_src(sender_id, DstLocation::Direct, None, variant)
 }
 
 #[test]

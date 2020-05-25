@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingMessage, MessageHash};
+use super::{AccumulatingMessage, Message, MessageHash};
 use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
@@ -63,7 +63,10 @@ pub enum Variant {
     ParsecResponse(u64, ParsecResponse),
     /// Message sent to a disconnected peer to trigger lost peer detection.
     Ping,
-    /// Send from a node that doesn't know how to handle `message` to its elders in order for them
+    /// Sent from a node that can't establish the trust of the contained message to its original
+    /// source in order for them to provide new proof that the node would trust.
+    BouncedUntrustedMessage(Box<Message>),
+    /// Sent from a node that doesn't know how to handle `message` to its elders in order for them
     /// to decide what to do with it (resend with more info or discard).
     BouncedUnknownMessage {
         /// The original message, serialized.
@@ -93,6 +96,10 @@ impl Debug for Variant {
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),
+            Self::BouncedUntrustedMessage(message) => f
+                .debug_tuple("BouncedUntrustedMessage")
+                .field(message)
+                .finish(),
             Self::BouncedUnknownMessage {
                 message,
                 parsec_version,

@@ -69,7 +69,9 @@ impl Bootstrapping {
                 Ok(MessageStatus::Useful)
             }
 
-            Variant::NeighbourInfo { .. } | Variant::UserMessage(_) => Ok(MessageStatus::Unknown),
+            Variant::NeighbourInfo { .. }
+            | Variant::UserMessage(_)
+            | Variant::BouncedUntrustedMessage(_) => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)

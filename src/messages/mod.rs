@@ -73,8 +73,14 @@ impl Message {
     }
 
     /// Creates a message from single node.
-    pub(crate) fn single_src(src: &FullId, dst: DstLocation, variant: Variant) -> Result<Self> {
-        let serialized = serialize_for_node_signing(src.public_id(), &dst, None, &variant)?;
+    pub(crate) fn single_src(
+        src: &FullId,
+        dst: DstLocation,
+        dst_key: Option<bls::PublicKey>,
+        variant: Variant,
+    ) -> Result<Self> {
+        let serialized =
+            serialize_for_node_signing(src.public_id(), &dst, dst_key.as_ref(), &variant)?;
         let signature = src.sign(&serialized);
 
         Ok(Self {
@@ -84,7 +90,7 @@ impl Message {
                 signature,
             },
             variant,
-            dst_key: None,
+            dst_key,
         })
     }
 

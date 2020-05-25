@@ -370,6 +370,7 @@ impl Approved {
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
+            | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. } => {
                 if self.verify_message(msg)? {
                     Ok(MessageStatus::Useful)
@@ -425,7 +426,7 @@ impl Approved {
             message: msg_bytes,
             parsec_version: self.consensus_engine.parsec_version(),
         };
-        let msg = Message::single_src(&core.full_id, DstLocation::Direct, variant)?;
+        let msg = Message::single_src(&core.full_id, DstLocation::Direct, None, variant)?;
         let msg = msg.to_bytes()?;
 
         // If the message came from one of our elders then bounce it only to them to avoid message
@@ -453,6 +454,44 @@ impl Approved {
         Ok(())
     }
 
+    pub fn handle_bounced_untrusted_message(
+        &mut self,
+        core: &mut Core,
+        dst_key: Option<bls::PublicKey>,
+        mut bounced_msg: Message,
+    ) -> Result<()> {
+        let dst_key = if let Some(dst_key) = dst_key {
+            dst_key
+        } else {
+            trace!(
+                "Received BouncedUntrustedMessage({:?}) - missing dst key, discarding",
+                bounced_msg,
+            );
+            return Ok(());
+        };
+
+        if let Err(error) = bounced_msg
+            .src
+            .extend_proof(&dst_key, &self.shared_state.our_history)
+        {
+            trace!(
+                "Received BouncedUntrustedMessage({:?}) - extending proof failed, \
+                 discarding: {:?}",
+                bounced_msg,
+                error,
+            );
+            return Ok(());
+        }
+
+        trace!(
+            "Received BouncedUntrustedMessage({:?}) - resending with extended proof",
+            bounced_msg
+        );
+
+        let msg = MessageWithBytes::new(bounced_msg)?;
+        self.relay_message(core, &msg)
+    }
+
     pub fn handle_bounced_unknown_message(
         &mut self,
         core: &mut Core,
@@ -462,16 +501,16 @@ impl Approved {
     ) {
         if sender_parsec_version >= self.consensus_engine.parsec_version() {
             trace!(
-                "Received BouncedUnknownMessage of {:?} from {} - peer is up to date or ahead of \
-                 us, discarding",
+                "Received BouncedUnknownMessage({:?}) from {} \
+                 - peer is up to date or ahead of us, discarding",
                 MessageHash::from_bytes(&bounced_msg_bytes),
                 sender
             );
         }
 
         trace!(
-            "Received BouncedUnknownMessage of {:?} from {} - peer is lagging behind, \
-             resending with parsec gossip",
+            "Received BouncedUnknownMessage({:?}) from {} \
+             - peer is lagging behind, resending with parsec gossip",
             MessageHash::from_bytes(&bounced_msg_bytes),
             sender,
         );
@@ -1806,7 +1845,7 @@ impl Approved {
         // If the source is a single node, we don't even need to send signatures, so let's cut this
         // short
         if !src.is_section() {
-            let msg = Message::single_src(&core.full_id, dst, variant)?;
+            let msg = Message::single_src(&core.full_id, dst, None, variant)?;
             let msg = MessageWithBytes::new(msg)?;
             return self.handle_accumulated_message(core, msg);
         }

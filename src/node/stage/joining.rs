@@ -94,6 +94,7 @@ impl Joining {
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
+            | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
