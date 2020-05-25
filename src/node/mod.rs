@@ -31,7 +31,6 @@ use crate::{
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
-    time::Duration,
     transport::PeerStatus,
     xor_space::{Prefix, XorName, Xorable},
     TransportConfig, TransportEvent,
@@ -50,9 +49,6 @@ use {
     crate::section::{EldersInfo, SectionProofChain, SharedState},
     std::collections::{BTreeMap, BTreeSet},
 };
-
-/// Delay after which a bounced message is resent.
-pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 
 /// Node configuration.
 pub struct NodeConfig {
@@ -579,8 +575,7 @@ impl Node {
                     msg_with_bytes.full_crypto_hash(),
                 );
 
-                self.handle_unknown_message(sender, msg, msg_with_bytes.full_bytes().clone());
-                Ok(())
+                self.handle_unknown_message(sender, msg, msg_with_bytes.full_bytes().clone())
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {}: {:?}", sender, msg);
@@ -654,10 +649,6 @@ impl Node {
                         self.join(params);
                     }
                 }
-                Variant::Bounce {
-                    elders_version,
-                    message,
-                } => self.handle_bounce(msg.src.to_sender_node(sender)?, elders_version, message),
                 _ => unreachable!(),
             },
             Stage::Joining(stage) => match msg.variant {
@@ -672,10 +663,6 @@ impl Node {
                     let msg_backlog = stage.take_message_backlog();
                     self.approve(connect_type, *genesis_prefix_info, msg_backlog)?
                 }
-                Variant::Bounce {
-                    elders_version,
-                    message,
-                } => self.handle_bounce(msg.src.to_sender_node(sender)?, elders_version, message),
                 _ => unreachable!(),
             },
             Stage::Approved(stage) => match msg.variant {
@@ -740,10 +727,15 @@ impl Node {
                         dst: msg.dst,
                     });
                 }
-                Variant::Bounce {
-                    elders_version,
+                Variant::BouncedUnknownMessage {
                     message,
-                } => self.handle_bounce(msg.src.to_sender_node(sender)?, elders_version, message),
+                    parsec_version,
+                } => stage.handle_bounced_unknown_message(
+                    &mut self.core,
+                    msg.src.to_sender_node(sender)?,
+                    message,
+                    parsec_version,
+                ),
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
                 }
@@ -754,74 +746,26 @@ impl Node {
         Ok(())
     }
 
-    fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
-        let known_version = match &self.stage {
-            Stage::Bootstrapping(_) | Stage::Joining(_) => {
-                trace!(
-                    "Received Bounce of {:?} from {}. Resending",
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender
-                );
-                self.core.send_message_to_target_later(
-                    sender.peer_addr(),
-                    msg_bytes,
-                    BOUNCE_RESEND_DELAY,
-                );
-                return;
-            }
-            Stage::Approved(stage) => stage
-                .shared_state
-                .find_section_by_member(sender.name())
-                .map(|info| info.version),
-            Stage::Terminated => unreachable!(),
-        };
-
-        if let Some(known_version) = known_version {
-            if sender_version
-                .map(|sender_version| sender_version < known_version)
-                .unwrap_or(true)
-            {
-                trace!(
-                    "Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender,
-                    BOUNCE_RESEND_DELAY
-                );
-                self.core.send_message_to_target_later(
-                    sender.peer_addr(),
-                    msg_bytes,
-                    BOUNCE_RESEND_DELAY,
-                );
-            } else {
-                trace!(
-                    "Received Bounce of {:?} from {}. Peer has moved on, not resending",
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender
-                );
-            }
-        } else {
-            trace!(
-                "Received Bounce of {:?} from {}. Peer not known, not resending",
-                MessageHash::from_bytes(&msg_bytes),
-                sender
-            );
-        }
-    }
-
-    fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message, msg_bytes: Bytes) {
+    fn handle_unknown_message(
+        &mut self,
+        sender: SocketAddr,
+        msg: Message,
+        msg_bytes: Bytes,
+    ) -> Result<()> {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Joining(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Approved(stage) => {
-                stage.handle_unknown_message(&mut self.core, sender, msg_bytes)
+                stage.handle_unknown_message(&mut self.core, sender, msg_bytes)?
             }
             Stage::Terminated => (),
         }
+
+        Ok(())
     }
 
     fn handle_untrusted_message(&mut self, _sender: &SocketAddr, _msg: Message) -> Result<()> {
-        // TODO:
-        Ok(())
+        todo!()
     }
 
     ////////////////////////////////////////////////////////////////////////////

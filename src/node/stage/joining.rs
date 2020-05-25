@@ -84,7 +84,7 @@ impl Joining {
                 Ok(MessageStatus::Useful)
             }
 
-            Variant::BootstrapResponse(BootstrapResponse::Join(_)) | Variant::Bounce { .. } => {
+            Variant::BootstrapResponse(BootstrapResponse::Join(_)) => {
                 verify_message(msg, None)?;
                 Ok(MessageStatus::Useful)
             }
@@ -93,7 +93,8 @@ impl Joining {
             | Variant::UserMessage(_)
             | Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
-            | Variant::MessageSignature(_) => Ok(MessageStatus::Unknown),
+            | Variant::MessageSignature(_)
+            | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)

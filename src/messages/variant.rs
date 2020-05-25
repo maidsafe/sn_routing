@@ -63,15 +63,13 @@ pub enum Variant {
     ParsecResponse(u64, ParsecResponse),
     /// Message sent to a disconnected peer to trigger lost peer detection.
     Ping,
-    /// Response to a message that the recipient cannot handle at this time but might be able to
-    /// handle it later. For example, an adult receiving a message intended for elders will be
-    /// able to handle it after being promoted.
-    Bounce {
-        /// Elders version of the section of the message recipient according to their knowledge.
-        /// `None` if the recipient is not yet member of any section.
-        elders_version: Option<u64>,
+    /// Send from a node that doesn't know how to handle `message` to its elders in order for them
+    /// to decide what to do with it (resend with more info or discard).
+    BouncedUnknownMessage {
         /// The original message, serialized.
         message: Bytes,
+        /// The latest parsec version of the recipient of `message`.
+        parsec_version: u64,
     },
 }
 
@@ -95,13 +93,13 @@ impl Debug for Variant {
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),
-            Self::Bounce {
-                elders_version,
+            Self::BouncedUnknownMessage {
                 message,
+                parsec_version,
             } => f
-                .debug_struct("Bounce")
-                .field("elders_version", elders_version)
+                .debug_struct("BouncedUnknownMessage")
                 .field("message_hash", &MessageHash::from_bytes(message))
+                .field("parsec_version", parsec_version)
                 .finish(),
         }
     }

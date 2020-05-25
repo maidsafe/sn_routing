@@ -17,7 +17,6 @@ use crate::{
     node::NodeConfig,
     quic_p2p::{EventSenders, OurType, Token},
     rng::{self, MainRng},
-    time::Duration,
     timer::Timer,
     transport::{PeerStatus, Transport},
     xor_space::XorName,
@@ -110,16 +109,6 @@ impl Core {
     ) {
         self.transport
             .send_message_to_targets(conn_infos, delivery_group_size, msg)
-    }
-
-    pub fn send_message_to_target_later(
-        &mut self,
-        dst: &SocketAddr,
-        message: Bytes,
-        delay: Duration,
-    ) {
-        self.transport
-            .send_message_to_target_later(dst, message, &self.timer, delay)
     }
 
     pub fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {

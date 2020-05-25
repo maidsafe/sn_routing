@@ -176,15 +176,6 @@ impl SharedState {
         self.our_members.remove(pub_id.name())
     }
 
-    /// Find section which has member with the given id
-    pub fn find_section_by_member(&self, name: &XorName) -> Option<&EldersInfo> {
-        if self.our_members.contains(name) {
-            Some(self.sections.our())
-        } else {
-            self.sections.find_neighbour_by_elder(name)
-        }
-    }
-
     /// Returns the `P2pNode` of all non-elders in the section
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
