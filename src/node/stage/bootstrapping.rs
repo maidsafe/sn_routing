@@ -79,7 +79,7 @@ impl Bootstrapping {
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge { .. }
+            | Variant::ParsecPoke(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping

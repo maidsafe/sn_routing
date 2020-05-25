@@ -699,10 +699,10 @@ impl Node {
                     msg.src.to_sender_node(sender)?,
                     *join_request,
                 ),
-                Variant::MemberKnowledge(payload) => stage.handle_member_knowledge(
+                Variant::ParsecPoke(version) => stage.handle_parsec_poke(
                     &mut self.core,
                     msg.src.to_sender_node(sender)?,
-                    payload,
+                    version,
                 ),
                 Variant::ParsecRequest(version, request) => {
                     stage.handle_parsec_request(
