@@ -31,7 +31,7 @@ lru_time_cache = "~0.8.1"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
 num-bigint = "~0.1.40"
 parsec = "0.7.0"
-quic-p2p = { version = "0.6.0", features = ["upnp"] }
+quic-p2p = { version = "~0.6.2", features = ["upnp"] }
 # rand in the versions used for compatibility
 rand = "0.7.2"
 rand_crypto = { package = "rand", version = "~0.6.5" }
