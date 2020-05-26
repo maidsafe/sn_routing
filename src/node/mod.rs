@@ -37,7 +37,7 @@ use crate::{
 };
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
-use std::{net::SocketAddr, slice};
+use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{
@@ -565,7 +565,7 @@ impl Node {
                     msg,
                     msg_with_bytes.full_crypto_hash()
                 );
-                self.handle_untrusted_message(&sender, msg)
+                self.handle_untrusted_message(sender, msg)
             }
             MessageStatus::Unknown => {
                 debug!(
@@ -574,7 +574,6 @@ impl Node {
                     msg,
                     msg_with_bytes.full_crypto_hash(),
                 );
-
                 self.handle_unknown_message(sender, msg, msg_with_bytes.full_bytes().clone())
             }
             MessageStatus::Useless => {
@@ -749,6 +748,15 @@ impl Node {
         Ok(())
     }
 
+    fn handle_untrusted_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+        match &self.stage {
+            Stage::Approved(stage) => {
+                stage.handle_untrusted_message(&mut self.core, Some(sender), msg)
+            }
+            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => unreachable!(),
+        }
+    }
+
     fn handle_unknown_message(
         &mut self,
         sender: SocketAddr,
@@ -763,36 +771,6 @@ impl Node {
             }
             Stage::Terminated => (),
         }
-
-        Ok(())
-    }
-
-    fn handle_untrusted_message(&mut self, sender: &SocketAddr, msg: Message) -> Result<()> {
-        let src = msg.src.location();
-        let bounce_dst = src.to_dst();
-        let bounce_dst_key = match &self.stage {
-            Stage::Approved(stage) => stage
-                .shared_state
-                .sections
-                .key_by_location(&bounce_dst)
-                .copied(),
-            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => None,
-        };
-
-        if bounce_dst_key.is_none() {
-            trace!("Untrusted message from unknown src {:?} - discarding", src);
-            return Ok(());
-        }
-
-        let bounce_msg = Message::single_src(
-            &self.core.full_id,
-            bounce_dst,
-            bounce_dst_key,
-            Variant::BouncedUntrustedMessage(Box::new(msg)),
-        )?;
-        let bounce_msg = bounce_msg.to_bytes()?;
-        self.core
-            .send_message_to_targets(slice::from_ref(sender), 1, bounce_msg);
 
         Ok(())
     }

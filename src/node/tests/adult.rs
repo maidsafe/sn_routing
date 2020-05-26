@@ -17,7 +17,7 @@ use crate::{
     node::{Node, NodeConfig},
     quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::{self, MainRng},
-    section::{IndexedSecretKeyShare, SectionKeysProvider, SharedState},
+    section::{EldersInfo, IndexedSecretKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
     TransportConfig, TransportEvent,
 };
@@ -25,7 +25,7 @@ use crossbeam_channel::Receiver;
 use itertools::Itertools;
 use mock_quic_p2p::Network;
 use rand::Rng;
-use std::net::SocketAddr;
+use std::{collections::BTreeMap, net::SocketAddr};
 
 const ELDER_SIZE: usize = 3;
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
@@ -45,10 +45,11 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let elders = create_elders(&mut rng, &network, 0);
+        let (elders_info, full_ids) =
+            test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE, 0);
+        let elders = create_elders(&mut rng, elders_info.clone(), full_ids);
 
         let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
-        let elders_info = elders[0].state.our_info().clone();
         let genesis_prefix_info =
             test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
 
@@ -85,8 +86,18 @@ impl Env {
     }
 
     fn perform_elders_change(&mut self) {
-        let current_version = self.elders[0].state.our_info().version;
-        self.elders = create_elders(&mut self.rng, &self.network, current_version + 1);
+        let elders_info = EldersInfo::new(
+            self.elders[0].state.our_info().elders.clone(),
+            self.elders[0].state.our_info().prefix,
+            self.elders[0].state.our_info().version + 1,
+        );
+        let full_ids = self
+            .elders
+            .drain(..)
+            .map(|elder| (*elder.full_id.public_id().name(), elder.full_id))
+            .collect();
+
+        self.elders = create_elders(&mut self.rng, elders_info, full_ids);
     }
 
     fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
@@ -157,10 +168,13 @@ impl Elder {
     }
 }
 
-fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elder> {
+fn create_elders(
+    rng: &mut MainRng,
+    elders_info: EldersInfo,
+    full_ids: BTreeMap<XorName, FullId>,
+) -> Vec<Elder> {
     let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
-    let (elders_info, full_ids) = test_utils::create_elders_info(rng, network, ELDER_SIZE, version);
     let genesis_prefix_info =
         test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
 
@@ -299,7 +313,7 @@ fn genesis_update_message_proof_too_new() {
 }
 
 #[test]
-fn receive_unknown_message() {
+fn handle_unknown_message() {
     let mut env = Env::new();
 
     let dst = DstLocation::Section(env.rng.gen());
@@ -309,18 +323,18 @@ fn receive_unknown_message() {
     env.poll();
 
     for (sender, msg) in env.elders[0].received_messages() {
-        assert_eq!(sender, env.subject.our_connection_info().unwrap());
-
-        if let Variant::BouncedUnknownMessage { .. } = msg.variant {
+        if sender == env.subject.our_connection_info().unwrap()
+            && matches!(msg.variant, Variant::BouncedUnknownMessage { .. })
+        {
             return;
         }
     }
 
-    panic!("expected BouncedUnknownMessage not received")
+    panic!("BouncedUnknownMessage not received")
 }
 
 #[test]
-fn receive_untrusted_message() {
+fn handle_untrusted_accumulated_message() {
     let mut env = Env::new();
 
     // Generate new section key which the adult is not yet aware of.
@@ -334,12 +348,35 @@ fn receive_untrusted_message() {
     env.poll();
 
     for (sender, msg) in env.elders[0].received_messages() {
-        assert_eq!(sender, env.subject.our_connection_info().unwrap());
-
-        if let Variant::BouncedUntrustedMessage(_) = msg.variant {
+        if sender == env.subject.our_connection_info().unwrap()
+            && matches!(msg.variant, Variant::BouncedUntrustedMessage(_))
+        {
             return;
         }
     }
 
-    panic!("expected BouncedUntrustedMessage not received")
+    panic!("BouncedUntrustedMessage not received")
+}
+
+#[test]
+fn handle_untrusted_accumulating_message() {
+    let mut env = Env::new();
+    env.perform_elders_change();
+
+    // The GenesisUpdate message is accumulated at destination and so is received as a series of
+    // `MessageSignature`s.
+    let genesis_prefix_info = env.genesis_prefix_info(1);
+    env.handle_genesis_update(genesis_prefix_info).unwrap();
+
+    env.poll();
+
+    for (sender, msg) in env.elders[0].received_messages() {
+        if sender == env.subject.our_connection_info().unwrap()
+            && matches!(msg.variant, Variant::BouncedUntrustedMessage(_))
+        {
+            return;
+        }
+    }
+
+    panic!("BouncedUntrustedMessage not received")
 }
