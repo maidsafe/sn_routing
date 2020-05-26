@@ -15,11 +15,16 @@ use crate::{
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     network_params::NetworkParams,
     node::{Node, NodeConfig},
+    quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::{self, MainRng},
     section::{IndexedSecretKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
+    TransportConfig, TransportEvent,
 };
+use crossbeam_channel::Receiver;
+use itertools::Itertools;
 use mock_quic_p2p::Network;
+use rand::Rng;
 use std::net::SocketAddr;
 
 const ELDER_SIZE: usize = 3;
@@ -64,6 +69,10 @@ impl Env {
         }
     }
 
+    fn poll(&mut self) {
+        self.network.poll(&mut self.rng)
+    }
+
     fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
         test_utils::create_genesis_prefix_info(
             self.elders[0].state.our_info().clone(),
@@ -81,26 +90,71 @@ impl Env {
     }
 
     fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
-        for elder in &self.elders {
-            let msg = genesis_update_message_signature(
+        for elder in &mut self.elders {
+            let msg = create_genesis_update_message_signature(
                 elder,
                 *self.subject.name(),
                 genesis_prefix_info.clone(),
             )?;
 
-            test_utils::handle_message(&mut self.subject, elder.addr, msg)?;
+            test_utils::handle_message(&mut self.subject, elder.addr(), msg)?;
         }
 
         Ok(())
+    }
+
+    fn create_user_message(&self, dst: DstLocation, content: Vec<u8>) -> Message {
+        let msg = PlainMessage {
+            src: Prefix::default(),
+            dst,
+            dst_key: self.elders[0]
+                .section_keys_provider
+                .public_key_set()
+                .public_key(),
+            variant: Variant::UserMessage(content),
+        };
+        self.accumulate_message(msg)
+    }
+
+    fn accumulate_message(&self, content: PlainMessage) -> Message {
+        self.elders
+            .iter()
+            .map(|elder| to_accumulating_message(elder, content.clone()).unwrap())
+            .fold1(|mut msg0, msg1| {
+                msg0.add_signature_shares(msg1);
+                msg0
+            })
+            .expect("there are no messages to accumulate")
+            .combine_signatures()
+            .expect("failed to combine signatures")
     }
 }
 
 // Simplified representation of the section elder.
 struct Elder {
+    full_id: FullId,
     state: SharedState,
     section_keys_provider: SectionKeysProvider,
-    addr: SocketAddr,
-    full_id: FullId,
+    transport: QuicP2p,
+    transport_rx: Receiver<TransportEvent>,
+}
+
+impl Elder {
+    fn addr(&mut self) -> SocketAddr {
+        self.transport.our_connection_info().unwrap()
+    }
+
+    fn received_messages(&self) -> impl Iterator<Item = (SocketAddr, Message)> + '_ {
+        self.transport_rx
+            .try_iter()
+            .filter_map(|event| match event {
+                TransportEvent::NewMessage {
+                    peer: Peer::Node(addr),
+                    msg,
+                } => Some((addr, Message::from_bytes(&msg).unwrap())),
+                _ => None,
+            })
+    }
 }
 
 fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elder> {
@@ -123,45 +177,72 @@ fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elde
                 Some(IndexedSecretKeyShare::from_set(&secret_key_set, index)),
             );
 
-            let addr = network.gen_addr();
+            let addr = genesis_prefix_info
+                .elders_info
+                .elders
+                .get(full_id.public_id().name())
+                .unwrap()
+                .peer_addr();
+            let (transport, transport_rx) = create_transport(addr);
 
             Elder {
+                full_id,
                 state,
                 section_keys_provider,
-                addr,
-                full_id,
+                transport,
+                transport_rx,
             }
         })
         .collect()
 }
 
-fn genesis_update_message_signature(
+fn create_transport(addr: &SocketAddr) -> (QuicP2p, Receiver<TransportEvent>) {
+    let (transport_tx, transport_rx) = {
+        let (client_tx, _) = crossbeam_channel::unbounded();
+        let (node_tx, node_rx) = crossbeam_channel::unbounded();
+        (EventSenders { node_tx, client_tx }, node_rx)
+    };
+    let config = TransportConfig {
+        ip: Some(addr.ip()),
+        port: Some(addr.port()),
+        ..Default::default()
+    };
+    let transport =
+        QuicP2p::with_config(transport_tx, Some(config), Default::default(), false).unwrap();
+
+    (transport, transport_rx)
+}
+
+fn create_genesis_update_message_signature(
     sender: &Elder,
     dst: XorName,
     genesis_prefix_info: GenesisPrefixInfo,
 ) -> Result<Message> {
-    let msg = genesis_update_accumulating_message(sender, dst, genesis_prefix_info)?;
+    let msg = create_genesis_update_accumulating_message(sender, dst, genesis_prefix_info)?;
     to_message_signature(&sender.full_id, msg)
 }
 
-fn genesis_update_accumulating_message(
+fn create_genesis_update_accumulating_message(
     sender: &Elder,
     dst: XorName,
     genesis_prefix_info: GenesisPrefixInfo,
 ) -> Result<AccumulatingMessage> {
-    let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
-    let public_key_set = sender.section_keys_provider.public_key_set().clone();
-
     let content = PlainMessage {
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
-        dst_key: public_key_set.public_key(),
+        dst_key: sender.section_keys_provider.public_key_set().public_key(),
         variant: Variant::GenesisUpdate(Box::new(genesis_prefix_info)),
     };
 
+    to_accumulating_message(sender, content)
+}
+
+fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<AccumulatingMessage> {
+    let secret_key_share = sender.section_keys_provider.secret_key_share().unwrap();
+    let public_key_set = sender.section_keys_provider.public_key_set().clone();
     let proof = sender.state.prove(&content.dst, None);
 
-    AccumulatingMessage::new(content, secret_key, public_key_set, proof)
+    AccumulatingMessage::new(content, secret_key_share, public_key_set, proof)
 }
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
@@ -209,10 +290,13 @@ fn handle_genesis_update_allow_skipped_versions() {
 fn genesis_update_message_successful_trust_check() {
     let mut env = Env::new();
     let genesis_prefix_info = env.genesis_prefix_info(1);
-    let msg =
-        genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
-            .unwrap();
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr, msg).unwrap();
+    let msg = create_genesis_update_message_signature(
+        &env.elders[0],
+        *env.subject.name(),
+        genesis_prefix_info,
+    )
+    .unwrap();
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
 
@@ -223,8 +307,58 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     env.perform_elders_change();
 
     let genesis_prefix_info = env.genesis_prefix_info(1);
-    let msg =
-        genesis_update_message_signature(&env.elders[0], *env.subject.name(), genesis_prefix_info)
-            .unwrap();
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr, msg).unwrap();
+    let msg = create_genesis_update_message_signature(
+        &env.elders[0],
+        *env.subject.name(),
+        genesis_prefix_info,
+    )
+    .unwrap();
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+}
+
+#[test]
+fn receive_unknown_message() {
+    let mut env = Env::new();
+
+    let dst = DstLocation::Section(env.rng.gen());
+    let msg = env.create_user_message(dst, b"hello section".to_vec());
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+
+    env.poll();
+
+    for (sender, msg) in env.elders[0].received_messages() {
+        assert_eq!(sender, env.subject.our_connection_info().unwrap());
+
+        if let Variant::BouncedUnknownMessage { .. } = msg.variant {
+            return;
+        }
+    }
+
+    panic!("expected BouncedUnknownMessage not received")
+}
+
+#[test]
+#[ignore] // FIXME: there is a bug in Approved::verify_message that causes this test to fail
+fn receive_untrusted_message() {
+    let mut env = Env::new();
+
+    // Generate new section key which the adult is not yet aware of.
+    env.perform_elders_change();
+
+    // This message is signed with the new key so won't be trusted by the adult yet.
+    let dst = DstLocation::Node(*env.subject.name());
+    let msg = env.create_user_message(dst, b"hello node".to_vec());
+    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+
+    env.poll();
+
+    for (sender, msg) in env.elders[0].received_messages() {
+        assert_eq!(sender, env.subject.our_connection_info().unwrap());
+
+        if let Variant::BouncedUntrustedMessage(_) = msg.variant {
+            return;
+        }
+    }
+
+    panic!("expected BouncedUntrustedMessage not received")
 }
