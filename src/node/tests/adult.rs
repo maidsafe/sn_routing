@@ -287,33 +287,15 @@ fn handle_genesis_update_allow_skipped_versions() {
 }
 
 #[test]
-fn genesis_update_message_successful_trust_check() {
-    let mut env = Env::new();
-    let genesis_prefix_info = env.genesis_prefix_info(1);
-    let msg = create_genesis_update_message_signature(
-        &env.elders[0],
-        *env.subject.name(),
-        genesis_prefix_info,
-    )
-    .unwrap();
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
-    assert_eq!(env.subject.parsec_last_version(), 1);
-}
-
-#[test]
-#[should_panic(expected = "Untrusted")]
-fn genesis_update_message_failed_trust_check_proof_too_new() {
+fn genesis_update_message_proof_too_new() {
     let mut env = Env::new();
     env.perform_elders_change();
 
     let genesis_prefix_info = env.genesis_prefix_info(1);
-    let msg = create_genesis_update_message_signature(
-        &env.elders[0],
-        *env.subject.name(),
-        genesis_prefix_info,
-    )
-    .unwrap();
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+    env.handle_genesis_update(genesis_prefix_info).unwrap();
+
+    // The GenesisUpdate message is bounced so nothing is updated yet.
+    assert_eq!(env.subject.parsec_last_version(), 0);
 }
 
 #[test]
@@ -338,7 +320,6 @@ fn receive_unknown_message() {
 }
 
 #[test]
-#[ignore] // FIXME: there is a bug in Approved::verify_message that causes this test to fail
 fn receive_untrusted_message() {
     let mut env = Env::new();
 
