@@ -35,8 +35,7 @@ pub fn create_elders_info(
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
             let id = FullId::gen(rng);
-            let name = *id.public_id().name();
-            (name, id)
+            (*id.public_id().name(), id)
         })
         .collect();
 

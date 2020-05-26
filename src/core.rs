@@ -111,6 +111,11 @@ impl Core {
             .send_message_to_targets(conn_infos, delivery_group_size, msg)
     }
 
+    pub fn send_message_to_target(&mut self, recipient: &SocketAddr, msg: Bytes) {
+        self.transport
+            .send_message_to_targets(slice::from_ref(recipient), 1, msg)
+    }
+
     pub fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
         let message = match Message::single_src(&self.full_id, DstLocation::Direct, None, variant) {
             Ok(message) => message,
@@ -128,7 +133,7 @@ impl Core {
             }
         };
 
-        self.send_message_to_targets(slice::from_ref(recipient), 1, bytes)
+        self.send_message_to_target(recipient, bytes)
     }
 
     pub fn handle_unsent_message(

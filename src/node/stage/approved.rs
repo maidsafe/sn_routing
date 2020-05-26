@@ -41,7 +41,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     iter,
     net::SocketAddr,
-    slice,
 };
 
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
@@ -413,6 +412,44 @@ impl Approved {
         }
     }
 
+    /// Handle message whose trust we can't establish because its proof contains only keys we don't
+    /// know.
+    pub fn handle_untrusted_message(
+        &self,
+        core: &mut Core,
+        sender: Option<SocketAddr>,
+        msg: Message,
+    ) -> Result<()> {
+        let src = msg.src.location();
+        let bounce_dst = src.to_dst();
+        let bounce_dst_key = self
+            .shared_state
+            .sections
+            .key_by_location(&bounce_dst)
+            .copied();
+
+        if bounce_dst_key.is_none() {
+            trace!("Untrusted message from unknown src {:?} - discarding", src);
+            return Ok(());
+        }
+
+        let bounce_msg = Message::single_src(
+            &core.full_id,
+            bounce_dst,
+            bounce_dst_key,
+            Variant::BouncedUntrustedMessage(Box::new(msg)),
+        )?;
+        let bounce_msg = bounce_msg.to_bytes()?;
+
+        if let Some(sender) = sender {
+            core.send_message_to_target(&sender, bounce_msg)
+        } else {
+            self.send_message_to_our_elders(core, bounce_msg)
+        }
+
+        Ok(())
+    }
+
     /// Handle message that is "unknown" because we are not in the correct state (e.g. we are adult
     /// and the message is for elders). We bounce the message to our elders who have more
     /// information to decide what to do with it.
@@ -422,12 +459,16 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg_bytes: Bytes,
     ) -> Result<()> {
-        let variant = Variant::BouncedUnknownMessage {
-            message: msg_bytes,
-            parsec_version: self.consensus_engine.parsec_version(),
-        };
-        let msg = Message::single_src(&core.full_id, DstLocation::Direct, None, variant)?;
-        let msg = msg.to_bytes()?;
+        let bounce_msg = Message::single_src(
+            &core.full_id,
+            DstLocation::Direct,
+            None,
+            Variant::BouncedUnknownMessage {
+                message: msg_bytes,
+                parsec_version: self.consensus_engine.parsec_version(),
+            },
+        )?;
+        let bounce_msg = bounce_msg.to_bytes()?;
 
         // If the message came from one of our elders then bounce it only to them to avoid message
         // explosion.
@@ -438,18 +479,9 @@ impl Approved {
                 .any(|p2p_node| p2p_node.peer_addr() == sender)
         });
         if let Some(sender) = our_elder_sender {
-            core.send_message_to_targets(slice::from_ref(&sender), 1, msg)
+            core.send_message_to_target(&sender, bounce_msg)
         } else {
-            // TODO: consider sending this only to a subset of the elders to save bandwidth.
-            let targets: Vec<_> = self
-                .shared_state
-                .sections
-                .our_elders()
-                .map(P2pNode::peer_addr)
-                .copied()
-                .collect();
-
-            core.send_message_to_targets(&targets, targets.len(), msg)
+            self.send_message_to_our_elders(core, bounce_msg)
         }
 
         Ok(())
@@ -522,7 +554,7 @@ impl Approved {
         // message again.
 
         self.send_parsec_gossip(core, Some((sender_parsec_version, sender.clone())));
-        core.send_message_to_targets(slice::from_ref(sender.peer_addr()), 1, bounced_msg_bytes)
+        core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
     pub fn handle_neighbour_info(
@@ -848,17 +880,21 @@ impl Approved {
             MessageStatus::Useful => {
                 core.msg_filter.insert_incoming(&msg_with_bytes);
                 core.msg_queue.push_back(msg.into_queued(None));
+                Ok(())
+            }
+            MessageStatus::Untrusted => {
+                trace!("Untrusted accumulated message: {:?}", msg);
+                self.handle_untrusted_message(core, None, msg)
             }
             MessageStatus::Unknown => {
-                self.handle_unknown_message(core, None, msg_with_bytes.full_bytes().clone())?
+                trace!("Unknown accumulated message: {:?}", msg);
+                self.handle_unknown_message(core, None, msg_with_bytes.full_bytes().clone())
             }
-            MessageStatus::Useless | MessageStatus::Untrusted => {
-                // TODO: handle `Untrusted` properly.
-                trace!("Unhandled accumulated message, discarding: {:?}", msg);
+            MessageStatus::Useless => {
+                trace!("Useless accumulated message: {:?}", msg);
+                Ok(())
             }
         }
-
-        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1885,6 +1921,19 @@ impl Approved {
         };
 
         AccumulatingMessage::new(content, sk_share, pk_set, proof)
+    }
+
+    // TODO: consider changing this so it sends only to a subset of the elders
+    // (say 1/3 of the ones closest to our name or so)
+    fn send_message_to_our_elders(&self, core: &mut Core, msg_bytes: Bytes) {
+        let targets: Vec<_> = self
+            .shared_state
+            .sections
+            .our_elders()
+            .map(P2pNode::peer_addr)
+            .copied()
+            .collect();
+        core.send_message_to_targets(&targets, targets.len(), msg_bytes)
     }
 
     ////////////////////////////////////////////////////////////////////////////
