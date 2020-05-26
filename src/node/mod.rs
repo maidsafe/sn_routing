@@ -759,7 +759,7 @@ impl Node {
             Stage::Bootstrapping(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Joining(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Approved(stage) => {
-                stage.handle_unknown_message(&mut self.core, sender, msg_bytes)?
+                stage.handle_unknown_message(&mut self.core, Some(sender), msg_bytes)?
             }
             Stage::Terminated => (),
         }

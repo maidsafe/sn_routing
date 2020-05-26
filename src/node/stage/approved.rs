@@ -419,7 +419,7 @@ impl Approved {
     pub fn handle_unknown_message(
         &self,
         core: &mut Core,
-        sender: SocketAddr,
+        sender: Option<SocketAddr>,
         msg_bytes: Bytes,
     ) -> Result<()> {
         let variant = Variant::BouncedUnknownMessage {
@@ -431,12 +431,13 @@ impl Approved {
 
         // If the message came from one of our elders then bounce it only to them to avoid message
         // explosion.
-        if self
-            .shared_state
-            .sections
-            .our_elders()
-            .any(|p2p_node| *p2p_node.peer_addr() == sender)
-        {
+        let our_elder_sender = sender.filter(|sender| {
+            self.shared_state
+                .sections
+                .our_elders()
+                .any(|p2p_node| p2p_node.peer_addr() == sender)
+        });
+        if let Some(sender) = our_elder_sender {
             core.send_message_to_targets(slice::from_ref(&sender), 1, msg)
         } else {
             // TODO: consider sending this only to a subset of the elders to save bandwidth.
@@ -848,8 +849,11 @@ impl Approved {
                 core.msg_filter.insert_incoming(&msg_with_bytes);
                 core.msg_queue.push_back(msg.into_queued(None));
             }
-            MessageStatus::Useless | MessageStatus::Untrusted | MessageStatus::Unknown => {
-                // TODO: handle `Untrusted` and `Unknown` properly.
+            MessageStatus::Unknown => {
+                self.handle_unknown_message(core, None, msg_with_bytes.full_bytes().clone())?
+            }
+            MessageStatus::Useless | MessageStatus::Untrusted => {
+                // TODO: handle `Untrusted` properly.
                 trace!("Unhandled accumulated message, discarding: {:?}", msg);
             }
         }
