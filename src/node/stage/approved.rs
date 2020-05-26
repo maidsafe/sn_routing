@@ -403,10 +403,14 @@ impl Approved {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        self.verify_message_quiet(msg).map_err(|error| {
-            messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
-            error
-        })
+        match msg.verify(self.shared_state.sections.keys()) {
+            Ok(VerifyStatus::Full) => Ok(true),
+            Ok(VerifyStatus::Unknown) => Ok(false),
+            Err(error) => {
+                messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
+                Err(error)
+            }
+        }
     }
 
     /// Handle message that is "unknown" because we are not in the correct state (e.g. we are adult
@@ -1908,21 +1912,6 @@ impl Approved {
 
         for event in events {
             self.vote_for_event(event)
-        }
-    }
-
-    // Verifies message but doesn't log anything on failure, only returns result.
-    fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.shared_state.sections.keys()) {
-            Ok(VerifyStatus::Full) => Ok(true),
-            Ok(VerifyStatus::Unknown) if msg.dst.is_section() => {
-                // Proof is too new which can only happen if we've been already demoted but are
-                // lagging behind (or the sender is faulty/malicious). We can't handle the
-                // message ourselves but the other elders likely can.
-                Ok(false)
-            }
-            Ok(VerifyStatus::Unknown) => Err(RoutingError::UntrustedMessage),
-            Err(error) => Err(error),
         }
     }
 
