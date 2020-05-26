@@ -78,29 +78,36 @@ impl SectionProofChain {
     }
 
     /// Returns a slice of this chain with the given index range.
+    ///
+    /// Note: unlike `std::slice`, if the range is invalid or out of bounds, it is silently adjusted
+    /// to the nearest valid range and so this function never panics.
     pub(crate) fn slice<B: RangeBounds<u64>>(&self, range: B) -> Self {
-        let first_index = match range.start_bound() {
-            Bound::Included(index) => *index,
-            Bound::Excluded(index) => *index + 1,
+        let start = match range.start_bound() {
+            Bound::Included(index) => *index as usize,
+            Bound::Excluded(index) => *index as usize + 1,
             Bound::Unbounded => 0,
         };
 
-        if first_index == 0 || self.tail.is_empty() {
-            return self.clone();
-        }
-
-        let head_index = std::cmp::min(first_index as usize, self.tail.len()) - 1;
-
-        let tail_end_index = match range.end_bound() {
-            Bound::Included(index) => *index as usize,
-            Bound::Excluded(index) => *index as usize - 1,
-            Bound::Unbounded => self.tail.len(),
+        let end = match range.end_bound() {
+            Bound::Included(index) => *index as usize + 1,
+            Bound::Excluded(index) => *index as usize,
+            Bound::Unbounded => self.tail.len() + 1,
         };
 
-        let head = self.tail[head_index].key;
-        let tail = self.tail[head_index + 1..tail_end_index].to_vec();
+        let start = start.min(self.tail.len());
+        let end = end.min(self.tail.len() + 1).max(start + 1);
 
-        Self { head, tail }
+        if start == 0 {
+            Self {
+                head: self.head,
+                tail: self.tail[0..end - 1].to_vec(),
+            }
+        } else {
+            Self {
+                head: self.tail[start - 1].key,
+                tail: self.tail[start..end - 1].to_vec(),
+            }
+        }
     }
 
     /// Number of blocks in the chain (including the first block)
@@ -257,6 +264,47 @@ mod tests {
             chain.check_trust(iter::once(&trusted_key)),
             TrustStatus::Unknown
         )
+    }
+
+    #[test]
+    fn slice() {
+        let mut rng = rng::new();
+        let chain = gen_chain(&mut rng, 3);
+        let keys: Vec<_> = chain.keys().collect();
+
+        let assert_keys_eq = |chain: SectionProofChain, expected: &[_]| {
+            let actual: Vec<_> = chain.keys().collect();
+            assert_eq!(&actual[..], expected)
+        };
+
+        assert_keys_eq(chain.slice(..), &keys[0..3]);
+        assert_keys_eq(chain.slice(0..), &keys[0..3]);
+        assert_keys_eq(chain.slice(1..), &keys[1..3]);
+        assert_keys_eq(chain.slice(2..), &keys[2..3]);
+        assert_keys_eq(chain.slice(3..), &keys[2..3]);
+        assert_keys_eq(chain.slice(..0), &keys[0..1]);
+        assert_keys_eq(chain.slice(..1), &keys[0..1]);
+        assert_keys_eq(chain.slice(..2), &keys[0..2]);
+        assert_keys_eq(chain.slice(..3), &keys[0..3]);
+        assert_keys_eq(chain.slice(..4), &keys[0..3]);
+        assert_keys_eq(chain.slice(..=0), &keys[0..1]);
+        assert_keys_eq(chain.slice(..=1), &keys[0..2]);
+        assert_keys_eq(chain.slice(..=2), &keys[0..3]);
+        assert_keys_eq(chain.slice(..=3), &keys[0..3]);
+        assert_keys_eq(chain.slice(0..0), &keys[0..1]);
+        assert_keys_eq(chain.slice(0..1), &keys[0..1]);
+        assert_keys_eq(chain.slice(0..2), &keys[0..2]);
+        assert_keys_eq(chain.slice(0..3), &keys[0..3]);
+        assert_keys_eq(chain.slice(0..4), &keys[0..3]);
+        assert_keys_eq(chain.slice(1..1), &keys[1..2]);
+        assert_keys_eq(chain.slice(1..2), &keys[1..2]);
+        assert_keys_eq(chain.slice(1..3), &keys[1..3]);
+        assert_keys_eq(chain.slice(2..2), &keys[2..3]);
+        assert_keys_eq(chain.slice(2..3), &keys[2..3]);
+        assert_keys_eq(chain.slice(0..=0), &keys[0..1]);
+        assert_keys_eq(chain.slice(0..=1), &keys[0..2]);
+        assert_keys_eq(chain.slice(0..=2), &keys[0..3]);
+        assert_keys_eq(chain.slice(0..=3), &keys[0..3]);
     }
 
     fn gen_keys(rng: &mut MainRng) -> (bls::PublicKey, bls::SecretKey) {
