@@ -37,7 +37,7 @@ use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
 use std::{
-    cmp::{self, Ordering},
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     iter,
     net::SocketAddr,
@@ -1192,7 +1192,7 @@ impl Approved {
         core: &mut Core,
         details: RelocateDetails,
     ) -> Result<(), RoutingError> {
-        let node_knowledge = match self
+        match self
             .shared_state
             .remove_member(
                 &details.pub_id,
@@ -1200,9 +1200,8 @@ impl Approved {
             )
             .map(|info| info.state)
         {
-            Some(MemberState::Relocating { node_knowledge }) => {
+            Some(MemberState::Relocating) => {
                 info!("handle Relocate: {:?}", details);
-                node_knowledge
             }
             Some(MemberState::Left) | None => {
                 info!("ignore Relocate: {:?} - not a member", details);
@@ -1229,17 +1228,11 @@ impl Approved {
             return Ok(());
         }
 
-        // We need proof that is valid for both the relocating node and the target section. To
-        // construct such proof, we create one proof for the relocating node and one for the target
-        // section and then take the longer of the two. This works because the longer proof is a
-        // superset of the shorter one. We need to do this because in rare cases, the relocating
-        // node might be lagging behind the target section in the knowledge of the source section.
-        let knowledge_index = cmp::min(
-            node_knowledge,
-            self.shared_state
-                .sections
-                .knowledge_by_location(&DstLocation::Section(details.destination)),
-        );
+        // We need to construct a proof that would be trusted by the destination section.
+        let knowledge_index = self
+            .shared_state
+            .sections
+            .knowledge_by_location(&DstLocation::Section(details.destination));
 
         let src = SrcLocation::Section(*self.shared_state.our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());

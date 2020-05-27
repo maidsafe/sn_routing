@@ -101,10 +101,7 @@ impl MemberInfo {
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberState {
     Joined,
-    Relocating {
-        // The latest index of our section key that this node knows about.
-        node_knowledge: u64,
-    },
+    Relocating,
     // TODO: we should track how long the node has been away. If longer than some limit, remove it
     // from the list. Otherwise we allow it to return.
     Left,
