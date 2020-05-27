@@ -108,7 +108,10 @@ impl Bootstrapping {
         }
 
         match response {
-            BootstrapResponse::Join(elders_info) => {
+            BootstrapResponse::Join {
+                elders_info,
+                section_key,
+            } => {
                 info!(
                     "Joining a section {:?} (given by {:?})",
                     elders_info, sender
@@ -117,6 +120,7 @@ impl Bootstrapping {
                 let relocate_payload = self.join_section(core, &elders_info)?;
                 Ok(Some(JoinParams {
                     elders_info,
+                    section_key,
                     relocate_payload,
                     msg_backlog: mem::take(&mut self.msg_backlog),
                 }))
@@ -197,6 +201,7 @@ impl Bootstrapping {
 
 pub struct JoinParams {
     pub elders_info: EldersInfo,
+    pub section_key: bls::PublicKey,
     pub relocate_payload: Option<RelocatePayload>,
     pub msg_backlog: Vec<QueuedMessage>,
 }

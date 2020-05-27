@@ -539,7 +539,7 @@ fn handle_bootstrap() {
 
     let response = new_node.expect_bootstrap_response();
     match response {
-        BootstrapResponse::Join(elders_info) => assert_eq!(elders_info, env.elders_info),
+        BootstrapResponse::Join { elders_info, .. } => assert_eq!(elders_info, env.elders_info),
         BootstrapResponse::Rebootstrap(_) => panic!("Unexpected Rebootstrap response"),
     }
 }

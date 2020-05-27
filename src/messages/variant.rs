@@ -116,8 +116,11 @@ impl Debug for Variant {
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
-    /// the section elders and the section prefix are provided.
-    Join(EldersInfo),
+    /// the section elders and the section key are provided.
+    Join {
+        elders_info: EldersInfo,
+        section_key: bls::PublicKey,
+    },
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<SocketAddr>),
@@ -126,8 +129,8 @@ pub enum BootstrapResponse {
 /// Request to join a section
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct JoinRequest {
-    /// The section version to join
-    pub elders_version: u64,
+    /// The public key of the section to join
+    pub section_key: bls::PublicKey,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     pub relocate_payload: Option<RelocatePayload>,
 }
@@ -136,7 +139,7 @@ impl Debug for JoinRequest {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         formatter
             .debug_struct("JoinRequest")
-            .field("elders_version", &self.elders_version)
+            .field("section_key", &self.section_key)
             .field(
                 "relocate_payload",
                 &self
