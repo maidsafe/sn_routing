@@ -462,7 +462,6 @@ impl SharedState {
             return;
         }
 
-        let relocating_state = self.create_relocating_state();
         let first_key = self.our_history.first_key();
 
         for member_info in self.our_members.joined_mut() {
@@ -498,7 +497,7 @@ impl SharedState {
                 "Change state to Relocating {}",
                 member_info.p2p_node.public_id()
             );
-            member_info.state = relocating_state;
+            member_info.state = MemberState::Relocating;
 
             let destination_key = *self.sections.key_by_name(&destination).unwrap_or(first_key);
             let details = RelocateDetails {
@@ -513,13 +512,6 @@ impl SharedState {
         }
 
         trace!("increment_age_counters: {:?}", self.our_members);
-    }
-
-    // Return a relocating state of a node relocating now.
-    // Ensure that node knows enough to trust node_knowledge proving index.
-    fn create_relocating_state(&self) -> MemberState {
-        let node_knowledge = self.sections.knowledge_by_section(self.our_prefix());
-        MemberState::Relocating { node_knowledge }
     }
 }
 
