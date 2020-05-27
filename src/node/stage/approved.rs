@@ -598,10 +598,6 @@ impl Approved {
             signed_msg.relocate_details().destination
         );
 
-        if !self.check_signed_relocation_details(&signed_msg) {
-            return None;
-        }
-
         let conn_infos: Vec<_> = self
             .shared_state
             .sections
@@ -754,7 +750,14 @@ impl Approved {
                 return;
             }
 
-            if !self.check_signed_relocation_details(&payload.details) {
+            if !self
+                .verify_message(payload.details.signed_msg())
+                .unwrap_or(false)
+            {
+                debug!(
+                    "Ignoring relocation JoinRequest from {} - untrusted.",
+                    pub_id
+                );
                 return;
             }
 
@@ -1959,21 +1962,6 @@ impl Approved {
         for event in events {
             self.vote_for_event(event)
         }
-    }
-
-    fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
-        msg.signed_msg()
-            .verify(self.shared_state.sections.keys())
-            .and_then(VerifyStatus::require_full)
-            .map_err(|error| {
-                messages::log_verify_failure(
-                    msg.signed_msg(),
-                    &error,
-                    self.shared_state.sections.keys(),
-                );
-                error
-            })
-            .is_ok()
     }
 
     fn print_network_stats(&self) {
