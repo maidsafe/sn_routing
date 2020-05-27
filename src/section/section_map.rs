@@ -134,66 +134,31 @@ impl SectionMap {
     }
 
     pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
-        let prefix = elders_info.prefix;
         let parent_prefix = elders_info.prefix.popped();
         let sibling_prefix = elders_info.prefix.sibling();
-        let new_elders_info_version = elders_info.version;
 
-        if let Some(old_elders_info) = self.neighbours.insert(prefix, elders_info) {
-            if old_elders_info.version > new_elders_info_version {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Ejected newer neighbour info {:?}",
-                    old_elders_info
-                );
-            }
-        }
+        let _ = self.neighbours.insert(elders_info.prefix, elders_info);
 
         // If we just split an existing neighbour and we also need its sibling,
-        // add the sibling prefix with the parent prefix sigs.
-        if let Some(sinfo) = self
-            .neighbours
-            .get(&parent_prefix)
-            .filter(|pinfo| {
-                pinfo.version < new_elders_info_version
-                    && self.our().prefix.is_neighbour(&sibling_prefix)
-                    && !self.neighbours.contains_key(&sibling_prefix)
-            })
-            .cloned()
-        {
-            let _ = self.neighbours.insert(sibling_prefix, sinfo);
+        // add the sibling prefix with the parent info.
+        if let Some(parent_info) = self.neighbours.remove(&parent_prefix) {
+            if self.our().prefix.is_neighbour(&sibling_prefix)
+                && !self.neighbours.contains_key(&sibling_prefix)
+            {
+                let _ = self.neighbours.insert(sibling_prefix, parent_info);
+            }
         }
 
         self.prune_neighbours();
     }
 
-    // Remove outdated neighbour infos.
+    // Remove sections that are no longer our neighbours.
     fn prune_neighbours(&mut self) {
-        // Remove invalid neighbour prefix, older version of compatible prefix.
         let to_remove: Vec<_> = self
             .neighbours
-            .iter()
-            .filter_map(|(prefix, elders_info)| {
-                if !self.our().prefix.is_neighbour(prefix) {
-                    // we just split making old neighbour no longer needed
-                    return Some(*prefix);
-                }
-
-                // Remove older compatible neighbour prefixes.
-                // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
-                let is_newer =
-                    |(other_prefix, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
-                        other_prefix.is_compatible(prefix)
-                            && other_elders_info.version > elders_info.version
-                            && !prefix.is_extension_of(other_prefix)
-                    };
-
-                if self.neighbours.iter().any(is_newer) {
-                    return Some(*prefix);
-                }
-
-                None
-            })
+            .keys()
+            .filter(|prefix| !self.our().prefix.is_neighbour(prefix))
+            .copied()
             .collect();
 
         for prefix in to_remove {
