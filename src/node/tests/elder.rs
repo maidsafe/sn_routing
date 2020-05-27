@@ -14,15 +14,15 @@ use crate::{
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
-    messages::{BootstrapResponse, Message, Variant},
+    messages::{AccumulatingMessage, BootstrapResponse, Message, PlainMessage, Variant},
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::EldersInfo,
-    section::MIN_AGE,
+    section::{EldersInfo, IndexedSecretKeyShare, MIN_AGE},
     utils, ELDER_SIZE,
 };
 use itertools::Itertools;
 use mock_quic_p2p::Network;
+use rand::Rng;
 use std::{collections::BTreeSet, iter, net::SocketAddr};
 
 // Minimal number of votes to reach accumulation.
@@ -93,6 +93,10 @@ impl Env {
         env.n_vote_for_unconsensused_events(env.other_ids.len());
         env.create_gossip().unwrap();
         env
+    }
+
+    fn poll(&mut self) {
+        self.network.poll(&mut self.rng)
     }
 
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
@@ -265,8 +269,17 @@ impl Env {
         };
 
         // This event needs total consensus.
+        // FIXME: it doesn't anymore.
         self.subject.vote_for_event(event.clone()).unwrap();
         let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
+    }
+
+    // Accumulate `ParsecPrune` which should result in the parsec version increase.
+    fn accumulate_parsec_prune(&mut self) {
+        let _ = self.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            iter::once(AccumulatingEvent::ParsecPrune),
+        );
     }
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
@@ -367,6 +380,59 @@ impl Env {
         self.other_ids = new_info.new_other_ids;
         self.accumulate_self_their_knowledge();
     }
+
+    fn accumulate_message(&self, dst: DstLocation, variant: Variant) -> Message {
+        let state = self
+            .subject
+            .shared_state()
+            .expect("subject is not approved");
+        let proof = state.prove(&dst, None);
+        let dst_key = *state
+            .sections
+            .key_by_location(&dst)
+            .expect("dst location is not known");
+
+        let content = PlainMessage {
+            src: *state.our_prefix(),
+            dst,
+            dst_key,
+            variant,
+        };
+
+        let public_key_set = self.subject.public_key_set().unwrap();
+        let accumulating_msgs = self
+            .subject
+            .secret_key_share()
+            .ok()
+            .into_iter()
+            .chain(self.other_ids.iter().map(|(_, share)| share))
+            .enumerate()
+            .map(|(index, secret_key_share)| {
+                AccumulatingMessage::new(
+                    content.clone(),
+                    &IndexedSecretKeyShare {
+                        index,
+                        key: secret_key_share.clone(),
+                    },
+                    public_key_set.clone(),
+                    proof.clone(),
+                )
+                .unwrap()
+            });
+        test_utils::accumulate_messages(accumulating_msgs)
+    }
+
+    // Create `MockTransport` for the `index`-th other elder.
+    fn create_transport_for_other_elder(&self, index: usize) -> MockTransport {
+        let name = self.other_ids[index].0.public_id().name();
+        let addr = self
+            .elders_info
+            .elders
+            .get(name)
+            .map(|p2p_node| p2p_node.peer_addr());
+
+        MockTransport::new(addr)
+    }
 }
 
 struct Peer {
@@ -465,13 +531,13 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 #[test]
 fn handle_bootstrap() {
     let mut env = Env::new(ELDER_SIZE);
-    let mut new_node = JoiningPeer::new(&mut env.rng);
+    let new_node = JoiningPeer::new(&mut env.rng);
 
     let addr = *new_node.addr();
     let msg = new_node.bootstrap_request().unwrap();
 
     test_utils::handle_message(&mut env.subject, addr, msg).unwrap();
-    env.network.poll(&mut env.rng);
+    env.poll();
 
     let response = new_node.expect_bootstrap_response();
     match response {
@@ -508,6 +574,47 @@ fn send_genesis_update() {
     assert!(proof.has_key(&new_section_key));
 }
 
+#[test]
+fn handle_bounced_unknown_message() {
+    let mut env = Env::new(ELDER_SIZE);
+
+    // Ensure parsec version is > 0
+    env.accumulate_parsec_prune();
+
+    let dst = DstLocation::Section(env.rng.gen());
+    let msg = env.accumulate_message(dst, Variant::UserMessage(b"unknown message".to_vec()));
+
+    // Pretend that one of the other nodes is lagging behind and have it bounce a message to us.
+    let other_node = env.create_transport_for_other_elder(0);
+    let bounce_msg = Message::single_src(
+        &env.other_ids[0].0,
+        DstLocation::Direct,
+        None,
+        Variant::BouncedUnknownMessage {
+            message: msg.to_bytes().unwrap(),
+            parsec_version: 0,
+        },
+    )
+    .unwrap();
+
+    test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
+    env.poll();
+
+    let mut received_parsec_request = false;
+    let mut received_resent_message = false;
+
+    for (_, msg) in other_node.received_messages() {
+        match msg.variant {
+            Variant::ParsecRequest(0, _) => received_parsec_request = true,
+            Variant::UserMessage(_) => received_resent_message = true,
+            _ => (),
+        }
+    }
+
+    assert!(received_parsec_request);
+    assert!(received_resent_message);
+}
+
 struct JoiningPeer {
     transport: MockTransport,
     full_id: FullId,
@@ -521,7 +628,7 @@ impl JoiningPeer {
         }
     }
 
-    fn addr(&mut self) -> &SocketAddr {
+    fn addr(&self) -> &SocketAddr {
         self.transport.addr()
     }
 
