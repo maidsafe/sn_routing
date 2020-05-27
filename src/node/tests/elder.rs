@@ -14,7 +14,9 @@ use crate::{
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
-    messages::{AccumulatingMessage, BootstrapResponse, Message, PlainMessage, Variant},
+    messages::{
+        AccumulatingMessage, BootstrapResponse, Message, PlainMessage, SrcAuthority, Variant,
+    },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{EldersInfo, IndexedSecretKeyShare, MIN_AGE},
@@ -527,7 +529,7 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 #[test]
 fn handle_bootstrap() {
     let mut env = Env::new(ELDER_SIZE);
-    let new_node = JoiningPeer::new(&mut env.rng);
+    let new_node = OtherNode::new(&mut env.rng);
 
     let addr = *new_node.addr();
     let msg = new_node.bootstrap_request().unwrap();
@@ -580,7 +582,8 @@ fn handle_bounced_unknown_message() {
     let dst = DstLocation::Section(env.rng.gen());
     let msg = env.accumulate_message(dst, Variant::UserMessage(b"unknown message".to_vec()));
 
-    // Pretend that one of the other nodes is lagging behind and have it bounce a message to us.
+    // Pretend that one of the other nodes is lagging behind and has not transitioned to elder yet
+    // and so bounces a message to us as unknown.
     let other_node = env.create_transport_for_other_elder(0);
     let bounce_msg = Message::single_src(
         &env.other_ids[0].0,
@@ -611,12 +614,54 @@ fn handle_bounced_unknown_message() {
     assert!(received_resent_message);
 }
 
-struct JoiningPeer {
+#[test]
+fn handle_bounced_untrusted_message() {
+    let mut env = Env::new(ELDER_SIZE);
+    let old_section_key = *env.subject.section_key().expect("subject is not approved");
+
+    // Simulate the section going through the elder change to generate new section key.
+    let new = env.gen_peer().to_p2p_node();
+    let old = *env.other_ids[0].0.public_id();
+    env.accumulate_online(new.clone());
+    env.perform_offline_and_promote(&old, new);
+
+    let new_section_key = *env.subject.section_key().expect("subject is not approved");
+
+    let dst = DstLocation::Node(*env.other_ids[0].0.public_id().name());
+    let msg = env.accumulate_message(dst, Variant::UserMessage(b"untrusted message".to_vec()));
+
+    // Pretend that one of the other nodes is lagging behind and doesn't know the new key yet and
+    // so bounces a message to us as untrusted.
+    let other_node = env.create_transport_for_other_elder(0);
+    let bounce_msg = Message::single_src(
+        &env.other_ids[0].0,
+        msg.src.location().to_dst(),
+        Some(old_section_key),
+        Variant::BouncedUntrustedMessage(Box::new(msg)),
+    )
+    .unwrap();
+
+    test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
+    env.poll();
+
+    let proof = other_node
+        .received_messages()
+        .find_map(|(_, msg)| match (msg.variant, msg.src) {
+            (Variant::UserMessage(_), SrcAuthority::Section { proof, .. }) => Some(proof),
+            _ => None,
+        })
+        .expect("message was not resent");
+
+    assert!(proof.has_key(&old_section_key));
+    assert!(proof.has_key(&new_section_key));
+}
+
+struct OtherNode {
     transport: MockTransport,
     full_id: FullId,
 }
 
-impl JoiningPeer {
+impl OtherNode {
     fn new(rng: &mut MainRng) -> Self {
         Self {
             transport: MockTransport::new(None),
@@ -637,10 +682,13 @@ impl JoiningPeer {
         Message::single_src(&self.full_id, DstLocation::Direct, None, variant)
     }
 
+    fn received_messages(&self) -> impl Iterator<Item = Message> + '_ {
+        self.transport.received_messages().map(|(_, msg)| msg)
+    }
+
     fn expect_bootstrap_response(&self) -> BootstrapResponse {
-        self.transport
-            .received_messages()
-            .find_map(|(_, msg)| match msg.variant {
+        self.received_messages()
+            .find_map(|msg| match msg.variant {
                 Variant::BootstrapResponse(response) => Some(response),
                 _ => None,
             })
