@@ -264,14 +264,10 @@ impl Env {
                 .subject
                 .our_history()
                 .expect("subject is not approved")
-                .len() as u64
-                - 1,
+                .last_key_index(),
         };
 
-        // This event needs total consensus.
-        // FIXME: it doesn't anymore.
-        self.subject.vote_for_event(event.clone()).unwrap();
-        let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
+        let _ = self.n_vote_for_gossipped(ACCUMULATE_VOTE_COUNT, iter::once(event));
     }
 
     // Accumulate `ParsecPrune` which should result in the parsec version increase.
