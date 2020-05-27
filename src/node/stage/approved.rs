@@ -392,7 +392,7 @@ impl Approved {
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
-        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version
+        self.is_our_elder(our_id) || req.section_key != *self.shared_state.our_history.last_key()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
@@ -659,12 +659,10 @@ impl Approved {
         );
 
         let response = if self.shared_state.our_prefix().matches(&destination) {
-            let our_info = self.shared_state.our_info().clone();
-            debug!(
-                "Sending BootstrapResponse::Join({:?}) to {}",
-                our_info, p2p_node,
-            );
-            BootstrapResponse::Join(our_info)
+            BootstrapResponse::Join {
+                elders_info: self.shared_state.our_info().clone(),
+                section_key: *self.shared_state.our_history.last_key(),
+            }
         } else {
             let conn_infos: Vec<_> = self
                 .shared_state
@@ -675,9 +673,10 @@ impl Approved {
                 .values()
                 .map(|p2p_node| *p2p_node.peer_addr())
                 .collect();
-            debug!("Sending BootstrapResponse::Rebootstrap to {}", p2p_node);
             BootstrapResponse::Rebootstrap(conn_infos)
         };
+
+        debug!("Sending BootstrapResponse {:?} to {}", response, p2p_node);
         core.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
     }
 
@@ -687,19 +686,14 @@ impl Approved {
         p2p_node: P2pNode,
         join_request: JoinRequest,
     ) {
-        debug!(
-            "Received JoinRequest from {} for v{}",
-            p2p_node, join_request.elders_version
-        );
+        debug!("Received {:?} from {}", join_request, p2p_node);
 
-        if join_request.elders_version < self.shared_state.our_info().version {
-            trace!(
-                "Resending BootstrapResponse::Join({:?}) to {}",
-                self.shared_state.our_info(),
-                p2p_node,
-            );
-
-            let response = BootstrapResponse::Join(self.shared_state.our_info().clone());
+        if join_request.section_key != *self.shared_state.our_history.last_key() {
+            let response = BootstrapResponse::Join {
+                elders_info: self.shared_state.our_info().clone(),
+                section_key: *self.shared_state.our_history.last_key(),
+            };
+            trace!("Resending BootstrapResponse {:?} to {}", response, p2p_node,);
             core.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
             return;
         }

@@ -28,6 +28,8 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct Joining {
     // EldersInfo of the section we are joining.
     elders_info: EldersInfo,
+    // PublicKey of the section we are joining.
+    section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
     // Token for the join request timeout.
@@ -40,6 +42,7 @@ impl Joining {
     pub fn new(
         core: &mut Core,
         elders_info: EldersInfo,
+        section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Self {
@@ -51,6 +54,7 @@ impl Joining {
 
         let stage = Self {
             elders_info,
+            section_key,
             join_type,
             timer_token,
             msg_backlog,
@@ -84,7 +88,7 @@ impl Joining {
                 Ok(MessageStatus::Useful)
             }
 
-            Variant::BootstrapResponse(BootstrapResponse::Join(_)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Join { .. }) => {
                 verify_message(msg, None)?;
                 Ok(MessageStatus::Useful)
             }
@@ -116,8 +120,9 @@ impl Joining {
         core: &mut Core,
         sender: P2pNode,
         new_elders_info: EldersInfo,
+        new_section_key: bls::PublicKey,
     ) -> Result<()> {
-        if new_elders_info.version <= self.elders_info.version {
+        if new_section_key == self.section_key {
             return Ok(());
         }
 
@@ -127,6 +132,7 @@ impl Joining {
                 new_elders_info, sender
             );
             self.elders_info = new_elders_info;
+            self.section_key = new_section_key;
             self.send_join_requests(core);
         } else {
             log_or_panic!(
@@ -166,13 +172,12 @@ impl Joining {
 
         for dst in self.elders_info.elders.values() {
             let join_request = JoinRequest {
-                elders_version: self.elders_info.version,
+                section_key: self.section_key,
                 relocate_payload: relocate_payload.cloned(),
             };
 
+            info!("Sending {:?} to {}", join_request, dst);
             let variant = Variant::JoinRequest(Box::new(join_request));
-
-            info!("Sending JoinRequest to {}", dst);
             core.send_direct_message(dst.peer_addr(), variant);
         }
     }

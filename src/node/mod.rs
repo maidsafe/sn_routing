@@ -648,12 +648,15 @@ impl Node {
                 _ => unreachable!(),
             },
             Stage::Joining(stage) => match msg.variant {
-                Variant::BootstrapResponse(BootstrapResponse::Join(elders_info)) => stage
-                    .handle_bootstrap_response(
-                        &mut self.core,
-                        msg.src.to_sender_node(sender)?,
-                        elders_info,
-                    )?,
+                Variant::BootstrapResponse(BootstrapResponse::Join {
+                    elders_info,
+                    section_key,
+                }) => stage.handle_bootstrap_response(
+                    &mut self.core,
+                    msg.src.to_sender_node(sender)?,
+                    elders_info,
+                    section_key,
+                )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
@@ -780,6 +783,7 @@ impl Node {
     fn join(&mut self, params: JoinParams) {
         let JoinParams {
             elders_info,
+            section_key,
             relocate_payload,
             msg_backlog,
         } = params;
@@ -787,6 +791,7 @@ impl Node {
         self.stage = Stage::Joining(Joining::new(
             &mut self.core,
             elders_info,
+            section_key,
             relocate_payload,
             msg_backlog,
         ));
