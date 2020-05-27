@@ -840,23 +840,28 @@ impl Node {
             Stage::Bootstrapping(_) => write!(buffer, "{}(?) ", self.name()),
             Stage::Joining(stage) => write!(
                 buffer,
-                "{}({:b}v{}?) ",
+                "{}({:b}?) ",
                 self.name(),
                 stage.target_section_elders_info().prefix,
-                stage.target_section_elders_info().version,
             ),
-            Stage::Approved(stage) => write!(
-                buffer,
-                "{}({:b}v{}{}) ",
-                self.core.name(),
-                stage.shared_state.our_prefix(),
-                stage.shared_state.our_info().version,
+            Stage::Approved(stage) => {
                 if stage.is_our_elder(self.core.id()) {
-                    "!"
+                    write!(
+                        buffer,
+                        "{}({:b}v{}!) ",
+                        self.core.name(),
+                        stage.shared_state.our_prefix(),
+                        stage.shared_state.our_history.last_key_index()
+                    )
                 } else {
-                    ""
-                },
-            ),
+                    write!(
+                        buffer,
+                        "{}({:b}) ",
+                        self.core.name(),
+                        stage.shared_state.our_prefix()
+                    )
+                }
+            }
             Stage::Terminated => write!(buffer, "[terminated]"),
         })
     }
