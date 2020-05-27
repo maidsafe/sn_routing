@@ -19,10 +19,13 @@ use crate::{
     id::{FullId, P2pNode},
     messages::{Message, MessageWithBytes},
     node::Node,
+    quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::MainRng,
     section::EldersInfo,
     xor_space::{Prefix, XorName},
+    TransportConfig, TransportEvent,
 };
+use crossbeam_channel::Receiver;
 use mock_quic_p2p::Network;
 use std::{collections::BTreeMap, net::SocketAddr};
 
@@ -68,4 +71,49 @@ pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Resu
     node.try_handle_message(sender, msg)?;
     node.handle_messages();
     Ok(())
+}
+
+pub struct MockTransport {
+    _inner: QuicP2p,
+    rx: Receiver<TransportEvent>,
+    addr: SocketAddr,
+}
+
+impl MockTransport {
+    pub fn new(addr: Option<&SocketAddr>) -> Self {
+        let (tx, rx) = {
+            let (client_tx, _) = crossbeam_channel::unbounded();
+            let (node_tx, node_rx) = crossbeam_channel::unbounded();
+            (EventSenders { node_tx, client_tx }, node_rx)
+        };
+
+        let config = addr.map(|addr| TransportConfig {
+            ip: Some(addr.ip()),
+            port: Some(addr.port()),
+            ..Default::default()
+        });
+
+        let mut inner = QuicP2p::with_config(tx, config, Default::default(), false).unwrap();
+        let addr = inner.our_connection_info().unwrap();
+
+        Self {
+            _inner: inner,
+            rx,
+            addr,
+        }
+    }
+
+    pub fn addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+
+    pub fn received_messages(&self) -> impl Iterator<Item = (SocketAddr, Message)> + '_ {
+        self.rx.try_iter().filter_map(|event| match event {
+            TransportEvent::NewMessage {
+                peer: Peer::Node(addr),
+                msg,
+            } => Some((addr, Message::from_bytes(&msg).unwrap())),
+            _ => None,
+        })
+    }
 }
