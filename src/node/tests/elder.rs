@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::utils as test_utils;
+use super::utils::{self as test_utils, MockTransport};
 use crate::{
     consensus::{
         generate_bls_threshold_secret_key, AccumulatingEvent, OnlinePayload, ParsecRequest,
@@ -16,13 +16,11 @@ use crate::{
     location::DstLocation,
     messages::{BootstrapResponse, Message, Variant},
     node::{Node, NodeConfig},
-    quic_p2p,
     rng::{self, MainRng},
     section::EldersInfo,
     section::MIN_AGE,
     utils, ELDER_SIZE,
 };
-use crossbeam_channel::Receiver;
 use itertools::Itertools;
 use mock_quic_p2p::Network;
 use std::{collections::BTreeSet, iter, net::SocketAddr};
@@ -469,7 +467,7 @@ fn handle_bootstrap() {
     let mut env = Env::new(ELDER_SIZE);
     let mut new_node = JoiningPeer::new(&mut env.rng);
 
-    let addr = new_node.our_connection_info();
+    let addr = *new_node.addr();
     let msg = new_node.bootstrap_request().unwrap();
 
     test_utils::handle_message(&mut env.subject, addr, msg).unwrap();
@@ -511,29 +509,20 @@ fn send_genesis_update() {
 }
 
 struct JoiningPeer {
-    network_service: quic_p2p::QuicP2p,
-    network_event_rx: Receiver<quic_p2p::Event>,
+    transport: MockTransport,
     full_id: FullId,
 }
 
 impl JoiningPeer {
     fn new(rng: &mut MainRng) -> Self {
-        let (network_event_tx, network_event_rx) = {
-            let (node_tx, node_rx) = crossbeam_channel::unbounded();
-            let (client_tx, _) = crossbeam_channel::unbounded();
-            (quic_p2p::EventSenders { node_tx, client_tx }, node_rx)
-        };
-        let network_service = quic_p2p::QuicP2p::new(network_event_tx).unwrap();
-
         Self {
-            network_service,
-            network_event_rx,
+            transport: MockTransport::new(None),
             full_id: FullId::gen(rng),
         }
     }
 
-    fn our_connection_info(&mut self) -> SocketAddr {
-        self.network_service.our_connection_info().unwrap()
+    fn addr(&mut self) -> &SocketAddr {
+        self.transport.addr()
     }
 
     fn public_id(&self) -> &PublicId {
@@ -546,20 +535,12 @@ impl JoiningPeer {
     }
 
     fn expect_bootstrap_response(&self) -> BootstrapResponse {
-        self.recv_messages()
-            .find_map(|msg| match msg.variant {
+        self.transport
+            .received_messages()
+            .find_map(|(_, msg)| match msg.variant {
                 Variant::BootstrapResponse(response) => Some(response),
                 _ => None,
             })
             .expect("BootstrapResponse not received")
-    }
-
-    fn recv_messages<'a>(&'a self) -> impl Iterator<Item = Message> + 'a {
-        self.network_event_rx
-            .try_iter()
-            .filter_map(|event| match event {
-                quic_p2p::Event::NewMessage { msg, .. } => Some(Message::from_bytes(&msg).unwrap()),
-                _ => None,
-            })
     }
 }

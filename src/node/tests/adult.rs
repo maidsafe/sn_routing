@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::utils as test_utils;
+use super::utils::{self as test_utils, MockTransport};
 use crate::{
     consensus::{generate_bls_threshold_secret_key, GenesisPrefixInfo},
     error::Result,
@@ -15,13 +15,10 @@ use crate::{
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     network_params::NetworkParams,
     node::{Node, NodeConfig},
-    quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::{self, MainRng},
     section::{EldersInfo, IndexedSecretKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
-    TransportConfig, TransportEvent,
 };
-use crossbeam_channel::Receiver;
 use itertools::Itertools;
 use mock_quic_p2p::Network;
 use rand::Rng;
@@ -108,7 +105,7 @@ impl Env {
                 genesis_prefix_info.clone(),
             )?;
 
-            test_utils::handle_message(&mut self.subject, elder.addr(), msg)?;
+            test_utils::handle_message(&mut self.subject, *elder.addr(), msg)?;
         }
 
         Ok(())
@@ -146,25 +143,16 @@ struct Elder {
     full_id: FullId,
     state: SharedState,
     section_keys_provider: SectionKeysProvider,
-    transport: QuicP2p,
-    transport_rx: Receiver<TransportEvent>,
+    transport: MockTransport,
 }
 
 impl Elder {
-    fn addr(&mut self) -> SocketAddr {
-        self.transport.our_connection_info().unwrap()
+    fn addr(&self) -> &SocketAddr {
+        self.transport.addr()
     }
 
     fn received_messages(&self) -> impl Iterator<Item = (SocketAddr, Message)> + '_ {
-        self.transport_rx
-            .try_iter()
-            .filter_map(|event| match event {
-                TransportEvent::NewMessage {
-                    peer: Peer::Node(addr),
-                    msg,
-                } => Some((addr, Message::from_bytes(&msg).unwrap())),
-                _ => None,
-            })
+        self.transport.received_messages()
     }
 }
 
@@ -195,36 +183,17 @@ fn create_elders(
                 .elders_info
                 .elders
                 .get(full_id.public_id().name())
-                .unwrap()
-                .peer_addr();
-            let (transport, transport_rx) = create_transport(addr);
+                .map(|p2p_node| p2p_node.peer_addr());
+            let transport = MockTransport::new(addr);
 
             Elder {
                 full_id,
                 state,
                 section_keys_provider,
                 transport,
-                transport_rx,
             }
         })
         .collect()
-}
-
-fn create_transport(addr: &SocketAddr) -> (QuicP2p, Receiver<TransportEvent>) {
-    let (transport_tx, transport_rx) = {
-        let (client_tx, _) = crossbeam_channel::unbounded();
-        let (node_tx, node_rx) = crossbeam_channel::unbounded();
-        (EventSenders { node_tx, client_tx }, node_rx)
-    };
-    let config = TransportConfig {
-        ip: Some(addr.ip()),
-        port: Some(addr.port()),
-        ..Default::default()
-    };
-    let transport =
-        QuicP2p::with_config(transport_tx, Some(config), Default::default(), false).unwrap();
-
-    (transport, transport_rx)
 }
 
 fn create_genesis_update_message_signature(
@@ -318,7 +287,7 @@ fn handle_unknown_message() {
 
     let dst = DstLocation::Section(env.rng.gen());
     let msg = env.create_user_message(dst, b"hello section".to_vec());
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, *env.elders[0].addr(), msg).unwrap();
 
     env.poll();
 
@@ -343,7 +312,7 @@ fn handle_untrusted_accumulated_message() {
     // This message is signed with the new key so won't be trusted by the adult yet.
     let dst = DstLocation::Node(*env.subject.name());
     let msg = env.create_user_message(dst, b"hello node".to_vec());
-    test_utils::handle_message(&mut env.subject, env.elders[0].addr(), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, *env.elders[0].addr(), msg).unwrap();
 
     env.poll();
 
