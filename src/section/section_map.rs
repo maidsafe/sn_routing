@@ -98,22 +98,6 @@ impl SectionMap {
         self.neighbours.keys().any(|prefix| prefix.matches(name))
     }
 
-    /// Returns `true` if the `EldersInfo` isn't known to us yet.
-    pub fn is_new(&self, elders_info: &EldersInfo) -> bool {
-        self.all()
-            .filter(|(_, known_info)| known_info.prefix.is_compatible(&elders_info.prefix))
-            .all(|(_, known_info)| known_info.version < elders_info.version)
-    }
-
-    /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
-    pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
-        let our_prefix = &self.our().prefix;
-        let other_prefix = &elders_info.prefix;
-
-        (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
-            && self.is_new(elders_info)
-    }
-
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.all().flat_map(|(_, info)| info.elders.values())
@@ -226,8 +210,7 @@ impl SectionMap {
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        // TODO: should we use `self.keys()` instead of `self.keys` ?
-        self.keys.values().any(|known_key| known_key == key)
+        self.keys().any(|(_, known_key)| known_key == key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.

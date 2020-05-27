@@ -562,7 +562,7 @@ impl Approved {
         elders_info: EldersInfo,
         src_key: bls::PublicKey,
     ) -> Result<()> {
-        if self.shared_state.sections.is_new_neighbour(&elders_info) {
+        if !self.shared_state.sections.has_key(&src_key) {
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info, src_key));
         } else {
             trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
