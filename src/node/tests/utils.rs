@@ -17,7 +17,7 @@ use crate::{
     consensus::GenesisPrefixInfo,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{Message, MessageWithBytes},
+    messages::{AccumulatingMessage, Message, MessageWithBytes},
     node::Node,
     quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::MainRng,
@@ -26,6 +26,7 @@ use crate::{
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;
+use itertools::Itertools;
 use mock_quic_p2p::Network;
 use std::{collections::BTreeMap, net::SocketAddr};
 
@@ -71,6 +72,21 @@ pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Resu
     node.try_handle_message(sender, msg)?;
     node.handle_messages();
     Ok(())
+}
+
+pub fn accumulate_messages<I>(accumulating_msgs: I) -> Message
+where
+    I: IntoIterator<Item = AccumulatingMessage>,
+{
+    accumulating_msgs
+        .into_iter()
+        .fold1(|mut msg0, msg1| {
+            msg0.add_signature_shares(msg1);
+            msg0
+        })
+        .expect("there are no messages to accumulate")
+        .combine_signatures()
+        .expect("failed to combine signatures")
 }
 
 pub struct MockTransport {

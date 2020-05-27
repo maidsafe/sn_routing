@@ -1034,7 +1034,7 @@ impl Node {
             .map(|stage| &stage.shared_state.our_history)
     }
 
-    fn shared_state(&self) -> Option<&SharedState> {
+    pub(crate) fn shared_state(&self) -> Option<&SharedState> {
         self.stage.approved().map(|stage| &stage.shared_state)
     }
 }

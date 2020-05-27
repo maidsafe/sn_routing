@@ -19,7 +19,6 @@ use crate::{
     section::{EldersInfo, IndexedSecretKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
 };
-use itertools::Itertools;
 use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeMap, net::SocketAddr};
@@ -125,16 +124,11 @@ impl Env {
     }
 
     fn accumulate_message(&self, content: PlainMessage) -> Message {
-        self.elders
-            .iter()
-            .map(|elder| to_accumulating_message(elder, content.clone()).unwrap())
-            .fold1(|mut msg0, msg1| {
-                msg0.add_signature_shares(msg1);
-                msg0
-            })
-            .expect("there are no messages to accumulate")
-            .combine_signatures()
-            .expect("failed to combine signatures")
+        test_utils::accumulate_messages(
+            self.elders
+                .iter()
+                .map(|elder| to_accumulating_message(elder, content.clone()).unwrap()),
+        )
     }
 }
 
