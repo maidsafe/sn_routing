@@ -40,10 +40,7 @@ use crossbeam_channel::{Receiver, RecvError, Select};
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{
-    consensus::{AccumulatingEvent, ConsensusEngine},
-    messages::AccumulatingMessage,
-};
+use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage};
 #[cfg(feature = "mock_base")]
 use {
     crate::section::{EldersInfo, SectionProofChain, SharedState},
@@ -1079,15 +1076,6 @@ impl Node {
     pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {
         if let Some(stage) = self.stage.approved_mut() {
             Ok(&mut stage.consensus_engine)
-        } else {
-            Err(RoutingError::InvalidState)
-        }
-    }
-
-    pub(crate) fn vote_for_event(&mut self, event: AccumulatingEvent) -> Result<()> {
-        if let Some(stage) = self.stage.approved_mut() {
-            stage.vote_for_event(event);
-            Ok(())
         } else {
             Err(RoutingError::InvalidState)
         }
