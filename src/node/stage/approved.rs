@@ -1981,5 +1981,5 @@ pub struct RelocateParams {
 fn create_first_elders_info(p2p_node: P2pNode) -> EldersInfo {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default(), 0)
+    EldersInfo::new(iter::once(node).collect(), Prefix::default())
 }

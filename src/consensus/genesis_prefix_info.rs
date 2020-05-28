@@ -21,8 +21,8 @@ impl Debug for GenesisPrefixInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "GenesisPrefixInfo({:?}, elders_version: {}, parsec_version: {})",
-            self.elders_info.prefix, self.elders_info.version, self.parsec_version,
+            "GenesisPrefixInfo({:?}, parsec_version: {})",
+            self.elders_info.prefix, self.parsec_version,
         )
     }
 }

@@ -25,21 +25,14 @@ use std::{
 pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to a `P2pNode`.
     pub elders: BTreeMap<XorName, P2pNode>,
-    /// The section version. This increases monotonically whenever the set of elders changes.
-    /// Thus `EldersInfo`s with compatible prefixes always have different versions.
-    pub version: u64,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix<XorName>,
 }
 
 impl EldersInfo {
     /// Creates a new `EldersInfo` with the given members, prefix and version.
-    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix<XorName>, version: u64) -> Self {
-        Self {
-            elders,
-            version,
-            prefix,
-        }
+    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix<XorName>) -> Self {
+        Self { elders, prefix }
     }
 
     pub(crate) fn elder_ids(&self) -> impl Iterator<Item = &PublicId> {
@@ -60,9 +53,8 @@ impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo {{ prefix: ({:b}), version: {}, elders: {{{}}} }}",
+            "EldersInfo {{ prefix: ({:b}), elders: {{{}}} }}",
             self.prefix,
-            self.version,
             self.elders.values().format(", "),
         )
     }

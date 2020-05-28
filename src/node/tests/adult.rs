@@ -42,7 +42,7 @@ impl Env {
         let network = Network::new();
 
         let (elders_info, full_ids) =
-            test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE, 0);
+            test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
         let elders = create_elders(&mut rng, elders_info.clone(), full_ids);
 
         let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
@@ -82,11 +82,7 @@ impl Env {
     }
 
     fn perform_elders_change(&mut self) {
-        let elders_info = EldersInfo::new(
-            self.elders[0].state.our_info().elders.clone(),
-            self.elders[0].state.our_info().prefix,
-            self.elders[0].state.our_info().version + 1,
-        );
+        let elders_info = self.elders[0].state.our_info().clone();
         let full_ids = self
             .elders
             .drain(..)
