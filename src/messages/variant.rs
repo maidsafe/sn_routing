@@ -22,6 +22,7 @@ use std::{
 };
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 /// Message variant
 pub enum Variant {
     /// Inform neighbours about our new section.
@@ -37,11 +38,11 @@ pub enum Variant {
     UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
     /// Section X -> Node joining X
-    NodeApproval(Box<GenesisPrefixInfo>),
+    NodeApproval(GenesisPrefixInfo),
     /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(Box<GenesisPrefixInfo>),
+    GenesisUpdate(GenesisPrefixInfo),
     /// Send from a section to the node being relocated.
-    Relocate(Box<RelocateDetails>),
+    Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<AccumulatingMessage>),
