@@ -660,7 +660,7 @@ impl Node {
                 Variant::NodeApproval(genesis_prefix_info) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, *genesis_prefix_info, msg_backlog)?
+                    self.approve(connect_type, genesis_prefix_info, msg_backlog)?
                 }
                 _ => unreachable!(),
             },
@@ -672,7 +672,7 @@ impl Node {
                 }
                 Variant::GenesisUpdate(info) => {
                     msg.src.check_is_section()?;
-                    stage.handle_genesis_update(&mut self.core, *info)?;
+                    stage.handle_genesis_update(&mut self.core, info)?;
                 }
                 Variant::Relocate(_) => {
                     msg.src.check_is_section()?;

@@ -54,7 +54,7 @@ impl SignedRelocateDetails {
 
     pub fn relocate_details(&self) -> &RelocateDetails {
         if let Variant::Relocate(details) = &self.signed_msg.variant {
-            &**details
+            details
         } else {
             panic!("SignedRelocateDetails always contain Variant::Relocate")
         }

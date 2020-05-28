@@ -1233,7 +1233,7 @@ impl Approved {
 
         let src = SrcLocation::Section(*self.shared_state.our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());
-        let content = Variant::Relocate(Box::new(details));
+        let content = Variant::Relocate(details);
 
         self.send_routing_message(core, src, dst, content, Some(knowledge_index))
     }
@@ -1668,7 +1668,7 @@ impl Approved {
         let src = SrcLocation::Section(self.genesis_prefix_info.elders_info.prefix);
         let dst = DstLocation::Node(*p2p_node.name());
 
-        let variant = Variant::NodeApproval(Box::new(self.genesis_prefix_info.clone()));
+        let variant = Variant::NodeApproval(self.genesis_prefix_info.clone());
         let their_knowledge =
             their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
 
@@ -1699,7 +1699,7 @@ impl Approved {
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(Box::new(self.genesis_prefix_info.clone()));
+                let variant = Variant::GenesisUpdate(self.genesis_prefix_info.clone());
                 let dst = DstLocation::Node(*recipient.name());
                 let proof_start_index = self
                     .shared_state

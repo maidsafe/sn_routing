@@ -204,7 +204,7 @@ fn create_genesis_update_accumulating_message(
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
         dst_key: sender.section_keys_provider.public_key_set().public_key(),
-        variant: Variant::GenesisUpdate(Box::new(genesis_prefix_info)),
+        variant: Variant::GenesisUpdate(genesis_prefix_info),
     };
 
     to_accumulating_message(sender, content)
