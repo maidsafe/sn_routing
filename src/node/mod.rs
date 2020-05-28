@@ -932,15 +932,6 @@ impl Node {
             .unwrap_or_default()
     }
 
-    /// Returns the elder info version of a section with the given prefix.
-    /// Prefix must be either our prefix or of one of our neighbours.
-    /// Returns `None` otherwise.
-    pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> Option<u64> {
-        self.shared_state()
-            .and_then(|state| state.sections.get(prefix))
-            .map(|info| info.version)
-    }
-
     /// Returns the elders in our and neighbouring sections.
     pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.shared_state()

@@ -302,7 +302,7 @@ mod test {
     }
 
     fn empty_elders_info() -> EldersInfo {
-        EldersInfo::new(Default::default(), Default::default(), Default::default())
+        EldersInfo::new(Default::default(), Default::default())
     }
 
     fn random_section_info_sig_share(

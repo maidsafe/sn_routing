@@ -202,20 +202,16 @@ impl SharedState {
         if expected_elders == current_elders {
             None
         } else {
-            let old_size = self.our_info().elders.len();
+            let new_info = EldersInfo::new(expected_elders_map, self.our_info().prefix);
 
-            let new_info = EldersInfo::new(
-                expected_elders_map,
-                self.our_info().prefix,
-                self.our_info().version + 1,
-            );
-
-            if self.our_info().elders.len() < network_params.elder_size
-                && old_size >= network_params.elder_size
+            if new_info.elders.len() < network_params.elder_size
+                && self.our_info().elders.len() >= network_params.elder_size
             {
-                panic!(
-                    "Merging situation encountered! Not supported: {:?}",
-                    self.our_info()
+                warn!(
+                    "Dropping below elder_size ({}) elders (old: {:?}, new: {:?})",
+                    network_params.elder_size,
+                    self.our_info(),
+                    new_info
                 );
             }
 
@@ -407,8 +403,8 @@ impl SharedState {
             .our_members
             .elder_candidates_matching_prefix(&other_prefix, network_params.elder_size);
 
-        let our_info = EldersInfo::new(our_elders, our_prefix, self.our_info().version + 1);
-        let other_info = EldersInfo::new(other_elders, other_prefix, self.our_info().version + 1);
+        let our_info = EldersInfo::new(our_elders, our_prefix);
+        let other_info = EldersInfo::new(other_elders, other_prefix);
 
         Some((our_info, other_info))
     }
@@ -554,7 +550,7 @@ mod test {
                     let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
-                (EldersInfo::new(members, prefix, 0), full_ids)
+                (EldersInfo::new(members, prefix), full_ids)
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.elders.clone();
@@ -564,17 +560,11 @@ mod test {
                 let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
-                (
-                    EldersInfo::new(members, info.prefix, info.version + 1),
-                    full_ids,
-                )
+                (EldersInfo::new(members, info.prefix), full_ids)
             }
             SecInfoGen::Remove(info) => {
                 let elders = info.elders.clone();
-                (
-                    EldersInfo::new(elders, info.prefix, info.version + 1),
-                    Default::default(),
-                )
+                (EldersInfo::new(elders, info.prefix), Default::default())
             }
         }
     }

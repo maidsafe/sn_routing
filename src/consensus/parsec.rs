@@ -393,7 +393,7 @@ fn create(
 ) -> Parsec {
     #[cfg(feature = "mock")]
     let hash = {
-        let fields = (elders_info.prefix, elders_info.version, parsec_version);
+        let fields = (elders_info.prefix, parsec_version);
         crypto::sha3_256(&bincode::serialize(&fields).unwrap())
     };
 
@@ -491,7 +491,7 @@ mod tests {
                 )
             })
             .collect();
-        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version);
+        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default());
         parsec_map.init(rng, full_ids[0].clone(), &elders_info, vec![], version);
     }
 

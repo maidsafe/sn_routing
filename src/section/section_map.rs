@@ -346,7 +346,7 @@ impl SectionMap {
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
-    #[cfg(any(test, feature = "mock_base"))]
+    #[cfg(test)]
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
         if *prefix == self.our.prefix {
             Some(&self.our)
@@ -610,9 +610,8 @@ mod tests {
                 )
             })
             .collect();
-        let version = 101;
 
-        EldersInfo::new(members, prefix, version)
+        EldersInfo::new(members, prefix)
     }
 
     fn gen_key(rng: &mut MainRng) -> bls::PublicKey {
