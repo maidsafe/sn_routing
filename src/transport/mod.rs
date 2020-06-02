@@ -57,7 +57,7 @@ impl Transport {
     ) {
         if conn_infos.len() < delivery_group_size {
             warn!(
-                "Less than delivery_group_size valid targets! delivery_group_size = {}; targets = {:?}; msg = {:?}",
+                "Less than delivery_group_size valid targets! delivery_group_size = {}; targets = {:?}; msg = {:10}",
                 delivery_group_size,
                 conn_infos,
                 HexFmt(&msg)

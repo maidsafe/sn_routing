@@ -82,7 +82,6 @@ mod tests {
         section::{gen_secret_key, IndexedSecretKeyShare, SectionProofChain},
         Prefix, XorName,
     };
-    use itertools::Itertools;
     use rand::{distributions::Standard, Rng};
     use std::{collections::BTreeMap, net::SocketAddr};
 
@@ -197,7 +196,7 @@ mod tests {
         let env = Env::new();
 
         // Add each message with the section list added - none should accumulate.
-        env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
+        env.msgs_and_sigs.iter().for_each(|msg_and_sigs| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
             let result = sig_accumulator.add_proof(signed_msg);
             assert!(result.is_none());

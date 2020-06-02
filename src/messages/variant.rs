@@ -85,7 +85,7 @@ impl Debug for Variant {
                 .field("elders_info", elders_info)
                 .field("nonce", nonce)
                 .finish(),
-            Self::UserMessage(payload) => write!(f, "UserMessage({})", HexFmt(payload)),
+            Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
