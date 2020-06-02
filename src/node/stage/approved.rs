@@ -302,47 +302,15 @@ impl Approved {
                 if !self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Unknown);
                 }
-
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Untrusted)
-                }
             }
             Variant::UserMessage(_) => {
                 if !self.should_handle_user_message(our_id, &msg.dst) {
                     return Ok(MessageStatus::Unknown);
                 }
-
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Untrusted)
-                }
             }
             Variant::GenesisUpdate(info) => {
                 if !self.should_handle_genesis_update(our_id, info) {
                     return Ok(MessageStatus::Useless);
-                }
-
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Untrusted)
-                }
-            }
-            Variant::Relocate(_) => {
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Untrusted)
-                }
-            }
-            Variant::MessageSignature(_) => {
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Useless)
                 }
             }
             Variant::JoinRequest(req) => {
@@ -354,28 +322,26 @@ impl Approved {
                     // joining node sends it again.
                     return Ok(MessageStatus::Useless);
                 }
-
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Useless)
-                }
             }
-            Variant::BootstrapRequest(_)
+            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
+                return Ok(MessageStatus::Useless)
+            }
+            Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
             | Variant::ParsecPoke(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => {
-                if self.verify_message(msg)? {
-                    Ok(MessageStatus::Useful)
-                } else {
-                    Ok(MessageStatus::Useless)
-                }
-            }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
-                Ok(MessageStatus::Useless)
-            }
+            | Variant::BouncedUnknownMessage { .. } => {}
+        }
+
+        if self.verify_message(msg)? {
+            Ok(MessageStatus::Useful)
+        } else if msg.src.is_section() {
+            Ok(MessageStatus::Untrusted)
+        } else {
+            Ok(MessageStatus::Useless)
         }
     }
 
