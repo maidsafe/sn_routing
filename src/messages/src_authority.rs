@@ -39,10 +39,15 @@ impl SrcAuthority {
     }
 
     pub fn check_is_section(&self) -> Result<()> {
-        match self {
-            Self::Section { .. } => Ok(()),
-            Self::Node { .. } => Err(RoutingError::BadLocation),
+        if self.is_section() {
+            Ok(())
+        } else {
+            Err(RoutingError::BadLocation)
         }
+    }
+
+    pub fn is_section(&self) -> bool {
+        matches!(self, Self::Section { .. })
     }
 
     pub fn as_node(&self) -> Result<&PublicId> {
