@@ -45,7 +45,7 @@ use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage};
 #[cfg(feature = "mock_base")]
 use {
     crate::section::{EldersInfo, SectionProofChain, SharedState},
-    std::collections::{BTreeMap, BTreeSet},
+    std::collections::BTreeSet,
 };
 
 /// Node configuration.
@@ -920,7 +920,7 @@ impl Node {
     pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
         self.shared_state()
             .into_iter()
-            .flat_map(|state| state.sections.other().map(|(_, info)| info))
+            .flat_map(|state| state.sections.neighbours().map(|(_, info)| info))
     }
 
     /// Returns the info about our sections or `None` if we are not joined yet.
@@ -971,11 +971,10 @@ impl Node {
     }
 
     /// Returns their knowledge
-    pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
+    pub fn get_their_knowledge(&self, prefix: &Prefix<XorName>) -> u64 {
         self.shared_state()
-            .map(|state| state.sections.knowledge())
-            .cloned()
-            .unwrap_or_default()
+            .map(|state| state.sections.knowledge_by_section(prefix))
+            .unwrap_or(0)
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including

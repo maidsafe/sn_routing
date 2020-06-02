@@ -9,6 +9,7 @@
 mod elders_info;
 mod member_info;
 mod network_stats;
+mod prefix_map;
 mod section_keys;
 mod section_map;
 mod section_members;
