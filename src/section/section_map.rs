@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{elders_info::EldersInfo, network_stats::NetworkStats};
+use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
 use crate::{
     id::P2pNode,
     location::DstLocation,
@@ -14,7 +14,7 @@ use crate::{
 };
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeSet, VecDeque},
     iter,
 };
 
@@ -31,13 +31,13 @@ pub struct SectionMap {
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
-    neighbours: BTreeMap<Prefix<XorName>, EldersInfo>,
+    neighbours: PrefixMap<EldersInfo>,
     // BLS public keys of known sections
-    keys: BTreeMap<Prefix<XorName>, bls::PublicKey>,
+    keys: PrefixMap<bls::PublicKey>,
     // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
     recent_keys: VecDeque<(Prefix<XorName>, bls::PublicKey)>,
     // Indices of our section keys that are trusted by other sections.
-    knowledge: BTreeMap<Prefix<XorName>, u64>,
+    knowledge: PrefixMap<u64>,
 }
 
 impl SectionMap {
@@ -134,36 +134,15 @@ impl SectionMap {
     }
 
     pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
-        let parent_prefix = elders_info.prefix.popped();
-        let sibling_prefix = elders_info.prefix.sibling();
-
         let _ = self.neighbours.insert(elders_info.prefix, elders_info);
-
-        // If we just split an existing neighbour and we also need its sibling,
-        // add the sibling prefix with the parent info.
-        if let Some(parent_info) = self.neighbours.remove(&parent_prefix) {
-            if self.our().prefix.is_neighbour(&sibling_prefix)
-                && !self.neighbours.contains_key(&sibling_prefix)
-            {
-                let _ = self.neighbours.insert(sibling_prefix, parent_info);
-            }
-        }
-
         self.prune_neighbours();
     }
 
     // Remove sections that are no longer our neighbours.
     fn prune_neighbours(&mut self) {
-        let to_remove: Vec<_> = self
-            .neighbours
-            .keys()
-            .filter(|prefix| !self.our().prefix.is_neighbour(prefix))
-            .copied()
-            .collect();
-
-        for prefix in to_remove {
-            let _ = self.neighbours.remove(&prefix);
-        }
+        let our_prefix = &self.our.prefix;
+        self.neighbours
+            .retain(|prefix, _| our_prefix.is_neighbour(prefix))
     }
 
     /// Returns the known section keys and any recent keys we still hold.
@@ -202,7 +181,7 @@ impl SectionMap {
     /// initialised to the old key that was stored for their common ancestor
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey) {
-        trace!("attempts to update keys for {:?}: {:?}", prefix, new_key);
+        trace!("update key for {:?}: {:?}", prefix, new_key);
 
         if self
             .recent_keys
@@ -212,33 +191,17 @@ impl SectionMap {
             return;
         }
 
-        if let Some((&old_prefix, &old_key)) = self
-            .keys
-            .iter()
-            .find(|(old_prefix, _)| old_prefix.is_compatible(&prefix))
-        {
-            if old_key == new_key || old_prefix.is_extension_of(&prefix) {
-                // Do not overwrite existing keys or prefix extensions
-                return;
-            }
+        let old_entry = self.keys.insert(prefix, new_key);
 
-            let _ = self.keys.remove(&old_prefix);
+        if let Some((old_prefix, old_key)) = old_entry {
+            if old_key != new_key {
+                self.recent_keys.push_front((old_prefix, old_key));
 
-            self.recent_keys.push_front((old_prefix, old_key));
-            if self.recent_keys.len() > MAX_RECENT_KEYS {
-                let _ = self.recent_keys.pop_back();
-            }
-
-            trace!("    from {:?} to {:?}", old_key, new_key);
-
-            let old_prefix_sibling = old_prefix.sibling();
-            let mut current_prefix = prefix.sibling();
-            while !self.keys.contains_key(&current_prefix) && current_prefix != old_prefix_sibling {
-                let _ = self.keys.insert(current_prefix, old_key);
-                current_prefix = current_prefix.popped().sibling();
+                if self.recent_keys.len() > MAX_RECENT_KEYS {
+                    let _ = self.recent_keys.pop_back();
+                }
             }
         }
-        let _ = self.keys.insert(prefix, new_key);
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -281,35 +244,13 @@ impl SectionMap {
             new_index,
         );
 
-        if let Some((&old_prefix, &old_index)) = self
-            .knowledge
-            .iter()
-            .find(|(other_prefix, _)| other_prefix.is_compatible(&prefix))
-        {
-            if old_prefix.is_extension_of(&prefix) || old_index > new_index {
-                // Do not overwrite newer index or prefix extensions
+        if let Some((_, &old_index)) = self.knowledge.get_equal_or_ancestor(&prefix) {
+            if old_index > new_index {
+                // Do not overwrite newer index
                 return;
             }
-
-            let _ = self.knowledge.remove(&old_prefix);
-
-            trace!(
-                "    from ({:b}): {} to ({:b}): {}",
-                old_prefix,
-                old_index,
-                prefix,
-                new_index
-            );
-
-            let old_prefix_sibling = old_prefix.sibling();
-            let mut current_prefix = prefix.sibling();
-            while !self.knowledge.contains_key(&current_prefix)
-                && current_prefix != old_prefix_sibling
-            {
-                let _ = self.knowledge.insert(current_prefix, old_index);
-                current_prefix = current_prefix.popped().sibling();
-            }
         }
+
         let _ = self.knowledge.insert(prefix, new_index);
     }
 
@@ -357,13 +298,8 @@ impl SectionMap {
 
     /// Returns iterator over all neighbours sections.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn other(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+    pub fn neighbours(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
         self.neighbours.iter()
-    }
-
-    #[cfg(feature = "mock_base")]
-    pub fn knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        &self.knowledge
     }
 }
 
