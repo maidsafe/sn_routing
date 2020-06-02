@@ -17,7 +17,7 @@ bytes = "~0.5.4"
 crossbeam-channel = "~0.4.2"
 ctrlc = { version = "3", optional = true, features = ["termination"] }
 derive_more = "~0.99.2"
-ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.3", features = ["serde"] }
+ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.3"
 fake_clock = "~0.3.0"
