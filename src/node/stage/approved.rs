@@ -539,6 +539,7 @@ impl Approved {
                 MessageHash::from_bytes(&bounced_msg_bytes),
                 sender
             );
+            return;
         }
 
         trace!(
@@ -548,7 +549,7 @@ impl Approved {
             sender,
         );
 
-        // First send parsec gossip to update the peer, the resend the message itself. If the
+        // First send parsec gossip to update the peer, then resend the message itself. If the
         // messages arrive in the same order they were sent, the gossip should update the peer so
         // they will then be able to handle the resent message. If not, the peer will bounce the
         // message again.
