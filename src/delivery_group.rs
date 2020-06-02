@@ -154,9 +154,10 @@ where
         }
     };
 
-    let mut list = our_elders
+    let mut list: Vec<_> = our_elders
         .into_iter()
-        .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
+        .collect();
     list.truncate(delivery_group_size(list.len()));
     list
 }

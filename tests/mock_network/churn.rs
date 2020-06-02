@@ -545,7 +545,7 @@ impl Display for MessageKey {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            "{:?} {:?} -> {:?}",
+            "{:10} {:?} -> {:?}",
             HexFmt(&self.content),
             self.src,
             self.dst

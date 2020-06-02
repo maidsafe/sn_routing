@@ -408,10 +408,11 @@ pub fn create_connected_nodes_until_split(
     let final_prefixes = gen_prefixes(&mut rng, prefix_lengths);
 
     // The sequence of prefixes to split in order to reach `final_prefixes`.
-    let mut split_sequence = final_prefixes
+    let mut split_sequence: Vec<_> = final_prefixes
         .iter()
         .flat_map(|prefix| prefix.ancestors())
-        .sorted_by(|lhs, rhs| lhs.cmp_breadth_first(rhs));
+        .sorted_by(|lhs, rhs| lhs.cmp_breadth_first(rhs))
+        .collect();
     split_sequence.dedup();
 
     let mut nodes = Vec::new();
@@ -424,7 +425,11 @@ pub fn create_connected_nodes_until_split(
     let actual_prefixes: BTreeSet<_> = current_sections(&nodes).collect();
     assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect());
 
-    let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).sorted();
+    let actual_prefix_lengths: Vec<_> = actual_prefixes
+        .iter()
+        .map(Prefix::bit_count)
+        .sorted()
+        .collect();
     assert_eq!(&actual_prefix_lengths[..], prefix_lengths);
 
     trace!("Created testnet comprising {:?}", actual_prefixes);
@@ -813,7 +818,7 @@ pub fn send_user_message(
     let dst_location = DstLocation::Section(dst.name());
 
     trace!(
-        "send_user_message: {:?} -> {:?}: {:?}",
+        "send_user_message: {:?} -> {:?}: {:10}",
         src_location,
         dst_location,
         hex_fmt::HexFmt(&content),

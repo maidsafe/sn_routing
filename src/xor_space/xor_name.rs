@@ -49,7 +49,7 @@ pub struct XorName(pub [u8; XOR_NAME_LEN]);
 impl XorName {
     /// Hex-encode the `XorName` as a `String`.
     pub fn to_hex(&self) -> String {
-        self.0.to_hex()
+        self.0.encode_hex()
     }
 
     /// Returns the number of bits in which `self` differs from `other`.
@@ -67,7 +67,9 @@ impl XorName {
             Err(FromHexError::InvalidHexCharacter { c, index }) => {
                 return Err(XorNameFromHexError::InvalidCharacter(c, index));
             }
-            Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::WrongLength),
+            Err(FromHexError::InvalidStringLength) | Err(FromHexError::OddLength) => {
+                return Err(XorNameFromHexError::WrongLength)
+            }
         };
         if data.len() != XOR_NAME_LEN {
             return Err(XorNameFromHexError::WrongLength);

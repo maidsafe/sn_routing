@@ -67,7 +67,7 @@
 #![allow(clippy::single_component_path_imports)]
 
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]

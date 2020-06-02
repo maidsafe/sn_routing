@@ -122,7 +122,7 @@ impl Debug for AccumulatingEvent {
                 related_info,
             } => write!(
                 formatter,
-                "Genesis {{ group: {:?}, related_info: {:?} }}",
+                "Genesis {{ group: {:?}, related_info: {:10} }}",
                 group,
                 HexFmt(related_info)
             ),

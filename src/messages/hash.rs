@@ -23,6 +23,6 @@ impl MessageHash {
 
 impl Debug for MessageHash {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", HexFmt(&self.0))
+        write!(f, "{:10}", HexFmt(&self.0))
     }
 }

@@ -11,36 +11,36 @@ version = "0.37.0"
 edition = "2018"
 
 [dependencies]
-bincode = "1.1.4"
+bincode = "1.2.1"
 bls = { package = "threshold_crypto", version = "~0.3.2" }
 bytes = "~0.5.4"
 crossbeam-channel = "~0.4.2"
 ctrlc = { version = "3", optional = true, features = ["termination"] }
-derive_more = "~0.99.2"
+derive_more = "~0.99.7"
 ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
-err-derive = "~0.2.3"
+err-derive = "~0.2.4"
 fake_clock = "~0.3.0"
 fxhash = "~0.2.1"
-hex = "~0.2.0"
-hex_fmt = "~0.1.0"
-itertools = "~0.6.1"
+hex = "~0.4.2"
+hex_fmt = "~0.3.0"
+itertools = "~0.9.0"
 lazy_static = { version = "1", optional = true }
 log = "~0.4.8"
-lru_time_cache = "~0.8.1"
+lru_time_cache = "~0.10.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
-num-bigint = "~0.1.40"
-parsec = "~0.7.0"
-quic-p2p = { version = "~0.6.2", features = ["upnp"] }
-# rand in the versions used for compatibility
-rand = "~0.7.2"
+num-bigint = "~0.2.6"
+parsec = "~0.7.1"
+# quic-p2p = { version = "~0.6.2", features = ["upnp"] }
+quic-p2p = { git = "https://github.com/madadam/quic-p2p", branch = "update-deps", features = ["upnp"] }
+rand = "~0.7.3"
+# rand in the versions used by the threshold-crypto crate
 rand_crypto = { package = "rand", version = "~0.6.5" }
 rand_core = "~0.5.1"
-rand_os = "~0.1.0"
+rand_os = "~0.2.2"
 rand_xorshift = "~0.2.0"
-serde = { version = "1.0.25", features = ["rc"] }
-serde_derive = "1.0.25"
-tiny-keccak = "1.5.0"
+serde = { version = "1.0.111", features = ["derive" ,"rc"] }
+tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 
 [dev-dependencies]
 env_logger = "~0.7.1"

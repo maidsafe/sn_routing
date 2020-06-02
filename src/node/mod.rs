@@ -298,6 +298,7 @@ impl Node {
     pub fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
         self.our_elders()
             .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Returns the information of all the current section adults.
@@ -313,6 +314,7 @@ impl Node {
     pub fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
         self.our_adults()
             .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Checks whether the given location represents self.
