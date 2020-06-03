@@ -47,6 +47,13 @@ impl EldersInfo {
             .count()
             >= quorum_count(self.elders.len())
     }
+
+    /// Returns the index of the elder with `name` in this set of elders.
+    /// This is useful for BLS signatures where the signature share needs to be mapped to a
+    /// "field element" which is typically a numeric index.
+    pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
+        self.elders.keys().position(|other_name| other_name == name)
+    }
 }
 
 impl Debug for EldersInfo {

@@ -31,11 +31,7 @@ impl IndexedSecretKeyShare {
         our_name: &XorName,
         elders_info: &EldersInfo,
     ) -> Option<Self> {
-        let index = elders_info
-            .elders
-            .keys()
-            .position(|name| name == our_name)?;
-
+        let index = elders_info.position(our_name)?;
         Some(Self { index, key })
     }
 
@@ -149,11 +145,7 @@ impl SectionKeysProvider {
         signed_bytes: &[u8],
     ) -> Result<bls::Signature> {
         proof
-            .check_and_combine_signatures(
-                elders_info,
-                self.public_key_set(),
-                signed_bytes,
-            )
+            .check_and_combine_signatures(elders_info, self.public_key_set(), signed_bytes)
             .map_err(|error| {
                 log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
                 error
