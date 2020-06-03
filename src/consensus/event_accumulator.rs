@@ -10,7 +10,12 @@ use super::{
     network_event::{AccumulatingEvent, NetworkEvent},
     proof::{Proof, ProofSet},
 };
-use crate::{id::PublicId, section::EldersInfo};
+use crate::{
+    error::{Result, RoutingError},
+    id::PublicId,
+    section::EldersInfo,
+};
+use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem,
@@ -127,7 +132,7 @@ impl EventAccumulator {
         if !self
             .unaccumulated_events
             .entry(event)
-            .or_insert_with(AccumulatingProof::default)
+            .or_default()
             .add_proof(proof, signature_share)
         {
             return Err(InsertError::ReplacedAlreadyInserted);
@@ -234,12 +239,14 @@ impl AccumulatingProof {
         self.sig_shares
     }
 
+    /// Check the signature shares at the given `signature_index` and combine them into a
+    /// complete signature.
     pub fn check_and_combine_signatures(
-        self,
+        &self,
         elder_info: &EldersInfo,
         pk_set: &bls::PublicKeySet,
         signed_bytes: &[u8],
-    ) -> Option<bls::Signature> {
+    ) -> Result<bls::Signature> {
         let fr_and_shares = elder_info
             .elder_ids()
             .enumerate()
@@ -248,12 +255,11 @@ impl AccumulatingProof {
                     .get(pub_id)
                     .map(|sig_share| (index, sig_share))
             })
-            .filter(|&(index, sig_share)| {
-                pk_set
-                    .public_key_share(index)
-                    .verify(sig_share, signed_bytes)
-            });
-        pk_set.combine_signatures(fr_and_shares).ok()
+            .filter(|&(index, share)| pk_set.public_key_share(index).verify(share, signed_bytes));
+
+        pk_set
+            .combine_signatures(fr_and_shares)
+            .map_err(|_| RoutingError::InvalidSignatureShares)
     }
 }
 

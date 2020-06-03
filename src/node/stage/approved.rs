@@ -1376,13 +1376,14 @@ impl Approved {
         our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        proofs: AccumulatingProof,
+        proof: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let signature = self.section_keys_provider.check_and_combine_signatures(
+            &proof,
             self.shared_state.sections.our(),
-            &section_key,
-            proofs,
+            &section_key.to_bytes(),
         )?;
+
         self.section_keys_provider
             .finalise_dkg(our_name, &elders_info)?;
         self.shared_state
