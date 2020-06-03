@@ -13,11 +13,7 @@ use crate::{
     id::PublicId,
     xor_space::XorName,
 };
-use serde::Serialize;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Debug,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Secret key share with its index.
 #[derive(Clone)]
@@ -146,33 +142,22 @@ impl SectionKeysProvider {
         Ok(())
     }
 
-    pub fn check_and_combine_signatures<S: Serialize + Debug>(
+    pub fn check_and_combine_signatures(
         &self,
-        our_elders: &EldersInfo,
-        signed_payload: &S,
-        proofs: AccumulatingProof,
+        proof: &AccumulatingProof,
+        elders_info: &EldersInfo,
+        signed_bytes: &[u8],
     ) -> Result<bls::Signature> {
-        let signed_bytes = bincode::serialize(signed_payload).map_err(|err| {
-            log_or_panic!(
-                log::Level::Error,
-                "Failed to serialise accumulated event: {:?} for {:?}",
-                err,
-                signed_payload
-            );
-            err
-        })?;
-
-        proofs
-            .check_and_combine_signatures(our_elders, self.public_key_set(), &signed_bytes)
-            .or_else(|| {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Failed to combine signatures for accumulated event: {:?}",
-                    signed_payload
-                );
-                None
+        proof
+            .check_and_combine_signatures(
+                elders_info,
+                self.public_key_set(),
+                signed_bytes,
+            )
+            .map_err(|error| {
+                log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
+                error
             })
-            .ok_or(RoutingError::InvalidNewSectionInfo)
     }
 }
 

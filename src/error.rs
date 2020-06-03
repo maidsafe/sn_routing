@@ -39,8 +39,8 @@ pub enum RoutingError {
     InvalidProvingSection,
     #[error(display = "A signed message could not be trusted.")]
     UntrustedMessage,
-    #[error(display = "A new SectionInfo is invalid.")]
-    InvalidNewSectionInfo,
+    #[error(display = "Some or all signature shares are invalid.")]
+    InvalidSignatureShares,
     #[error(display = "A Relocation is invalid.")]
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
