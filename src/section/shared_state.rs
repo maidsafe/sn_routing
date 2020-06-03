@@ -73,6 +73,15 @@ impl SharedState {
         self.handled_genesis_event = true;
     }
 
+    // Clear all data except that which is needed for non-elders.
+    pub fn demote(&mut self) {
+        // TODO: avoid this clone.
+        let elders_info = self.sections.our().clone();
+        let section_key = *self.our_history.last_key();
+
+        *self = Self::new(elders_info, section_key);
+    }
+
     /// Returns our own current section info.
     pub fn our_info(&self) -> &EldersInfo {
         self.sections.our()
