@@ -418,6 +418,15 @@ impl Node {
             .ok_or(RoutingError::InvalidState)
     }
 
+    /// Returns our index in the current BLS group or `RoutingError::InvalidState` if section key was
+    /// not generated yet.
+    pub fn our_index(&self) -> Result<usize> {
+        self.stage
+            .approved()
+            .and_then(|stage| stage.our_index())
+            .ok_or(RoutingError::InvalidState)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
