@@ -292,6 +292,14 @@ impl Approved {
             .map(|share| &share.key)
     }
 
+    /// Returns the node's index in the current BLS group
+    pub fn our_index(&self) -> Option<usize> {
+        self.section_keys_provider
+            .secret_key_share()
+            .ok()
+            .map(|share| share.index)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
