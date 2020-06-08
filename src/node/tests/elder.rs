@@ -108,25 +108,26 @@ impl Env {
             .consensus_engine_mut()
             .unwrap()
             .parsec_map_mut();
-        for event in events {
-            self.other_ids
-                .iter()
-                .take(count)
-                .for_each(|(full_id, secret_key_share)| {
-                    let sig_payload =
-                        if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
-                            let sig_share = secret_key_share.sign(&section_key.to_bytes()[..]);
-                            Some(sig_share)
-                        } else {
-                            None
-                        };
 
-                    info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
-                    parsec.vote_for_as(
-                        event.clone().into_network_event(sig_payload).into_obs(),
-                        full_id,
-                    );
-                });
+        for event in events {
+            for (full_id, secret_key_share) in self.other_ids.iter().take(count) {
+                let sig_payload = if let AccumulatingEvent::SectionInfo(_info, section_key) = &event
+                {
+                    let sig_share = secret_key_share.sign(&section_key.to_bytes());
+                    let index = self
+                        .elders_info
+                        .position(full_id.public_id().name())
+                        .unwrap();
+                    Some((index, sig_share))
+                } else {
+                    None
+                };
+
+                let event = event.clone().into_network_event(sig_payload);
+                info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
+
+                parsec.vote_for_as(event.into_obs(), full_id);
+            }
         }
     }
 
@@ -296,11 +297,7 @@ impl Env {
     }
 
     fn new_elders_info_without_candidate(&mut self) -> DkgToSectionInfo {
-        let old_info = self.new_elders_info_with_candidate();
-        let new_elder_info = EldersInfo::new(
-            self.elders_info.elders.clone(),
-            old_info.new_elders_info.prefix,
-        );
+        let new_elder_info = self.elders_info.clone();
         self.updated_other_ids(new_elder_info)
     }
 
@@ -498,17 +495,20 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 #[test]
 fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
     let mut env = Env::new(ELDER_SIZE - 1);
-    let new_info = env.new_elders_info_with_candidate();
+    let info_with_candidate = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&new_info);
-    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_start_dkg(&info_with_candidate);
+    env.accumulate_section_info_if_vote(&info_with_candidate);
     env.accumulate_voted_unconsensused_events();
 
-    env.other_ids = new_info.new_other_ids;
-    let new_info = env.new_elders_info_without_candidate();
+    let info_without_candidate = env.new_elders_info_without_candidate();
+
+    env.other_ids = info_with_candidate.new_other_ids;
+    env.elders_info = info_with_candidate.new_elders_info;
+
     env.accumulate_offline(*env.candidate.public_id());
-    env.accumulate_start_dkg(&new_info);
-    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_start_dkg(&info_without_candidate);
+    env.accumulate_section_info_if_vote(&info_without_candidate);
     env.accumulate_voted_unconsensused_events();
 
     assert!(!env.has_unpolled_observations());

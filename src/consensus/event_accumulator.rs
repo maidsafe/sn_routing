@@ -104,7 +104,7 @@ impl EventAccumulator {
         &mut self,
         event: AccumulatingEvent,
         proof: Proof,
-        signature_share: Option<bls::SignatureShare>,
+        signature_share: Option<(usize, bls::SignatureShare)>,
         elders_info: &EldersInfo,
     ) -> Result<(AccumulatingEvent, AccumulatingProof), AccumulatingError> {
         match &event {
@@ -194,7 +194,7 @@ impl EventAccumulator {
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct AccumulatingProof {
     parsec_proofs: ProofSet,
-    sig_shares: BTreeMap<PublicId, bls::SignatureShare>,
+    sig_shares: BTreeSet<(usize, bls::SignatureShare)>,
 }
 
 impl AccumulatingProof {
@@ -202,10 +202,10 @@ impl AccumulatingProof {
     pub fn add_proof(
         &mut self,
         proof: Proof,
-        sig_share: Option<bls::SignatureShare>,
+        sig_share: Option<(usize, bls::SignatureShare)>,
     ) -> Result<(), AccumulatingError> {
         if let Some(sig_share) = sig_share {
-            if self.sig_shares.insert(proof.pub_id, sig_share).is_some() {
+            if !self.sig_shares.insert(sig_share) {
                 return Err(AccumulatingError::ReplacedAlreadyInserted);
             }
         }
@@ -225,23 +225,19 @@ impl AccumulatingProof {
     /// complete signature.
     pub fn check_and_combine_signatures(
         &self,
-        elder_info: &EldersInfo,
         pk_set: &bls::PublicKeySet,
         signed_bytes: &[u8],
     ) -> Result<bls::Signature> {
-        let fr_and_shares = elder_info
-            .elder_ids()
-            .enumerate()
-            .filter_map(|(index, pub_id)| {
-                self.sig_shares
-                    .get(pub_id)
-                    .map(|sig_share| (index, sig_share))
-            })
-            .filter(|&(index, share)| pk_set.public_key_share(index).verify(share, signed_bytes));
+        let shares = self
+            .sig_shares
+            .iter()
+            .filter(|(index, share)| pk_set.public_key_share(index).verify(share, signed_bytes))
+            .map(|(index, share)| (*index, share));
 
-        pk_set
-            .combine_signatures(fr_and_shares)
-            .map_err(|_| RoutingError::InvalidSignatureShares)
+        pk_set.combine_signatures(shares).map_err(|error| {
+            log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
+            RoutingError::InvalidSignatureShares
+        })
     }
 }
 

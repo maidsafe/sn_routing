@@ -217,7 +217,7 @@ impl Approved {
                 }
             };
 
-            Some(secret_key_share.key.sign(&to_sign))
+            Some((secret_key_share.index, secret_key_share.key.sign(&to_sign)))
         } else {
             None
         };
@@ -1401,9 +1401,8 @@ impl Approved {
         section_key: bls::PublicKey,
         proof: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let signature = self.section_keys_provider.check_and_combine_signatures(
-            &proof,
-            self.shared_state.sections.our(),
+        let signature = proof.check_and_combine_signatures(
+            self.section_keys_provider.public_key_set(),
             &section_key.to_bytes(),
         )?;
 
