@@ -67,7 +67,7 @@ impl ConsensusEngine {
     pub fn poll(
         &mut self,
         our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    ) -> Option<(AccumulatingEvent, Option<bls::Signature>)> {
         while let Some(block) = self.parsec_map.poll() {
             if let Some(output) = self.handle_parsec_block(block, our_elders) {
                 return Some(output);
@@ -81,7 +81,7 @@ impl ConsensusEngine {
         &mut self,
         block: Block,
         our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    ) -> Option<(AccumulatingEvent, Option<bls::Signature>)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
             Observation::Genesis {
@@ -102,7 +102,7 @@ impl ConsensusEngine {
                         group: group.clone(),
                         related_info: related_info.clone(),
                     },
-                    AccumulatingProof::default(),
+                    None,
                 ))
             }
             Observation::OpaquePayload(event) => {
@@ -112,6 +112,13 @@ impl ConsensusEngine {
                     sig: *proof.signature(),
                 };
 
+                let NetworkEvent {
+                    payload: event,
+                    proof_share,
+                } = event.clone();
+
+                let proof_share = proof_share?;
+
                 trace!(
                     "Parsec OpaquePayload v{}: {} - {:?}",
                     self.parsec_map.last_version(),
@@ -119,16 +126,11 @@ impl ConsensusEngine {
                     event
                 );
 
-                let NetworkEvent {
-                    payload: event,
-                    proof_share,
-                } = event.clone();
-
                 match self
                     .accumulator
                     .insert(event, proof, proof_share, our_elders)
                 {
-                    Ok((event, proof)) => Some((event, proof)),
+                    Ok((event, signature)) => Some((event, Some(signature))),
                     Err(AccumulatingError::NotEnoughVotes)
                     | Err(AccumulatingError::AlreadyAccumulated) => None,
                     Err(AccumulatingError::ReplacedAlreadyInserted) => {
@@ -142,6 +144,11 @@ impl ConsensusEngine {
                             log::Level::Warn,
                             "Attempt to insert event with invalid signature share"
                         );
+                        None
+                    }
+                    Err(AccumulatingError::CombineSignaturesFailed(error)) => {
+                        // This should never happen
+                        log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
                         None
                     }
                 }
@@ -160,7 +167,7 @@ impl ConsensusEngine {
                         participants: participants.clone(),
                         dkg_result: dkg_result.clone(),
                     },
-                    AccumulatingProof::default(),
+                    None,
                 ))
             }
             Observation::Add { .. }
@@ -233,14 +240,15 @@ impl ConsensusEngine {
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
     ) {
-        let proof_share = event.to_proof_share(public_key_set, index, secret_key_share);
-        let event = event.into_network_event(proof_share);
+        let event = event.into_network_event(public_key_set, index, secret_key_share);
         self.parsec_map.vote_for(event)
     }
 
     pub fn vote_for_start_dkg(&mut self, participants: BTreeSet<PublicId>) {
-        self.parsec_map
-            .vote_for(AccumulatingEvent::StartDkg(participants).into_network_event(None))
+        self.parsec_map.vote_for(NetworkEvent {
+            payload: AccumulatingEvent::StartDkg(participants),
+            proof_share: None,
+        })
     }
 
     pub fn create_gossip(
@@ -270,8 +278,8 @@ impl ConsensusEngine {
             .handle_response(msg_version, response, pub_id)
     }
 
-    pub fn prune_if_needed(&mut self) {
-        self.parsec_map.prune_if_needed()
+    pub fn needs_pruning(&self) -> bool {
+        self.parsec_map.needs_pruning()
     }
 
     pub fn parsec_version(&self) -> u64 {
