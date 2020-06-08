@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    network_event::AccumulatingEvent,
+    network_event::{AccumulatingEvent, ProofShare},
     proof::{Proof, ProofSet},
 };
 use crate::{
@@ -103,8 +103,8 @@ impl EventAccumulator {
     pub fn insert(
         &mut self,
         event: AccumulatingEvent,
-        proof: Proof,
-        signature_share: Option<(usize, bls::SignatureShare)>,
+        node_proof: Proof,
+        section_proof_share: Option<ProofShare>,
         elders_info: &EldersInfo,
     ) -> Result<(AccumulatingEvent, AccumulatingProof), AccumulatingError> {
         match &event {
@@ -118,14 +118,23 @@ impl EventAccumulator {
         }
 
         if self.accumulated_events.contains(&event) {
-            self.vote_statuses.add_vote(&event, &proof.pub_id);
+            self.vote_statuses.add_vote(&event, &node_proof.pub_id);
             return Err(AccumulatingError::AlreadyAccumulated);
         }
+
+        let (_, signature_share) = if let Some(proof_share) = section_proof_share {
+            (
+                Some(proof_share.public_key_set),
+                Some((proof_share.index, proof_share.signature_share)),
+            )
+        } else {
+            (None, None)
+        };
 
         let (event, proofs) = match self.unaccumulated_events.entry(event) {
             Entry::Vacant(entry) => {
                 let mut proofs = AccumulatingProof::default();
-                proofs.add_proof(proof, signature_share)?;
+                proofs.add_proof(node_proof, signature_share)?;
 
                 if !elders_info.is_quorum(proofs.parsec_proof_set()) {
                     let _ = entry.insert(proofs);
@@ -135,7 +144,7 @@ impl EventAccumulator {
                 (entry.into_key(), proofs)
             }
             Entry::Occupied(mut entry) => {
-                entry.get_mut().add_proof(proof, signature_share)?;
+                entry.get_mut().add_proof(node_proof, signature_share)?;
 
                 if !elders_info.is_quorum(entry.get().parsec_proof_set()) {
                     return Err(AccumulatingError::NotEnoughVotes);
