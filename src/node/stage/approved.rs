@@ -1559,8 +1559,9 @@ impl Approved {
 
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self) {
-        let members = self.shared_state.our_info().elder_ids();
-        let unresponsive_nodes = self.consensus_engine.detect_unresponsive(members);
+        let unresponsive_nodes = self
+            .consensus_engine
+            .detect_unresponsive(self.shared_state.our_info());
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
             self.consensus_engine

@@ -13,7 +13,7 @@ mod parsec;
 mod proof;
 
 pub use self::{
-    event_accumulator::{AccumulatingProof, InsertError},
+    event_accumulator::{AccumulatingError, AccumulatingProof},
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent, OnlinePayload},
     parsec::{
@@ -119,30 +119,21 @@ impl ConsensusEngine {
                     event
                 );
 
-                let (event, signature) = AccumulatingEvent::from_network_event(event.clone());
+                let (event, signature_share) = AccumulatingEvent::from_network_event(event.clone());
 
-                // TODO: merge these three steps (add_proof, incomplete_events, poll_event) into a
-                // single one, to make the process less fragile.
-                match self.accumulator.add_proof(event, proof, signature) {
-                    Ok(()) | Err(InsertError::AlreadyComplete) => {
-                        // Proof added or event already completed.
-                    }
-                    Err(InsertError::ReplacedAlreadyInserted) => {
+                match self
+                    .accumulator
+                    .insert(event, proof, signature_share, our_elders)
+                {
+                    Ok((event, proof)) => Some((event, proof)),
+                    Err(AccumulatingError::NotEnoughVotes) => None,
+                    Err(AccumulatingError::AlreadyAccumulated) => None,
+                    Err(AccumulatingError::ReplacedAlreadyInserted) => {
                         // TODO: If detecting duplicate vote from peer, penalise.
                         log_or_panic!(log::Level::Warn, "Duplicate proof in the accumulator");
+                        None
                     }
                 }
-
-                let event = self
-                    .accumulator
-                    .unaccumulated_events()
-                    .find(|(event, proofs)| {
-                        self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
-                    })
-                    .map(|(event, _)| event.clone())?;
-
-                self.accumulator
-                    .poll_event(event, our_elders.elder_ids().cloned().collect())
             }
             Observation::DkgResult {
                 participants,
@@ -177,41 +168,13 @@ impl ConsensusEngine {
         }
     }
 
-    fn is_accumulated(
-        &self,
-        event: &AccumulatingEvent,
-        proofs: &ProofSet,
-        our_elders: &EldersInfo,
-    ) -> bool {
-        match event {
-            AccumulatingEvent::SectionInfo(..)
-            | AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::NeighbourInfo { .. }
-            | AccumulatingEvent::SendNeighbourInfo { .. }
-            | AccumulatingEvent::TheirKeyInfo { .. }
-            | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::User(_) => our_elders.is_quorum(proofs),
-
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::DkgResult { .. } => unreachable!(
-                "unexpected event present in the event accumulator: {:?}",
-                event
-            ),
-        }
-    }
-
     // Prepares for reset of the consensus engine. Returns all events voted by us that have not
     // accumulated yet, so they can be voted for again. Should be followed by `finalise_reset`.
     pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<NetworkEvent> {
         let RemainingEvents {
             unaccumulated_events,
             accumulated_events,
-        } = self.accumulator.reset_accumulator(our_id);
+        } = self.accumulator.reset(our_id);
 
         unaccumulated_events
             .into_iter()
@@ -248,11 +211,8 @@ impl ConsensusEngine {
             .init(rng, full_id, elders_info, serialised_state, parsec_version)
     }
 
-    pub fn detect_unresponsive<'a>(
-        &self,
-        members: impl IntoIterator<Item = &'a PublicId>,
-    ) -> BTreeSet<PublicId> {
-        self.accumulator.detect_unresponsive(members)
+    pub fn detect_unresponsive(&self, elders_info: &EldersInfo) -> BTreeSet<PublicId> {
+        self.accumulator.detect_unresponsive(elders_info)
     }
 
     pub fn vote_for(&mut self, event: NetworkEvent) {
