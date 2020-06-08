@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    network_event::{AccumulatingEvent, NetworkEvent},
+    network_event::AccumulatingEvent,
     proof::{Proof, ProofSet},
 };
 use crate::{
@@ -160,9 +160,7 @@ impl EventAccumulator {
             unaccumulated_events: unaccumulated_events
                 .into_iter()
                 .filter(|(_, proofs)| proofs.parsec_proofs.contains_id(our_id))
-                .map(|(event, proofs)| {
-                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
-                })
+                .map(|(event, _)| event)
                 .collect(),
             accumulated_events,
         }
@@ -223,10 +221,6 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
-    pub fn into_sig_shares(self) -> BTreeMap<PublicId, bls::SignatureShare> {
-        self.sig_shares
-    }
-
     /// Check the signature shares at the given `signature_index` and combine them into a
     /// complete signature.
     pub fn check_and_combine_signatures(
@@ -262,7 +256,7 @@ pub enum AccumulatingError {
 #[derive(Default, PartialEq, Eq, Debug)]
 pub struct RemainingEvents {
     /// The remaining unaccumulated events that should be revoted.
-    pub unaccumulated_events: BTreeSet<NetworkEvent>,
+    pub unaccumulated_events: BTreeSet<AccumulatingEvent>,
     /// The already accumulated events.
     pub accumulated_events: BTreeSet<AccumulatingEvent>,
 }
@@ -344,11 +338,6 @@ mod test {
             unaccumulated_events,
             accumulated_events,
         } = accumulator.reset(full_ids[0].public_id());
-
-        let unaccumulated_events: BTreeSet<_> = unaccumulated_events
-            .into_iter()
-            .map(|event| event.payload)
-            .collect();
 
         assert!(!unaccumulated_events.contains(&event0));
         assert!(accumulated_events.contains(&event0));
