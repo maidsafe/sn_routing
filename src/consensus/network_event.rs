@@ -95,24 +95,31 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<(usize, bls::SignatureShare)>) {
-        (event.payload, event.signature)
-    }
-
-    pub fn into_network_event(
-        self,
-        signature: Option<(usize, bls::SignatureShare)>,
-    ) -> NetworkEvent {
+    pub fn into_network_event(self, proof_share: Option<ProofShare>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
-            signature,
+            proof_share,
         }
     }
 
-    pub fn sign(&self, key: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
+    pub fn to_proof_share(
+        &self,
+        public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
+    ) -> Option<ProofShare> {
+        let signature_share = self.sign(secret_key_share)?;
+        Some(ProofShare {
+            public_key_set,
+            index,
+            signature_share,
+        })
+    }
+
+    fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
         match self {
             AccumulatingEvent::SectionInfo(_, section_key) => {
-                Some(key.sign(&section_key.to_bytes()[..]))
+                Some(secret_key_share.sign(&section_key.to_bytes()[..]))
             }
             _ => None,
         }
@@ -171,7 +178,7 @@ impl Debug for AccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<(usize, bls::SignatureShare)>,
+    pub proof_share: Option<ProofShare>,
 }
 
 impl NetworkEvent {
@@ -191,10 +198,17 @@ impl ParsecNetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if let Some((index, _)) = self.signature.as_ref() {
-            write!(formatter, "{:?} (sig #{})", self.payload, index)
+        if let Some(share) = self.proof_share.as_ref() {
+            write!(formatter, "{:?} (sig #{})", self.payload, share.index)
         } else {
             self.payload.fmt(formatter)
         }
     }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct ProofShare {
+    pub public_key_set: bls::PublicKeySet,
+    pub index: usize,
+    pub signature_share: bls::SignatureShare,
 }

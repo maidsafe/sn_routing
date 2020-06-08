@@ -35,7 +35,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,
-    section::{EldersInfo, IndexedSecretKeyShare},
+    section::EldersInfo,
     time::Duration,
 };
 use std::collections::BTreeSet;
@@ -119,11 +119,14 @@ impl ConsensusEngine {
                     event
                 );
 
-                let (event, signature_share) = AccumulatingEvent::from_network_event(event.clone());
+                let NetworkEvent {
+                    payload: event,
+                    proof_share,
+                } = event.clone();
 
                 match self
                     .accumulator
-                    .insert(event, proof, signature_share, our_elders)
+                    .insert(event, proof, proof_share, our_elders)
                 {
                     Ok((event, proof)) => Some((event, proof)),
                     Err(AccumulatingError::NotEnoughVotes) => None,
@@ -192,7 +195,7 @@ impl ConsensusEngine {
                         | parsec::Observation::DkgResult { .. }
                         | parsec::Observation::DkgMessage(_) => None,
                     })
-                    .map(|event| AccumulatingEvent::from_network_event(event.clone()).0),
+                    .map(|event| event.payload.clone()),
             )
             .filter(|event| !accumulated_events.contains(event))
             .collect()
@@ -215,11 +218,15 @@ impl ConsensusEngine {
         self.accumulator.detect_unresponsive(elders_info)
     }
 
-    pub fn vote_for(&mut self, event: AccumulatingEvent, secret_key_share: &IndexedSecretKeyShare) {
-        let signature_share = event
-            .sign(&secret_key_share.key)
-            .map(|signature_share| (secret_key_share.index, signature_share));
-        let event = event.into_network_event(signature_share);
+    pub fn vote_for(
+        &mut self,
+        event: AccumulatingEvent,
+        public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
+    ) {
+        let proof_share = event.to_proof_share(public_key_set, index, secret_key_share);
+        let event = event.into_network_event(proof_share);
         self.parsec_map.vote_for(event)
     }
 

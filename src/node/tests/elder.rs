@@ -45,6 +45,7 @@ struct Env {
     pub subject: Node,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
+    pub public_key_set: bls::PublicKeySet,
     pub candidate: P2pNode,
 }
 
@@ -87,6 +88,7 @@ impl Env {
             subject,
             other_ids,
             elders_info,
+            public_key_set: secret_key_set.public_keys(),
             candidate,
         };
 
@@ -111,21 +113,15 @@ impl Env {
 
         for event in events {
             for (full_id, secret_key_share) in self.other_ids.iter().take(count) {
-                let sig_payload = if let AccumulatingEvent::SectionInfo(_info, section_key) = &event
-                {
-                    let sig_share = secret_key_share.sign(&section_key.to_bytes());
-                    let index = self
-                        .elders_info
-                        .position(full_id.public_id().name())
-                        .unwrap();
-                    Some((index, sig_share))
-                } else {
-                    None
-                };
+                let index = self
+                    .elders_info
+                    .position(full_id.public_id().name())
+                    .unwrap();
+                let proof_share =
+                    event.to_proof_share(self.public_key_set.clone(), index, secret_key_share);
+                let event = event.clone().into_network_event(proof_share);
 
-                let event = event.clone().into_network_event(sig_payload);
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
-
                 parsec.vote_for_as(event.into_obs(), full_id);
             }
         }

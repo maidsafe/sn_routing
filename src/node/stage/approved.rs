@@ -201,7 +201,12 @@ impl Approved {
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
         match self.section_keys_provider.secret_key_share() {
-            Ok(share) => self.consensus_engine.vote_for(event, share),
+            Ok(share) => self.consensus_engine.vote_for(
+                event,
+                self.section_keys_provider.public_key_set().clone(),
+                share.index,
+                &share.key,
+            ),
             Err(error) => log_or_panic!(
                 log::Level::Error,
                 "Failed to vote for {:?}: {}",
