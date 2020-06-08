@@ -95,11 +95,14 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<bls::SignatureShare>) {
+    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<(usize, bls::SignatureShare)>) {
         (event.payload, event.signature)
     }
 
-    pub fn into_network_event(self, signature: Option<bls::SignatureShare>) -> NetworkEvent {
+    pub fn into_network_event(
+        self,
+        signature: Option<(usize, bls::SignatureShare)>,
+    ) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
@@ -159,7 +162,7 @@ impl Debug for AccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<bls::SignatureShare>,
+    pub signature: Option<(usize, bls::SignatureShare)>,
 }
 
 impl NetworkEvent {
@@ -179,8 +182,8 @@ impl ParsecNetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if self.signature.is_some() {
-            write!(formatter, "{:?}(signature)", self.payload)
+        if let Some((index, _)) = self.signature.as_ref() {
+            write!(formatter, "{:?} (sig #{})", self.payload, index)
         } else {
             self.payload.fmt(formatter)
         }

@@ -8,7 +8,7 @@
 
 use super::elders_info::EldersInfo;
 use crate::{
-    consensus::{AccumulatingProof, DkgResult, DkgResultWrapper},
+    consensus::{DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::PublicId,
     xor_space::XorName,
@@ -136,20 +136,6 @@ impl SectionKeysProvider {
         self.new_keys.clear();
 
         Ok(())
-    }
-
-    pub fn check_and_combine_signatures(
-        &self,
-        proof: &AccumulatingProof,
-        elders_info: &EldersInfo,
-        signed_bytes: &[u8],
-    ) -> Result<bls::Signature> {
-        proof
-            .check_and_combine_signatures(elders_info, self.public_key_set(), signed_bytes)
-            .map_err(|error| {
-                log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
-                error
-            })
     }
 }
 
