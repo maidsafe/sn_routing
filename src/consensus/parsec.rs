@@ -283,7 +283,7 @@ impl ParsecMap {
 
     pub fn prune_if_needed(&mut self) {
         if self.size_counter.needs_pruning() {
-            self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event());
+            self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event(None));
             self.size_counter.set_pruning_voted_for();
         }
     }

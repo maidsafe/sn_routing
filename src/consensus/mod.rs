@@ -170,7 +170,7 @@ impl ConsensusEngine {
 
     // Prepares for reset of the consensus engine. Returns all events voted by us that have not
     // accumulated yet, so they can be voted for again. Should be followed by `finalise_reset`.
-    pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<NetworkEvent> {
+    pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<AccumulatingEvent> {
         let RemainingEvents {
             unaccumulated_events,
             accumulated_events,
@@ -192,9 +192,9 @@ impl ConsensusEngine {
                         | parsec::Observation::DkgResult { .. }
                         | parsec::Observation::DkgMessage(_) => None,
                     })
-                    .cloned(),
+                    .map(|event| AccumulatingEvent::from_network_event(event.clone()).0),
             )
-            .filter(|event| !accumulated_events.contains(&event.payload))
+            .filter(|event| !accumulated_events.contains(event))
             .collect()
     }
 

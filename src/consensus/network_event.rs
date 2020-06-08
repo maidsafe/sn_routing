@@ -99,14 +99,7 @@ impl AccumulatingEvent {
         (event.payload, event.signature)
     }
 
-    pub fn into_network_event(self) -> NetworkEvent {
-        NetworkEvent {
-            payload: self,
-            signature: None,
-        }
-    }
-
-    pub fn into_network_event_with(self, signature: Option<bls::SignatureShare>) -> NetworkEvent {
+    pub fn into_network_event(self, signature: Option<bls::SignatureShare>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,

@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
-        GenesisPrefixInfo, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
+        GenesisPrefixInfo, OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
     delivery_group,
@@ -200,7 +200,30 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.consensus_engine.vote_for(event.into_network_event())
+        let to_sign = match &event {
+            AccumulatingEvent::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
+            _ => None,
+        };
+
+        let signature_share = if let Some(to_sign) = to_sign {
+            let secret_key_share = match self.section_keys_provider.secret_key_share() {
+                Ok(share) => share,
+                Err(error) => {
+                    error!(
+                        "Failed to create signature share for {:?}: {}",
+                        event, error
+                    );
+                    return;
+                }
+            };
+
+            Some(secret_key_share.key.sign(&to_sign))
+        } else {
+            None
+        };
+
+        self.consensus_engine
+            .vote_for(event.into_network_event(signature_share))
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
@@ -232,7 +255,7 @@ impl Approved {
         };
 
         if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(pub_id.name()) {
-            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id))
         }
     }
 
@@ -1006,7 +1029,10 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_relocate_prepare(details, RELOCATE_COOL_DOWN_STEPS);
+                self.vote_for_event(AccumulatingEvent::RelocatePrepare(
+                    details,
+                    RELOCATE_COOL_DOWN_STEPS,
+                ));
             }
 
             return true;
@@ -1157,9 +1183,9 @@ impl Approved {
         }
 
         if count_down > 0 {
-            self.vote_for_relocate_prepare(payload, count_down - 1);
+            self.vote_for_event(AccumulatingEvent::RelocatePrepare(payload, count_down - 1))
         } else {
-            self.vote_for_relocate(payload);
+            self.vote_for_event(AccumulatingEvent::Relocate(payload))
         }
     }
 
@@ -1232,7 +1258,10 @@ impl Approved {
 
         if let Some(info) = self.dkg_cache.remove(participants) {
             info!("handle DkgResult: {:?}", participants);
-            self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
+            self.vote_for_event(AccumulatingEvent::SectionInfo(
+                info,
+                dkg_result.0.public_key_set.public_key(),
+            ));
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -1506,17 +1535,20 @@ impl Approved {
             self.shared_state.handled_genesis_event = false;
 
             for event in events {
-                self.consensus_engine.vote_for(event);
+                self.vote_for_event(event);
             }
         }
 
         Ok(())
     }
 
-    fn filter_events_to_revote(&self, mut events: Vec<NetworkEvent>) -> Vec<NetworkEvent> {
+    fn filter_events_to_revote(
+        &self,
+        mut events: Vec<AccumulatingEvent>,
+    ) -> Vec<AccumulatingEvent> {
         let our_prefix = *self.shared_state.our_prefix();
 
-        events.retain(|event| match event.payload {
+        events.retain(|event| match event {
             // Only re-vote if still relevant to our new prefix.
             AccumulatingEvent::Online(ref payload) => our_prefix.matches(payload.p2p_node.name()),
             AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
@@ -1564,36 +1596,8 @@ impl Approved {
             .detect_unresponsive(self.shared_state.our_info());
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
-            self.consensus_engine
-                .vote_for(AccumulatingEvent::Offline(*pub_id).into_network_event());
+            self.vote_for_event(AccumulatingEvent::Offline(*pub_id));
         }
-    }
-
-    fn vote_for_relocate(&mut self, details: RelocateDetails) {
-        self.consensus_engine
-            .vote_for(AccumulatingEvent::Relocate(details).into_network_event())
-    }
-
-    fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
-        self.consensus_engine
-            .vote_for(AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event());
-    }
-
-    fn vote_for_section_info(
-        &mut self,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-    ) -> Result<(), RoutingError> {
-        let signature_share = self
-            .section_keys_provider
-            .secret_key_share()?
-            .key
-            .sign(&section_key.to_bytes()[..]);
-
-        let event = AccumulatingEvent::SectionInfo(elders_info, section_key);
-        let event = event.into_network_event_with(Some(signature_share));
-        self.consensus_engine.vote_for(event);
-        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////

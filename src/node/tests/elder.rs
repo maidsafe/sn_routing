@@ -123,10 +123,7 @@ impl Env {
 
                     info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                     parsec.vote_for_as(
-                        event
-                            .clone()
-                            .into_network_event_with(sig_payload)
-                            .into_obs(),
+                        event.clone().into_network_event(sig_payload).into_obs(),
                         full_id,
                     );
                 });
