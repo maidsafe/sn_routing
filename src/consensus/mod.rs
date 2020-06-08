@@ -129,11 +129,19 @@ impl ConsensusEngine {
                     .insert(event, proof, proof_share, our_elders)
                 {
                     Ok((event, proof)) => Some((event, proof)),
-                    Err(AccumulatingError::NotEnoughVotes) => None,
-                    Err(AccumulatingError::AlreadyAccumulated) => None,
+                    Err(AccumulatingError::NotEnoughVotes)
+                    | Err(AccumulatingError::AlreadyAccumulated) => None,
                     Err(AccumulatingError::ReplacedAlreadyInserted) => {
-                        // TODO: If detecting duplicate vote from peer, penalise.
-                        log_or_panic!(log::Level::Warn, "Duplicate proof in the accumulator");
+                        // TODO: penalise
+                        log_or_panic!(log::Level::Warn, "Attempt to insert duplicate event");
+                        None
+                    }
+                    Err(AccumulatingError::InvalidSignatureShare) => {
+                        // TODO: penalise
+                        log_or_panic!(
+                            log::Level::Warn,
+                            "Attempt to insert event with invalid signature share"
+                        );
                         None
                     }
                 }

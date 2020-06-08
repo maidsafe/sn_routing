@@ -501,6 +501,7 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 
     env.other_ids = info_with_candidate.new_other_ids;
     env.elders_info = info_with_candidate.new_elders_info;
+    env.public_key_set = info_with_candidate.new_pk_set;
 
     env.accumulate_offline(*env.candidate.public_id());
     env.accumulate_start_dkg(&info_without_candidate);
