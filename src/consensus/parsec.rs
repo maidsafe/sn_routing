@@ -206,12 +206,17 @@ impl ParsecMap {
     pub fn vote_for(&mut self, event: NetworkEvent) {
         trace!("Vote for Event {:?}", event);
 
+        let prune = matches!(&event.payload, AccumulatingEvent::ParsecPrune);
+
         if let Some(parsec) = self.map.values_mut().last() {
             let obs = event.into_obs();
 
             match parsec.vote_for(obs) {
                 Ok(()) => {
                     self.send_gossip = true;
+                    if prune {
+                        self.size_counter.set_pruning_voted_for();
+                    }
                 }
                 Err(err) => trace!("Parsec vote error: {:?}", err),
             }
@@ -281,11 +286,8 @@ impl ParsecMap {
         parsec.has_unpolled_observations()
     }
 
-    pub fn prune_if_needed(&mut self) {
-        if self.size_counter.needs_pruning() {
-            self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event(None));
-            self.size_counter.set_pruning_voted_for();
-        }
+    pub fn needs_pruning(&self) -> bool {
+        self.size_counter.needs_pruning()
     }
 
     // Returns whether we should send parsec gossip now.

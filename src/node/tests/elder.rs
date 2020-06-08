@@ -117,9 +117,11 @@ impl Env {
                     .elders_info
                     .position(full_id.public_id().name())
                     .unwrap();
-                let proof_share =
-                    event.to_proof_share(self.public_key_set.clone(), index, secret_key_share);
-                let event = event.clone().into_network_event(proof_share);
+                let event = event.clone().into_network_event(
+                    self.public_key_set.clone(),
+                    index,
+                    secret_key_share,
+                );
 
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                 parsec.vote_for_as(event.into_obs(), full_id);
@@ -357,8 +359,11 @@ impl Env {
         self.accumulate_start_dkg(&new_info);
         self.accumulate_section_info_if_vote(&new_info);
         self.accumulate_voted_unconsensused_events();
+
         self.elders_info = new_info.new_elders_info;
         self.other_ids = new_info.new_other_ids;
+        self.public_key_set = new_info.new_pk_set;
+
         self.accumulate_self_their_knowledge();
     }
 
@@ -472,16 +477,20 @@ fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_o
 #[test]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut env = Env::new(ELDER_SIZE - 1);
-    let new_info = env.new_elders_info_with_candidate();
+    let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&new_info);
-    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_start_dkg(&info1);
+    env.accumulate_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
 
-    env.other_ids = new_info.new_other_ids;
-    let new_info = env.new_elders_info_without_candidate();
+    let info2 = env.new_elders_info_without_candidate();
+
+    env.other_ids = info1.new_other_ids;
+    env.elders_info = info1.new_elders_info;
+    env.public_key_set = info1.new_pk_set;
+
     env.accumulate_offline(*env.candidate.public_id());
-    env.accumulate_start_dkg(&new_info);
+    env.accumulate_start_dkg(&info2);
 
     assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
@@ -491,21 +500,21 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 #[test]
 fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
     let mut env = Env::new(ELDER_SIZE - 1);
-    let info_with_candidate = env.new_elders_info_with_candidate();
+    let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&info_with_candidate);
-    env.accumulate_section_info_if_vote(&info_with_candidate);
+    env.accumulate_start_dkg(&info1);
+    env.accumulate_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
 
-    let info_without_candidate = env.new_elders_info_without_candidate();
+    let info2 = env.new_elders_info_without_candidate();
 
-    env.other_ids = info_with_candidate.new_other_ids;
-    env.elders_info = info_with_candidate.new_elders_info;
-    env.public_key_set = info_with_candidate.new_pk_set;
+    env.other_ids = info1.new_other_ids;
+    env.elders_info = info1.new_elders_info;
+    env.public_key_set = info1.new_pk_set;
 
     env.accumulate_offline(*env.candidate.public_id());
-    env.accumulate_start_dkg(&info_without_candidate);
-    env.accumulate_section_info_if_vote(&info_without_candidate);
+    env.accumulate_start_dkg(&info2);
+    env.accumulate_section_info_if_vote(&info2);
     env.accumulate_voted_unconsensused_events();
 
     assert!(!env.has_unpolled_observations());

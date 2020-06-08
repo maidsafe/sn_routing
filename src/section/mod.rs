@@ -30,11 +30,9 @@ pub use self::{
 #[cfg(test)]
 pub use self::section_keys::gen_secret_key;
 
-use crate::consensus::AccumulatingProof;
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct SplitCache {
     pub elders_info: EldersInfo,
     pub section_key: bls::PublicKey,
-    pub proofs: AccumulatingProof,
+    pub signature: bls::Signature,
 }

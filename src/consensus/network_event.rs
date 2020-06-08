@@ -95,42 +95,56 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn into_network_event(self, proof_share: Option<ProofShare>) -> NetworkEvent {
+    pub fn into_network_event(
+        self,
+        public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
+    ) -> NetworkEvent {
+        let proof_share = if let Some(signature_share) = self.sign(secret_key_share) {
+            Some(ProofShare {
+                public_key_set,
+                index,
+                signature_share,
+            })
+        } else {
+            None
+        };
+
         NetworkEvent {
             payload: self,
             proof_share,
         }
     }
 
-    pub fn to_proof_share(
-        &self,
-        public_key_set: bls::PublicKeySet,
-        index: usize,
-        secret_key_share: &bls::SecretKeyShare,
-    ) -> Option<ProofShare> {
-        let bytes = self.serialise_for_signing()?;
-        let signature_share = secret_key_share.sign(&bytes);
-        Some(ProofShare {
-            public_key_set,
-            index,
-            signature_share,
-        })
+    pub fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
+        self.serialise_for_signing()
+            .map(|bytes| secret_key_share.sign(&bytes))
     }
 
     pub fn verify(&self, proof_share: &ProofShare) -> bool {
-        let bytes = if let Some(bytes) = self.serialise_for_signing() {
-            bytes
+        if let Some(bytes) = self.serialise_for_signing() {
+            proof_share.verify(&bytes)
         } else {
-            return false;
-        };
-
-        proof_share.verify(&bytes)
+            false
+        }
     }
 
     fn serialise_for_signing(&self) -> Option<Vec<u8>> {
         match self {
-            AccumulatingEvent::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
-            _ => None,
+            Self::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
+            // TODO: serialise these variants properly
+            Self::Online(_)
+            | Self::Offline(_)
+            | Self::NeighbourInfo(..)
+            | Self::SendNeighbourInfo { .. }
+            | Self::TheirKeyInfo { .. }
+            | Self::TheirKnowledge { .. }
+            | Self::ParsecPrune
+            | Self::Relocate(_)
+            | Self::RelocatePrepare(..)
+            | Self::User(_) => Some(vec![]),
+            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => None,
         }
     }
 }
