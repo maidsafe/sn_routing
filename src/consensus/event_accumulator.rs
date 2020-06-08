@@ -17,7 +17,7 @@ use crate::{
 };
 use serde::Serialize;
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
     mem,
     rc::Rc,
 };
@@ -42,7 +42,7 @@ impl VoteStatuses {
         &mut self,
         event: AccumulatingEvent,
         non_voters: BTreeSet<PublicId>,
-        all_members: &BTreeSet<PublicId>,
+        elders_info: &EldersInfo,
     ) {
         let event_rc = Rc::new(event);
         for id in non_voters {
@@ -61,10 +61,10 @@ impl VoteStatuses {
         }
 
         // Pruning old peers
-        if self.unvoted.len() > all_members.len() {
+        if self.unvoted.len() > elders_info.elders.len() {
             self.unvoted = mem::replace(&mut self.unvoted, BTreeMap::new())
                 .into_iter()
-                .filter(|(peer_id, _)| all_members.contains(peer_id))
+                .filter(|(id, _)| elders_info.elders.contains_key(id.name()))
                 .collect();
         }
     }
@@ -100,70 +100,58 @@ pub struct EventAccumulator {
 }
 
 impl EventAccumulator {
-    #[cfg(test)]
-    pub fn insert_with_proof_set(
-        &mut self,
-        event: AccumulatingEvent,
-        proof_set: ProofSet,
-    ) -> Result<(), InsertError> {
-        if self.accumulated_events.contains(&event) {
-            return Err(InsertError::AlreadyComplete);
-        }
-
-        let proof = AccumulatingProof::from_proof_set(proof_set);
-        if self.unaccumulated_events.insert(event, proof).is_some() {
-            return Err(InsertError::ReplacedAlreadyInserted);
-        }
-
-        Ok(())
-    }
-
-    pub fn add_proof(
+    pub fn insert(
         &mut self,
         event: AccumulatingEvent,
         proof: Proof,
         signature_share: Option<bls::SignatureShare>,
-    ) -> Result<(), InsertError> {
+        elders_info: &EldersInfo,
+    ) -> Result<(AccumulatingEvent, AccumulatingProof), AccumulatingError> {
+        match &event {
+            AccumulatingEvent::Genesis { .. }
+            | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::DkgResult { .. } => panic!(
+                "invalid event inserted into the event accumulator: {:?}",
+                event
+            ),
+            _ => (),
+        }
+
         if self.accumulated_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &proof.pub_id);
-            return Err(InsertError::AlreadyComplete);
+            return Err(AccumulatingError::AlreadyAccumulated);
         }
 
-        if !self
-            .unaccumulated_events
-            .entry(event)
-            .or_default()
-            .add_proof(proof, signature_share)
-        {
-            return Err(InsertError::ReplacedAlreadyInserted);
-        }
+        let (event, proofs) = match self.unaccumulated_events.entry(event) {
+            Entry::Vacant(entry) => {
+                let mut proofs = AccumulatingProof::default();
+                proofs.add_proof(proof, signature_share)?;
 
-        Ok(())
+                if !elders_info.is_quorum(proofs.parsec_proof_set()) {
+                    let _ = entry.insert(proofs);
+                    return Err(AccumulatingError::NotEnoughVotes);
+                }
+
+                (entry.into_key(), proofs)
+            }
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().add_proof(proof, signature_share)?;
+
+                if !elders_info.is_quorum(entry.get().parsec_proof_set()) {
+                    return Err(AccumulatingError::NotEnoughVotes);
+                }
+
+                entry.remove_entry()
+            }
+        };
+
+        self.add_expectation(event.clone(), &proofs, elders_info);
+        let _ = self.accumulated_events.insert(event.clone());
+
+        Ok((event, proofs))
     }
 
-    pub fn poll_event(
-        &mut self,
-        event: AccumulatingEvent,
-        all_voters: BTreeSet<PublicId>,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        let proofs = self.unaccumulated_events.remove(&event)?;
-
-        if !self.accumulated_events.insert(event.clone()) {
-            log_or_panic!(log::Level::Warn, "Duplicate insert in completed events.");
-        }
-
-        self.add_expectation(event.clone(), &proofs, all_voters);
-
-        Some((event, proofs))
-    }
-
-    pub fn unaccumulated_events(
-        &self,
-    ) -> impl Iterator<Item = (&AccumulatingEvent, &AccumulatingProof)> {
-        self.unaccumulated_events.iter()
-    }
-
-    pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
+    pub fn reset(&mut self, our_id: &PublicId) -> RemainingEvents {
         let accumulated_events = std::mem::take(&mut self.accumulated_events);
         let unaccumulated_events = std::mem::take(&mut self.unaccumulated_events);
         self.vote_statuses = Default::default();
@@ -180,29 +168,28 @@ impl EventAccumulator {
         }
     }
 
-    pub fn add_expectation(
+    pub fn detect_unresponsive(&self, elders_info: &EldersInfo) -> BTreeSet<PublicId> {
+        elders_info
+            .elder_ids()
+            .filter(|id| self.vote_statuses.is_unresponsive(id))
+            .copied()
+            .collect()
+    }
+
+    fn add_expectation(
         &mut self,
         event: AccumulatingEvent,
         proofs: &AccumulatingProof,
-        all_voters: BTreeSet<PublicId>,
+        elders_info: &EldersInfo,
     ) {
-        let mut non_voted = all_voters.clone();
-        for id in proofs.parsec_proof_set().ids() {
-            let _ = non_voted.remove(id);
-        }
-        self.vote_statuses
-            .add_expectation(event, non_voted, &all_voters);
-    }
+        let non_voted = elders_info
+            .elder_ids()
+            .filter(|id| !proofs.parsec_proof_set().contains_id(id))
+            .copied()
+            .collect();
 
-    pub fn detect_unresponsive<'a>(
-        &self,
-        members: impl IntoIterator<Item = &'a PublicId>,
-    ) -> BTreeSet<PublicId> {
-        members
-            .into_iter()
-            .filter(|peer_id| self.vote_statuses.is_unresponsive(peer_id))
-            .cloned()
-            .collect()
+        self.vote_statuses
+            .add_expectation(event, non_voted, elders_info);
     }
 }
 
@@ -213,22 +200,23 @@ pub struct AccumulatingProof {
 }
 
 impl AccumulatingProof {
-    #[cfg(test)]
-    pub fn from_proof_set(parsec_proofs: ProofSet) -> Self {
-        Self {
-            parsec_proofs,
-            sig_shares: Default::default(),
-        }
-    }
-
     /// Return false if share or proof is replaced
-    pub fn add_proof(&mut self, proof: Proof, sig_share: Option<bls::SignatureShare>) -> bool {
-        let new_share = sig_share.map_or(true, |share| {
-            self.sig_shares.insert(proof.pub_id, share).is_none()
-        });
+    pub fn add_proof(
+        &mut self,
+        proof: Proof,
+        sig_share: Option<bls::SignatureShare>,
+    ) -> Result<(), AccumulatingError> {
+        if let Some(sig_share) = sig_share {
+            if self.sig_shares.insert(proof.pub_id, sig_share).is_some() {
+                return Err(AccumulatingError::ReplacedAlreadyInserted);
+            }
+        }
 
-        let new_proof = self.parsec_proofs.add_proof(proof);
-        new_share && new_proof
+        if !self.parsec_proofs.add_proof(proof) {
+            return Err(AccumulatingError::ReplacedAlreadyInserted);
+        }
+
+        Ok(())
     }
 
     pub fn parsec_proof_set(&self) -> &ProofSet {
@@ -264,8 +252,9 @@ impl AccumulatingProof {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub enum InsertError {
-    AlreadyComplete,
+pub enum AccumulatingError {
+    NotEnoughVotes,
+    AlreadyAccumulated,
     ReplacedAlreadyInserted,
 }
 
@@ -282,378 +271,159 @@ pub struct RemainingEvents {
 mod test {
     use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
-        id::FullId,
+        id::{FullId, P2pNode},
         rng::{self, MainRng},
-        section::EldersInfo,
+        ELDER_SIZE,
     };
-    use parsec::SecretId;
-    use std::iter;
+    use itertools::Itertools;
+    use rand::{distributions::Standard, seq::SliceRandom, Rng};
+    use std::{iter, net::SocketAddr};
 
-    const TEST_DATA_FOR_SIGN: [u8; 1] = [1u8];
+    #[test]
+    fn insert_without_signature_shares() {
+        let mut rng = rng::new();
+        let (elders_info, full_ids) = gen_elders_info(&mut rng);
 
-    struct TestData {
-        pub our_id: PublicId,
-        pub event: AccumulatingEvent,
-        pub network_event: NetworkEvent,
-        pub first_proof: Proof,
-        pub proofs: ProofSet,
-        pub acc_proofs: AccumulatingProof,
-        pub signature: Option<bls::SignatureShare>,
-    }
+        let mut accumulator = EventAccumulator::default();
+        let event = gen_event(&mut rng);
 
-    enum EventType {
-        WithSignature,
-        NoSignature,
-    }
-
-    fn empty_elders_info() -> EldersInfo {
-        EldersInfo::new(Default::default(), Default::default())
-    }
-
-    fn random_section_info_sig_share(
-        rng: &mut MainRng,
-    ) -> (bls::SignatureShare, bls::PublicKeySet) {
-        let participants = 2;
-        let first_secret_key_index = 0;
-        let bls_keys = generate_bls_threshold_secret_key(rng, participants);
-        let bls_secret_key_share = bls_keys.secret_key_share(first_secret_key_index);
-
-        (
-            bls_secret_key_share.sign(&TEST_DATA_FOR_SIGN),
-            bls_keys.public_keys(),
-        )
-    }
-
-    fn random_ids_and_proof(rng: &mut MainRng) -> (FullId, Proof) {
-        let id = FullId::gen(rng);
-        let pub_id = *id.public_id();
-        let sig = id.sign_detached(&TEST_DATA_FOR_SIGN);
-
-        (id, Proof { pub_id, sig })
-    }
-
-    fn test_data_random_key(rng: &mut MainRng, event_type: EventType) -> TestData {
-        let (id, first_proof) = random_ids_and_proof(rng);
-        let proofs = ProofSet {
-            sigs: iter::once((first_proof.pub_id, first_proof.sig)).collect(),
-        };
-
-        match event_type {
-            EventType::NoSignature => {
-                let event = AccumulatingEvent::User(vec![0]);
-                TestData {
-                    our_id: *id.public_id(),
-                    event: event.clone(),
-                    network_event: event.into_network_event(),
-                    first_proof,
-                    proofs: proofs.clone(),
-                    acc_proofs: AccumulatingProof {
-                        parsec_proofs: proofs,
-                        sig_shares: Default::default(),
-                    },
-                    signature: None,
-                }
-            }
-            EventType::WithSignature => {
-                let elders_info = empty_elders_info();
-                let (sig_share, keys) = random_section_info_sig_share(rng);
-                let event = AccumulatingEvent::SectionInfo(elders_info, keys.public_key());
-
-                TestData {
-                    our_id: *id.public_id(),
-                    event: event.clone(),
-                    network_event: event.into_network_event_with(Some(sig_share.clone())),
-                    first_proof,
-                    proofs: proofs.clone(),
-                    acc_proofs: AccumulatingProof {
-                        parsec_proofs: proofs,
-                        sig_shares: iter::once((first_proof.pub_id, sig_share.clone())).collect(),
-                    },
-                    signature: Some(sig_share),
-                }
-            }
+        // The first 4 votes are not enough to accumulate
+        for full_id in &full_ids[..4] {
+            let proof = create_proof(full_id);
+            assert_eq!(
+                accumulator.insert(event.clone(), proof, None, &elders_info),
+                Err(AccumulatingError::NotEnoughVotes)
+            );
         }
-    }
 
-    fn incomplete_events(acc: &EventAccumulator) -> Vec<(AccumulatingEvent, AccumulatingProof)> {
-        acc.unaccumulated_events()
-            .map(|(e, p)| (e.clone(), p.clone()))
-            .collect()
-    }
+        // With the 5th vote we reach the quorum
+        let proof = create_proof(&full_ids[4]);
+        let accumulated_event = match accumulator.insert(event.clone(), proof, None, &elders_info) {
+            Ok((event, _proofs)) => event,
+            Err(error) => panic!("unexpected error: {:?}", error),
+        };
+        assert_eq!(accumulated_event, event);
 
-    fn accumulated_events(acc: &EventAccumulator) -> Vec<AccumulatingEvent> {
-        acc.accumulated_events.iter().cloned().collect()
-    }
-
-    #[test]
-    fn insert_with_proof_set_no_sig() {
-        insert_with_proof_set(test_data_random_key(
-            &mut rng::new(),
-            EventType::NoSignature,
-        ));
-    }
-
-    fn insert_with_proof_set(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let result = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
-
-        assert_eq!(result, Ok(()));
-        assert_eq!(incomplete_events(&acc), vec![(data.event, data.acc_proofs)]);
-    }
-
-    #[test]
-    fn poll_proof_no_sig() {
-        poll_proof(test_data_random_key(
-            &mut rng::new(),
-            EventType::NoSignature,
-        ));
-    }
-
-    fn poll_proof(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
-
-        let event_to_poll = acc.unaccumulated_events().next().unwrap().0.clone();
-        let result = acc.poll_event(event_to_poll, Default::default());
-
-        assert_eq!(result, Some((data.event, data.acc_proofs)));
-        assert_eq!(incomplete_events(&acc), vec![]);
-    }
-
-    #[test]
-    fn re_insert_with_proof_set_no_sig() {
-        let mut rng = rng::new();
-        re_insert_with_proof_set(
-            test_data_random_key(&mut rng, EventType::NoSignature),
-            test_data_random_key(&mut rng, EventType::NoSignature),
-        );
-    }
-
-    fn re_insert_with_proof_set(data: TestData, data2: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
-
-        let result = acc.insert_with_proof_set(data.event.clone(), data2.proofs.clone());
-
-        assert_eq!(result, Err(InsertError::ReplacedAlreadyInserted));
+        // Any additional votes are redundant
+        let proof = create_proof(&full_ids[5]);
         assert_eq!(
-            incomplete_events(&acc),
-            vec![(data.event, data2.acc_proofs)]
+            accumulator.insert(event, proof, None, &elders_info),
+            Err(AccumulatingError::AlreadyAccumulated)
         );
     }
 
     #[test]
-    fn re_insert_with_proof_set_after_poll_no_sig() {
+    fn reset() {
         let mut rng = rng::new();
-        re_insert_with_proof_set_after_poll(
-            test_data_random_key(&mut rng, EventType::NoSignature),
-            test_data_random_key(&mut rng, EventType::NoSignature),
-        );
-    }
+        let (elders_info, full_ids) = gen_elders_info(&mut rng);
 
-    fn re_insert_with_proof_set_after_poll(data: TestData, data2: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
-        let _ = acc.poll_event(data.event.clone(), Default::default());
+        let mut accumulator = EventAccumulator::default();
 
-        let result = acc.insert_with_proof_set(data.event, data2.proofs);
+        // one accumulated event
+        let event0 = gen_event(&mut rng);
+        for full_id in &full_ids[..5] {
+            let proof = create_proof(full_id);
+            let _ = accumulator.insert(event0.clone(), proof, None, &elders_info);
+        }
 
-        assert_eq!(result, Err(InsertError::AlreadyComplete));
-        assert_eq!(incomplete_events(&acc), vec![]);
-    }
+        // one unaccumulated event voted for by node 0
+        let event1 = gen_event(&mut rng);
+        for full_id in &full_ids[..4] {
+            let proof = create_proof(full_id);
+            let _ = accumulator.insert(event1.clone(), proof, None, &elders_info);
+        }
 
-    #[test]
-    fn add_proof_no_sig() {
-        add_proof(test_data_random_key(
-            &mut rng::new(),
-            EventType::NoSignature,
-        ));
-    }
+        // one unaccumulated event not voted for by node 0
+        let event2 = gen_event(&mut rng);
+        for full_id in &full_ids[1..5] {
+            let proof = create_proof(full_id);
+            let _ = accumulator.insert(event2.clone(), proof, None, &elders_info);
+        }
 
-    #[test]
-    fn add_proof_with_sig() {
-        add_proof(test_data_random_key(
-            &mut rng::new(),
-            EventType::WithSignature,
-        ));
-    }
+        let RemainingEvents {
+            unaccumulated_events,
+            accumulated_events,
+        } = accumulator.reset(full_ids[0].public_id());
 
-    fn add_proof(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let result = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
+        let unaccumulated_events: BTreeSet<_> = unaccumulated_events
+            .into_iter()
+            .map(|event| event.payload)
+            .collect();
 
-        assert_eq!(result, Ok(()));
-        assert_eq!(incomplete_events(&acc), vec![(data.event, data.acc_proofs)]);
-    }
+        assert!(!unaccumulated_events.contains(&event0));
+        assert!(accumulated_events.contains(&event0));
 
-    #[test]
-    fn re_add_proof_no_sig() {
-        re_add_proof(test_data_random_key(
-            &mut rng::new(),
-            EventType::NoSignature,
-        ));
-    }
+        assert!(unaccumulated_events.contains(&event1));
+        assert!(!accumulated_events.contains(&event1));
 
-    #[test]
-    fn re_add_proof_with_sig() {
-        re_add_proof(test_data_random_key(
-            &mut rng::new(),
-            EventType::WithSignature,
-        ));
-    }
-
-    fn re_add_proof(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
-
-        let result = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
-
-        assert_eq!(result, Err(InsertError::ReplacedAlreadyInserted));
-        assert_eq!(incomplete_events(&acc), vec![(data.event, data.acc_proofs)]);
-    }
-
-    #[test]
-    fn re_add_proof_after_poll_no_sig() {
-        let mut rng = rng::new();
-        re_add_proof_after_poll(test_data_random_key(&mut rng, EventType::NoSignature));
-    }
-
-    #[test]
-    fn re_add_proof_after_poll_with_sig() {
-        let mut rng = rng::new();
-        re_add_proof_after_poll(test_data_random_key(&mut rng, EventType::WithSignature));
-    }
-
-    fn re_add_proof_after_poll(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
-        let _ = acc.poll_event(data.event.clone(), Default::default());
-
-        let result = acc.add_proof(data.event, data.first_proof, data.signature);
-
-        assert_eq!(result, Err(InsertError::AlreadyComplete));
-        assert_eq!(incomplete_events(&acc), vec![]);
-    }
-
-    #[test]
-    fn reset_all_completed_no_sig() {
-        let mut rng = rng::new();
-        reset_all_completed(test_data_random_key(&mut rng, EventType::NoSignature));
-    }
-
-    #[test]
-    fn reset_all_completed_with_sig() {
-        let mut rng = rng::new();
-        reset_all_completed(test_data_random_key(&mut rng, EventType::WithSignature));
-    }
-
-    fn reset_all_completed(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
-        let _ = acc.poll_event(data.event.clone(), Default::default());
-
-        let result = acc.reset_accumulator(&data.our_id);
-
-        assert_eq!(
-            result,
-            RemainingEvents {
-                unaccumulated_events: BTreeSet::new(),
-                accumulated_events: vec![data.event].into_iter().collect()
-            }
-        );
-        assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(accumulated_events(&acc), vec![]);
-    }
-
-    #[test]
-    fn reset_none_completed_no_sig() {
-        let mut rng = rng::new();
-        reset_none_completed(test_data_random_key(&mut rng, EventType::NoSignature));
-    }
-
-    #[test]
-    fn reset_none_completed_with_sig() {
-        let mut rng = rng::new();
-        reset_none_completed(test_data_random_key(&mut rng, EventType::WithSignature));
-    }
-
-    fn reset_none_completed(data: TestData) {
-        let mut acc = EventAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
-
-        let result = acc.reset_accumulator(&data.our_id);
-
-        assert_eq!(
-            result,
-            RemainingEvents {
-                unaccumulated_events: vec![data.network_event].into_iter().collect(),
-                accumulated_events: BTreeSet::new(),
-            }
-        );
-        assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(accumulated_events(&acc), vec![]);
-    }
-
-    #[test]
-    fn reset_none_completed_none_our_id_no_sig() {
-        let mut rng = rng::new();
-        let test_data = test_data_random_key(&mut rng, EventType::NoSignature);
-        reset_none_completed_none_our_id(&mut rng, test_data);
-    }
-
-    #[test]
-    fn reset_none_completed_none_our_id_with_sig() {
-        let mut rng = rng::new();
-        let test_data = test_data_random_key(&mut rng, EventType::WithSignature);
-        reset_none_completed_none_our_id(&mut rng, test_data);
-    }
-
-    fn reset_none_completed_none_our_id(rng: &mut MainRng, data: TestData) {
-        let our_id = *FullId::gen(rng).public_id();
-        let mut acc = EventAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature);
-
-        let result = acc.reset_accumulator(&our_id);
-
-        assert_eq!(result, RemainingEvents::default());
-        assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(accumulated_events(&acc), vec![]);
+        assert!(!unaccumulated_events.contains(&event2));
+        assert!(!accumulated_events.contains(&event2));
     }
 
     #[test]
     fn tracking_responsiveness() {
         let mut rng = rng::new();
 
-        let ids_and_proofs: Vec<_> = (0..8)
-            .map(|_| {
-                let (full_id, proof) = random_ids_and_proof(&mut rng);
-                (*full_id.public_id(), proof)
-            })
-            .collect();
-        let members: BTreeSet<_> = ids_and_proofs.iter().map(|(id, _)| *id).clone().collect();
-        let polling_point = 6;
-        let unresponsive_node = ids_and_proofs[5].0;
+        let (elders_info, full_ids) = gen_elders_info(&mut rng);
+        let proofs: Vec<_> = full_ids.iter().map(create_proof).collect();
+        let unresponsive_node = full_ids.choose(&mut rng).unwrap().public_id();
 
         let mut acc = EventAccumulator::default();
 
         for i in 0..UNRESPONSIVE_WINDOW {
             let event = AccumulatingEvent::User([i as u8].to_vec());
-            for (index, (id, proof)) in ids_and_proofs.iter().enumerate() {
-                if index == polling_point {
-                    let _ = acc.poll_event(event.clone(), members.clone());
-                }
+            for proof in &proofs {
                 if i >= (UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1)
-                    && id == &unresponsive_node
+                    && proof.pub_id == *unresponsive_node
                 {
                     continue;
                 }
-                let _ = acc.add_proof(event.clone(), *proof, None);
+
+                let _ = acc.insert(event.clone(), *proof, None, &elders_info);
             }
         }
 
-        let expected: BTreeSet<_> = iter::once(unresponsive_node).collect();
-        let detected = acc.detect_unresponsive(&members);
+        let expected: BTreeSet<_> = iter::once(*unresponsive_node).collect();
+        let detected = acc.detect_unresponsive(&elders_info);
         assert_eq!(detected, expected);
+    }
+
+    const TEST_DATA_FOR_SIGN: [u8; 1] = [1];
+
+    // Generate elders info and the corresponding full ids in the same order.
+    fn gen_elders_info(rng: &mut MainRng) -> (EldersInfo, Vec<FullId>) {
+        let full_ids: Vec<_> = (0..ELDER_SIZE)
+            .map(|_| FullId::gen(rng))
+            .sorted_by(|lhs, rhs| lhs.public_id().name().cmp(rhs.public_id().name()))
+            .collect();
+
+        let elders = full_ids
+            .iter()
+            .map(|full_id| {
+                let addr = gen_socket_addr(rng);
+                let p2p_node = P2pNode::new(*full_id.public_id(), addr);
+                (*p2p_node.public_id().name(), p2p_node)
+            })
+            .collect();
+
+        (EldersInfo::new(elders, Default::default()), full_ids)
+    }
+
+    fn gen_socket_addr(rng: &mut MainRng) -> SocketAddr {
+        let ip: [u8; 4] = rng.gen();
+        let port: u16 = rng.gen();
+        SocketAddr::from((ip, port))
+    }
+
+    fn gen_event(rng: &mut MainRng) -> AccumulatingEvent {
+        AccumulatingEvent::User(rng.sample_iter(&Standard).take(10).collect())
+    }
+
+    fn create_proof(full_id: &FullId) -> Proof {
+        let sig = full_id.sign(&TEST_DATA_FOR_SIGN);
+        Proof {
+            pub_id: *full_id.public_id(),
+            sig,
+        }
     }
 }
