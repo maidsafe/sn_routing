@@ -35,7 +35,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,
-    section::EldersInfo,
+    section::{EldersInfo, IndexedSecretKeyShare},
     time::Duration,
 };
 use std::collections::BTreeSet;
@@ -215,8 +215,17 @@ impl ConsensusEngine {
         self.accumulator.detect_unresponsive(elders_info)
     }
 
-    pub fn vote_for(&mut self, event: NetworkEvent) {
+    pub fn vote_for(&mut self, event: AccumulatingEvent, secret_key_share: &IndexedSecretKeyShare) {
+        let signature_share = event
+            .sign(&secret_key_share.key)
+            .map(|signature_share| (secret_key_share.index, signature_share));
+        let event = event.into_network_event(signature_share);
         self.parsec_map.vote_for(event)
+    }
+
+    pub fn vote_for_start_dkg(&mut self, participants: BTreeSet<PublicId>) {
+        self.parsec_map
+            .vote_for(AccumulatingEvent::StartDkg(participants).into_network_event(None))
     }
 
     pub fn create_gossip(
