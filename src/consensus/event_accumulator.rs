@@ -85,7 +85,7 @@ impl VoteStatuses {
 }
 
 #[derive(Default)]
-pub struct EventAccumulator {
+pub(crate) struct EventAccumulator {
     // A map containing network events that have not been accumulated yet, together with their
     // proofs that have been collected so far. We are still waiting for more proofs, or to reach a
     // state where we can handle the event.
@@ -122,35 +122,31 @@ impl EventAccumulator {
             return Err(AccumulatingError::AlreadyAccumulated);
         }
 
-        let (_, signature_share) = if let Some(proof_share) = section_proof_share {
-            (
-                Some(proof_share.public_key_set),
-                Some((proof_share.index, proof_share.signature_share)),
-            )
-        } else {
-            (None, None)
-        };
+        if let Some(proof_share) = section_proof_share.as_ref() {
+            if !event.verify(proof_share) {
+                return Err(AccumulatingError::InvalidSignatureShare);
+            }
+        }
 
         let (event, proofs) = match self.unaccumulated_events.entry(event) {
             Entry::Vacant(entry) => {
                 let mut proofs = AccumulatingProof::default();
-                proofs.add_proof(node_proof, signature_share)?;
-
-                if !elders_info.is_quorum(proofs.parsec_proof_set()) {
+                if proofs.add_proof(node_proof, section_proof_share, elders_info)? {
+                    (entry.into_key(), proofs)
+                } else {
                     let _ = entry.insert(proofs);
                     return Err(AccumulatingError::NotEnoughVotes);
                 }
-
-                (entry.into_key(), proofs)
             }
             Entry::Occupied(mut entry) => {
-                entry.get_mut().add_proof(node_proof, signature_share)?;
-
-                if !elders_info.is_quorum(entry.get().parsec_proof_set()) {
+                if entry
+                    .get_mut()
+                    .add_proof(node_proof, section_proof_share, elders_info)?
+                {
+                    entry.remove_entry()
+                } else {
                     return Err(AccumulatingError::NotEnoughVotes);
                 }
-
-                entry.remove_entry()
             }
         };
 
@@ -191,7 +187,7 @@ impl EventAccumulator {
     ) {
         let non_voted = elders_info
             .elder_ids()
-            .filter(|id| !proofs.parsec_proof_set().contains_id(id))
+            .filter(|id| !proofs.parsec_proofs.contains_id(id))
             .copied()
             .collect();
 
@@ -207,27 +203,27 @@ pub struct AccumulatingProof {
 }
 
 impl AccumulatingProof {
-    /// Return false if share or proof is replaced
+    /// Returns whether we have enough votes.
     pub fn add_proof(
         &mut self,
-        proof: Proof,
-        sig_share: Option<(usize, bls::SignatureShare)>,
-    ) -> Result<(), AccumulatingError> {
-        if let Some(sig_share) = sig_share {
-            if !self.sig_shares.insert(sig_share) {
+        node_proof: Proof,
+        section_proof_share: Option<ProofShare>,
+        elders_info: &EldersInfo,
+    ) -> Result<bool, AccumulatingError> {
+        if let Some(proof_share) = section_proof_share {
+            if !self
+                .sig_shares
+                .insert((proof_share.index, proof_share.signature_share))
+            {
                 return Err(AccumulatingError::ReplacedAlreadyInserted);
             }
         }
 
-        if !self.parsec_proofs.add_proof(proof) {
+        if !self.parsec_proofs.add_proof(node_proof) {
             return Err(AccumulatingError::ReplacedAlreadyInserted);
         }
 
-        Ok(())
-    }
-
-    pub fn parsec_proof_set(&self) -> &ProofSet {
-        &self.parsec_proofs
+        Ok(elders_info.is_quorum(&self.parsec_proofs))
     }
 
     /// Check the signature shares at the given `signature_index` and combine them into a
@@ -255,11 +251,12 @@ pub enum AccumulatingError {
     NotEnoughVotes,
     AlreadyAccumulated,
     ReplacedAlreadyInserted,
+    InvalidSignatureShare,
 }
 
 /// The outcome of a prefix change.
 #[derive(Default, PartialEq, Eq, Debug)]
-pub struct RemainingEvents {
+pub(crate) struct RemainingEvents {
     /// The remaining unaccumulated events that should be revoted.
     pub unaccumulated_events: BTreeSet<AccumulatingEvent>,
     /// The already accumulated events.

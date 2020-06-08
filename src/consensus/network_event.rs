@@ -108,7 +108,8 @@ impl AccumulatingEvent {
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
     ) -> Option<ProofShare> {
-        let signature_share = self.sign(secret_key_share)?;
+        let bytes = self.serialise_for_signing()?;
+        let signature_share = secret_key_share.sign(&bytes);
         Some(ProofShare {
             public_key_set,
             index,
@@ -116,11 +117,19 @@ impl AccumulatingEvent {
         })
     }
 
-    fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
+    pub fn verify(&self, proof_share: &ProofShare) -> bool {
+        let bytes = if let Some(bytes) = self.serialise_for_signing() {
+            bytes
+        } else {
+            return false;
+        };
+
+        proof_share.verify(&bytes)
+    }
+
+    fn serialise_for_signing(&self) -> Option<Vec<u8>> {
         match self {
-            AccumulatingEvent::SectionInfo(_, section_key) => {
-                Some(secret_key_share.sign(&section_key.to_bytes()[..]))
-            }
+            AccumulatingEvent::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
             _ => None,
         }
     }
@@ -211,4 +220,12 @@ pub struct ProofShare {
     pub public_key_set: bls::PublicKeySet,
     pub index: usize,
     pub signature_share: bls::SignatureShare,
+}
+
+impl ProofShare {
+    pub fn verify(&self, signed_bytes: &[u8]) -> bool {
+        self.public_key_set
+            .public_key_share(self.index)
+            .verify(&self.signature_share, signed_bytes)
+    }
 }
