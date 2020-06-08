@@ -200,30 +200,15 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        let to_sign = match &event {
-            AccumulatingEvent::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
-            _ => None,
-        };
-
-        let signature_share = if let Some(to_sign) = to_sign {
-            let secret_key_share = match self.section_keys_provider.secret_key_share() {
-                Ok(share) => share,
-                Err(error) => {
-                    error!(
-                        "Failed to create signature share for {:?}: {}",
-                        event, error
-                    );
-                    return;
-                }
-            };
-
-            Some((secret_key_share.index, secret_key_share.key.sign(&to_sign)))
-        } else {
-            None
-        };
-
-        self.consensus_engine
-            .vote_for(event.into_network_event(signature_share))
+        match self.section_keys_provider.secret_key_share() {
+            Ok(share) => self.consensus_engine.vote_for(event, share),
+            Err(error) => log_or_panic!(
+                log::Level::Error,
+                "Failed to vote for {:?}: {}",
+                event,
+                error
+            ),
+        }
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
@@ -1014,7 +999,7 @@ impl Approved {
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+            self.consensus_engine.vote_for_start_dkg(participants);
         }
 
         true

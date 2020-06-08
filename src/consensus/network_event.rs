@@ -108,6 +108,15 @@ impl AccumulatingEvent {
             signature,
         }
     }
+
+    pub fn sign(&self, key: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
+        match self {
+            AccumulatingEvent::SectionInfo(_, section_key) => {
+                Some(key.sign(&section_key.to_bytes()[..]))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Debug for AccumulatingEvent {
