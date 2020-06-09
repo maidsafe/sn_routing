@@ -74,7 +74,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
+        consensus::generate_secret_key_set,
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
@@ -157,7 +157,7 @@ mod tests {
 
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
 
-            let keys = generate_bls_threshold_secret_key(&mut rng, 9);
+            let keys = generate_secret_key_set(&mut rng, 9);
             let full_ids: BTreeMap<_, _> = (0..9)
                 .map(|_| {
                     let full_id = FullId::gen(&mut rng);

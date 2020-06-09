@@ -8,9 +8,9 @@
 
 use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
-    generate_bls_threshold_secret_key, mock::Environment, rng::MainRng, AccumulatingMessage,
-    DstLocation, EldersInfo, FullId, IndexedSecretKeyShare, Message, MessageHash, NetworkParams,
-    P2pNode, PlainMessage, Prefix, SectionProofChain, Variant, XorName,
+    generate_secret_key_set, mock::Environment, rng::MainRng, AccumulatingMessage, DstLocation,
+    EldersInfo, FullId, IndexedSecretKeyShare, Message, MessageHash, NetworkParams, P2pNode,
+    PlainMessage, Prefix, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -63,7 +63,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     let our_prefix = get_prefix(&nodes[our_node_pos]);
 
     let fake_full = FullId::gen(&mut env.new_rng());
-    let bls_keys = generate_bls_threshold_secret_key(&mut rng, 1);
+    let bls_keys = generate_secret_key_set(&mut rng, 1);
     let bls_secret_key_share = IndexedSecretKeyShare::from_set(&bls_keys, 0);
 
     let socket_addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
@@ -121,12 +121,10 @@ fn message_with_invalid_proof() {
 }
 
 fn create_invalid_proof_chain(rng: &mut MainRng, last_pk: bls::PublicKey) -> SectionProofChain {
-    let block0_key = generate_bls_threshold_secret_key(rng, 1)
-        .public_keys()
-        .public_key();
+    let block0_key = generate_secret_key_set(rng, 1).public_keys().public_key();
 
     let block1_signature = {
-        let invalid_sk_set = generate_bls_threshold_secret_key(rng, 1);
+        let invalid_sk_set = generate_secret_key_set(rng, 1);
         let invalid_sk_share = invalid_sk_set.secret_key_share(0);
         let signature_share = invalid_sk_share.sign(&last_pk.to_bytes()[..]);
         invalid_sk_set

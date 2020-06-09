@@ -75,7 +75,7 @@ impl Approved {
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(*core.id(), connection_info);
 
-        let secret_key_set = consensus::generate_bls_threshold_secret_key(&mut core.rng, 1);
+        let secret_key_set = consensus::generate_secret_key_set(&mut core.rng, 1);
         let public_key_set = secret_key_set.public_keys();
         let public_key = public_key_set.public_key();
         let secret_key_share = secret_key_set.secret_key_share(0);
