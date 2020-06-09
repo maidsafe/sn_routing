@@ -14,7 +14,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::GenesisPrefixInfo,
     error::Result,
     id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageWithBytes},
@@ -52,18 +51,6 @@ pub fn create_elders_info(
 
     let elders_info = EldersInfo::new(members_map, Prefix::default());
     (elders_info, full_ids)
-}
-
-pub fn create_genesis_prefix_info(
-    elders_info: EldersInfo,
-    public_keys: bls::PublicKeySet,
-    parsec_version: u64,
-) -> GenesisPrefixInfo {
-    GenesisPrefixInfo {
-        elders_info,
-        public_keys,
-        parsec_version,
-    }
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {

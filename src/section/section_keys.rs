@@ -47,18 +47,15 @@ impl IndexedSecretKeyShare {
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Clone)]
-pub struct SectionKeys {
+pub struct SectionKeyShare {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
-    /// Secret Key share and index. None if the node was not participating in the DKG.
-    pub secret_key_share: Option<IndexedSecretKeyShare>,
+    /// Secret Key share and index.
+    pub secret_key_share: IndexedSecretKeyShare,
 }
 
-impl SectionKeys {
-    pub fn new(
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<IndexedSecretKeyShare>,
-    ) -> Self {
+impl SectionKeyShare {
+    pub fn new(public_key_set: bls::PublicKeySet, secret_key_share: IndexedSecretKeyShare) -> Self {
         Self {
             public_key_set,
             secret_key_share,
@@ -69,32 +66,24 @@ impl SectionKeys {
 /// Struct that holds the current section keys and helps with new key generation.
 pub struct SectionKeysProvider {
     /// Our current section BLS keys.
-    keys: SectionKeys,
+    current: Option<SectionKeyShare>,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
     /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
     /// then members are disjoint. We are working around not having access to the prefix for the
     /// DkgResult but only the list of participants.
-    new_keys: BTreeMap<XorName, DkgResult>,
+    new: BTreeMap<XorName, DkgResult>,
 }
 
 impl SectionKeysProvider {
-    pub fn new(
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<IndexedSecretKeyShare>,
-    ) -> Self {
+    pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
-            keys: SectionKeys::new(public_key_set, secret_key_share),
-            new_keys: Default::default(),
+            current,
+            new: Default::default(),
         }
     }
 
-    pub fn public_key_set(&self) -> &bls::PublicKeySet {
-        &self.keys.public_key_set
-    }
-
-    pub fn secret_key_share(&self) -> Result<&IndexedSecretKeyShare> {
-        self.keys
-            .secret_key_share
+    pub fn key_share(&self) -> Result<&SectionKeyShare> {
+        self.current
             .as_ref()
             .ok_or(RoutingError::InvalidElderDkgResult)
     }
@@ -107,7 +96,7 @@ impl SectionKeysProvider {
     ) -> Result<()> {
         if let Some(first) = participants.iter().next() {
             if self
-                .new_keys
+                .new
                 .insert(*first.name(), dkg_result.0.clone())
                 .is_some()
             {
@@ -125,15 +114,16 @@ impl SectionKeysProvider {
             .next()
             .ok_or(RoutingError::InvalidElderDkgResult)?;
         let dkg_result = self
-            .new_keys
+            .new
             .remove(first_name)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
-        let secret_key_share = dkg_result
-            .secret_key_share
-            .and_then(|key| IndexedSecretKeyShare::new(key, our_name, elders_info));
+        let public_key_set = dkg_result.public_key_set;
 
-        self.keys = SectionKeys::new(dkg_result.public_key_set, secret_key_share);
-        self.new_keys.clear();
+        self.current = dkg_result
+            .secret_key_share
+            .and_then(|key| IndexedSecretKeyShare::new(key, our_name, elders_info))
+            .map(|secret_key_share| SectionKeyShare::new(public_key_set, secret_key_share));
+        self.new.clear();
 
         Ok(())
     }

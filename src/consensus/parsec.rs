@@ -362,16 +362,6 @@ impl ParsecMap {
     }
 }
 
-// Generate a DkgResult that can be used for the first node
-pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
-    let participants = 1;
-    let index = 0;
-
-    let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
-    let secret_key_share = secret_key_set.secret_key_share(index);
-    DkgResult::new(secret_key_set.public_keys(), Some(secret_key_share))
-}
-
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
 pub fn generate_bls_threshold_secret_key(

@@ -16,7 +16,9 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, IndexedSecretKeyShare, SectionKeysProvider, SharedState},
+    section::{
+        EldersInfo, IndexedSecretKeyShare, SectionKeyShare, SectionKeysProvider, SharedState,
+    },
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -45,9 +47,17 @@ impl Env {
             test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
         let elders = create_elders(&mut rng, elders_info.clone(), full_ids);
 
-        let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
-        let genesis_prefix_info =
-            test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
+        let public_key_set = elders[0]
+            .section_keys_provider
+            .key_share()
+            .unwrap()
+            .public_key_set
+            .clone();
+        let public_key = public_key_set.public_key();
+        let genesis_prefix_info = GenesisPrefixInfo {
+            elders_info,
+            parsec_version: 0,
+        };
 
         let (subject, ..) = Node::approved(
             NodeConfig {
@@ -55,6 +65,7 @@ impl Env {
                 ..Default::default()
             },
             genesis_prefix_info,
+            public_key,
             None,
         );
 
@@ -71,14 +82,10 @@ impl Env {
     }
 
     fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
-        test_utils::create_genesis_prefix_info(
-            self.elders[0].state.our_info().clone(),
-            self.elders[0]
-                .section_keys_provider
-                .public_key_set()
-                .clone(),
+        GenesisPrefixInfo {
+            elders_info: self.elders[0].state.our_info().clone(),
             parsec_version,
-        )
+        }
     }
 
     fn perform_elders_change(&mut self) {
@@ -112,7 +119,9 @@ impl Env {
             dst,
             dst_key: self.elders[0]
                 .section_keys_provider
-                .public_key_set()
+                .key_share()
+                .unwrap()
+                .public_key_set
                 .public_key(),
             variant: Variant::UserMessage(content),
         };
@@ -153,21 +162,22 @@ fn create_elders(
 ) -> Vec<Elder> {
     let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
-    let genesis_prefix_info =
-        test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
+    let public_key = public_key_set.public_key();
+    let genesis_prefix_info = GenesisPrefixInfo {
+        elders_info,
+        parsec_version: 0,
+    };
 
     full_ids
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let state = SharedState::new(
-                genesis_prefix_info.elders_info.clone(),
-                genesis_prefix_info.public_keys.public_key(),
-            );
-            let section_keys_provider = SectionKeysProvider::new(
-                genesis_prefix_info.public_keys.clone(),
-                Some(IndexedSecretKeyShare::from_set(&secret_key_set, index)),
-            );
+            let state = SharedState::new(genesis_prefix_info.elders_info.clone(), public_key);
+
+            let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare::new(
+                public_key_set.clone(),
+                IndexedSecretKeyShare::from_set(&secret_key_set, index),
+            )));
 
             let addr = genesis_prefix_info
                 .elders_info
@@ -203,7 +213,12 @@ fn create_genesis_update_accumulating_message(
     let content = PlainMessage {
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
-        dst_key: sender.section_keys_provider.public_key_set().public_key(),
+        dst_key: sender
+            .section_keys_provider
+            .key_share()
+            .unwrap()
+            .public_key_set
+            .public_key(),
         variant: Variant::GenesisUpdate(genesis_prefix_info),
     };
 
@@ -211,11 +226,15 @@ fn create_genesis_update_accumulating_message(
 }
 
 fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<AccumulatingMessage> {
-    let secret_key_share = sender.section_keys_provider.secret_key_share().unwrap();
-    let public_key_set = sender.section_keys_provider.public_key_set().clone();
+    let key_share = sender.section_keys_provider.key_share().unwrap();
     let proof = sender.state.prove(&content.dst, None);
 
-    AccumulatingMessage::new(content, secret_key_share, public_key_set, proof)
+    AccumulatingMessage::new(
+        content,
+        &key_share.secret_key_share,
+        key_share.public_key_set.clone(),
+        proof,
+    )
 }
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
