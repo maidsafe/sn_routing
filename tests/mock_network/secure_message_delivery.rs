@@ -9,8 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
     generate_secret_key_set, mock::Environment, rng::MainRng, AccumulatingMessage, DstLocation,
-    EldersInfo, FullId, IndexedSecretKeyShare, Message, MessageHash, NetworkParams, P2pNode,
-    PlainMessage, Prefix, SectionProofChain, Variant, XorName,
+    EldersInfo, FullId, Message, MessageHash, NetworkParams, P2pNode, PlainMessage, Prefix,
+    SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -63,8 +63,9 @@ fn message_with_invalid_security(fail_type: FailType) {
     let our_prefix = get_prefix(&nodes[our_node_pos]);
 
     let fake_full = FullId::gen(&mut env.new_rng());
-    let bls_keys = generate_secret_key_set(&mut rng, 1);
-    let bls_secret_key_share = IndexedSecretKeyShare::from_set(&bls_keys, 0);
+    let sk_set = generate_secret_key_set(&mut rng, 1);
+    let pk_set = sk_set.public_keys();
+    let sk_share = sk_set.secret_key_share(0);
 
     let socket_addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
     let members: BTreeMap<_, _> = iter::once((
@@ -91,12 +92,11 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .prove(&DstLocation::Section(their_prefix.name()))
                 .unwrap(),
             FailType::UntrustedProofValidSig => {
-                create_invalid_proof_chain(&mut rng, bls_keys.public_keys().public_key())
+                create_invalid_proof_chain(&mut rng, pk_set.public_key())
             }
         };
-        let pk_set = bls_keys.public_keys();
 
-        let msg = AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof).unwrap();
+        let msg = AccumulatingMessage::new(content, pk_set, 0, &sk_share, proof).unwrap();
         msg.combine_signatures().unwrap()
     };
 

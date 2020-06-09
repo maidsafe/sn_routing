@@ -11,7 +11,7 @@ use crate::{
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
-    section::EldersInfo,
+    section::{EldersInfo, SectionKeyShare},
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -95,21 +95,17 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn into_network_event(
-        self,
-        public_key_set: bls::PublicKeySet,
-        index: usize,
-        secret_key_share: &bls::SecretKeyShare,
-    ) -> NetworkEvent {
-        let proof_share = if let Some(signature_share) = self.sign(secret_key_share) {
-            Some(ProofShare {
-                public_key_set,
-                index,
-                signature_share,
-            })
-        } else {
-            None
-        };
+    pub fn into_network_event(self, section_key_share: &SectionKeyShare) -> NetworkEvent {
+        let proof_share =
+            if let Some(signature_share) = self.sign(&section_key_share.secret_key_share) {
+                Some(ProofShare {
+                    public_key_set: section_key_share.public_key_set.clone(),
+                    index: section_key_share.index,
+                    signature_share,
+                })
+            } else {
+                None
+            };
 
         NetworkEvent {
             payload: self,

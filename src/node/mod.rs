@@ -410,7 +410,7 @@ impl Node {
         self.stage
             .approved()
             .and_then(|stage| stage.section_key_share())
-            .map(|share| &share.secret_key_share.key)
+            .map(|share| &share.secret_key_share)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -420,7 +420,7 @@ impl Node {
         self.stage
             .approved()
             .and_then(|stage| stage.section_key_share())
-            .map(|share| share.secret_key_share.index)
+            .map(|share| share.index)
             .ok_or(RoutingError::InvalidState)
     }
 

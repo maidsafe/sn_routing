@@ -9,7 +9,7 @@
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
     error::Result,
-    section::{IndexedSecretKeyShare, SectionProofChain},
+    section::SectionProofChain,
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -31,14 +31,15 @@ impl AccumulatingMessage {
     /// Create new `AccumulatingMessage`
     pub fn new(
         content: PlainMessage,
-        secret_key_share: &IndexedSecretKeyShare,
         public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
         proof: SectionProofChain,
     ) -> Result<Self> {
         let bytes = content.serialize_for_signing()?;
         let mut signature_shares = BTreeSet::new();
-        let sig_share = secret_key_share.key.sign(&bytes);
-        let _ = signature_shares.insert((secret_key_share.index, sig_share));
+        let sig_share = secret_key_share.sign(&bytes);
+        let _ = signature_shares.insert((index, sig_share));
 
         Ok(Self {
             content,
@@ -187,18 +188,23 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = IndexedSecretKeyShare::from_set(&sk_set, 0);
-        let sk_share_1 = IndexedSecretKeyShare::from_set(&sk_set, 1);
+        let sk_share_0 = sk_set.secret_key_share(0);
+        let sk_share_1 = sk_set.secret_key_share(1);
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
 
-        let mut msg_0 =
-            AccumulatingMessage::new(content.clone(), &sk_share_0, pk_set.clone(), proof.clone())
-                .unwrap();
+        let mut msg_0 = AccumulatingMessage::new(
+            content.clone(),
+            pk_set.clone(),
+            0,
+            &sk_share_0,
+            proof.clone(),
+        )
+        .unwrap();
         assert!(!msg_0.check_fully_signed());
 
-        let msg_1 = AccumulatingMessage::new(content, &sk_share_1, pk_set, proof).unwrap();
+        let msg_1 = AccumulatingMessage::new(content, pk_set, 1, &sk_share_1, proof).unwrap();
         msg_0.add_signature_shares(msg_1);
         assert!(msg_0.check_fully_signed());
 
@@ -218,20 +224,25 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = IndexedSecretKeyShare::from_set(&sk_set, 0);
-        let sk_share_1 = IndexedSecretKeyShare::from_set(&sk_set, 1);
-        let sk_share_2 = IndexedSecretKeyShare::from_set(&sk_set, 2);
+        let sk_share_0 = sk_set.secret_key_share(0);
+        let sk_share_1 = sk_set.secret_key_share(1);
+        let sk_share_2 = sk_set.secret_key_share(2);
 
         let content = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
 
         // Message with valid signature
-        let mut msg_0 =
-            AccumulatingMessage::new(content.clone(), &sk_share_0, pk_set.clone(), proof.clone())
-                .unwrap();
+        let mut msg_0 = AccumulatingMessage::new(
+            content.clone(),
+            pk_set.clone(),
+            0,
+            &sk_share_0,
+            proof.clone(),
+        )
+        .unwrap();
 
         // Message with invalid signature
-        let invalid_signature_share = sk_share_1.key.sign(b"bad message");
+        let invalid_signature_share = sk_share_1.sign(b"bad message");
         let msg_1 = AccumulatingMessage {
             content: content.clone(),
             proof: proof.clone(),
@@ -246,7 +257,7 @@ mod tests {
         assert!(!msg_0.check_fully_signed());
 
         // Another valid signature
-        let msg_2 = AccumulatingMessage::new(content, &sk_share_2, pk_set, proof).unwrap();
+        let msg_2 = AccumulatingMessage::new(content, pk_set, 2, &sk_share_2, proof).unwrap();
         msg_0.add_signature_shares(msg_2);
 
         // There are now two valid signatures which is enough.

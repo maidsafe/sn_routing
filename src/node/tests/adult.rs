@@ -16,9 +16,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{
-        EldersInfo, IndexedSecretKeyShare, SectionKeyShare, SectionKeysProvider, SharedState,
-    },
+    section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -174,10 +172,11 @@ fn create_elders(
         .map(|(index, (_, full_id))| {
             let state = SharedState::new(genesis_prefix_info.elders_info.clone(), public_key);
 
-            let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare::new(
-                public_key_set.clone(),
-                IndexedSecretKeyShare::from_set(&secret_key_set, index),
-            )));
+            let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare {
+                public_key_set: public_key_set.clone(),
+                index,
+                secret_key_share: secret_key_set.secret_key_share(index),
+            }));
 
             let addr = genesis_prefix_info
                 .elders_info
@@ -231,8 +230,9 @@ fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<Accu
 
     AccumulatingMessage::new(
         content,
-        &key_share.secret_key_share,
         key_share.public_key_set.clone(),
+        key_share.index,
+        &key_share.secret_key_share,
         proof,
     )
 }

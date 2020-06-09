@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        OnlinePayload, ParsecRequest, ParsecResponse,
+        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
     delivery_group,
@@ -25,8 +25,8 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     section::{
-        EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved, SectionKeyShare,
-        SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
+        EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
+        SharedState, SplitCache, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -85,13 +85,11 @@ impl Approved {
             parsec_version: 0,
         };
 
-        let section_key_share = SectionKeyShare::new(
+        let section_key_share = SectionKeyShare {
             public_key_set,
-            IndexedSecretKeyShare {
-                index: 0,
-                key: secret_key_share,
-            },
-        );
+            index: 0,
+            secret_key_share,
+        };
 
         Self::new(
             core,
@@ -212,12 +210,10 @@ impl Approved {
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
         match self.section_keys_provider.key_share() {
-            Ok(share) => self.consensus_engine.vote_for(
-                event,
-                share.public_key_set.clone(),
-                share.secret_key_share.index,
-                &share.secret_key_share.key,
-            ),
+            Ok(share) => {
+                let event = event.into_network_event(share);
+                self.consensus_engine.vote_for(event)
+            }
             Err(error) => log_or_panic!(
                 log::Level::Error,
                 "Failed to vote for {:?}: {}",
@@ -998,7 +994,10 @@ impl Approved {
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.consensus_engine.vote_for_start_dkg(participants);
+            self.consensus_engine.vote_for(NetworkEvent {
+                payload: AccumulatingEvent::StartDkg(participants),
+                proof_share: None,
+            });
         }
 
         true
@@ -1843,8 +1842,9 @@ impl Approved {
 
         AccumulatingMessage::new(
             content,
-            &key_share.secret_key_share,
             key_share.public_key_set.clone(),
+            key_share.index,
+            &key_share.secret_key_share,
             proof,
         )
     }

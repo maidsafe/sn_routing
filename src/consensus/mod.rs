@@ -229,22 +229,8 @@ impl ConsensusEngine {
         self.accumulator.detect_unresponsive(elders_info)
     }
 
-    pub fn vote_for(
-        &mut self,
-        event: AccumulatingEvent,
-        public_key_set: bls::PublicKeySet,
-        index: usize,
-        secret_key_share: &bls::SecretKeyShare,
-    ) {
-        let event = event.into_network_event(public_key_set, index, secret_key_share);
+    pub fn vote_for(&mut self, event: NetworkEvent) {
         self.parsec_map.vote_for(event)
-    }
-
-    pub fn vote_for_start_dkg(&mut self, participants: BTreeSet<PublicId>) {
-        self.parsec_map.vote_for(NetworkEvent {
-            payload: AccumulatingEvent::StartDkg(participants),
-            proof_share: None,
-        })
     }
 
     pub fn create_gossip(
