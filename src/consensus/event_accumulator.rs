@@ -91,7 +91,7 @@ pub(crate) struct EventAccumulator {
     // A map containing network events that have not been accumulated yet, together with their
     // signature shares that have been collected so far.
     // FIXME: Purge votes that are older than a given period.
-    unaccumulated_events: BTreeMap<AccumulatingEvent, State>,
+    unaccumulated_events: BTreeMap<(AccumulatingEvent, bls::PublicKey), State>,
     // Events that were already accumulated: Further incoming shares for these can be ignored.
     // When an event is accumulated, it cannot be inserted again.
     accumulated_events: BTreeSet<AccumulatingEvent>,
@@ -127,7 +127,12 @@ impl EventAccumulator {
             return Err(AccumulatingError::InvalidSignatureShare);
         }
 
-        let (event, state) = match self.unaccumulated_events.entry(event) {
+        // Use the public key to differentiate identical events that are signed with different key
+        // sets. This is to prevent mixing signature shares from different key sets which would make
+        // the whole signature invalid even when the shares themselves are all individually valid.
+        let public_key = proof_share.public_key_set.public_key();
+
+        let ((event, _), state) = match self.unaccumulated_events.entry((event, public_key)) {
             Entry::Vacant(entry) => {
                 let state = State::new(voter_name, proof_share.index, proof_share.signature_share);
                 if state.has_enough_votes(proof_share.public_key_set.threshold(), elders_info) {
@@ -174,7 +179,7 @@ impl EventAccumulator {
             unaccumulated_events: unaccumulated_events
                 .into_iter()
                 .filter(|(_, state)| state.voters.contains(our_name))
-                .map(|(event, _)| event)
+                .map(|((event, _), _)| event)
                 .collect(),
             accumulated_events,
         }

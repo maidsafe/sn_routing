@@ -115,8 +115,11 @@ impl AccumulatingMessage {
         })
     }
 
-    // Computes the cryptographuc hash of this message. Messages with identical `content` have the
+    // Computes the cryptographic hash of this message. Messages with identical `content` have the
     // same hash, regardless of their signature shares and/or proof.
+    //
+    // TODO: include also the BLS public key in the serialized data so identical messages
+    // signed with different key sets are accumulated separately.
     pub(crate) fn crypto_hash(&self) -> Result<MessageHash> {
         let bytes = serialize(&self.content)?;
         Ok(MessageHash::from_bytes(&bytes))
