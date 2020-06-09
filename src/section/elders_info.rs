@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::ProofSet,
     id::{P2pNode, PublicId},
     Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
@@ -40,10 +39,13 @@ impl EldersInfo {
     }
 
     /// Returns `true` if the proofs are from a quorum of this section.
-    pub(crate) fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs
-            .ids()
-            .filter(|id| self.elders.contains_key(id.name()))
+    pub(crate) fn is_quorum<'a, I>(&self, names: I) -> bool
+    where
+        I: IntoIterator<Item = &'a XorName>,
+    {
+        names
+            .into_iter()
+            .filter(|name| self.elders.contains_key(name))
             .count()
             >= quorum_count(self.elders.len())
     }

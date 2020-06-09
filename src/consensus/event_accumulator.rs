@@ -6,15 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    network_event::{AccumulatingEvent, ProofShare},
-    proof::{Proof, ProofSet},
-};
-use crate::{error::Result, id::PublicId, section::EldersInfo};
+use super::network_event::{AccumulatingEvent, ProofShare};
+use crate::{error::Result, id::PublicId, section::EldersInfo, xor_space::XorName};
 use serde::Serialize;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
-    mem,
+    iter, mem,
     rc::Rc,
 };
 
@@ -30,26 +27,26 @@ pub const UNRESPONSIVE_WINDOW: usize = 64;
 #[derive(Default)]
 struct VoteStatuses {
     tracked_events: VecDeque<Rc<AccumulatingEvent>>,
-    unvoted: BTreeMap<PublicId, BTreeSet<Rc<AccumulatingEvent>>>,
+    unvoted: BTreeMap<XorName, BTreeSet<Rc<AccumulatingEvent>>>,
 }
 
 impl VoteStatuses {
     fn add_expectation(
         &mut self,
         event: AccumulatingEvent,
-        proofs: &ProofSet,
+        voters: &BTreeSet<XorName>,
         elders_info: &EldersInfo,
     ) {
         let event_rc = Rc::new(event);
 
-        for id in elders_info.elder_ids() {
-            if proofs.contains_id(id) {
+        for name in elders_info.elders.keys() {
+            if voters.contains(name) {
                 continue;
             }
 
             let _ = self
                 .unvoted
-                .entry(*id)
+                .entry(*name)
                 .or_default()
                 .insert(Rc::clone(&event_rc));
         }
@@ -69,18 +66,18 @@ impl VoteStatuses {
         if self.unvoted.len() > elders_info.elders.len() {
             self.unvoted = mem::replace(&mut self.unvoted, BTreeMap::new())
                 .into_iter()
-                .filter(|(id, _)| elders_info.elders.contains_key(id.name()))
+                .filter(|(name, _)| elders_info.elders.contains_key(name))
                 .collect();
         }
     }
 
-    fn add_vote(&mut self, event: &AccumulatingEvent, voter: &PublicId) {
+    fn add_vote(&mut self, event: &AccumulatingEvent, voter: &XorName) {
         if let Some(events) = self.unvoted.get_mut(voter) {
             let _ = events.remove(event);
         }
     }
 
-    fn is_unresponsive(&self, peer: &PublicId) -> bool {
+    fn is_unresponsive(&self, peer: &XorName) -> bool {
         if let Some(events) = self.unvoted.get(peer) {
             events.len() > UNRESPONSIVE_THRESHOLD
         } else {
@@ -107,8 +104,8 @@ impl EventAccumulator {
     pub fn insert(
         &mut self,
         event: AccumulatingEvent,
-        node_proof: Proof,
-        section_proof_share: ProofShare,
+        voter_name: XorName,
+        proof_share: ProofShare,
         elders_info: &EldersInfo,
     ) -> Result<(AccumulatingEvent, bls::Signature), AccumulatingError> {
         match &event {
@@ -122,24 +119,18 @@ impl EventAccumulator {
         }
 
         if self.accumulated_events.contains(&event) {
-            self.vote_statuses.add_vote(&event, &node_proof.pub_id);
+            self.vote_statuses.add_vote(&event, &voter_name);
             return Err(AccumulatingError::AlreadyAccumulated);
         }
 
-        if !event.verify(&section_proof_share) {
+        if !event.verify(&proof_share) {
             return Err(AccumulatingError::InvalidSignatureShare);
         }
 
         let (event, state) = match self.unaccumulated_events.entry(event) {
             Entry::Vacant(entry) => {
-                let state = State::new(
-                    node_proof,
-                    section_proof_share.index,
-                    section_proof_share.signature_share,
-                );
-                if state
-                    .has_enough_votes(section_proof_share.public_key_set.threshold(), elders_info)
-                {
+                let state = State::new(voter_name, proof_share.index, proof_share.signature_share);
+                if state.has_enough_votes(proof_share.public_key_set.threshold(), elders_info) {
                     (entry.into_key(), state)
                 } else {
                     let _ = entry.insert(state);
@@ -147,14 +138,12 @@ impl EventAccumulator {
                 }
             }
             Entry::Occupied(mut entry) => {
-                entry.get_mut().add(
-                    node_proof,
-                    section_proof_share.index,
-                    section_proof_share.signature_share,
-                )?;
+                entry
+                    .get_mut()
+                    .add(voter_name, proof_share.index, proof_share.signature_share)?;
                 if entry
                     .get()
-                    .has_enough_votes(section_proof_share.public_key_set.threshold(), elders_info)
+                    .has_enough_votes(proof_share.public_key_set.threshold(), elders_info)
                 {
                     entry.remove_entry()
                 } else {
@@ -163,23 +152,20 @@ impl EventAccumulator {
             }
         };
 
-        let shares = state
-            .sig_shares
-            .iter()
-            .map(|(index, share)| (*index, share));
-        let signature = section_proof_share
+        let shares = state.shares.iter().map(|(index, share)| (*index, share));
+        let signature = proof_share
             .public_key_set
             .combine_signatures(shares)
             .map_err(AccumulatingError::CombineSignaturesFailed)?;
 
         self.vote_statuses
-            .add_expectation(event.clone(), &state.parsec_proofs, elders_info);
+            .add_expectation(event.clone(), &state.voters, elders_info);
         let _ = self.accumulated_events.insert(event.clone());
 
         Ok((event, signature))
     }
 
-    pub fn reset(&mut self, our_id: &PublicId) -> RemainingEvents {
+    pub fn reset(&mut self, our_name: &XorName) -> RemainingEvents {
         let accumulated_events = std::mem::take(&mut self.accumulated_events);
         let unaccumulated_events = std::mem::take(&mut self.unaccumulated_events);
         self.vote_statuses = Default::default();
@@ -187,7 +173,7 @@ impl EventAccumulator {
         RemainingEvents {
             unaccumulated_events: unaccumulated_events
                 .into_iter()
-                .filter(|(_, proofs)| proofs.parsec_proofs.contains_id(our_id))
+                .filter(|(_, state)| state.voters.contains(our_name))
                 .map(|(event, _)| event)
                 .collect(),
             accumulated_events,
@@ -197,7 +183,7 @@ impl EventAccumulator {
     pub fn detect_unresponsive(&self, elders_info: &EldersInfo) -> BTreeSet<PublicId> {
         elders_info
             .elder_ids()
-            .filter(|id| self.vote_statuses.is_unresponsive(id))
+            .filter(|id| self.vote_statuses.is_unresponsive(id.name()))
             .copied()
             .collect()
     }
@@ -206,35 +192,29 @@ impl EventAccumulator {
 // Accumulation state of a single event in the event accumulator.
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 struct State {
-    parsec_proofs: ProofSet,
-    sig_shares: BTreeSet<(usize, bls::SignatureShare)>,
+    voters: BTreeSet<XorName>,
+    shares: BTreeMap<usize, bls::SignatureShare>,
 }
 
 impl State {
-    fn new(node_proof: Proof, index: usize, signature_share: bls::SignatureShare) -> Self {
-        let mut parsec_proofs = ProofSet::default();
-        let _ = parsec_proofs.add_proof(node_proof);
+    fn new(voter_name: XorName, voter_index: usize, signature_share: bls::SignatureShare) -> Self {
+        let voters = iter::once(voter_name).collect();
+        let shares = iter::once((voter_index, signature_share)).collect();
 
-        let mut sig_shares = BTreeSet::new();
-        let _ = sig_shares.insert((index, signature_share));
-
-        Self {
-            parsec_proofs,
-            sig_shares,
-        }
+        Self { voters, shares }
     }
 
     fn add(
         &mut self,
-        node_proof: Proof,
-        index: usize,
+        voter_name: XorName,
+        voter_index: usize,
         signature_share: bls::SignatureShare,
     ) -> Result<(), AccumulatingError> {
-        if !self.sig_shares.insert((index, signature_share)) {
+        if self.shares.insert(voter_index, signature_share).is_some() {
             return Err(AccumulatingError::ReplacedAlreadyInserted);
         }
 
-        if !self.parsec_proofs.add_proof(node_proof) {
+        if !self.voters.insert(voter_name) {
             return Err(AccumulatingError::ReplacedAlreadyInserted);
         }
 
@@ -242,7 +222,7 @@ impl State {
     }
 
     fn has_enough_votes(&self, threshold: usize, elders_info: &EldersInfo) -> bool {
-        self.sig_shares.len() > threshold && elders_info.is_quorum(&self.parsec_proofs)
+        self.shares.len() > threshold && elders_info.is_quorum(&self.voters)
     }
 }
 
@@ -272,45 +252,50 @@ mod test {
         rng::{self, MainRng},
         ELDER_SIZE,
     };
-    use itertools::Itertools;
-    use rand::{distributions::Standard, seq::SliceRandom, Rng};
+    use rand::{distributions::Standard, seq::IteratorRandom, Rng};
     use std::{iter, net::SocketAddr};
 
     #[test]
     fn insert() {
         let mut rng = rng::new();
-        let (elders_info, full_ids) = gen_elders_info(&mut rng);
+        let elders_info = gen_elders_info(&mut rng);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
         let event = gen_event(&mut rng);
 
         // The first 4 votes are not enough to accumulate
-        for (index, full_id) in full_ids.iter().enumerate().take(4) {
-            let proof = create_proof(full_id);
+        for (index, name) in elders_info.elders.keys().enumerate().take(4) {
             let proof_share = create_proof_share(&sk_set, index, &event);
 
             assert_eq!(
-                accumulator.insert(event.clone(), proof, proof_share, &elders_info),
+                accumulator.insert(event.clone(), *name, proof_share, &elders_info),
                 Err(AccumulatingError::NotEnoughVotes)
             );
         }
 
         // With the 5th vote we reach the quorum
-        let proof = create_proof(&full_ids[4]);
         let proof_share = create_proof_share(&sk_set, 4, &event);
-        let accumulated_event =
-            match accumulator.insert(event.clone(), proof, proof_share, &elders_info) {
-                Ok((event, _proofs)) => event,
-                Err(error) => panic!("unexpected error: {:?}", error),
-            };
+        let accumulated_event = match accumulator.insert(
+            event.clone(),
+            *elders_info.elders.keys().nth(4).unwrap(),
+            proof_share,
+            &elders_info,
+        ) {
+            Ok((event, _proofs)) => event,
+            Err(error) => panic!("unexpected error: {:?}", error),
+        };
         assert_eq!(accumulated_event, event);
 
         // Any additional votes are redundant
-        let proof = create_proof(&full_ids[5]);
         let proof_share = create_proof_share(&sk_set, 5, &event);
         assert_eq!(
-            accumulator.insert(event, proof, proof_share, &elders_info),
+            accumulator.insert(
+                event,
+                *elders_info.elders.keys().nth(5).unwrap(),
+                proof_share,
+                &elders_info
+            ),
             Err(AccumulatingError::AlreadyAccumulated)
         );
     }
@@ -318,39 +303,36 @@ mod test {
     #[test]
     fn reset() {
         let mut rng = rng::new();
-        let (elders_info, full_ids) = gen_elders_info(&mut rng);
+        let elders_info = gen_elders_info(&mut rng);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
 
         // one accumulated event
         let event0 = gen_event(&mut rng);
-        for (index, full_id) in full_ids.iter().enumerate().take(5) {
-            let proof = create_proof(full_id);
+        for (index, name) in elders_info.elders.keys().enumerate().take(5) {
             let proof_share = create_proof_share(&sk_set, index, &event0);
-            let _ = accumulator.insert(event0.clone(), proof, proof_share, &elders_info);
+            let _ = accumulator.insert(event0.clone(), *name, proof_share, &elders_info);
         }
 
         // one unaccumulated event voted for by node 0
         let event1 = gen_event(&mut rng);
-        for (index, full_id) in full_ids.iter().enumerate().take(4) {
-            let proof = create_proof(full_id);
+        for (index, name) in elders_info.elders.keys().enumerate().take(4) {
             let proof_share = create_proof_share(&sk_set, index, &event1);
-            let _ = accumulator.insert(event1.clone(), proof, proof_share, &elders_info);
+            let _ = accumulator.insert(event1.clone(), *name, proof_share, &elders_info);
         }
 
         // one unaccumulated event not voted for by node 0
         let event2 = gen_event(&mut rng);
-        for (index, full_id) in full_ids.iter().enumerate().skip(1).take(4) {
-            let proof = create_proof(full_id);
+        for (index, name) in elders_info.elders.keys().enumerate().skip(1).take(4) {
             let proof_share = create_proof_share(&sk_set, index, &event2);
-            let _ = accumulator.insert(event2.clone(), proof, proof_share, &elders_info);
+            let _ = accumulator.insert(event2.clone(), *name, proof_share, &elders_info);
         }
 
         let RemainingEvents {
             unaccumulated_events,
             accumulated_events,
-        } = accumulator.reset(full_ids[0].public_id());
+        } = accumulator.reset(elders_info.elders.keys().next().unwrap());
 
         assert!(!unaccumulated_events.contains(&event0));
         assert!(accumulated_events.contains(&event0));
@@ -366,54 +348,48 @@ mod test {
     fn tracking_responsiveness() {
         let mut rng = rng::new();
 
-        let (elders_info, full_ids) = gen_elders_info(&mut rng);
+        let elders_info = gen_elders_info(&mut rng);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
-        let unresponsive_node = full_ids.choose(&mut rng).unwrap().public_id();
+        let unresponsive_node = elders_info.elders.keys().choose(&mut rng).unwrap();
 
         let mut acc = EventAccumulator::default();
 
         for step in 0..UNRESPONSIVE_WINDOW {
             let event = AccumulatingEvent::User(step.to_ne_bytes().to_vec());
 
-            for (index, full_id) in full_ids.iter().enumerate() {
+            for (index, name) in elders_info.elders.keys().enumerate() {
                 if step >= (UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1)
-                    && full_id.public_id() == unresponsive_node
+                    && name == unresponsive_node
                 {
                     continue;
                 }
 
-                let proof = create_proof(full_id);
                 let proof_share = create_proof_share(&sk_set, index, &event);
-
-                let _ = acc.insert(event.clone(), proof, proof_share, &elders_info);
+                let _ = acc.insert(event.clone(), *name, proof_share, &elders_info);
             }
         }
 
         let expected: BTreeSet<_> = iter::once(*unresponsive_node).collect();
-        let detected = acc.detect_unresponsive(&elders_info);
+        let detected: BTreeSet<_> = acc
+            .detect_unresponsive(&elders_info)
+            .into_iter()
+            .map(|id| *id.name())
+            .collect();
         assert_eq!(detected, expected);
     }
 
-    const TEST_DATA_FOR_SIGN: [u8; 1] = [1];
-
-    // Generate elders info and the corresponding full ids in the same order.
-    fn gen_elders_info(rng: &mut MainRng) -> (EldersInfo, Vec<FullId>) {
-        let full_ids: Vec<_> = (0..ELDER_SIZE)
-            .map(|_| FullId::gen(rng))
-            .sorted_by(|lhs, rhs| lhs.public_id().name().cmp(rhs.public_id().name()))
-            .collect();
-
-        let elders = full_ids
-            .iter()
-            .map(|full_id| {
+    fn gen_elders_info(rng: &mut MainRng) -> EldersInfo {
+        let elders = (0..ELDER_SIZE)
+            .map(|_| {
+                let full_id = FullId::gen(rng);
                 let addr = gen_socket_addr(rng);
                 let p2p_node = P2pNode::new(*full_id.public_id(), addr);
                 (*p2p_node.public_id().name(), p2p_node)
             })
             .collect();
 
-        (EldersInfo::new(elders, Default::default()), full_ids)
+        EldersInfo::new(elders, Default::default())
     }
 
     fn gen_socket_addr(rng: &mut MainRng) -> SocketAddr {
@@ -424,14 +400,6 @@ mod test {
 
     fn gen_event(rng: &mut MainRng) -> AccumulatingEvent {
         AccumulatingEvent::User(rng.sample_iter(&Standard).take(10).collect())
-    }
-
-    fn create_proof(full_id: &FullId) -> Proof {
-        let sig = full_id.sign(&TEST_DATA_FOR_SIGN);
-        Proof {
-            pub_id: *full_id.public_id(),
-            sig,
-        }
     }
 
     fn create_proof_share(

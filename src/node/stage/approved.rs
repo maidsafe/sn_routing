@@ -1503,7 +1503,7 @@ impl Approved {
     fn reset_parsec(&mut self, core: &mut Core, new_parsec_version: u64) -> Result<()> {
         let is_elder = self.is_our_elder(core.id());
 
-        let events = self.consensus_engine.prepare_reset(core.id());
+        let events = self.consensus_engine.prepare_reset(core.name());
         let events = self.filter_events_to_revote(events);
 
         let serialised_state = if is_elder {
