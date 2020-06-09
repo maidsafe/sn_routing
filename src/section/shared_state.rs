@@ -323,8 +323,8 @@ impl SharedState {
         // There will be at most two events returned because the only possible event combinations
         // are these:
         // - `[]`
-        // - `[TheirKeyInfo]`
-        // - `[TheirKeyInfo, TheirKnowledge]`
+        // - `[TheirKey]`
+        // - `[TheirKey, TheirKnowledge]`
         // - `[SendNeighbourInfo]`
         // - `[SendNeighbourInfo, TheirKnowledge]`
         let mut events = Vec::with_capacity(2);
@@ -336,7 +336,7 @@ impl SharedState {
             if is_neighbour {
                 vote_send_neighbour_info = true;
             } else {
-                events.push(AccumulatingEvent::TheirKeyInfo {
+                events.push(AccumulatingEvent::TheirKey {
                     prefix,
                     key: *new_key,
                 });

@@ -122,15 +122,22 @@ impl Env {
 
         for event in events {
             for (full_id, secret_key_share) in self.other_ids.iter().take(count) {
-                let index = self
-                    .elders_info
-                    .position(full_id.public_id().name())
-                    .unwrap();
-                let event = event.clone().into_network_event(&SectionKeyShare {
-                    public_key_set: self.public_key_set.clone(),
-                    index,
-                    secret_key_share: secret_key_share.clone(),
-                });
+                let event = if event.needs_signature() {
+                    let index = self
+                        .elders_info
+                        .position(full_id.public_id().name())
+                        .unwrap();
+                    event
+                        .clone()
+                        .into_signed_network_event(&SectionKeyShare {
+                            public_key_set: self.public_key_set.clone(),
+                            index,
+                            secret_key_share: secret_key_share.clone(),
+                        })
+                        .unwrap()
+                } else {
+                    event.clone().into_unsigned_network_event()
+                };
 
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                 parsec.vote_for_as(event.into_obs(), full_id);
