@@ -10,7 +10,6 @@ mod event_accumulator;
 mod genesis_prefix_info;
 mod network_event;
 mod parsec;
-mod proof;
 
 pub use self::{
     event_accumulator::AccumulatingError,
@@ -21,7 +20,6 @@ pub use self::{
         DkgResult, DkgResultWrapper, Observation, ParsecNetworkEvent, Request as ParsecRequest,
         Response as ParsecResponse, GOSSIP_PERIOD,
     },
-    proof::{Proof, ProofSet},
 };
 
 #[cfg(feature = "mock_base")]
@@ -37,6 +35,7 @@ use crate::{
     rng::MainRng,
     section::EldersInfo,
     time::Duration,
+    xor_space::XorName,
 };
 use std::collections::BTreeSet;
 
@@ -107,10 +106,7 @@ impl ConsensusEngine {
             }
             Observation::OpaquePayload(event) => {
                 let proof = block.proofs().iter().next()?;
-                let proof = Proof {
-                    pub_id: *proof.public_id(),
-                    sig: *proof.signature(),
-                };
+                let voter_name = *proof.public_id().name();
 
                 let NetworkEvent {
                     payload: event,
@@ -122,13 +118,13 @@ impl ConsensusEngine {
                 trace!(
                     "Parsec OpaquePayload v{}: {} - {:?}",
                     self.parsec_map.last_version(),
-                    proof.pub_id(),
+                    voter_name,
                     event
                 );
 
                 match self
                     .accumulator
-                    .insert(event, proof, proof_share, our_elders)
+                    .insert(event, voter_name, proof_share, our_elders)
                 {
                     Ok((event, signature)) => Some((event, Some(signature))),
                     Err(AccumulatingError::NotEnoughVotes)
@@ -188,11 +184,11 @@ impl ConsensusEngine {
 
     // Prepares for reset of the consensus engine. Returns all events voted by us that have not
     // accumulated yet, so they can be voted for again. Should be followed by `finalise_reset`.
-    pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<AccumulatingEvent> {
+    pub fn prepare_reset(&mut self, our_name: &XorName) -> Vec<AccumulatingEvent> {
         let RemainingEvents {
             unaccumulated_events,
             accumulated_events,
-        } = self.accumulator.reset(our_id);
+        } = self.accumulator.reset(our_name);
 
         unaccumulated_events
             .into_iter()
