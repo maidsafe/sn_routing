@@ -12,16 +12,7 @@ use crate::{
     location::DstLocation,
     xor_space::{Prefix, XorName},
 };
-use std::{
-    cmp::Ordering,
-    collections::{BTreeSet, VecDeque},
-    iter,
-};
-
-// Number of recent keys we keep: i.e how many other section churns we can handle before a
-// message sent with a previous version of a section is no longer trusted.
-// With low churn rate, an ad hoc 20 should be big enough to avoid losing messages.
-const MAX_RECENT_KEYS: usize = 20;
+use std::{cmp::Ordering, collections::BTreeSet, iter};
 
 /// Container for storing information about sections in the network.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,8 +25,6 @@ pub struct SectionMap {
     neighbours: PrefixMap<EldersInfo>,
     // BLS public keys of known sections
     keys: PrefixMap<bls::PublicKey>,
-    // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
-    recent_keys: VecDeque<(Prefix<XorName>, bls::PublicKey)>,
     // Indices of our section keys that are trusted by other sections.
     knowledge: PrefixMap<u64>,
 }
@@ -48,7 +37,6 @@ impl SectionMap {
             our: our_info,
             neighbours: Default::default(),
             keys: iter::once((prefix, our_key)).collect(),
-            recent_keys: Default::default(),
             knowledge: Default::default(),
         }
     }
@@ -145,31 +133,26 @@ impl SectionMap {
             .retain(|prefix, _| our_prefix.is_neighbour(prefix))
     }
 
-    /// Returns the known section keys and any recent keys we still hold.
+    /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
-        self.keys
-            .iter()
-            .chain(self.recent_keys.iter().map(|(p, k)| (p, k)))
+        self.keys.iter()
     }
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys().any(|(_, known_key)| known_key == key)
+        self.keys.values().any(|known_key| known_key == key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        // `keys()` yields the keys from newest to oldest because it is a `chain` of `keys` and
-        // `recent_keys` in that order, so in case of multiple compatible keys, the newest one
-        // is returned.
-        self.keys()
+        self.keys
+            .iter()
             .find(|(prefix, _)| prefix.matches(name))
             .map(|(_, key)| key)
     }
 
     /// Returns the latest known key for the prefix that is compatible with `dst`.
     pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
-        // TODO: should we use `self.keys()` instead of `self.keys` ?
         self.keys
             .iter()
             .find(|(prefix, _)| dst.is_compatible(prefix))
@@ -182,26 +165,7 @@ impl SectionMap {
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey) {
         trace!("update key for {:?}: {:?}", prefix, new_key);
-
-        if self
-            .recent_keys
-            .iter()
-            .any(|(_, old_key)| *old_key == new_key)
-        {
-            return;
-        }
-
-        let old_entry = self.keys.insert(prefix, new_key);
-
-        if let Some((old_prefix, old_key)) = old_entry {
-            if old_key != new_key {
-                self.recent_keys.push_front((old_prefix, old_key));
-
-                if self.recent_keys.len() > MAX_RECENT_KEYS {
-                    let _ = self.recent_keys.pop_back();
-                }
-            }
-        }
+        let _ = self.keys.insert(prefix, new_key);
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -346,7 +310,7 @@ mod tests {
         update_keys_and_check(
             &mut rng,
             vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k3)],
-            vec![("0", &k0), ("1", &k3), ("1", &k2), ("1", &k1)],
+            vec![("0", &k0), ("1", &k3)],
         );
     }
 
@@ -360,7 +324,7 @@ mod tests {
         update_keys_and_check(
             &mut rng,
             vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k1)],
-            vec![("0", &k0), ("1", &k2), ("1", &k1)],
+            vec![("0", &k0), ("1", &k1)],
         );
     }
 
@@ -375,13 +339,7 @@ mod tests {
         update_keys_and_check(
             &mut rng,
             vec![("0", &k0), ("10", &k1), ("11", &k2), ("101", &k3)],
-            vec![
-                ("0", &k0),
-                ("100", &k1),
-                ("101", &k3),
-                ("11", &k2),
-                ("10", &k1),
-            ],
+            vec![("0", &k0), ("100", &k1), ("101", &k3), ("11", &k2)],
         );
     }
 
@@ -396,13 +354,7 @@ mod tests {
         update_keys_and_check(
             &mut rng::new(),
             vec![("01", &k0), ("1", &k1), ("111", &k2)],
-            vec![
-                ("01", &k0),
-                ("10", &k1),
-                ("110", &k1),
-                ("111", &k2),
-                ("1", &k1),
-            ],
+            vec![("01", &k0), ("10", &k1), ("110", &k1), ("111", &k2)],
         );
     }
 
@@ -425,7 +377,6 @@ mod tests {
                 ("101101", &k1),
                 ("10111", &k1),
                 ("11", &k1),
-                ("1", &k1),
             ],
         );
     }
@@ -449,13 +400,7 @@ mod tests {
                 ("101", &k3),
                 ("10", &k4),
             ],
-            vec![
-                ("0", &k0),
-                ("100", &k1),
-                ("101", &k3),
-                ("11", &k2),
-                ("10", &k1),
-            ],
+            vec![("0", &k0), ("100", &k1), ("101", &k3), ("11", &k2)],
         );
     }
 
