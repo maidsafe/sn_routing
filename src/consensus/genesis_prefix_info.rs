@@ -13,7 +13,6 @@ use std::fmt::{self, Debug, Formatter};
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPrefixInfo {
     pub elders_info: EldersInfo,
-    pub public_keys: bls::PublicKeySet,
     pub parsec_version: u64,
 }
 

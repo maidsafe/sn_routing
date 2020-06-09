@@ -41,7 +41,7 @@ use itertools::Itertools;
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage};
+use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
 use {
     crate::section::{EldersInfo, SectionProofChain, SharedState},
@@ -399,7 +399,8 @@ impl Node {
     pub fn public_key_set(&self) -> Result<&bls::PublicKeySet> {
         self.stage
             .approved()
-            .map(|stage| stage.public_key_set())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| &share.public_key_set)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -408,7 +409,8 @@ impl Node {
     pub fn secret_key_share(&self) -> Result<&bls::SecretKeyShare> {
         self.stage
             .approved()
-            .and_then(|stage| stage.secret_key_share())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| &share.secret_key_share.key)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -417,7 +419,8 @@ impl Node {
     pub fn our_index(&self) -> Result<usize> {
         self.stage
             .approved()
-            .and_then(|stage| stage.our_index())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| share.secret_key_share.index)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -661,9 +664,10 @@ impl Node {
                     section_key,
                 )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
+                    let section_key = *msg.src.as_section_key()?;
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, genesis_prefix_info, msg_backlog)?
+                    self.approve(connect_type, genesis_prefix_info, section_key, msg_backlog)?
                 }
                 _ => unreachable!(),
             },
@@ -674,8 +678,8 @@ impl Node {
                     stage.handle_neighbour_info(elders_info, src_key)?;
                 }
                 Variant::GenesisUpdate(info) => {
-                    msg.src.check_is_section()?;
-                    stage.handle_genesis_update(&mut self.core, info)?;
+                    let section_key = *msg.src.as_section_key()?;
+                    stage.handle_genesis_update(&mut self.core, info, section_key)?;
                 }
                 Variant::Relocate(_) => {
                     msg.src.check_is_section()?;
@@ -805,6 +809,7 @@ impl Node {
         &mut self,
         connect_type: Connected,
         genesis_prefix_info: GenesisPrefixInfo,
+        section_key: bls::PublicKey,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
         info!(
@@ -812,7 +817,7 @@ impl Node {
             genesis_prefix_info.elders_info.prefix,
         );
 
-        let stage = Approved::new(&mut self.core, genesis_prefix_info, None)?;
+        let stage = Approved::new(&mut self.core, genesis_prefix_info, section_key, None)?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);
@@ -1045,7 +1050,8 @@ impl Node {
     pub(crate) fn approved(
         config: NodeConfig,
         genesis_prefix_info: GenesisPrefixInfo,
-        secret_key_share: Option<bls::SecretKeyShare>,
+        section_public_key: bls::PublicKey,
+        section_key_share: Option<SectionKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
@@ -1053,7 +1059,13 @@ impl Node {
 
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Approved::new(&mut core, genesis_prefix_info, secret_key_share).unwrap();
+        let stage = Approved::new(
+            &mut core,
+            genesis_prefix_info,
+            section_public_key,
+            section_key_share,
+        )
+        .unwrap();
         let stage = Stage::Approved(stage);
 
         let node = Self {

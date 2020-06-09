@@ -25,7 +25,7 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     section::{
-        EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
+        EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved, SectionKeyShare,
         SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
@@ -74,35 +74,46 @@ impl Approved {
     pub fn first(core: &mut Core) -> Result<Self> {
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(*core.id(), connection_info);
-        let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
+
+        let secret_key_set = consensus::generate_bls_threshold_secret_key(&mut core.rng, 1);
+        let public_key_set = secret_key_set.public_keys();
+        let public_key = public_key_set.public_key();
+        let secret_key_share = secret_key_set.secret_key_share(0);
+
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: create_first_elders_info(p2p_node),
-            public_keys: first_dkg_result.public_key_set,
             parsec_version: 0,
         };
 
-        Self::new(core, genesis_prefix_info, first_dkg_result.secret_key_share)
+        let section_key_share = SectionKeyShare::new(
+            public_key_set,
+            IndexedSecretKeyShare {
+                index: 0,
+                key: secret_key_share,
+            },
+        );
+
+        Self::new(
+            core,
+            genesis_prefix_info,
+            public_key,
+            Some(section_key_share),
+        )
     }
 
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
-        secret_key_share: Option<bls::SecretKeyShare>,
+        section_public_key: bls::PublicKey,
+        section_key_share: Option<SectionKeyShare>,
     ) -> Result<Self> {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
-        let section_keys_provider = SectionKeysProvider::new(
-            genesis_prefix_info.public_keys.clone(),
-            secret_key_share.and_then(|key| {
-                IndexedSecretKeyShare::new(key, core.name(), &genesis_prefix_info.elders_info)
-            }),
-        );
+        let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
-        let mut shared_state = SharedState::new(
-            genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.public_key(),
-        );
+        let mut shared_state =
+            SharedState::new(genesis_prefix_info.elders_info.clone(), section_public_key);
 
         if genesis_prefix_info
             .elders_info
@@ -200,12 +211,12 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        match self.section_keys_provider.secret_key_share() {
+        match self.section_keys_provider.key_share() {
             Ok(share) => self.consensus_engine.vote_for(
                 event,
-                self.section_keys_provider.public_key_set().clone(),
-                share.index,
-                &share.key,
+                share.public_key_set.clone(),
+                share.secret_key_share.index,
+                &share.secret_key_share.key,
             ),
             Err(error) => log_or_panic!(
                 log::Level::Error,
@@ -292,24 +303,8 @@ impl Approved {
     }
 
     /// Returns the current BLS public key set
-    pub fn public_key_set(&self) -> &bls::PublicKeySet {
-        self.section_keys_provider.public_key_set()
-    }
-
-    /// Returns the current BLS secret key share, if any
-    pub fn secret_key_share(&self) -> Option<&bls::SecretKeyShare> {
-        self.section_keys_provider
-            .secret_key_share()
-            .ok()
-            .map(|share| &share.key)
-    }
-
-    /// Returns the node's index in the current BLS group
-    pub fn our_index(&self) -> Option<usize> {
-        self.section_keys_provider
-            .secret_key_share()
-            .ok()
-            .map(|share| share.index)
+    pub fn section_key_share(&self) -> Option<&SectionKeyShare> {
+        self.section_keys_provider.key_share().ok()
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -561,19 +556,14 @@ impl Approved {
         &mut self,
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
+        section_key: bls::PublicKey,
     ) -> Result<()> {
         info!("Received GenesisUpdate: {:?}", genesis_prefix_info);
 
         core.msg_filter.reset();
 
-        self.shared_state = SharedState::new(
-            genesis_prefix_info.elders_info,
-            genesis_prefix_info.public_keys.public_key(),
-        );
-
-        self.section_keys_provider =
-            SectionKeysProvider::new(genesis_prefix_info.public_keys, None);
-
+        self.shared_state = SharedState::new(genesis_prefix_info.elders_info, section_key);
+        self.section_keys_provider = SectionKeysProvider::new(None);
         self.reset_parsec(core, genesis_prefix_info.parsec_version)
     }
 
@@ -1573,7 +1563,6 @@ impl Approved {
     fn create_genesis_prefix_info(&self) -> GenesisPrefixInfo {
         GenesisPrefixInfo {
             elders_info: self.shared_state.our_info().clone(),
-            public_keys: self.section_keys_provider.public_key_set().clone(),
             parsec_version: self.consensus_engine.parsec_version(),
         }
     }
@@ -1837,8 +1826,7 @@ impl Approved {
         proof_start_index_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
         let proof = self.shared_state.prove(&dst, proof_start_index_override);
-        let pk_set = self.section_keys_provider.public_key_set().clone();
-        let sk_share = self.section_keys_provider.secret_key_share()?;
+        let key_share = self.section_keys_provider.key_share()?;
 
         let dst_key = *self
             .shared_state
@@ -1853,7 +1841,12 @@ impl Approved {
             variant,
         };
 
-        AccumulatingMessage::new(content, sk_share, pk_set, proof)
+        AccumulatingMessage::new(
+            content,
+            &key_share.secret_key_share,
+            key_share.public_key_set.clone(),
+            proof,
+        )
     }
 
     // TODO: consider changing this so it sends only to a subset of the elders

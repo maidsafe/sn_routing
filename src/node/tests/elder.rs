@@ -9,7 +9,8 @@
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
     consensus::{
-        generate_bls_threshold_secret_key, AccumulatingEvent, OnlinePayload, ParsecRequest,
+        generate_bls_threshold_secret_key, AccumulatingEvent, GenesisPrefixInfo, OnlinePayload,
+        ParsecRequest,
     },
     error::Result,
     id::{FullId, P2pNode, PublicId},
@@ -19,7 +20,7 @@ use crate::{
     },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, IndexedSecretKeyShare, MIN_AGE},
+    section::{EldersInfo, IndexedSecretKeyShare, SectionKeyShare, MIN_AGE},
     utils, ELDER_SIZE,
 };
 use itertools::Itertools;
@@ -56,11 +57,13 @@ impl Env {
 
         let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
-        let genesis_prefix_info = test_utils::create_genesis_prefix_info(
-            elders_info.clone(),
-            secret_key_set.public_keys(),
-            0,
-        );
+        let public_key_set = secret_key_set.public_keys();
+        let public_key = public_key_set.public_key();
+
+        let genesis_prefix_info = GenesisPrefixInfo {
+            elders_info: elders_info.clone(),
+            parsec_version: 0,
+        };
 
         let mut full_and_bls_ids = full_ids
             .into_iter()
@@ -71,13 +74,22 @@ impl Env {
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
+        let section_key_share = SectionKeyShare::new(
+            public_key_set,
+            IndexedSecretKeyShare {
+                index: elders_info.position(full_id.public_id().name()).unwrap(),
+                key: secret_key_share,
+            },
+        );
+
         let (subject, ..) = Node::approved(
             NodeConfig {
                 full_id: Some(full_id),
                 ..Default::default()
             },
             genesis_prefix_info,
-            Some(secret_key_share),
+            public_key,
+            Some(section_key_share),
         );
 
         let candidate = Peer::gen(&mut rng, &network).to_p2p_node();
