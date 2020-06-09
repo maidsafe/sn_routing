@@ -8,6 +8,7 @@
 
 use crate::{
     consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
+    error::Result,
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
@@ -36,16 +37,16 @@ pub struct OnlinePayload {
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Genesis event. This is output-only event.
+    /// Genesis event. This is output-only unsigned event.
     Genesis {
         group: BTreeSet<PublicId>,
         related_info: Vec<u8>,
     },
 
-    /// Vote to start a DKG instance. This is input-only event.
+    /// Vote to start a DKG instance. This is input-only unsigned event.
     StartDkg(BTreeSet<PublicId>),
 
-    /// Result of a DKG. This is output-only event.
+    /// Result of a DKG. This is output-only unsigned event.
     DkgResult {
         participants: BTreeSet<PublicId>,
         dkg_result: DkgResultWrapper,
@@ -69,8 +70,8 @@ pub enum AccumulatingEvent {
         nonce: MessageHash,
     },
 
-    // Voted for received message with keys to update their_keys
-    TheirKeyInfo {
+    // Voted to update their section key.
+    TheirKey {
         prefix: Prefix<XorName>,
         key: bls::PublicKey,
     },
@@ -95,52 +96,85 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn into_network_event(self, section_key_share: &SectionKeyShare) -> NetworkEvent {
-        let proof_share =
-            if let Some(signature_share) = self.sign(&section_key_share.secret_key_share) {
-                Some(ProofShare {
-                    public_key_set: section_key_share.public_key_set.clone(),
-                    index: section_key_share.index,
-                    signature_share,
-                })
-            } else {
-                None
-            };
+    pub fn needs_signature(&self) -> bool {
+        match self {
+            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => false,
+            _ => true,
+        }
+    }
+
+    /// Sign and convert this event into `NetworkEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `false`
+    pub fn into_signed_network_event(
+        self,
+        section_key_share: &SectionKeyShare,
+    ) -> Result<NetworkEvent> {
+        let signature_share = self.sign(&section_key_share.secret_key_share)?;
+        let proof_share = ProofShare {
+            public_key_set: section_key_share.public_key_set.clone(),
+            index: section_key_share.index,
+            signature_share,
+        };
+
+        Ok(NetworkEvent {
+            payload: self,
+            proof_share: Some(proof_share),
+        })
+    }
+
+    /// Convert this event into unsigned `NetworkEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `true`
+    #[cfg(all(test, feature = "mock"))]
+    pub fn into_unsigned_network_event(self) -> NetworkEvent {
+        assert!(!self.needs_signature());
 
         NetworkEvent {
             payload: self,
-            proof_share,
+            proof_share: None,
         }
     }
 
-    pub fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Option<bls::SignatureShare> {
-        self.serialise_for_signing()
-            .map(|bytes| secret_key_share.sign(&bytes))
+    /// Create a signature share of this event using `secret key share`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `false`
+    pub fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Result<bls::SignatureShare> {
+        assert!(self.needs_signature());
+
+        let bytes = self.serialise_for_signing()?;
+        Ok(secret_key_share.sign(&bytes))
     }
 
     pub fn verify(&self, proof_share: &ProofShare) -> bool {
-        if let Some(bytes) = self.serialise_for_signing() {
-            proof_share.verify(&bytes)
-        } else {
-            false
-        }
+        self.needs_signature()
+            && self
+                .serialise_for_signing()
+                .map(|bytes| proof_share.verify(&bytes))
+                .unwrap_or(false)
     }
 
-    fn serialise_for_signing(&self) -> Option<Vec<u8>> {
+    fn serialise_for_signing(&self) -> Result<Vec<u8>> {
         match self {
-            Self::SectionInfo(_, section_key) => Some(section_key.to_bytes().to_vec()),
+            Self::SectionInfo(_, section_key) => Ok(section_key.to_bytes().to_vec()),
+            Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             // TODO: serialise these variants properly
             Self::Online(_)
             | Self::Offline(_)
             | Self::NeighbourInfo(..)
             | Self::SendNeighbourInfo { .. }
-            | Self::TheirKeyInfo { .. }
             | Self::TheirKnowledge { .. }
             | Self::ParsecPrune
             | Self::Relocate(_)
             | Self::RelocatePrepare(..)
-            | Self::User(_) => Some(vec![]),
-            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => None,
+            | Self::User(_) => Ok(vec![]),
+            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => unreachable!(),
         }
     }
 }
@@ -174,11 +208,11 @@ impl Debug for AccumulatingEvent {
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
                 dst, nonce
             ),
-            Self::TheirKeyInfo { prefix, key } => write!(
-                formatter,
-                "TheirKeyInfo {{ prefix: {:?}, key: {:?} }}",
-                prefix, key
-            ),
+            Self::TheirKey { prefix, key } => formatter
+                .debug_struct("TheirKey")
+                .field("prefix", prefix)
+                .field("key", key)
+                .finish(),
             Self::TheirKnowledge { prefix, knowledge } => write!(
                 formatter,
                 "TheirKnowledge {{ prefix: {:?}, knowledge: {} }}",

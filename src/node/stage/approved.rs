@@ -209,15 +209,15 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        match self.section_keys_provider.key_share() {
-            Ok(share) => {
-                let event = event.into_network_event(share);
-                self.consensus_engine.vote_for(event)
-            }
+        match self
+            .section_keys_provider
+            .key_share()
+            .and_then(|share| event.into_signed_network_event(share))
+        {
+            Ok(event) => self.consensus_engine.vote_for(event),
             Err(error) => log_or_panic!(
                 log::Level::Error,
-                "Failed to vote for {:?}: {}",
-                event,
+                "Failed to create NetworkEvent: {}",
                 error
             ),
         }
@@ -1060,8 +1060,9 @@ impl Approved {
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::TheirKeyInfo { prefix, key } => {
-                self.handle_their_key_info_event(prefix, key)
+            AccumulatingEvent::TheirKey { prefix, key } => {
+                let signature = signature.expect("signature missing");
+                self.handle_their_key_event(prefix, key, signature)
             }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
                 self.handle_their_knowledge_event(prefix, knowledge)
@@ -1450,7 +1451,12 @@ impl Approved {
         )
     }
 
-    fn handle_their_key_info_event(&mut self, prefix: Prefix<XorName>, key: bls::PublicKey) {
+    fn handle_their_key_event(
+        &mut self,
+        prefix: Prefix<XorName>,
+        key: bls::PublicKey,
+        _signature: bls::Signature,
+    ) {
         self.shared_state.sections.update_keys(prefix, key);
     }
 
@@ -1552,7 +1558,7 @@ impl Approved {
             }
 
             // Keep: Still relevant after prefix change.
-            AccumulatingEvent::TheirKeyInfo { .. }
+            AccumulatingEvent::TheirKey { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::User(_) => true,
         });
