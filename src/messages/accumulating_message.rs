@@ -171,7 +171,7 @@ impl PlainMessage {
 mod tests {
     use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
+        consensus::generate_secret_key_set,
         messages::VerifyStatus,
         rng::{self, MainRng},
         section::gen_secret_key,
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn combine_signatures() {
         let mut rng = rng::new();
-        let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
+        let sk_set = generate_secret_key_set(&mut rng, 4);
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn invalid_signatures() {
         let mut rng = rng::new();
-        let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
+        let sk_set = generate_secret_key_set(&mut rng, 4);
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 

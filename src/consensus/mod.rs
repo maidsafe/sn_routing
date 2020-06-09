@@ -16,7 +16,7 @@ pub use self::{
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent, OnlinePayload},
     parsec::{
-        generate_bls_threshold_secret_key, Block, CreateGossipError, DkgResult, DkgResultWrapper,
+        generate_secret_key_set, Block, CreateGossipError, DkgResult, DkgResultWrapper,
         Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
         GOSSIP_PERIOD,
     },

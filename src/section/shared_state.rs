@@ -524,7 +524,7 @@ impl SharedState {
 mod test {
     use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
+        consensus::generate_secret_key_set,
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::EldersInfo,
@@ -611,7 +611,7 @@ mod test {
 
         let elders_info = sections_iter.next().expect("section members");
         let participants = elders_info.elders.len();
-        let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
+        let secret_key_set = generate_secret_key_set(rng, participants);
         let public_key = secret_key_set.public_keys().public_key();
 
         let mut state = SharedState::new(elders_info, public_key);

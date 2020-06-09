@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{generate_bls_threshold_secret_key, GenesisPrefixInfo},
+    consensus::{generate_secret_key_set, GenesisPrefixInfo},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -160,7 +160,7 @@ fn create_elders(
     elders_info: EldersInfo,
     full_ids: BTreeMap<XorName, FullId>,
 ) -> Vec<Elder> {
-    let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
+    let secret_key_set = generate_secret_key_set(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
     let public_key = public_key_set.public_key();
     let genesis_prefix_info = GenesisPrefixInfo {

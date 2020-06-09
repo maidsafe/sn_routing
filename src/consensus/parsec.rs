@@ -364,10 +364,7 @@ impl ParsecMap {
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
-pub fn generate_bls_threshold_secret_key(
-    rng: &mut MainRng,
-    participants: usize,
-) -> bls::SecretKeySet {
+pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     let threshold = participants.saturating_sub(1) / 3;
