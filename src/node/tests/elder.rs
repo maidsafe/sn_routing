@@ -19,7 +19,7 @@ use crate::{
     },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, IndexedSecretKeyShare, SectionKeyShare, MIN_AGE},
+    section::{EldersInfo, SectionKeyShare, MIN_AGE},
     utils, ELDER_SIZE,
 };
 use itertools::Itertools;
@@ -73,13 +73,11 @@ impl Env {
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
-        let section_key_share = SectionKeyShare::new(
+        let section_key_share = SectionKeyShare {
             public_key_set,
-            IndexedSecretKeyShare {
-                index: elders_info.position(full_id.public_id().name()).unwrap(),
-                key: secret_key_share,
-            },
-        );
+            index: elders_info.position(full_id.public_id().name()).unwrap(),
+            secret_key_share,
+        };
 
         let (subject, ..) = Node::approved(
             NodeConfig {
@@ -128,11 +126,11 @@ impl Env {
                     .elders_info
                     .position(full_id.public_id().name())
                     .unwrap();
-                let event = event.clone().into_network_event(
-                    self.public_key_set.clone(),
+                let event = event.clone().into_network_event(&SectionKeyShare {
+                    public_key_set: self.public_key_set.clone(),
                     index,
-                    secret_key_share,
-                );
+                    secret_key_share: secret_key_share.clone(),
+                });
 
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                 parsec.vote_for_as(event.into_obs(), full_id);
@@ -407,11 +405,9 @@ impl Env {
             .map(|(index, secret_key_share)| {
                 AccumulatingMessage::new(
                     content.clone(),
-                    &IndexedSecretKeyShare {
-                        index,
-                        key: secret_key_share.clone(),
-                    },
                     public_key_set.clone(),
+                    index,
+                    secret_key_share,
                     proof.clone(),
                 )
                 .unwrap()

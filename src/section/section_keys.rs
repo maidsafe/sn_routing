@@ -15,52 +15,15 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Secret key share with its index.
-#[derive(Clone)]
-pub struct IndexedSecretKeyShare {
-    /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
-    pub index: usize,
-    /// Secret Key share
-    pub key: bls::SecretKeyShare,
-}
-
-impl IndexedSecretKeyShare {
-    /// Create a new share finding the index within the elders.
-    pub fn new(
-        key: bls::SecretKeyShare,
-        our_name: &XorName,
-        elders_info: &EldersInfo,
-    ) -> Option<Self> {
-        let index = elders_info.position(our_name)?;
-        Some(Self { index, key })
-    }
-
-    /// Extracts the `index`-th share from `secret_key_set`.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub fn from_set(secret_key_set: &bls::SecretKeySet, index: usize) -> Self {
-        Self {
-            index,
-            key: secret_key_set.secret_key_share(index),
-        }
-    }
-}
-
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Clone)]
 pub struct SectionKeyShare {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
-    /// Secret Key share and index.
-    pub secret_key_share: IndexedSecretKeyShare,
-}
-
-impl SectionKeyShare {
-    pub fn new(public_key_set: bls::PublicKeySet, secret_key_share: IndexedSecretKeyShare) -> Self {
-        Self {
-            public_key_set,
-            secret_key_share,
-        }
-    }
+    /// Index of the owner of this key share within the set of all section elders.
+    pub index: usize,
+    /// Secret Key share.
+    pub secret_key_share: bls::SecretKeyShare,
 }
 
 /// Struct that holds the current section keys and helps with new key generation.
@@ -121,8 +84,16 @@ impl SectionKeysProvider {
 
         self.current = dkg_result
             .secret_key_share
-            .and_then(|key| IndexedSecretKeyShare::new(key, our_name, elders_info))
-            .map(|secret_key_share| SectionKeyShare::new(public_key_set, secret_key_share));
+            .and_then(|secret_key_share| {
+                elders_info
+                    .position(our_name)
+                    .map(|index| (index, secret_key_share))
+            })
+            .map(|(index, secret_key_share)| SectionKeyShare {
+                public_key_set,
+                index,
+                secret_key_share,
+            });
         self.new.clear();
 
         Ok(())

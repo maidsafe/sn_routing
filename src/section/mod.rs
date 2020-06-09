@@ -20,7 +20,7 @@ pub use self::{
     elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_stats::NetworkStats,
-    section_keys::{IndexedSecretKeyShare, SectionKeyShare, SectionKeysProvider},
+    section_keys::{SectionKeyShare, SectionKeysProvider},
     section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
     section_proof_chain::{SectionProofChain, TrustStatus},

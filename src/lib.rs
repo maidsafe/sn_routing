@@ -110,7 +110,7 @@ pub use self::{
     messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
-    section::{quorum_count, EldersInfo, IndexedSecretKeyShare, SectionProofChain, MIN_AGE},
+    section::{quorum_count, EldersInfo, SectionProofChain, MIN_AGE},
     xor_space::Xorable,
 };
 

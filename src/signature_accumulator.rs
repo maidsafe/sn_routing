@@ -79,7 +79,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng::{self, MainRng},
-        section::{gen_secret_key, IndexedSecretKeyShare, SectionProofChain},
+        section::{gen_secret_key, SectionProofChain},
         Prefix, XorName,
     };
     use rand::{distributions::Standard, Rng};
@@ -94,7 +94,7 @@ mod tests {
         fn new(
             rng: &mut MainRng,
             secret_ids: &BTreeMap<XorName, FullId>,
-            secret_key_shares: &BTreeMap<XorName, IndexedSecretKeyShare>,
+            secret_key_shares: &BTreeMap<XorName, bls::SecretKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
             let content = PlainMessage {
@@ -108,20 +108,24 @@ mod tests {
                 .values()
                 .next()
                 .expect("secret_key_shares can't be empty");
-            let other_ids = secret_ids.values().zip(secret_key_shares.values()).skip(1);
 
             let proof = SectionProofChain::new(pk_set.public_key());
 
             let signed_msg = AccumulatingMessage::new(
                 content.clone(),
-                msg_sender_secret_key_share,
                 pk_set.clone(),
+                0,
+                msg_sender_secret_key_share,
                 proof.clone(),
             )
             .unwrap();
 
-            let signature_msgs = other_ids
-                .map(|(id, bls_id)| {
+            let signature_msgs = secret_ids
+                .values()
+                .zip(secret_key_shares.values())
+                .enumerate()
+                .skip(1)
+                .map(|(index, (id, sk_share))| {
                     Message::single_src(
                         id,
                         DstLocation::Direct,
@@ -129,8 +133,9 @@ mod tests {
                         Variant::MessageSignature(Box::new(
                             AccumulatingMessage::new(
                                 content.clone(),
-                                bls_id,
                                 pk_set.clone(),
+                                index,
+                                sk_share,
                                 proof.clone(),
                             )
                             .unwrap(),
@@ -157,7 +162,7 @@ mod tests {
 
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
 
-            let keys = generate_secret_key_set(&mut rng, 9);
+            let sk_set = generate_secret_key_set(&mut rng, 9);
             let full_ids: BTreeMap<_, _> = (0..9)
                 .map(|_| {
                     let full_id = FullId::gen(&mut rng);
@@ -170,19 +175,16 @@ mod tests {
                 .map(|(name, full_id)| (*name, P2pNode::new(*full_id.public_id(), socket_addr)))
                 .collect();
 
-            let secret_ids: BTreeMap<_, _> = pub_ids
+            let sk_shares: BTreeMap<_, _> = pub_ids
                 .keys()
                 .enumerate()
-                .map(|(idx, name)| {
-                    let share = IndexedSecretKeyShare::from_set(&keys, idx);
-                    (*name, share)
-                })
+                .map(|(idx, name)| (*name, sk_set.secret_key_share(idx)))
                 .collect();
 
-            let pk_set = keys.public_keys();
+            let pk_set = sk_set.public_keys();
 
             let msgs_and_sigs = (0..5)
-                .map(|_| MessageAndSignatures::new(&mut rng, &full_ids, &secret_ids, &pk_set))
+                .map(|_| MessageAndSignatures::new(&mut rng, &full_ids, &sk_shares, &pk_set))
                 .collect();
             Self { msgs_and_sigs }
         }
