@@ -37,14 +37,23 @@ impl VoteStatuses {
     fn add_expectation(
         &mut self,
         event: AccumulatingEvent,
-        non_voters: BTreeSet<PublicId>,
+        proofs: &ProofSet,
         elders_info: &EldersInfo,
     ) {
         let event_rc = Rc::new(event);
-        for id in non_voters {
-            let events = self.unvoted.entry(id).or_insert_with(BTreeSet::new);
-            let _ = events.insert(Rc::clone(&event_rc));
+
+        for id in elders_info.elder_ids() {
+            if proofs.contains_id(id) {
+                continue;
+            }
+
+            let _ = self
+                .unvoted
+                .entry(*id)
+                .or_default()
+                .insert(Rc::clone(&event_rc));
         }
+
         self.tracked_events.push_back(event_rc);
 
         // Pruning old events
@@ -83,12 +92,11 @@ impl VoteStatuses {
 #[derive(Default)]
 pub(crate) struct EventAccumulator {
     // A map containing network events that have not been accumulated yet, together with their
-    // proofs that have been collected so far. We are still waiting for more proofs, or to reach a
-    // state where we can handle the event.
+    // signature shares that have been collected so far.
     // FIXME: Purge votes that are older than a given period.
-    unaccumulated_events: BTreeMap<AccumulatingEvent, AccumulatingProof>,
-    // Events that were already accumulated: Further incoming proofs for these can be ignored.
-    // When an event is accumulated, it cannot be polled or inserted again.
+    unaccumulated_events: BTreeMap<AccumulatingEvent, State>,
+    // Events that were already accumulated: Further incoming shares for these can be ignored.
+    // When an event is accumulated, it cannot be inserted again.
     accumulated_events: BTreeSet<AccumulatingEvent>,
     // A struct retains the order of insertion, and keeps tracking of which node has not involved.
     // Entry will be created when an event reached consensus.
@@ -122,30 +130,32 @@ impl EventAccumulator {
             return Err(AccumulatingError::InvalidSignatureShare);
         }
 
-        let (event, proofs) = match self.unaccumulated_events.entry(event) {
+        let (event, state) = match self.unaccumulated_events.entry(event) {
             Entry::Vacant(entry) => {
-                let mut proofs = AccumulatingProof::default();
-                if proofs.add_proof(
+                let state = State::new(
                     node_proof,
-                    section_proof_share.public_key_set.threshold(),
                     section_proof_share.index,
                     section_proof_share.signature_share,
-                    elders_info,
-                )? {
-                    (entry.into_key(), proofs)
+                );
+                if state
+                    .has_enough_votes(section_proof_share.public_key_set.threshold(), elders_info)
+                {
+                    (entry.into_key(), state)
                 } else {
-                    let _ = entry.insert(proofs);
+                    let _ = entry.insert(state);
                     return Err(AccumulatingError::NotEnoughVotes);
                 }
             }
             Entry::Occupied(mut entry) => {
-                if entry.get_mut().add_proof(
+                entry.get_mut().add(
                     node_proof,
-                    section_proof_share.public_key_set.threshold(),
                     section_proof_share.index,
                     section_proof_share.signature_share,
-                    elders_info,
-                )? {
+                )?;
+                if entry
+                    .get()
+                    .has_enough_votes(section_proof_share.public_key_set.threshold(), elders_info)
+                {
                     entry.remove_entry()
                 } else {
                     return Err(AccumulatingError::NotEnoughVotes);
@@ -153,7 +163,7 @@ impl EventAccumulator {
             }
         };
 
-        let shares = proofs
+        let shares = state
             .sig_shares
             .iter()
             .map(|(index, share)| (*index, share));
@@ -162,7 +172,8 @@ impl EventAccumulator {
             .combine_signatures(shares)
             .map_err(AccumulatingError::CombineSignaturesFailed)?;
 
-        self.add_expectation(event.clone(), &proofs, elders_info);
+        self.vote_statuses
+            .add_expectation(event.clone(), &state.parsec_proofs, elders_info);
         let _ = self.accumulated_events.insert(event.clone());
 
         Ok((event, signature))
@@ -190,40 +201,35 @@ impl EventAccumulator {
             .copied()
             .collect()
     }
-
-    fn add_expectation(
-        &mut self,
-        event: AccumulatingEvent,
-        proofs: &AccumulatingProof,
-        elders_info: &EldersInfo,
-    ) {
-        let non_voted = elders_info
-            .elder_ids()
-            .filter(|id| !proofs.parsec_proofs.contains_id(id))
-            .copied()
-            .collect();
-
-        self.vote_statuses
-            .add_expectation(event, non_voted, elders_info);
-    }
 }
 
+// Accumulation state of a single event in the event accumulator.
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct AccumulatingProof {
+struct State {
     parsec_proofs: ProofSet,
     sig_shares: BTreeSet<(usize, bls::SignatureShare)>,
 }
 
-impl AccumulatingProof {
-    /// Returns whether we have enough votes.
-    pub fn add_proof(
+impl State {
+    fn new(node_proof: Proof, index: usize, signature_share: bls::SignatureShare) -> Self {
+        let mut parsec_proofs = ProofSet::default();
+        let _ = parsec_proofs.add_proof(node_proof);
+
+        let mut sig_shares = BTreeSet::new();
+        let _ = sig_shares.insert((index, signature_share));
+
+        Self {
+            parsec_proofs,
+            sig_shares,
+        }
+    }
+
+    fn add(
         &mut self,
         node_proof: Proof,
-        threshold: usize,
         index: usize,
         signature_share: bls::SignatureShare,
-        elders_info: &EldersInfo,
-    ) -> Result<bool, AccumulatingError> {
+    ) -> Result<(), AccumulatingError> {
         if !self.sig_shares.insert((index, signature_share)) {
             return Err(AccumulatingError::ReplacedAlreadyInserted);
         }
@@ -232,7 +238,11 @@ impl AccumulatingProof {
             return Err(AccumulatingError::ReplacedAlreadyInserted);
         }
 
-        Ok(self.sig_shares.len() > threshold && elders_info.is_quorum(&self.parsec_proofs))
+        Ok(())
+    }
+
+    fn has_enough_votes(&self, threshold: usize, elders_info: &EldersInfo) -> bool {
+        self.sig_shares.len() > threshold && elders_info.is_quorum(&self.parsec_proofs)
     }
 }
 

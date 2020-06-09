@@ -13,7 +13,7 @@ mod parsec;
 mod proof;
 
 pub use self::{
-    event_accumulator::{AccumulatingError, AccumulatingProof},
+    event_accumulator::AccumulatingError,
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent, OnlinePayload},
     parsec::{
