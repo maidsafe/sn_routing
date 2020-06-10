@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
+        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse, Proof,
     },
     core::Core,
     delivery_group,
@@ -906,17 +906,17 @@ impl Approved {
             return Ok(true);
         }
 
-        let (event, signature) = match self.consensus_engine.poll(self.shared_state.sections.our())
-        {
+        let (event, proof) = match self.consensus_engine.poll(self.shared_state.sections.our()) {
             None => return Ok(false),
-            Some((event, signature)) => (event, signature),
+            Some((event, proof)) => (event, proof),
         };
 
         if self.should_backlog_event(&event) {
+            // TODO: backlog it with the proof.
             self.backlog_event(event);
             Ok(false)
         } else {
-            self.handle_accumulated_event(core, event, signature)?;
+            self.handle_accumulated_event(core, event, proof)?;
             Ok(true)
         }
     }
@@ -1028,7 +1028,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
-        signature: Option<bls::Signature>,
+        proof: Option<Proof>,
     ) -> Result<()> {
         trace!("Handle accumulated event: {:?}", event);
 
@@ -1051,8 +1051,8 @@ impl Approved {
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
             AccumulatingEvent::SectionInfo(elders_info, key) => {
-                let signature = signature.expect("signature missing");
-                self.handle_section_info_event(core, elders_info, key, signature)?
+                let proof = proof.expect("proof missing");
+                self.handle_section_info_event(core, elders_info, key, proof)?
             }
             AccumulatingEvent::NeighbourInfo(elders_info, key) => {
                 self.handle_neighbour_info_event(core, elders_info, key)?
@@ -1061,8 +1061,8 @@ impl Approved {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
             AccumulatingEvent::TheirKey { prefix, key } => {
-                let signature = signature.expect("signature missing");
-                self.handle_their_key_event(prefix, key, signature)
+                let proof = proof.expect("proof missing");
+                self.handle_their_key_event(prefix, key, proof)
             }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
                 self.handle_their_knowledge_event(prefix, knowledge)
@@ -1263,14 +1263,14 @@ impl Approved {
         core: &mut Core,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        signature: bls::Signature,
+        proof: Proof,
     ) -> Result<()> {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         let neighbour_elders_removed =
-            if self.add_new_elders_info(core.name(), elders_info, section_key, signature)? {
+            if self.add_new_elders_info(core.name(), elders_info, section_key, proof)? {
                 neighbour_elders_removed.build(&self.shared_state.sections)
             } else {
                 return Ok(());
@@ -1337,7 +1337,7 @@ impl Approved {
         our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        signature: bls::Signature,
+        proof: Proof,
     ) -> Result<bool> {
         // Split handling alone. wouldn't cater to merge
         if elders_info
@@ -1349,7 +1349,7 @@ impl Approved {
                     self.split_cache = Some(SplitCache {
                         elders_info,
                         section_key,
-                        signature,
+                        proof,
                     });
                     Ok(false)
                 }
@@ -1363,18 +1363,18 @@ impl Approved {
                             our_name,
                             cached.elders_info,
                             cached.section_key,
-                            cached.signature,
+                            cached.proof,
                         )?;
                         self.add_sibling_elders_info(elders_info, section_key);
                     } else {
-                        self.add_our_elders_info(our_name, elders_info, section_key, signature)?;
+                        self.add_our_elders_info(our_name, elders_info, section_key, proof)?;
                         self.add_sibling_elders_info(cached.elders_info, cached.section_key);
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.add_our_elders_info(our_name, elders_info, section_key, signature)?;
+            self.add_our_elders_info(our_name, elders_info, section_key, proof)?;
             Ok(true)
         }
     }
@@ -1384,12 +1384,12 @@ impl Approved {
         our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        signature: bls::Signature,
+        proof: Proof,
     ) -> Result<(), RoutingError> {
         self.section_keys_provider
             .finalise_dkg(our_name, &elders_info)?;
         self.shared_state
-            .update_our_section(elders_info, section_key, signature);
+            .update_our_section(elders_info, section_key, proof.signature);
         self.churn_in_progress = false;
         Ok(())
     }
@@ -1455,7 +1455,7 @@ impl Approved {
         &mut self,
         prefix: Prefix<XorName>,
         key: bls::PublicKey,
-        _signature: bls::Signature,
+        _proof: Proof,
     ) {
         self.shared_state.sections.update_keys(prefix, key);
     }

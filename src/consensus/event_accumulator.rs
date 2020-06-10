@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::network_event::{AccumulatingEvent, ProofShare};
+use super::{
+    network_event::AccumulatingEvent,
+    proof::{Proof, ProofShare},
+};
 use crate::{error::Result, id::PublicId, section::EldersInfo, xor_space::XorName};
 use serde::Serialize;
 use std::{
@@ -107,7 +110,7 @@ impl EventAccumulator {
         voter_name: XorName,
         proof_share: ProofShare,
         elders_info: &EldersInfo,
-    ) -> Result<(AccumulatingEvent, bls::Signature), AccumulatingError> {
+    ) -> Result<(AccumulatingEvent, Proof), AccumulatingError> {
         match &event {
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)
@@ -162,12 +165,16 @@ impl EventAccumulator {
             .public_key_set
             .combine_signatures(shares)
             .map_err(AccumulatingError::CombineSignaturesFailed)?;
+        let proof = Proof {
+            public_key,
+            signature,
+        };
 
         self.vote_statuses
             .add_expectation(event.clone(), &state.voters, elders_info);
         let _ = self.accumulated_events.insert(event.clone());
 
-        Ok((event, signature))
+        Ok((event, proof))
     }
 
     pub fn reset(&mut self, our_name: &XorName) -> RemainingEvents {

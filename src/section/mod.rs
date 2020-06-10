@@ -16,6 +16,8 @@ mod section_members;
 mod section_proof_chain;
 mod shared_state;
 
+#[cfg(test)]
+pub use self::section_keys::gen_secret_key;
 pub use self::{
     elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
@@ -26,13 +28,11 @@ pub use self::{
     section_proof_chain::{SectionProofChain, TrustStatus},
     shared_state::SharedState,
 };
-
-#[cfg(test)]
-pub use self::section_keys::gen_secret_key;
+use crate::consensus::Proof;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SplitCache {
     pub elders_info: EldersInfo,
     pub section_key: bls::PublicKey,
-    pub signature: bls::Signature,
+    pub proof: Proof,
 }
