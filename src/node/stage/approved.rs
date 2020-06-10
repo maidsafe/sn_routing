@@ -1055,7 +1055,8 @@ impl Approved {
                 self.handle_section_info_event(core, elders_info, key, proof)?
             }
             AccumulatingEvent::NeighbourInfo(elders_info, key) => {
-                self.handle_neighbour_info_event(core, elders_info, key)?
+                let proof = proof.expect("proof missing");
+                self.handle_neighbour_info_event(core, elders_info, key, proof)?
             }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
@@ -1410,14 +1411,15 @@ impl Approved {
         &mut self,
         core: &mut Core,
         elders_info: EldersInfo,
-        key: bls::PublicKey,
+        section_key: bls::PublicKey,
+        _section_key_proof: Proof,
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state
             .sections
-            .update_keys(elders_info.prefix, key);
+            .update_keys(elders_info.prefix, section_key);
         self.shared_state.sections.add_neighbour(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
 

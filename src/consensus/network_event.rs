@@ -162,12 +162,13 @@ impl AccumulatingEvent {
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>> {
         match self {
-            Self::SectionInfo(_, section_key) => Ok(section_key.to_bytes().to_vec()),
+            Self::SectionInfo(_, section_key) | Self::NeighbourInfo(_, section_key) => {
+                Ok(section_key.to_bytes().to_vec())
+            }
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             // TODO: serialise these variants properly
             Self::Online(_)
             | Self::Offline(_)
-            | Self::NeighbourInfo(..)
             | Self::SendNeighbourInfo { .. }
             | Self::TheirKnowledge { .. }
             | Self::ParsecPrune
