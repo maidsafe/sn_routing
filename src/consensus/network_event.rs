@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::{DkgResultWrapper, Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
-    consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
     error::Result,
     id::{P2pNode, PublicId},
     messages::MessageHash,
@@ -256,20 +256,5 @@ impl Debug for NetworkEvent {
         } else {
             self.payload.fmt(formatter)
         }
-    }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct ProofShare {
-    pub public_key_set: bls::PublicKeySet,
-    pub index: usize,
-    pub signature_share: bls::SignatureShare,
-}
-
-impl ProofShare {
-    pub fn verify(&self, signed_bytes: &[u8]) -> bool {
-        self.public_key_set
-            .public_key_share(self.index)
-            .verify(&self.signature_share, signed_bytes)
     }
 }

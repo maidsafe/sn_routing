@@ -10,6 +10,7 @@ mod event_accumulator;
 mod genesis_prefix_info;
 mod network_event;
 mod parsec;
+mod proof;
 
 pub use self::{
     event_accumulator::AccumulatingError,
@@ -20,6 +21,7 @@ pub use self::{
         Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
         GOSSIP_PERIOD,
     },
+    proof::{Proof, ProofShare},
 };
 
 #[cfg(feature = "mock_base")]
@@ -63,10 +65,7 @@ impl ConsensusEngine {
     }
 
     /// Returns the next consensused and accumulated event, if any.
-    pub fn poll(
-        &mut self,
-        our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, Option<bls::Signature>)> {
+    pub fn poll(&mut self, our_elders: &EldersInfo) -> Option<(AccumulatingEvent, Option<Proof>)> {
         while let Some(block) = self.parsec_map.poll() {
             if let Some(output) = self.handle_parsec_block(block, our_elders) {
                 return Some(output);
@@ -80,7 +79,7 @@ impl ConsensusEngine {
         &mut self,
         block: Block,
         our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, Option<bls::Signature>)> {
+    ) -> Option<(AccumulatingEvent, Option<Proof>)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
             Observation::Genesis {
@@ -105,8 +104,7 @@ impl ConsensusEngine {
                 ))
             }
             Observation::OpaquePayload(event) => {
-                let proof = block.proofs().iter().next()?;
-                let voter_name = *proof.public_id().name();
+                let voter_name = *block.proofs().iter().next()?.public_id().name();
 
                 let NetworkEvent {
                     payload: event,
@@ -126,7 +124,7 @@ impl ConsensusEngine {
                     .accumulator
                     .insert(event, voter_name, proof_share, our_elders)
                 {
-                    Ok((event, signature)) => Some((event, Some(signature))),
+                    Ok((event, proof)) => Some((event, Some(proof))),
                     Err(AccumulatingError::NotEnoughVotes)
                     | Err(AccumulatingError::AlreadyAccumulated) => None,
                     Err(AccumulatingError::ReplacedAlreadyInserted) => {
