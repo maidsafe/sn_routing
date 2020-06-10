@@ -83,7 +83,7 @@ impl SectionMap {
 
     /// Returns whether the given name is in any of our neighbour sections.
     pub fn is_in_neighbour(&self, name: &XorName) -> bool {
-        self.neighbours.keys().any(|prefix| prefix.matches(name))
+        self.neighbours.contains_matching(name)
     }
 
     /// Returns all elders from all known sections.
@@ -105,9 +105,13 @@ impl SectionMap {
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
-        self.all()
-            .find(|(prefix, _)| prefix.matches(name))
-            .and_then(|(_, elders_info)| elders_info.elders.get(name))
+        let elders_info = if self.our.prefix.matches(name) {
+            &self.our
+        } else {
+            &self.neighbours.get_matching(name)?.1
+        };
+
+        elders_info.elders.get(name)
     }
 
     /// Returns whether the given peer is elder in a known sections.
@@ -145,18 +149,12 @@ impl SectionMap {
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys
-            .iter()
-            .find(|(prefix, _)| prefix.matches(name))
-            .map(|(_, key)| key)
+        self.keys.get_matching(name).map(|(_, key)| key)
     }
 
     /// Returns the latest known key for the prefix that is compatible with `dst`.
     pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
-        self.keys
-            .iter()
-            .find(|(prefix, _)| dst.is_compatible(prefix))
-            .map(|(_, key)| key)
+        self.key_by_name(dst.name()?)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
@@ -171,26 +169,32 @@ impl SectionMap {
     /// Returns the index of the public key in our_history that will be trusted by the given
     /// section.
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
-        self.knowledge.get(prefix).copied().unwrap_or(0)
+        self.knowledge
+            .get_equal_or_ancestor(prefix)
+            .map(|(_, index)| *index)
+            .unwrap_or(0)
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
     /// location
-    pub fn knowledge_by_location(&self, target: &DstLocation) -> u64 {
-        let (prefix, &index) = if let Some(pair) = self
-            .knowledge
-            .iter()
-            .filter(|(prefix, _)| target.is_compatible(prefix))
-            .min_by_key(|(_, &index)| index)
-        {
+    pub fn knowledge_by_location(&self, dst: &DstLocation) -> u64 {
+        let name = if let Some(name) = dst.name() {
+            name
+        } else {
+            return 0;
+        };
+
+        let (prefix, &index) = if let Some(pair) = self.knowledge.get_matching(name) {
             pair
         } else {
             return 0;
         };
 
-        if let Some(sibling_index) = self.knowledge.get(&prefix.sibling()) {
+        // TODO: we might not need to do this anymore because we have the bounce untrusted messages
+        // mechanism now.
+        if let Some((_, sibling_index)) = self.knowledge.get_equal_or_ancestor(&prefix.sibling()) {
             // The sibling section might not have processed the split yet, so it might still be in
-            // `target`'s location. Because of that, we need to return index that would be trusted
+            // `dst`'s location. Because of that, we need to return index that would be trusted
             // by them too.
             index.min(*sibling_index)
         } else {
@@ -208,6 +212,8 @@ impl SectionMap {
             new_index,
         );
 
+        // FIXME: we should always update even if it means overwriting newer with older, because we
+        // must always obey section decisions.
         if let Some((_, &old_index)) = self.knowledge.get_equal_or_ancestor(&prefix) {
             if old_index > new_index {
                 // Do not overwrite newer index
@@ -329,55 +335,65 @@ mod tests {
     }
 
     #[test]
-    fn update_keys_split() {
+    fn update_keys_complete_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            vec![("0", &k0), ("00", &k1), ("01", &k2)],
+            vec![("00", &k1), ("01", &k2)],
+        );
+    }
+
+    #[test]
+    fn update_keys_partial_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            vec![("0", &k0), ("00", &k1)],
+            vec![("0", &k0), ("00", &k1)],
+        );
+    }
+
+    #[test]
+    fn update_keys_indirect_complete_split() {
         let mut rng = rng::new();
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
         let k2 = gen_key(&mut rng);
         let k3 = gen_key(&mut rng);
+        let k4 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("10", &k1), ("11", &k2), ("101", &k3)],
-            vec![("0", &k0), ("100", &k1), ("101", &k3), ("11", &k2)],
-        );
-    }
-
-    #[test]
-    fn update_keys_our_section_not_sibling_of_ancestor() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
-
-        // 01 Not the sibling of the single bit parent prefix of 111
-        update_keys_and_check(
-            &mut rng::new(),
-            vec![("01", &k0), ("1", &k1), ("111", &k2)],
-            vec![("01", &k0), ("10", &k1), ("110", &k1), ("111", &k2)],
-        );
-    }
-
-    #[test]
-    fn update_keys_multiple_split() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
-
-        update_keys_and_check(
-            &mut rng::new(),
-            vec![("0", &k0), ("1", &k1), ("1011001", &k2)],
             vec![
                 ("0", &k0),
-                ("100", &k1),
-                ("1010", &k1),
-                ("1011000", &k1),
-                ("1011001", &k2),
-                ("101101", &k1),
-                ("10111", &k1),
-                ("11", &k1),
+                ("000", &k1),
+                ("001", &k2),
+                ("010", &k3),
+                ("011", &k4),
             ],
+            vec![("000", &k1), ("001", &k2), ("010", &k3), ("011", &k4)],
+        );
+    }
+
+    #[test]
+    fn update_keys_indirect_partial_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng::new(),
+            vec![("0", &k0), ("000", &k1), ("001", &k2)],
+            vec![("0", &k0), ("000", &k1), ("001", &k2)],
         );
     }
 
@@ -400,7 +416,7 @@ mod tests {
                 ("101", &k3),
                 ("10", &k4),
             ],
-            vec![("0", &k0), ("100", &k1), ("101", &k3), ("11", &k2)],
+            vec![("0", &k0), ("10", &k1), ("101", &k3), ("11", &k2)],
         );
     }
 

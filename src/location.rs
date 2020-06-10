@@ -67,14 +67,6 @@ impl DstLocation {
         }
     }
 
-    /// Returns if the location is compatible with that prefix
-    pub(crate) fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
-        match self {
-            Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
-            Self::Direct => false,
-        }
-    }
-
     /// If this location is `Node`, returns its name, otherwise `Err(BadLocation)`.
     pub(crate) fn as_node(&self) -> Result<&XorName> {
         match self {
@@ -100,9 +92,18 @@ impl DstLocation {
         assert!(prefix.matches(name));
 
         match self {
-            DstLocation::Node(self_name) => name == self_name,
-            DstLocation::Section(self_name) => prefix.matches(self_name),
-            DstLocation::Direct => true,
+            Self::Node(self_name) => name == self_name,
+            Self::Section(self_name) => prefix.matches(self_name),
+            Self::Direct => true,
+        }
+    }
+
+    /// Returns the name of this location, or `None` if it is `Direct`.
+    pub(crate) fn name(&self) -> Option<&XorName> {
+        match self {
+            Self::Node(name) => Some(name),
+            Self::Section(name) => Some(name),
+            Self::Direct => None,
         }
     }
 }
