@@ -24,10 +24,12 @@ pub struct SectionMap {
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     neighbours: PrefixMap<EldersInfo>,
-    // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)` pair.
+    // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
+    // pair.
     keys: PrefixMap<(bls::PublicKey, Proof)>,
-    // Indices of our section keys that are trusted by other sections.
-    knowledge: PrefixMap<u64>,
+    // Indices of our section keys that are trusted by other sections. The proof is for the
+    // `(prefix, knowledge)` pair.
+    knowledge: PrefixMap<(u64, Proof)>,
 }
 
 impl SectionMap {
@@ -165,7 +167,7 @@ impl SectionMap {
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
         self.knowledge
             .get_equal_or_ancestor(prefix)
-            .map(|(_, index)| *index)
+            .map(|(_, (index, _))| *index)
             .unwrap_or(0)
     }
 
@@ -178,15 +180,18 @@ impl SectionMap {
             return 0;
         };
 
-        let (prefix, &index) = if let Some(pair) = self.knowledge.get_matching(name) {
-            pair
+        let (prefix, index) = if let Some((prefix, (index, _))) = self.knowledge.get_matching(name)
+        {
+            (prefix, *index)
         } else {
             return 0;
         };
 
         // TODO: we might not need to do this anymore because we have the bounce untrusted messages
         // mechanism now.
-        if let Some((_, sibling_index)) = self.knowledge.get_equal_or_ancestor(&prefix.sibling()) {
+        if let Some((_, (sibling_index, _))) =
+            self.knowledge.get_equal_or_ancestor(&prefix.sibling())
+        {
             // The sibling section might not have processed the split yet, so it might still be in
             // `dst`'s location. Because of that, we need to return index that would be trusted
             // by them too.
@@ -199,23 +204,14 @@ impl SectionMap {
     /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
     /// occurred in the meantime, the index for sections covering the rest of the address space
     /// are initialised to the old index that was stored for their common ancestor
-    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, new_index: u64) {
+    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, new_index: u64, proof: Proof) {
         trace!(
             "update knowledge of section ({:b}) about our section to {}",
             prefix,
             new_index,
         );
 
-        // FIXME: we should always update even if it means overwriting newer with older, because we
-        // must always obey section decisions.
-        if let Some((_, &old_index)) = self.knowledge.get_equal_or_ancestor(&prefix) {
-            if old_index > new_index {
-                // Do not overwrite newer index
-                return;
-            }
-        }
-
-        let _ = self.knowledge.insert(prefix, new_index);
+        let _ = self.knowledge.insert(prefix, (new_index, proof));
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our
@@ -484,7 +480,8 @@ mod tests {
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
-            map.update_knowledge(prefix, version);
+            let proof = consensus::test_utils::prove(rng, &(prefix, version));
+            map.update_knowledge(prefix, version, proof);
         }
 
         for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {

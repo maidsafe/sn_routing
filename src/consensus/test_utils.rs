@@ -9,17 +9,18 @@
 use super::Proof;
 use crate::rng::{MainRng, RngCompat};
 use rand_crypto::Rng;
+use serde::Serialize;
 
 // Generate random BLS `SecretKey`.
 pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
     RngCompat(rng).gen()
 }
 
-// Create fake proof for the given key.
+// Create fake proof for the given payload.
 #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-pub fn prove(rng: &mut MainRng, key: &bls::PublicKey) -> Proof {
+pub fn prove<T: Serialize>(rng: &mut MainRng, payload: &T) -> Proof {
     let secret_key = gen_secret_key(rng);
-    let bytes = bincode::serialize(key).unwrap();
+    let bytes = bincode::serialize(payload).unwrap();
     Proof {
         public_key: secret_key.public_key(),
         signature: secret_key.sign(&bytes),
