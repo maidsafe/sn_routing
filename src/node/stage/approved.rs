@@ -1408,10 +1408,12 @@ impl Approved {
             .update_keys(prefix, section_key, section_key_proof);
 
         // We can update their knowledge already because we know they also reached consensus on
-        // our `SectionInfo` so they know our latest key.
-        self.shared_state
-            .sections
-            .update_knowledge(prefix, self.shared_state.our_history.last_key_index());
+        // our `SectionInfo` so they know our latest key. Need to vote for it first, to
+        // accumulate the signatures.
+        self.vote_for_event(AccumulatingEvent::TheirKnowledge {
+            prefix,
+            knowledge: self.shared_state.our_history.last_key_index(),
+        })
     }
 
     fn handle_neighbour_info_event(
