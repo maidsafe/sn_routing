@@ -74,12 +74,12 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        consensus::generate_secret_key_set,
+        consensus::{self, generate_secret_key_set},
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         rng::{self, MainRng},
-        section::{gen_secret_key, SectionProofChain},
+        section::SectionProofChain,
         Prefix, XorName,
     };
     use rand::{distributions::Standard, Rng};
@@ -100,7 +100,7 @@ mod tests {
             let content = PlainMessage {
                 src: Prefix::default(),
                 dst: DstLocation::Section(rng.gen()),
-                dst_key: gen_secret_key(rng).public_key(),
+                dst_key: consensus::test_utils::gen_secret_key(rng).public_key(),
                 variant: Variant::UserMessage(rng.sample_iter(Standard).take(3).collect()),
             };
 

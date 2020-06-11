@@ -1329,7 +1329,7 @@ impl Approved {
         our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        proof: Proof,
+        section_key_proof: Proof,
     ) -> Result<bool> {
         // Split handling alone. wouldn't cater to merge
         if elders_info
@@ -1341,7 +1341,7 @@ impl Approved {
                     self.split_cache = Some(SplitCache {
                         elders_info,
                         section_key,
-                        proof,
+                        section_key_proof,
                     });
                     Ok(false)
                 }
@@ -1355,18 +1355,27 @@ impl Approved {
                             our_name,
                             cached.elders_info,
                             cached.section_key,
-                            cached.proof,
+                            cached.section_key_proof,
                         )?;
-                        self.add_sibling_elders_info(elders_info, section_key);
+                        self.add_sibling_elders_info(elders_info, section_key, section_key_proof);
                     } else {
-                        self.add_our_elders_info(our_name, elders_info, section_key, proof)?;
-                        self.add_sibling_elders_info(cached.elders_info, cached.section_key);
+                        self.add_our_elders_info(
+                            our_name,
+                            elders_info,
+                            section_key,
+                            section_key_proof,
+                        )?;
+                        self.add_sibling_elders_info(
+                            cached.elders_info,
+                            cached.section_key,
+                            cached.section_key_proof,
+                        );
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.add_our_elders_info(our_name, elders_info, section_key, proof)?;
+            self.add_our_elders_info(our_name, elders_info, section_key, section_key_proof)?;
             Ok(true)
         }
     }
@@ -1376,20 +1385,27 @@ impl Approved {
         our_name: &XorName,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        proof: Proof,
+        section_key_proof: Proof,
     ) -> Result<(), RoutingError> {
         self.section_keys_provider
             .finalise_dkg(our_name, &elders_info)?;
         self.shared_state
-            .update_our_section(elders_info, section_key, proof.signature);
+            .update_our_section(elders_info, section_key, section_key_proof.signature);
         self.churn_in_progress = false;
         Ok(())
     }
 
-    fn add_sibling_elders_info(&mut self, elders_info: EldersInfo, section_key: bls::PublicKey) {
+    fn add_sibling_elders_info(
+        &mut self,
+        elders_info: EldersInfo,
+        section_key: bls::PublicKey,
+        section_key_proof: Proof,
+    ) {
         let prefix = elders_info.prefix;
         self.shared_state.sections.add_neighbour(elders_info);
-        self.shared_state.sections.update_keys(prefix, section_key);
+        self.shared_state
+            .sections
+            .update_keys(prefix, section_key, section_key_proof);
 
         // We can update their knowledge already because we know they also reached consensus on
         // our `SectionInfo` so they know our latest key.
@@ -1403,14 +1419,14 @@ impl Approved {
         core: &mut Core,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
-        _section_key_proof: Proof,
+        section_key_proof: Proof,
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state
             .sections
-            .update_keys(elders_info.prefix, section_key);
+            .update_keys(elders_info.prefix, section_key, section_key_proof);
         self.shared_state.sections.add_neighbour(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
 
@@ -1447,10 +1463,12 @@ impl Approved {
     fn handle_their_key_event(
         &mut self,
         prefix: Prefix<XorName>,
-        key: bls::PublicKey,
-        _proof: Proof,
+        section_key: bls::PublicKey,
+        section_key_proof: Proof,
     ) {
-        self.shared_state.sections.update_keys(prefix, key);
+        self.shared_state
+            .sections
+            .update_keys(prefix, section_key, section_key_proof);
     }
 
     fn handle_their_knowledge_event(&mut self, prefix: Prefix<XorName>, knowledge: u64) {
