@@ -1057,7 +1057,8 @@ impl Approved {
                 self.handle_their_key_event(prefix, key, proof)
             }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
-                self.handle_their_knowledge_event(prefix, knowledge)
+                let proof = proof.expect("proof missing");
+                self.handle_their_knowledge_event(prefix, knowledge, proof)
             }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(core, payload)?,
@@ -1473,10 +1474,15 @@ impl Approved {
             .update_keys(prefix, section_key, section_key_proof);
     }
 
-    fn handle_their_knowledge_event(&mut self, prefix: Prefix<XorName>, knowledge: u64) {
+    fn handle_their_knowledge_event(
+        &mut self,
+        prefix: Prefix<XorName>,
+        knowledge: u64,
+        knowledge_proof: Proof,
+    ) {
         self.shared_state
             .sections
-            .update_knowledge(prefix, knowledge)
+            .update_knowledge(prefix, knowledge, knowledge_proof)
     }
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
