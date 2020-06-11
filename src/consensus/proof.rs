@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// Proof that a quorum of the section elders has decided something.
+use crate::xor_space::{Prefix, XorName};
+use std::borrow::Borrow;
+
+/// Proof that a quorum of the section elders has agreed on something.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Proof {
     pub public_key: bls::PublicKey,
@@ -25,5 +28,27 @@ impl ProofShare {
         self.public_key_set
             .public_key_share(self.index)
             .verify(&self.signature_share, signed_bytes)
+    }
+}
+
+/// A value together with the proof that it was agreed on by the quorum of the section elders.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub struct Proven<T> {
+    pub value: T,
+    pub proof: Proof,
+}
+
+impl<T> Proven<T> {
+    pub fn new(value: T, proof: Proof) -> Self {
+        Self { value, proof }
+    }
+}
+
+impl<T> Borrow<Prefix<XorName>> for Proven<T>
+where
+    T: Borrow<Prefix<XorName>>,
+{
+    fn borrow(&self) -> &Prefix<XorName> {
+        self.value.borrow()
     }
 }

@@ -246,15 +246,8 @@ impl<T: Debug> Debug for Entry<T> {
     }
 }
 
-// Tuples whose first element is `Prefix` can be used as entries of `PrefixMap`.
-// Note: currently implemented only for 2-tuples and 3-tuples.
+// Allow pairs of `(Prefix, T)` for any `T` to be used as entries in `PrefixMap`.
 impl<T> Borrow<Prefix<XorName>> for (Prefix<XorName>, T) {
-    fn borrow(&self) -> &Prefix<XorName> {
-        &self.0
-    }
-}
-
-impl<T0, T1> Borrow<Prefix<XorName>> for (Prefix<XorName>, T0, T1) {
     fn borrow(&self) -> &Prefix<XorName> {
         &self.0
     }
