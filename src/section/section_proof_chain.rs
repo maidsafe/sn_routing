@@ -209,8 +209,8 @@ impl Block {
 mod tests {
     use super::*;
     use crate::{
+        consensus,
         rng::{self, MainRng},
-        section::gen_secret_key,
     };
 
     #[test]
@@ -308,7 +308,7 @@ mod tests {
     }
 
     fn gen_keys(rng: &mut MainRng) -> (bls::PublicKey, bls::SecretKey) {
-        let secret_key = gen_secret_key(rng);
+        let secret_key = consensus::test_utils::gen_secret_key(rng);
         (secret_key.public_key(), secret_key)
     }
 

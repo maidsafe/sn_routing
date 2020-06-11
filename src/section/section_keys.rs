@@ -99,12 +99,3 @@ impl SectionKeysProvider {
         Ok(())
     }
 }
-
-// Generate random BLS `SecretKey`. For tests only.
-#[cfg(test)]
-pub fn gen_secret_key(rng: &mut crate::rng::MainRng) -> bls::SecretKey {
-    use crate::rng::RngCompat;
-    use rand_crypto::Rng;
-
-    RngCompat(rng).gen()
-}

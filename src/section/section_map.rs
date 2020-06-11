@@ -8,6 +8,7 @@
 
 use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
 use crate::{
+    consensus::Proof,
     id::P2pNode,
     location::DstLocation,
     xor_space::{Prefix, XorName},
@@ -23,8 +24,8 @@ pub struct SectionMap {
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     neighbours: PrefixMap<EldersInfo>,
-    // BLS public keys of known sections excluding ours.
-    keys: PrefixMap<bls::PublicKey>,
+    // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)` pair.
+    keys: PrefixMap<(bls::PublicKey, Proof)>,
     // Indices of our section keys that are trusted by other sections.
     knowledge: PrefixMap<u64>,
 }
@@ -137,26 +138,26 @@ impl SectionMap {
 
     /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
-        self.keys.iter()
+        self.keys.iter().map(|(prefix, (key, _))| (prefix, key))
     }
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.values().any(|known_key| known_key == key)
+        self.keys.values().any(|(known_key, _)| known_key == key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys.get_matching(name).map(|(_, key)| key)
+        self.keys.get_matching(name).map(|(_, (key, _))| key)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey) {
+    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey, proof: Proof) {
         trace!("update key for {:?}: {:?}", prefix, new_key);
-        let _ = self.keys.insert(prefix, new_key);
+        let _ = self.keys.insert(prefix, (new_key, proof));
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -292,9 +293,10 @@ impl NeighbourEldersRemovedBuilder {
 mod tests {
     use super::*;
     use crate::{
+        consensus,
         id::FullId,
         location::DstLocation,
-        rng::{self, MainRng, RngCompat},
+        rng::{self, MainRng},
     };
     use rand::Rng;
 
@@ -455,7 +457,8 @@ mod tests {
         let mut map = SectionMap::new(elders_info);
 
         for (prefix, key) in updates {
-            map.update_keys(prefix.parse().unwrap(), *key);
+            let proof = consensus::test_utils::prove(rng, key);
+            map.update_keys(prefix.parse().unwrap(), *key, proof);
         }
 
         let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
@@ -509,7 +512,6 @@ mod tests {
     }
 
     fn gen_key(rng: &mut MainRng) -> bls::PublicKey {
-        let secret_key: bls::SecretKey = rand_crypto::Rng::gen(&mut RngCompat(rng));
-        secret_key.public_key()
+        consensus::test_utils::gen_secret_key(rng).public_key()
     }
 }

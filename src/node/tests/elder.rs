@@ -8,9 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{
-        generate_secret_key_set, AccumulatingEvent, GenesisPrefixInfo, OnlinePayload, ParsecRequest,
-    },
+    consensus::{self, AccumulatingEvent, GenesisPrefixInfo, OnlinePayload, ParsecRequest},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -55,7 +53,7 @@ impl Env {
         let network = Network::new();
 
         let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
-        let secret_key_set = generate_secret_key_set(&mut rng, full_ids.len());
+        let secret_key_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
         let public_key_set = secret_key_set.public_keys();
         let public_key = public_key_set.public_key();
 

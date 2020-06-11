@@ -172,10 +172,9 @@ impl PlainMessage {
 mod tests {
     use super::*;
     use crate::{
-        consensus::generate_secret_key_set,
+        consensus::{generate_secret_key_set, test_utils::gen_secret_key},
         messages::VerifyStatus,
         rng::{self, MainRng},
-        section::gen_secret_key,
         Prefix,
     };
     use rand::{self, Rng};
