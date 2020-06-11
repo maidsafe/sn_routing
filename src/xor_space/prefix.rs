@@ -94,6 +94,14 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
     }
 
+    /// Returns `true` if the `other` prefix differs only in the last bit from this one.
+    pub fn is_sibling(&self, other: &Self) -> bool {
+        let i = self.name.common_prefix(&other.name);
+        self.bit_count() == other.bit_count()
+            && self.bit_count() == i + 1
+            && self.name.bit(i) != other.name.bit(i)
+    }
+
     /// Returns the number of common leading bits with the input name, capped with prefix length.
     pub fn common_prefix(&self, name: &T) -> usize {
         cmp::min(self.bit_count(), self.name.common_prefix(name))
@@ -411,6 +419,16 @@ mod tests {
             parse("011").ancestors().collect::<Vec<_>>(),
             vec![parse(""), parse("0"), parse("01")]
         );
+    }
+
+    #[test]
+    fn is_sibling() {
+        assert!(parse("0").is_sibling(&parse("1")));
+        assert!(parse("00").is_sibling(&parse("01")));
+        assert!(!parse("").is_sibling(&parse("")));
+        assert!(!parse("0").is_sibling(&parse("")));
+        assert!(!parse("0").is_sibling(&parse("0")));
+        assert!(!parse("01").is_sibling(&parse("11")));
     }
 
     fn parse(input: &str) -> Prefix<u8> {
