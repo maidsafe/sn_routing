@@ -63,13 +63,15 @@ pub fn delivery_targets(
             candidates(target_name, our_id, sections)?
         }
         DstLocation::Section(target_name) => {
-            let (prefix, section) = sections.closest(target_name);
-            if *prefix == sections.our().prefix || prefix.is_neighbour(&sections.our().prefix) {
+            let info = sections.closest(target_name);
+            if info.prefix == sections.our().prefix
+                || info.prefix.is_neighbour(&sections.our().prefix)
+            {
                 // Exclude our name since we don't need to send to ourself
 
                 // FIXME: only doing this for now to match RT.
                 // should confirm if needed esp after msg_relay changes.
-                let section: Vec<_> = section
+                let section: Vec<_> = info
                     .elders
                     .values()
                     .filter(|node| node.name() != our_id.name())
@@ -96,7 +98,7 @@ fn candidates(
     let filtered_sections = sections
         .sorted_by_distance_to(target_name)
         .into_iter()
-        .map(|(prefix, info)| (prefix, info.elders.len(), info.elders.values()));
+        .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
     let mut dg_size = 0;
     let mut nodes_to_send = Vec::new();

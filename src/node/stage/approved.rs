@@ -640,7 +640,6 @@ impl Approved {
                 .shared_state
                 .sections
                 .closest(&destination)
-                .1
                 .elders
                 .values()
                 .map(|p2p_node| *p2p_node.peer_addr())

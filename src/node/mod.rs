@@ -925,7 +925,7 @@ impl Node {
     pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
         self.shared_state()
             .into_iter()
-            .flat_map(|state| state.sections.neighbours().map(|(_, info)| info))
+            .flat_map(|state| state.sections.neighbours())
     }
 
     /// Returns the info about our sections or `None` if we are not joined yet.
