@@ -19,6 +19,7 @@ use crate::{
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
+    iter,
     net::SocketAddr,
 };
 
@@ -45,7 +46,7 @@ impl SharedState {
         Self {
             handled_genesis_event: false,
             our_history: SectionProofChain::new(section_pk),
-            sections: SectionMap::new(elders_info, section_pk),
+            sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
@@ -134,6 +135,31 @@ impl SharedState {
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
         self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
+    }
+
+    pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
+        iter::once((&self.sections.our().prefix, self.our_history.last_key()))
+            .chain(self.sections.keys())
+    }
+
+    pub fn section_key_by_location(&self, dst: &DstLocation) -> &bls::PublicKey {
+        if let Some(name) = dst.name() {
+            self.section_key_by_name(name)
+        } else {
+            // We don't know the section if `dst` is `Direct`, so return the root key which should
+            // be trusted by everyone.
+            self.our_history.first_key()
+        }
+    }
+
+    pub fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
+        if self.our_prefix().matches(name) {
+            self.our_history.last_key()
+        } else {
+            self.sections
+                .key_by_name(name)
+                .unwrap_or_else(|| self.our_history.first_key())
+        }
     }
 
     /// Adds new member if its name matches our prefix and it's not already joined.
@@ -238,8 +264,6 @@ impl SharedState {
             .remove_not_matching_our_prefix(&elders_info.prefix);
         self.our_history.push(section_key, signature);
         self.sections.set_our(elders_info);
-        self.sections
-            .update_keys(self.sections.our().prefix, section_key);
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
@@ -308,6 +332,7 @@ impl SharedState {
     /// vote for (if any).
     pub fn update_section_knowledge(
         &mut self,
+        our_name: &XorName,
         src: &SrcAuthority,
         dst_key: Option<&bls::PublicKey>,
         hash: &MessageHash,
@@ -330,7 +355,7 @@ impl SharedState {
         let mut events = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 
-        if !self.sections.has_key(new_key) {
+        if !prefix.matches(our_name) && !self.sections.has_key(new_key) {
             // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
             // via `NeighbourInfo`.
             if is_neighbour {

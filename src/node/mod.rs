@@ -618,7 +618,7 @@ impl Node {
         msg_hash: &MessageHash,
     ) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(&msg, msg_hash);
+            stage.update_section_knowledge(self.core.name(), &msg, msg_hash);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
