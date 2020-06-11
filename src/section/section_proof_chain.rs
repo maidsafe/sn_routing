@@ -31,7 +31,11 @@ impl SectionProofChain {
 
     /// Pushes a new key into the chain but only if the signature is valid.
     pub(crate) fn push(&mut self, key: bls::PublicKey, signature: bls::Signature) {
-        if self.last_key().verify(&signature, &key.to_bytes()[..]) {
+        let valid = bincode::serialize(&key)
+            .map(|bytes| self.last_key().verify(&signature, &bytes))
+            .unwrap_or(false);
+
+        if valid {
             self.tail.push(Block { key, signature })
         } else {
             log_or_panic!(
@@ -201,7 +205,9 @@ struct Block {
 impl Block {
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     fn verify(&self, public_key: &bls::PublicKey) -> bool {
-        public_key.verify(&self.signature, &self.key.to_bytes()[..])
+        bincode::serialize(&self.key)
+            .map(|bytes| public_key.verify(&self.signature, &bytes))
+            .unwrap_or(false)
     }
 }
 

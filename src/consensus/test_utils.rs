@@ -19,8 +19,9 @@ pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
 #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
 pub fn prove(rng: &mut MainRng, key: &bls::PublicKey) -> Proof {
     let secret_key = gen_secret_key(rng);
+    let bytes = bincode::serialize(key).unwrap();
     Proof {
         public_key: secret_key.public_key(),
-        signature: secret_key.sign(&key.to_bytes()[..]),
+        signature: secret_key.sign(&bytes),
     }
 }
