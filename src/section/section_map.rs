@@ -8,7 +8,7 @@
 
 use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
 use crate::{
-    consensus::Proof,
+    consensus::{Proof, Proven},
     id::P2pNode,
     location::DstLocation,
     xor_space::{Prefix, XorName},
@@ -24,10 +24,10 @@ pub struct SectionMap {
     neighbours: PrefixMap<EldersInfo>,
     // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
     // pair.
-    keys: PrefixMap<(Prefix<XorName>, bls::PublicKey, Proof)>,
+    keys: PrefixMap<Proven<(Prefix<XorName>, bls::PublicKey)>>,
     // Indices of our section keys that are trusted by other sections. The proof is for the
     // `(prefix, knowledge)` pair.
-    knowledge: PrefixMap<(Prefix<XorName>, u64, Proof)>,
+    knowledge: PrefixMap<Proven<(Prefix<XorName>, u64)>>,
 }
 
 impl SectionMap {
@@ -134,26 +134,26 @@ impl SectionMap {
 
     /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
-        self.keys.iter().map(|(prefix, key, _)| (prefix, key))
+        self.keys
+            .iter()
+            .map(|entry| (&entry.value.0, &entry.value.1))
     }
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.iter().any(|(_, known_key, _)| known_key == key)
+        self.keys.iter().any(|entry| entry.value.1 == *key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys.get_matching(name).map(|(_, key, _)| key)
+        self.keys.get_matching(name).map(|entry| &entry.value.1)
     }
 
-    /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
-    /// occurred in the meantime, the keys for sections covering the rest of the address space are
-    /// initialised to the old key that was stored for their common ancestor
+    /// Updates the entry in `keys` for `prefix` to the latest known key.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey, proof: Proof) {
         trace!("update key for {:?}: {:?}", prefix, new_key);
-        let _ = self.keys.insert((prefix, new_key, proof));
+        let _ = self.keys.insert(Proven::new((prefix, new_key), proof));
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -161,7 +161,7 @@ impl SectionMap {
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
         self.knowledge
             .get_equal_or_ancestor(prefix)
-            .map(|(_, index, _)| *index)
+            .map(|entry| entry.value.1)
             .unwrap_or(0)
     }
 
@@ -174,20 +174,19 @@ impl SectionMap {
             return 0;
         };
 
-        let (prefix, index) = if let Some((prefix, index, _)) = self.knowledge.get_matching(name) {
-            (prefix, *index)
+        let (prefix, index) = if let Some(entry) = self.knowledge.get_matching(name) {
+            (&entry.value.0, entry.value.1)
         } else {
             return 0;
         };
 
         // TODO: we might not need to do this anymore because we have the bounce untrusted messages
         // mechanism now.
-        if let Some((_, sibling_index, _)) = self.knowledge.get_equal_or_ancestor(&prefix.sibling())
-        {
+        if let Some(sibling_entry) = self.knowledge.get_equal_or_ancestor(&prefix.sibling()) {
             // The sibling section might not have processed the split yet, so it might still be in
             // `dst`'s location. Because of that, we need to return index that would be trusted
             // by them too.
-            index.min(*sibling_index)
+            index.min(sibling_entry.value.1)
         } else {
             index
         }
@@ -203,7 +202,9 @@ impl SectionMap {
             new_index,
         );
 
-        let _ = self.knowledge.insert((prefix, new_index, proof));
+        let _ = self
+            .knowledge
+            .insert(Proven::new((prefix, new_index), proof));
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our

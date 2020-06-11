@@ -23,7 +23,7 @@ pub use self::{
         Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
         GOSSIP_PERIOD,
     },
-    proof::{Proof, ProofShare},
+    proof::{Proof, ProofShare, Proven},
 };
 
 #[cfg(feature = "mock_base")]
