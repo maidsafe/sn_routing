@@ -21,15 +21,13 @@ pub struct SectionMap {
     // Our section.
     our: EldersInfo,
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
-    // Note that after a split, the section's latest section info could be the one from the
-    // pre-split parent section, so the value's prefix doesn't always match the key.
     neighbours: PrefixMap<EldersInfo>,
     // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
     // pair.
-    keys: PrefixMap<(bls::PublicKey, Proof)>,
+    keys: PrefixMap<(Prefix<XorName>, bls::PublicKey, Proof)>,
     // Indices of our section keys that are trusted by other sections. The proof is for the
     // `(prefix, knowledge)` pair.
-    knowledge: PrefixMap<(u64, Proof)>,
+    knowledge: PrefixMap<(Prefix<XorName>, u64, Proof)>,
 }
 
 impl SectionMap {
@@ -49,37 +47,35 @@ impl SectionMap {
 
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
-    pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_prefix = &self.our().prefix;
-        let mut best_info = self.our();
-        for (prefix, info) in self.all() {
+    pub fn closest(&self, name: &XorName) -> &EldersInfo {
+        let mut best = self.our();
+        for info in self.all() {
             // TODO: Remove the first check after verifying that section infos are never empty.
             if !info.elders.is_empty()
-                && best_prefix.cmp_distance(prefix, name) == Ordering::Greater
+                && best.prefix.cmp_distance(&info.prefix, name) == Ordering::Greater
             {
-                best_prefix = prefix;
-                best_info = info;
+                best = info;
             }
         }
 
-        (best_prefix, best_info)
+        best
     }
 
     /// Returns iterator over all known sections.
-    pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
-        iter::once((&self.our.prefix, &self.our)).chain(&self.neighbours)
+    pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
+        iter::once(&self.our).chain(self.neighbours.iter())
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
-    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<&EldersInfo> {
         let mut result: Vec<_> = self.all().collect();
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, name));
+        result.sort_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name));
         result
     }
 
     /// Returns prefixes of all known sections.
     pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> + Clone {
-        self.all().map(|(prefix, _)| prefix)
+        self.all().map(|elders_info| &elders_info.prefix)
     }
 
     /// Returns whether the given name is in any of our neighbour sections.
@@ -89,7 +85,7 @@ impl SectionMap {
 
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.all().flat_map(|(_, info)| info.elders.values())
+        self.all().flat_map(|info| info.elders.values())
     }
 
     /// Returns all elders from our section.
@@ -99,9 +95,7 @@ impl SectionMap {
 
     /// Returns all elders from neighbour sections.
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbours
-            .values()
-            .flat_map(|info| info.elders.values())
+        self.neighbours.iter().flat_map(|info| info.elders.values())
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
@@ -109,7 +103,7 @@ impl SectionMap {
         let elders_info = if self.our.prefix.matches(name) {
             &self.our
         } else {
-            &self.neighbours.get_matching(name)?.1
+            self.neighbours.get_matching(name)?
         };
 
         elders_info.elders.get(name)
@@ -127,7 +121,7 @@ impl SectionMap {
     }
 
     pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
-        let _ = self.neighbours.insert(elders_info.prefix, elders_info);
+        let _ = self.neighbours.insert(elders_info);
         self.prune_neighbours();
     }
 
@@ -135,22 +129,22 @@ impl SectionMap {
     fn prune_neighbours(&mut self) {
         let our_prefix = &self.our.prefix;
         self.neighbours
-            .retain(|prefix, _| our_prefix.is_neighbour(prefix))
+            .retain(|info| our_prefix.is_neighbour(&info.prefix))
     }
 
     /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
-        self.keys.iter().map(|(prefix, (key, _))| (prefix, key))
+        self.keys.iter().map(|(prefix, key, _)| (prefix, key))
     }
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.values().any(|(known_key, _)| known_key == key)
+        self.keys.iter().any(|(_, known_key, _)| known_key == key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys.get_matching(name).map(|(_, (key, _))| key)
+        self.keys.get_matching(name).map(|(_, key, _)| key)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
@@ -159,7 +153,7 @@ impl SectionMap {
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey, proof: Proof) {
         trace!("update key for {:?}: {:?}", prefix, new_key);
-        let _ = self.keys.insert(prefix, (new_key, proof));
+        let _ = self.keys.insert((prefix, new_key, proof));
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -167,7 +161,7 @@ impl SectionMap {
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
         self.knowledge
             .get_equal_or_ancestor(prefix)
-            .map(|(_, (index, _))| *index)
+            .map(|(_, index, _)| *index)
             .unwrap_or(0)
     }
 
@@ -180,8 +174,7 @@ impl SectionMap {
             return 0;
         };
 
-        let (prefix, index) = if let Some((prefix, (index, _))) = self.knowledge.get_matching(name)
-        {
+        let (prefix, index) = if let Some((prefix, index, _)) = self.knowledge.get_matching(name) {
             (prefix, *index)
         } else {
             return 0;
@@ -189,8 +182,7 @@ impl SectionMap {
 
         // TODO: we might not need to do this anymore because we have the bounce untrusted messages
         // mechanism now.
-        if let Some((_, (sibling_index, _))) =
-            self.knowledge.get_equal_or_ancestor(&prefix.sibling())
+        if let Some((_, sibling_index, _)) = self.knowledge.get_equal_or_ancestor(&prefix.sibling())
         {
             // The sibling section might not have processed the split yet, so it might still be in
             // `dst`'s location. Because of that, we need to return index that would be trusted
@@ -211,7 +203,7 @@ impl SectionMap {
             new_index,
         );
 
-        let _ = self.knowledge.insert(prefix, (new_index, proof));
+        let _ = self.knowledge.insert((prefix, new_index, proof));
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our
@@ -258,7 +250,7 @@ impl SectionMap {
 
     /// Returns iterator over all neighbours sections.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn neighbours(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+    pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
         self.neighbours.iter()
     }
 }

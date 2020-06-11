@@ -662,7 +662,7 @@ mod test {
 
     fn check_infos_for_duplication(state: &SharedState) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
-        for (_, info) in state.sections.all() {
+        for info in state.sections.all() {
             if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(&info.prefix)) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
@@ -697,7 +697,7 @@ mod test {
         let (mut state, our_id) = gen_00_state(&mut rng);
         for _ in 0..100 {
             let (new_info, _) = {
-                let old_info: Vec<_> = state.sections.neighbours().map(|(_, info)| info).collect();
+                let old_info: Vec<_> = state.sections.neighbours().collect();
                 let info = old_info.choose(&mut rng).expect("neighbour infos");
                 if rng.gen_bool(0.5) {
                     gen_section_info(&mut rng, SecInfoGen::Add(info))
