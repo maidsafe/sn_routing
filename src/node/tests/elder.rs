@@ -389,10 +389,7 @@ impl Env {
             .shared_state()
             .expect("subject is not approved");
         let proof = state.prove(&dst, None);
-        let dst_key = *state
-            .sections
-            .key_by_location(&dst)
-            .expect("dst location is not known");
+        let dst_key = *state.section_key_by_location(&dst);
 
         let content = PlainMessage {
             src: *state.our_prefix(),

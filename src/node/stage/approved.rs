@@ -379,7 +379,7 @@ impl Approved {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.shared_state.sections.keys()) {
+        match msg.verify(self.shared_state.section_keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::Unknown) => Ok(false),
             Err(error) => {
@@ -399,21 +399,12 @@ impl Approved {
     ) -> Result<()> {
         let src = msg.src.location();
         let bounce_dst = src.to_dst();
-        let bounce_dst_key = self
-            .shared_state
-            .sections
-            .key_by_location(&bounce_dst)
-            .copied();
-
-        if bounce_dst_key.is_none() {
-            trace!("Untrusted message from unknown src {:?} - discarding", src);
-            return Ok(());
-        }
+        let bounce_dst_key = *self.shared_state.section_key_by_location(&bounce_dst);
 
         let bounce_msg = Message::single_src(
             &core.full_id,
             bounce_dst,
-            bounce_dst_key,
+            Some(bounce_dst_key),
             Variant::BouncedUntrustedMessage(Box::new(msg)),
         )?;
         let bounce_msg = bounce_msg.to_bytes()?;
@@ -1834,12 +1825,7 @@ impl Approved {
     ) -> Result<AccumulatingMessage> {
         let proof = self.shared_state.prove(&dst, proof_start_index_override);
         let key_share = self.section_keys_provider.key_share()?;
-
-        let dst_key = *self
-            .shared_state
-            .sections
-            .key_by_location(&dst)
-            .unwrap_or_else(|| self.shared_state.our_history.first_key());
+        let dst_key = *self.shared_state.section_key_by_location(&dst);
 
         let content = PlainMessage {
             src: *self.shared_state.our_prefix(),
@@ -1892,10 +1878,18 @@ impl Approved {
     }
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub fn update_section_knowledge(&mut self, msg: &Message, msg_hash: &MessageHash) {
-        let events =
-            self.shared_state
-                .update_section_knowledge(&msg.src, msg.dst_key.as_ref(), msg_hash);
+    pub fn update_section_knowledge(
+        &mut self,
+        our_name: &XorName,
+        msg: &Message,
+        msg_hash: &MessageHash,
+    ) {
+        let events = self.shared_state.update_section_knowledge(
+            our_name,
+            &msg.src,
+            msg.dst_key.as_ref(),
+            msg_hash,
+        );
 
         for event in events {
             self.vote_for_event(event)

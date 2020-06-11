@@ -23,20 +23,18 @@ pub struct SectionMap {
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     neighbours: PrefixMap<EldersInfo>,
-    // BLS public keys of known sections
+    // BLS public keys of known sections excluding ours.
     keys: PrefixMap<bls::PublicKey>,
     // Indices of our section keys that are trusted by other sections.
     knowledge: PrefixMap<u64>,
 }
 
 impl SectionMap {
-    pub fn new(our_info: EldersInfo, our_key: bls::PublicKey) -> Self {
-        let prefix = our_info.prefix;
-
+    pub fn new(our_info: EldersInfo) -> Self {
         Self {
             our: our_info,
             neighbours: Default::default(),
-            keys: iter::once((prefix, our_key)).collect(),
+            keys: Default::default(),
             knowledge: Default::default(),
         }
     }
@@ -150,11 +148,6 @@ impl SectionMap {
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
         self.keys.get_matching(name).map(|(_, key)| key)
-    }
-
-    /// Returns the latest known key for the prefix that is compatible with `dst`.
-    pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
-        self.key_by_name(dst.name()?)
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
@@ -311,12 +304,12 @@ mod tests {
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
         let k2 = gen_key(&mut rng);
-        let k3 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k3)],
-            vec![("0", &k0), ("1", &k3)],
+            "0",
+            vec![("1", &k0), ("1", &k1), ("1", &k2)],
+            vec![("1", &k2)],
         );
     }
 
@@ -325,12 +318,12 @@ mod tests {
         let mut rng = rng::new();
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k1)],
-            vec![("0", &k0), ("1", &k1)],
+            "0",
+            vec![("1", &k0), ("1", &k1), ("1", &k0)],
+            vec![("1", &k0)],
         );
     }
 
@@ -343,8 +336,9 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("00", &k1), ("01", &k2)],
-            vec![("00", &k1), ("01", &k2)],
+            "0",
+            vec![("1", &k0), ("10", &k1), ("11", &k2)],
+            vec![("10", &k1), ("11", &k2)],
         );
     }
 
@@ -356,8 +350,9 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("00", &k1)],
-            vec![("0", &k0), ("00", &k1)],
+            "0",
+            vec![("1", &k0), ("10", &k1)],
+            vec![("1", &k0), ("10", &k1)],
         );
     }
 
@@ -372,14 +367,15 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
+            "0",
             vec![
-                ("0", &k0),
-                ("000", &k1),
-                ("001", &k2),
-                ("010", &k3),
-                ("011", &k4),
+                ("1", &k0),
+                ("100", &k1),
+                ("101", &k2),
+                ("110", &k3),
+                ("111", &k4),
             ],
-            vec![("000", &k1), ("001", &k2), ("010", &k3), ("011", &k4)],
+            vec![("100", &k1), ("101", &k2), ("110", &k3), ("111", &k4)],
         );
     }
 
@@ -392,8 +388,9 @@ mod tests {
 
         update_keys_and_check(
             &mut rng::new(),
-            vec![("0", &k0), ("000", &k1), ("001", &k2)],
-            vec![("0", &k0), ("000", &k1), ("001", &k2)],
+            "0",
+            vec![("1", &k0), ("100", &k1), ("101", &k2)],
+            vec![("1", &k0), ("100", &k1), ("101", &k2)],
         );
     }
 
@@ -409,14 +406,15 @@ mod tests {
         // Late keys ignored
         update_keys_and_check(
             &mut rng,
+            "0",
             vec![
-                ("0", &k0),
+                ("1", &k0),
                 ("10", &k1),
                 ("11", &k2),
                 ("101", &k3),
                 ("10", &k4),
             ],
-            vec![("0", &k0), ("10", &k1), ("101", &k3), ("11", &k2)],
+            vec![("10", &k1), ("101", &k3), ("11", &k2)],
         );
     }
 
@@ -443,19 +441,18 @@ mod tests {
     // Create a `SectionMap` and apply a series of `update_keys` calls to it, then verify the stored
     // keys are as expected.
     //
-    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs. The first pair
-    //           is our section and its initial key. The following ones are then applied in sequence
-    //           by calling `update_keys`
+    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs that are
+    //           applied in sequenceby calling `update_keys`
     // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
     //           order.
     fn update_keys_and_check(
         rng: &mut MainRng,
-        mut updates: Vec<(&str, &bls::PublicKey)>,
+        our_prefix: &str,
+        updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
-        let (our_prefix, our_key) = updates.remove(0);
         let elders_info = gen_elders_info(rng, our_prefix.parse().unwrap());
-        let mut map = SectionMap::new(elders_info, *our_key);
+        let mut map = SectionMap::new(elders_info);
 
         for (prefix, key) in updates {
             map.update_keys(prefix.parse().unwrap(), *key);
@@ -480,7 +477,7 @@ mod tests {
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
-        let mut map = SectionMap::new(gen_elders_info(rng, Default::default()), gen_key(rng));
+        let mut map = SectionMap::new(gen_elders_info(rng, Default::default()));
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
