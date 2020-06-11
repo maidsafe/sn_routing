@@ -126,7 +126,7 @@ fn create_invalid_proof_chain(rng: &mut MainRng, last_pk: bls::PublicKey) -> Sec
     let block1_signature = {
         let invalid_sk_set = generate_secret_key_set(rng, 1);
         let invalid_sk_share = invalid_sk_set.secret_key_share(0);
-        let signature_share = invalid_sk_share.sign(&last_pk.to_bytes()[..]);
+        let signature_share = invalid_sk_share.sign(&bincode::serialize(&last_pk).unwrap());
         invalid_sk_set
             .public_keys()
             .combine_signatures(iter::once((0, &signature_share)))
