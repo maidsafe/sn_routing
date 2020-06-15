@@ -150,10 +150,13 @@ impl SectionMap {
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key.
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey, proof: Proof) {
-        trace!("update key for {:?}: {:?}", prefix, new_key);
-        let _ = self.keys.insert(Proven::new((prefix, new_key), proof));
+    pub fn update_keys(&mut self, new_key: Proven<(Prefix<XorName>, bls::PublicKey)>) {
+        trace!(
+            "update key for {:?}: {:?}",
+            new_key.value.0,
+            new_key.value.1
+        );
+        let _ = self.keys.insert(new_key);
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -446,8 +449,10 @@ mod tests {
         let mut map = SectionMap::new(elders_info);
 
         for (prefix, key) in updates {
-            let proof = consensus::test_utils::prove(rng, key);
-            map.update_keys(prefix.parse().unwrap(), *key, proof);
+            let prefix = prefix.parse().unwrap();
+            let proof = consensus::test_utils::prove(rng, &(&prefix, key));
+            let proven = Proven::new((prefix, *key), proof);
+            map.update_keys(proven);
         }
 
         let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
