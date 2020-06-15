@@ -174,9 +174,9 @@ impl AccumulatingEvent {
                 Ok(bincode::serialize(key)?)
             }
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
+            Self::SectionInfo(info) => Ok(bincode::serialize(info)?),
             // TODO: serialise these variants properly
-            Self::SectionInfo(_)
-            | Self::Online(_)
+            Self::Online(_)
             | Self::Offline(_)
             | Self::SendNeighbourInfo { .. }
             | Self::TheirKnowledge { .. }

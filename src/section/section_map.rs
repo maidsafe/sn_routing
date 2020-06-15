@@ -21,7 +21,7 @@ pub struct SectionMap {
     // Our section.
     our: EldersInfo,
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
-    neighbours: PrefixMap<EldersInfo>,
+    neighbours: PrefixMap<Proven<EldersInfo>>,
     // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
     // pair.
     keys: PrefixMap<Proven<(Prefix<XorName>, bls::PublicKey)>>,
@@ -63,7 +63,7 @@ impl SectionMap {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        iter::once(&self.our).chain(self.neighbours.iter())
+        iter::once(&self.our).chain(self.neighbours.iter().map(|info| &info.value))
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
@@ -95,7 +95,9 @@ impl SectionMap {
 
     /// Returns all elders from neighbour sections.
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbours.iter().flat_map(|info| info.elders.values())
+        self.neighbours
+            .iter()
+            .flat_map(|info| info.value.elders.values())
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
@@ -103,7 +105,7 @@ impl SectionMap {
         let elders_info = if self.our.prefix.matches(name) {
             &self.our
         } else {
-            self.neighbours.get_matching(name)?
+            self.neighbours.get_matching(name).map(|info| &info.value)?
         };
 
         elders_info.elders.get(name)
@@ -120,7 +122,7 @@ impl SectionMap {
         self.prune_neighbours()
     }
 
-    pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
+    pub fn add_neighbour(&mut self, elders_info: Proven<EldersInfo>) {
         let _ = self.neighbours.insert(elders_info);
         self.prune_neighbours();
     }
@@ -129,7 +131,7 @@ impl SectionMap {
     fn prune_neighbours(&mut self) {
         let our_prefix = &self.our.prefix;
         self.neighbours
-            .retain(|info| our_prefix.is_neighbour(&info.prefix))
+            .retain(|info| our_prefix.is_neighbour(&info.value.prefix))
     }
 
     /// Returns the known section keys.
@@ -246,14 +248,14 @@ impl SectionMap {
         if *prefix == self.our.prefix {
             Some(&self.our)
         } else {
-            self.neighbours.get(prefix)
+            self.neighbours.get(prefix).map(|info| &info.value)
         }
     }
 
     /// Returns iterator over all neighbours sections.
     #[cfg(any(test, feature = "mock_base"))]
     pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
-        self.neighbours.iter()
+        self.neighbours.iter().map(|info| &info.value)
     }
 }
 

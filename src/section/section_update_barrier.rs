@@ -16,10 +16,10 @@ use crate::{
 #[derive(Default)]
 pub struct SectionUpdateBarrier {
     our_key: Option<Proven<bls::PublicKey>>,
-    our_info: Option<EldersInfo>, // TODO: prove this
+    our_info: Option<Proven<EldersInfo>>,
 
     sibling_key: Option<Proven<(Prefix<XorName>, bls::PublicKey)>>,
-    sibling_info: Option<EldersInfo>, // TODO: prove this
+    sibling_info: Option<Proven<EldersInfo>>,
 }
 
 impl SectionUpdateBarrier {
@@ -45,9 +45,9 @@ impl SectionUpdateBarrier {
         &mut self,
         our_name: &XorName,
         our_prefix: &Prefix<XorName>,
-        new_info: EldersInfo,
+        new_info: Proven<EldersInfo>,
     ) -> Option<SectionUpdateDetails> {
-        if new_info.prefix.matches(our_name) {
+        if new_info.value.prefix.matches(our_name) {
             self.our_info = Some(new_info);
         } else {
             self.sibling_info = Some(new_info);
@@ -63,7 +63,7 @@ impl SectionUpdateBarrier {
             self.sibling_key.take(),
             self.sibling_info.take(),
         ) {
-            (Some(our_key), Some(our_info), None, None) if our_info.prefix == *our_prefix => {
+            (Some(our_key), Some(our_info), None, None) if our_info.value.prefix == *our_prefix => {
                 Some(SectionUpdateDetails {
                     our: OurDetails {
                         key: our_key,
@@ -104,19 +104,19 @@ pub struct SectionUpdateDetails {
 #[derive(Eq, PartialEq, Debug)]
 pub struct OurDetails {
     pub key: Proven<bls::PublicKey>,
-    pub info: EldersInfo,
+    pub info: Proven<EldersInfo>,
 }
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct SiblingDetails {
     pub key: Proven<(Prefix<XorName>, bls::PublicKey)>,
-    pub info: EldersInfo,
+    pub info: Proven<EldersInfo>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, rng};
+    use crate::{consensus::test_utils, rng};
     use itertools::Itertools;
     use rand::Rng;
 
@@ -127,11 +127,12 @@ mod tests {
         let our_prefix: Prefix<XorName> = "01".parse().unwrap();
         let our_name = our_prefix.substituted_in(rng.gen());
 
-        let old_sk = consensus::test_utils::gen_secret_key(&mut rng);
-        let new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
-        let new_key = consensus::test_utils::proven(&old_sk, new_key);
+        let old_sk = test_utils::gen_secret_key(&mut rng);
+        let new_key = test_utils::gen_secret_key(&mut rng).public_key();
+        let new_key = test_utils::proven(&old_sk, new_key);
 
         let new_info = dummy_elders_info(our_prefix);
+        let new_info = test_utils::proven(&old_sk, new_info);
 
         let all_ops = vec![Op::OurKey(new_key.clone()), Op::Info(new_info.clone())];
 
@@ -154,18 +155,19 @@ mod tests {
         let mut rng = rng::new();
 
         let our_prefix: Prefix<XorName> = "01".parse().unwrap();
-        let old_sk = consensus::test_utils::gen_secret_key(&mut rng);
+        let old_sk = test_utils::gen_secret_key(&mut rng);
 
         let our_new_prefix = our_prefix.pushed(rng.gen());
-        let our_new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
-        let our_new_key = consensus::test_utils::proven(&old_sk, our_new_key);
+        let our_new_key = test_utils::gen_secret_key(&mut rng).public_key();
+        let our_new_key = test_utils::proven(&old_sk, our_new_key);
         let our_new_info = dummy_elders_info(our_new_prefix);
+        let our_new_info = test_utils::proven(&old_sk, our_new_info);
 
         let sibling_new_prefix = our_new_prefix.sibling();
-        let sibling_new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
-        let sibling_new_key =
-            consensus::test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_key));
+        let sibling_new_key = test_utils::gen_secret_key(&mut rng).public_key();
+        let sibling_new_key = test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_key));
         let sibling_new_info = dummy_elders_info(sibling_new_prefix);
+        let sibling_new_info = test_utils::proven(&old_sk, sibling_new_info);
 
         let our_name = our_new_prefix.substituted_in(rng.gen());
 
@@ -210,7 +212,7 @@ mod tests {
     enum Op {
         OurKey(Proven<bls::PublicKey>),
         TheirKey(Proven<(Prefix<XorName>, bls::PublicKey)>),
-        Info(EldersInfo),
+        Info(Proven<EldersInfo>),
     }
 
     fn execute(

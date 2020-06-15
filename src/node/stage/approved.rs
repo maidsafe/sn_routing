@@ -1051,7 +1051,8 @@ impl Approved {
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
             AccumulatingEvent::SectionInfo(elders_info) => {
-                self.handle_section_info_event(core, elders_info)?
+                let payload = Proven::new(elders_info, proof.expect("missing proof"));
+                self.handle_section_info_event(core, payload)?
             }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
@@ -1274,10 +1275,11 @@ impl Approved {
     fn handle_section_info_event(
         &mut self,
         core: &mut Core,
-        elders_info: EldersInfo,
+        elders_info: Proven<EldersInfo>,
     ) -> Result<()> {
-        if elders_info.prefix == *self.shared_state.our_prefix()
+        if elders_info.value.prefix == *self.shared_state.our_prefix()
             || elders_info
+                .value
                 .prefix
                 .is_extension_of(self.shared_state.our_prefix())
         {
@@ -1399,7 +1401,7 @@ impl Approved {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
-        self.update_our_key_and_info(core, details.our.key, details.our.info)?;
+        self.update_our_key_and_info(core, details.our.key, details.our.info.value)?;
 
         if let Some(sibling) = details.sibling {
             self.update_sibling_key(core, sibling.key);
@@ -1479,7 +1481,7 @@ impl Approved {
         Ok(())
     }
 
-    fn update_neighbour_info(&mut self, core: &mut Core, elders_info: EldersInfo) {
+    fn update_neighbour_info(&mut self, core: &mut Core, elders_info: Proven<EldersInfo>) {
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state.sections.add_neighbour(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
