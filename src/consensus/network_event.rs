@@ -58,7 +58,7 @@ pub enum AccumulatingEvent {
     Offline(PublicId),
 
     // Vote to update the elders info of a section.
-    SectionInfo(EldersInfo, bls::PublicKey),
+    SectionInfo(EldersInfo),
 
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
@@ -70,6 +70,8 @@ pub enum AccumulatingEvent {
 
     // Voted to update our section key.
     OurKey {
+        // In case of split, this prefix is used to differentiate the subsections. Not part of
+        // the proof.
         prefix: Prefix<XorName>,
         key: bls::PublicKey,
     },
@@ -166,11 +168,15 @@ impl AccumulatingEvent {
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>> {
         match self {
-            Self::SectionInfo(_, section_key) => Ok(bincode::serialize(section_key)?),
-            Self::OurKey { prefix: _, key } => Ok(bincode::serialize(key)?),
+            Self::OurKey { prefix: _, key } => {
+                // Note: the prefix is only needed to differentiate between the two subsections in
+                // case of split but it isn't part of the proven data.
+                Ok(bincode::serialize(key)?)
+            }
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             // TODO: serialise these variants properly
-            Self::Online(_)
+            Self::SectionInfo(_)
+            | Self::Online(_)
             | Self::Offline(_)
             | Self::SendNeighbourInfo { .. }
             | Self::TheirKnowledge { .. }
@@ -203,7 +209,7 @@ impl Debug for AccumulatingEvent {
             ),
             Self::Online(payload) => write!(formatter, "Online({:?})", payload),
             Self::Offline(id) => write!(formatter, "Offline({})", id),
-            Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?}, ..)", info),
+            Self::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
             Self::SendNeighbourInfo { dst, nonce } => write!(
                 formatter,
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",

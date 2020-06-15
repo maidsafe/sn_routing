@@ -18,24 +18,26 @@ pub struct SectionUpdateBarrier {
     our_key: Option<Proven<bls::PublicKey>>,
     our_info: Option<EldersInfo>, // TODO: prove this
 
-    sibling_key: Option<Proven<bls::PublicKey>>,
+    sibling_key: Option<Proven<(Prefix<XorName>, bls::PublicKey)>>,
     sibling_info: Option<EldersInfo>, // TODO: prove this
 }
 
 impl SectionUpdateBarrier {
-    pub fn handle_key(
+    pub fn handle_our_key(
         &mut self,
-        our_name: &XorName,
         our_prefix: &Prefix<XorName>,
-        new_prefix: &Prefix<XorName>,
         new_key: Proven<bls::PublicKey>,
     ) -> Option<SectionUpdateDetails> {
-        if new_prefix.matches(our_name) {
-            self.our_key = Some(new_key);
-        } else {
-            self.sibling_key = Some(new_key);
-        }
+        self.our_key = Some(new_key);
+        self.try_get_details(our_prefix)
+    }
 
+    pub fn handle_their_key(
+        &mut self,
+        our_prefix: &Prefix<XorName>,
+        new_key: Proven<(Prefix<XorName>, bls::PublicKey)>,
+    ) -> Option<SectionUpdateDetails> {
+        self.sibling_key = Some(new_key);
         self.try_get_details(our_prefix)
     }
 
@@ -63,7 +65,7 @@ impl SectionUpdateBarrier {
         ) {
             (Some(our_key), Some(our_info), None, None) if our_info.prefix == *our_prefix => {
                 Some(SectionUpdateDetails {
-                    our: SectionDetails {
+                    our: OurDetails {
                         key: our_key,
                         info: our_info,
                     },
@@ -72,11 +74,11 @@ impl SectionUpdateBarrier {
             }
             (Some(our_key), Some(our_info), Some(sibling_key), Some(sibling_info)) => {
                 Some(SectionUpdateDetails {
-                    our: SectionDetails {
+                    our: OurDetails {
                         key: our_key,
                         info: our_info,
                     },
-                    sibling: Some(SectionDetails {
+                    sibling: Some(SiblingDetails {
                         key: sibling_key,
                         info: sibling_info,
                     }),
@@ -95,23 +97,26 @@ impl SectionUpdateBarrier {
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct SectionUpdateDetails {
-    pub our: SectionDetails,
-    pub sibling: Option<SectionDetails>,
+    pub our: OurDetails,
+    pub sibling: Option<SiblingDetails>,
 }
 
 #[derive(Eq, PartialEq, Debug)]
-pub struct SectionDetails {
+pub struct OurDetails {
     pub key: Proven<bls::PublicKey>,
+    pub info: EldersInfo,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct SiblingDetails {
+    pub key: Proven<(Prefix<XorName>, bls::PublicKey)>,
     pub info: EldersInfo,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        consensus::{self, Proof},
-        rng::{self, MainRng},
-    };
+    use crate::{consensus, rng};
     use itertools::Itertools;
     use rand::Rng;
 
@@ -123,13 +128,12 @@ mod tests {
         let our_name = our_prefix.substituted_in(rng.gen());
 
         let old_sk = consensus::test_utils::gen_secret_key(&mut rng);
-        let new_key = gen_proven_key(&mut rng, &old_sk);
+        let new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let new_key = consensus::test_utils::proven(&old_sk, new_key);
+
         let new_info = dummy_elders_info(our_prefix);
 
-        let all_ops = vec![
-            Op::Key(our_prefix, new_key.clone()),
-            Op::Info(new_info.clone()),
-        ];
+        let all_ops = vec![Op::OurKey(new_key.clone()), Op::Info(new_info.clone())];
 
         assert_eq!(execute(&our_name, &our_prefix, vec![]), None);
 
@@ -150,21 +154,24 @@ mod tests {
         let mut rng = rng::new();
 
         let our_prefix: Prefix<XorName> = "01".parse().unwrap();
-
         let old_sk = consensus::test_utils::gen_secret_key(&mut rng);
-        let our_new_key = gen_proven_key(&mut rng, &old_sk);
+
         let our_new_prefix = our_prefix.pushed(rng.gen());
+        let our_new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let our_new_key = consensus::test_utils::proven(&old_sk, our_new_key);
         let our_new_info = dummy_elders_info(our_new_prefix);
 
-        let sibling_new_key = gen_proven_key(&mut rng, &old_sk);
         let sibling_new_prefix = our_new_prefix.sibling();
+        let sibling_new_key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let sibling_new_key =
+            consensus::test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_key));
         let sibling_new_info = dummy_elders_info(sibling_new_prefix);
 
         let our_name = our_new_prefix.substituted_in(rng.gen());
 
         let all_ops = vec![
-            Op::Key(our_new_prefix, our_new_key.clone()),
-            Op::Key(sibling_new_prefix, sibling_new_key.clone()),
+            Op::OurKey(our_new_key.clone()),
+            Op::TheirKey(sibling_new_key.clone()),
             Op::Info(our_new_info.clone()),
             Op::Info(sibling_new_info.clone()),
         ];
@@ -201,7 +208,8 @@ mod tests {
 
     #[derive(Clone, Debug)]
     enum Op {
-        Key(Prefix<XorName>, Proven<bls::PublicKey>),
+        OurKey(Proven<bls::PublicKey>),
+        TheirKey(Proven<(Prefix<XorName>, bls::PublicKey)>),
         Info(EldersInfo),
     }
 
@@ -214,27 +222,13 @@ mod tests {
         let mut output = None;
         for op in ops {
             output = match op {
-                Op::Key(new_prefix, new_key) => {
-                    barrier.handle_key(our_name, our_prefix, &new_prefix, new_key)
-                }
+                Op::OurKey(new_key) => barrier.handle_our_key(our_prefix, new_key),
+                Op::TheirKey(new_key) => barrier.handle_their_key(our_prefix, new_key),
                 Op::Info(new_info) => barrier.handle_info(our_name, our_prefix, new_info),
             }
         }
 
         output
-    }
-
-    fn gen_proven_key(rng: &mut MainRng, old_sk: &bls::SecretKey) -> Proven<bls::PublicKey> {
-        let new_pk = consensus::test_utils::gen_secret_key(rng).public_key();
-        let signature = old_sk.sign(bincode::serialize(&new_pk).unwrap());
-
-        Proven::new(
-            new_pk,
-            Proof {
-                public_key: old_sk.public_key(),
-                signature,
-            },
-        )
     }
 
     fn dummy_elders_info(prefix: Prefix<XorName>) -> EldersInfo {
