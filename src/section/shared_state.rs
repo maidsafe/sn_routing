@@ -8,7 +8,7 @@
 
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::AccumulatingEvent,
+    consensus::{AccumulatingEvent, Proven},
     id::{P2pNode, PublicId},
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
@@ -257,12 +257,12 @@ impl SharedState {
     pub fn update_our_section(
         &mut self,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        signature: bls::Signature,
+        section_key: Proven<bls::PublicKey>,
     ) {
         self.our_members
             .remove_not_matching_our_prefix(&elders_info.prefix);
-        self.our_history.push(section_key, signature);
+        self.our_history
+            .push(section_key.value, section_key.proof.signature);
         self.sections.set_our(elders_info);
     }
 

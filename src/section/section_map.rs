@@ -8,7 +8,7 @@
 
 use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
 use crate::{
-    consensus::{Proof, Proven},
+    consensus::Proven,
     id::P2pNode,
     location::DstLocation,
     xor_space::{Prefix, XorName},
@@ -198,16 +198,14 @@ impl SectionMap {
     /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
     /// occurred in the meantime, the index for sections covering the rest of the address space
     /// are initialised to the old index that was stored for their common ancestor
-    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, new_index: u64, proof: Proof) {
+    pub fn update_knowledge(&mut self, new_index: Proven<(Prefix<XorName>, u64)>) {
         trace!(
             "update knowledge of section ({:b}) about our section to {}",
-            prefix,
-            new_index,
+            new_index.value.0,
+            new_index.value.1,
         );
 
-        let _ = self
-            .knowledge
-            .insert(Proven::new((prefix, new_index), proof));
+        let _ = self.knowledge.insert(new_index);
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our
@@ -450,7 +448,8 @@ mod tests {
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
-            let proof = consensus::test_utils::prove(rng, &(&prefix, key));
+            let sk = consensus::test_utils::gen_secret_key(rng);
+            let proof = consensus::test_utils::prove(&sk, &(&prefix, key));
             let proven = Proven::new((prefix, *key), proof);
             map.update_keys(proven);
         }
@@ -478,8 +477,9 @@ mod tests {
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
-            let proof = consensus::test_utils::prove(rng, &(prefix, version));
-            map.update_knowledge(prefix, version, proof);
+            let sk = consensus::test_utils::gen_secret_key(rng);
+            let payload = consensus::test_utils::proven(&sk, (prefix, version));
+            map.update_knowledge(payload);
         }
 
         for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {

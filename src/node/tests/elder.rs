@@ -237,14 +237,16 @@ impl Env {
         }
     }
 
-    fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let section_key = new_info.new_pk_set.public_key();
+    fn accumulate_our_key_and_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::SectionInfo(
-                new_info.new_elders_info.clone(),
-                section_key,
-            )),
+            vec![
+                AccumulatingEvent::OurKey {
+                    prefix: new_info.new_elders_info.prefix,
+                    key: new_info.new_pk_set.public_key(),
+                },
+                AccumulatingEvent::SectionInfo(new_info.new_elders_info.clone()),
+            ],
         );
     }
 
@@ -371,7 +373,7 @@ impl Env {
 
         self.accumulate_offline(*dropped_elder_id);
         self.accumulate_start_dkg(&new_info);
-        self.accumulate_section_info_if_vote(&new_info);
+        self.accumulate_our_key_and_section_info_if_vote(&new_info);
         self.accumulate_voted_unconsensused_events();
 
         self.elders_info = new_info.new_elders_info;
@@ -475,7 +477,7 @@ fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_o
     env.accumulate_online(env.candidate.clone());
     env.accumulate_start_dkg(&new_info);
 
-    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_our_key_and_section_info_if_vote(&new_info);
     env.accumulate_voted_unconsensused_events();
 
     assert!(!env.has_unpolled_observations());
@@ -489,7 +491,7 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
     env.accumulate_start_dkg(&info1);
-    env.accumulate_section_info_if_vote(&info1);
+    env.accumulate_our_key_and_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
 
     let info2 = env.new_elders_info_without_candidate();
@@ -512,7 +514,7 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
     env.accumulate_start_dkg(&info1);
-    env.accumulate_section_info_if_vote(&info1);
+    env.accumulate_our_key_and_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
 
     let info2 = env.new_elders_info_without_candidate();
@@ -523,7 +525,7 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 
     env.accumulate_offline(*env.candidate.public_id());
     env.accumulate_start_dkg(&info2);
-    env.accumulate_section_info_if_vote(&info2);
+    env.accumulate_our_key_and_section_info_if_vote(&info2);
     env.accumulate_voted_unconsensused_events();
 
     assert!(!env.has_unpolled_observations());

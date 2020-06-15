@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Proof;
+use super::{Proof, Proven};
 use crate::rng::{MainRng, RngCompat};
 use rand_crypto::Rng;
 use serde::Serialize;
@@ -16,13 +16,18 @@ pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
     RngCompat(rng).gen()
 }
 
-// Create fake proof for the given payload.
+// Create proof for the given payload using the given secret key.
 #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-pub fn prove<T: Serialize>(rng: &mut MainRng, payload: &T) -> Proof {
-    let secret_key = gen_secret_key(rng);
+pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Proof {
     let bytes = bincode::serialize(payload).unwrap();
     Proof {
         public_key: secret_key.public_key(),
         signature: secret_key.sign(&bytes),
     }
+}
+
+// Wrap the given payload in `Proven`
+pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Proven<T> {
+    let proof = prove(secret_key, &payload);
+    Proven::new(payload, proof)
 }
