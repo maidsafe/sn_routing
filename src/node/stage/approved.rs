@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse, Proof,
+        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse, Proof, Proven,
     },
     core::Core,
     delivery_group,
@@ -26,7 +26,7 @@ use crate::{
     rng::MainRng,
     section::{
         EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
-        SharedState, SplitCache, MIN_AGE,
+        SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -60,8 +60,7 @@ pub struct Approved {
     timer_token: u64,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    // The accumulated info during a split.
-    split_cache: Option<SplitCache>,
+    section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
     // Flag indicating that our section members changed (a node joined or left) and we might need
@@ -142,7 +141,7 @@ impl Approved {
             sig_accumulator: Default::default(),
             timer_token,
             dkg_cache: Default::default(),
-            split_cache: None,
+            section_update_barrier: Default::default(),
             churn_in_progress: false,
             members_changed: false,
         })
@@ -160,7 +159,7 @@ impl Approved {
             transport: core.transport,
             transport_rx: None,
             sig_accumulator: self.sig_accumulator,
-            split_cache: self.split_cache,
+            section_update_barrier: self.section_update_barrier,
         }
     }
 
@@ -198,7 +197,7 @@ impl Approved {
             section_keys_provider: state.section_keys_provider,
             sig_accumulator: state.sig_accumulator,
             timer_token,
-            split_cache: state.split_cache,
+            section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
             dkg_cache: Default::default(),
             churn_in_progress: false,
@@ -1041,19 +1040,19 @@ impl Approved {
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
             AccumulatingEvent::SectionInfo(elders_info, key) => {
-                let proof = proof.expect("proof missing");
-                self.handle_section_info_event(core, elders_info, key, proof)?
+                let key = Proven::new(key, proof.expect("proof missing"));
+                self.handle_section_info_event(core, key, elders_info)?
             }
             AccumulatingEvent::NeighbourInfo(elders_info, key) => {
-                let proof = proof.expect("proof missing");
-                self.handle_neighbour_info_event(core, elders_info, key, proof)
+                let key = Proven::new(key, proof.expect("proof missing"));
+                self.handle_neighbour_info_event(core, key, elders_info)
             }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
             AccumulatingEvent::TheirKey { prefix, key } => {
-                let proof = proof.expect("proof missing");
-                self.handle_their_key_event(prefix, key, proof)
+                let key = Proven::new((prefix, key), proof.expect("proof missing"));
+                self.handle_their_key_event(key)
             }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
                 let proof = proof.expect("proof missing");
@@ -1250,22 +1249,18 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_section_info_event(
-        &mut self,
-        core: &mut Core,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        proof: Proof,
-    ) -> Result<()> {
+    fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
-        if !self.add_new_elders_info(core, elders_info, section_key, proof)? {
-            return Ok(());
+        self.add_our_elders_info(core, details.our.key, details.our.info)?;
+
+        if let Some(sibling) = details.sibling {
+            self.add_sibling_elders_info(core, sibling.key, sibling.info);
         }
 
         let elders_info = self.shared_state.our_info();
-        let info_prefix = elders_info.prefix;
+        let new_prefix = elders_info.prefix;
         let is_elder = elders_info.elders.contains_key(core.name());
 
         core.msg_filter.reset();
@@ -1277,10 +1272,10 @@ impl Approved {
             return Ok(());
         }
 
-        if info_prefix.is_extension_of(&old_prefix) {
+        if new_prefix.is_extension_of(&old_prefix) {
             info!("Split");
-        } else if old_prefix.is_extension_of(&info_prefix) {
-            panic!("Merge not supported: {:?} -> {:?}", old_prefix, info_prefix);
+        } else if old_prefix.is_extension_of(&new_prefix) {
+            panic!("Merge not supported: {:?} -> {:?}", old_prefix, new_prefix);
         }
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
@@ -1317,83 +1312,47 @@ impl Approved {
         Ok(())
     }
 
-    // Handles our own section info, or the section info of our sibling directly after a split.
-    // Returns whether the event should be handled by the caller.
-    fn add_new_elders_info(
+    fn handle_section_info_event(
         &mut self,
         core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
-    ) -> Result<bool> {
-        // Split handling alone. wouldn't cater to merge
-        if elders_info
-            .prefix
-            .is_extension_of(self.shared_state.our_prefix())
-        {
-            match self.split_cache.take() {
-                None => {
-                    self.split_cache = Some(SplitCache {
-                        elders_info,
-                        section_key,
-                        section_key_proof,
-                    });
-                    Ok(false)
-                }
-                Some(cached) => {
-                    let cached_prefix = cached.elders_info.prefix;
-
-                    // Add our_info first so when we add sibling info, its a valid neighbour prefix
-                    // which does not get immediately purged.
-                    if cached_prefix.matches(core.name()) {
-                        self.add_our_elders_info(
-                            core,
-                            cached.elders_info,
-                            cached.section_key,
-                            cached.section_key_proof,
-                        )?;
-                        self.add_sibling_elders_info(
-                            core,
-                            elders_info,
-                            section_key,
-                            section_key_proof,
-                        );
-                    } else {
-                        self.add_our_elders_info(
-                            core,
-                            elders_info,
-                            section_key,
-                            section_key_proof,
-                        )?;
-                        self.add_sibling_elders_info(
-                            core,
-                            cached.elders_info,
-                            cached.section_key,
-                            cached.section_key_proof,
-                        );
-                    }
-                    Ok(true)
-                }
-            }
-        } else {
-            self.add_our_elders_info(core, elders_info, section_key, section_key_proof)?;
-            Ok(true)
+    ) -> Result<()> {
+        if let Some(details) = self.section_update_barrier.handle_key(
+            core.name(),
+            self.shared_state.our_prefix(),
+            &elders_info.prefix,
+            section_key,
+        ) {
+            return self.update_our_section(core, details);
         }
+
+        if let Some(details) = self.section_update_barrier.handle_info(
+            core.name(),
+            self.shared_state.our_prefix(),
+            elders_info,
+        ) {
+            return self.update_our_section(core, details);
+        }
+
+        Ok(())
     }
 
     fn add_our_elders_info(
         &mut self,
         core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
     ) -> Result<(), RoutingError> {
         self.section_keys_provider
             .finalise_dkg(core.name(), &elders_info)?;
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
-        self.shared_state
-            .update_our_section(elders_info, section_key, section_key_proof.signature);
+        self.shared_state.update_our_section(
+            elders_info,
+            section_key.value,
+            section_key.proof.signature,
+        );
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
 
@@ -1405,36 +1364,33 @@ impl Approved {
     fn add_sibling_elders_info(
         &mut self,
         core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
     ) {
-        self.update_neighbour_info(core, elders_info, section_key, section_key_proof)
+        self.update_neighbour_info(core, section_key, elders_info)
     }
 
     fn handle_neighbour_info_event(
         &mut self,
         core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
     ) {
         info!("handle NeighbourInfo: {:?}", elders_info);
-        self.update_neighbour_info(core, elders_info, section_key, section_key_proof)
+        self.update_neighbour_info(core, section_key, elders_info)
     }
 
     fn update_neighbour_info(
         &mut self,
         core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
     ) {
         let prefix = elders_info.prefix;
 
-        self.shared_state
-            .sections
-            .update_keys(elders_info.prefix, section_key, section_key_proof);
+        // FIXME:
+        let section_key = Proven::new((prefix, section_key.value), section_key.proof);
+        self.shared_state.sections.update_keys(section_key);
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state.sections.add_neighbour(elders_info);
@@ -1480,15 +1436,8 @@ impl Approved {
         )
     }
 
-    fn handle_their_key_event(
-        &mut self,
-        prefix: Prefix<XorName>,
-        section_key: bls::PublicKey,
-        section_key_proof: Proof,
-    ) {
-        self.shared_state
-            .sections
-            .update_keys(prefix, section_key, section_key_proof);
+    fn handle_their_key_event(&mut self, section_key: Proven<(Prefix<XorName>, bls::PublicKey)>) {
+        self.shared_state.sections.update_keys(section_key);
     }
 
     fn handle_their_knowledge_event(
