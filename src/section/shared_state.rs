@@ -549,7 +549,7 @@ impl SharedState {
 mod test {
     use super::*;
     use crate::{
-        consensus::generate_secret_key_set,
+        consensus,
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::EldersInfo,
@@ -606,16 +606,16 @@ mod test {
     fn add_neighbour_elders_info(
         state: &mut SharedState,
         our_id: &PublicId,
-        neighbour_info: EldersInfo,
+        neighbour_info: Proven<EldersInfo>,
     ) {
         assert!(
-            !neighbour_info.prefix.matches(our_id.name()),
+            !neighbour_info.value.prefix.matches(our_id.name()),
             "Only add neighbours."
         );
         state.sections.add_neighbour(neighbour_info)
     }
 
-    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId)
+    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId, bls::SecretKey)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -635,20 +635,20 @@ mod test {
         let mut sections_iter = section_members.into_iter();
 
         let elders_info = sections_iter.next().expect("section members");
-        let participants = elders_info.elders.len();
-        let secret_key_set = generate_secret_key_set(rng, participants);
-        let public_key = secret_key_set.public_keys().public_key();
+        let sk = consensus::test_utils::gen_secret_key(rng);
+        let pk = sk.public_key();
 
-        let mut state = SharedState::new(elders_info, public_key);
+        let mut state = SharedState::new(elders_info, pk);
 
         for info in sections_iter {
+            let info = consensus::test_utils::proven(&sk, info);
             add_neighbour_elders_info(&mut state, &our_pub_id, info);
         }
 
-        (state, our_pub_id)
+        (state, our_pub_id, sk)
     }
 
-    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId) {
+    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId, bls::SecretKey) {
         let elder_size: usize = 7;
         gen_state(
             rng,
@@ -677,7 +677,7 @@ mod test {
     fn generate_state() {
         let mut rng = rng::new();
 
-        let (state, our_id) = gen_00_state(&mut rng);
+        let (state, our_id, _) = gen_00_state(&mut rng);
 
         assert_eq!(
             state
@@ -694,7 +694,7 @@ mod test {
     #[test]
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
-        let (mut state, our_id) = gen_00_state(&mut rng);
+        let (mut state, our_id, sk) = gen_00_state(&mut rng);
         for _ in 0..100 {
             let (new_info, _) = {
                 let old_info: Vec<_> = state.sections.neighbours().collect();
@@ -706,6 +706,7 @@ mod test {
                 }
             };
 
+            let new_info = consensus::test_utils::proven(&sk, new_info);
             add_neighbour_elders_info(&mut state, &our_id, new_info);
             assert!(state.our_history.self_verify());
             check_infos_for_duplication(&state);
