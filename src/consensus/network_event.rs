@@ -57,10 +57,8 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
+    // Vote to update the elders info of a section.
     SectionInfo(EldersInfo, bls::PublicKey),
-
-    // Voted for received message with info about a neighbour section.
-    NeighbourInfo(EldersInfo, bls::PublicKey),
 
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
@@ -162,9 +160,7 @@ impl AccumulatingEvent {
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>> {
         match self {
-            Self::SectionInfo(_, section_key) | Self::NeighbourInfo(_, section_key) => {
-                Ok(bincode::serialize(section_key)?)
-            }
+            Self::SectionInfo(_, section_key) => Ok(bincode::serialize(section_key)?),
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             // TODO: serialise these variants properly
             Self::Online(_)
@@ -201,9 +197,6 @@ impl Debug for AccumulatingEvent {
             Self::Online(payload) => write!(formatter, "Online({:?})", payload),
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?}, ..)", info),
-            Self::NeighbourInfo(elders_info, _) => {
-                write!(formatter, "NeighbourInfo({:?}, ..)", elders_info)
-            }
             Self::SendNeighbourInfo { dst, nonce } => write!(
                 formatter,
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
