@@ -42,7 +42,7 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: EldersInfo, section_pk: bls::PublicKey) -> Self {
+    pub fn new(elders_info: Proven<EldersInfo>, section_pk: bls::PublicKey) -> Self {
         Self {
             handled_genesis_event: false,
             our_history: SectionProofChain::new(section_pk),
@@ -77,7 +77,7 @@ impl SharedState {
     // Clear all data except that which is needed for non-elders.
     pub fn demote(&mut self) {
         // TODO: avoid this clone.
-        let elders_info = self.sections.our().clone();
+        let elders_info = self.sections.proven_our().clone();
         let section_key = *self.our_history.last_key();
 
         *self = Self::new(elders_info, section_key);
@@ -256,11 +256,11 @@ impl SharedState {
 
     pub fn update_our_section(
         &mut self,
-        elders_info: EldersInfo,
+        elders_info: Proven<EldersInfo>,
         section_key: Proven<bls::PublicKey>,
     ) {
         self.our_members
-            .remove_not_matching_our_prefix(&elders_info.prefix);
+            .remove_not_matching_our_prefix(&elders_info.value.prefix);
         self.our_history
             .push(section_key.value, section_key.proof.signature);
         self.sections.set_our(elders_info);
@@ -634,9 +634,11 @@ mod test {
         let our_pub_id = *our_id.public_id();
         let mut sections_iter = section_members.into_iter();
 
-        let elders_info = sections_iter.next().expect("section members");
         let sk = consensus::test_utils::gen_secret_key(rng);
         let pk = sk.public_key();
+
+        let elders_info = sections_iter.next().expect("section members");
+        let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
         let mut state = SharedState::new(elders_info, pk);
 

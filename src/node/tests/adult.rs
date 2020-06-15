@@ -43,7 +43,7 @@ impl Env {
 
         let (elders_info, full_ids) =
             test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
-        let elders = create_elders(&mut rng, elders_info.clone(), full_ids);
+        let elders = create_elders(&mut rng, elders_info.value.clone(), full_ids);
 
         let public_key_set = elders[0]
             .section_keys_provider
@@ -82,7 +82,7 @@ impl Env {
 
     fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
         GenesisPrefixInfo {
-            elders_info: self.elders[0].state.our_info().clone(),
+            elders_info: self.elders[0].state.sections.proven_our().clone(),
             parsec_version,
         }
     }
@@ -162,6 +162,10 @@ fn create_elders(
     let secret_key_set = consensus::generate_secret_key_set(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
     let public_key = public_key_set.public_key();
+
+    let fake_prev_secret_key = consensus::test_utils::gen_secret_key(rng);
+    let elders_info = consensus::test_utils::proven(&fake_prev_secret_key, elders_info);
+
     let genesis_prefix_info = GenesisPrefixInfo {
         elders_info,
         parsec_version: 0,
@@ -181,6 +185,7 @@ fn create_elders(
 
             let addr = genesis_prefix_info
                 .elders_info
+                .value
                 .elders
                 .get(full_id.public_id().name())
                 .map(|p2p_node| p2p_node.peer_addr());

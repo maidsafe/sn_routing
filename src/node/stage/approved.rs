@@ -79,8 +79,12 @@ impl Approved {
         let public_key = public_key_set.public_key();
         let secret_key_share = secret_key_set.secret_key_share(0);
 
+        // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
+        // of the network there is no previous key. Sign with the current key instead.
+        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node);
+
         let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info: create_first_elders_info(p2p_node),
+            elders_info,
             parsec_version: 0,
         };
 
@@ -114,13 +118,14 @@ impl Approved {
 
         if genesis_prefix_info
             .elders_info
+            .value
             .elders
             .contains_key(core.name())
         {
             // We are being created already as elder so we need to insert all the section elders
             // (including us) into our_members explicitly because we won't see their `Online`
             // events. This only happens if we are the first node or in tests.
-            for p2p_node in genesis_prefix_info.elders_info.elders.values() {
+            for p2p_node in genesis_prefix_info.elders_info.value.elders.values() {
                 shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
             }
         }
@@ -129,7 +134,7 @@ impl Approved {
         let consensus_engine = ConsensusEngine::new(
             &mut core.rng,
             core.full_id.clone(),
-            &genesis_prefix_info.elders_info,
+            &genesis_prefix_info.elders_info.value,
             serialised_state,
             genesis_prefix_info.parsec_version,
         );
@@ -1401,7 +1406,7 @@ impl Approved {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
-        self.update_our_key_and_info(core, details.our.key, details.our.info.value)?;
+        self.update_our_key_and_info(core, details.our.key, details.our.info)?;
 
         if let Some(sibling) = details.sibling {
             self.update_sibling_key(core, sibling.key);
@@ -1465,10 +1470,10 @@ impl Approved {
         &mut self,
         core: &mut Core,
         section_key: Proven<bls::PublicKey>,
-        elders_info: EldersInfo,
+        elders_info: Proven<EldersInfo>,
     ) -> Result<(), RoutingError> {
         self.section_keys_provider
-            .finalise_dkg(core.name(), &elders_info)?;
+            .finalise_dkg(core.name(), &elders_info.value)?;
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state
@@ -1582,7 +1587,7 @@ impl Approved {
 
     fn create_genesis_prefix_info(&self) -> GenesisPrefixInfo {
         GenesisPrefixInfo {
-            elders_info: self.shared_state.our_info().clone(),
+            elders_info: self.shared_state.sections.proven_our().clone(),
             parsec_version: self.consensus_engine.parsec_version(),
         }
     }
@@ -1619,7 +1624,7 @@ impl Approved {
 
         let genesis_prefix_info = self.create_genesis_prefix_info();
 
-        let src = SrcLocation::Section(genesis_prefix_info.elders_info.prefix);
+        let src = SrcLocation::Section(genesis_prefix_info.elders_info.value.prefix);
         let dst = DstLocation::Node(*p2p_node.name());
 
         let variant = Variant::NodeApproval(genesis_prefix_info);
@@ -1929,8 +1934,24 @@ pub struct RelocateParams {
 }
 
 // Create `EldersInfo` for the first node.
-fn create_first_elders_info(p2p_node: P2pNode) -> EldersInfo {
+fn create_first_elders_info(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    p2p_node: P2pNode,
+) -> Proven<EldersInfo> {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default())
+    let elders_info = EldersInfo::new(iter::once(node).collect(), Prefix::default());
+
+    let signature_share = sk_share
+        .sign(&bincode::serialize(&elders_info).expect("failed to serialise first elders info"));
+    let signature = pk_set
+        .combine_signatures(iter::once((0, &signature_share)))
+        .expect("failed to sign first elders info");
+    let proof = Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    };
+
+    Proven::new(elders_info, proof)
 }
