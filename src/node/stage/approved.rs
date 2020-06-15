@@ -531,7 +531,7 @@ impl Approved {
         src_key: bls::PublicKey,
     ) -> Result<()> {
         if !self.shared_state.sections.has_key(&src_key) {
-            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info, src_key));
+            self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info, src_key));
         } else {
             trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
         }
@@ -1043,10 +1043,6 @@ impl Approved {
                 let key = Proven::new(key, proof.expect("proof missing"));
                 self.handle_section_info_event(core, key, elders_info)?
             }
-            AccumulatingEvent::NeighbourInfo(elders_info, key) => {
-                let key = Proven::new(key, proof.expect("proof missing"));
-                self.handle_neighbour_info_event(core, key, elders_info)
-            }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
@@ -1318,21 +1314,31 @@ impl Approved {
         section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
     ) -> Result<()> {
-        if let Some(details) = self.section_update_barrier.handle_key(
-            core.name(),
-            self.shared_state.our_prefix(),
-            &elders_info.prefix,
-            section_key,
-        ) {
-            return self.update_our_section(core, details);
-        }
+        if elders_info.prefix == *self.shared_state.our_prefix()
+            || elders_info
+                .prefix
+                .is_extension_of(self.shared_state.our_prefix())
+        {
+            // Our section
+            if let Some(details) = self.section_update_barrier.handle_key(
+                core.name(),
+                self.shared_state.our_prefix(),
+                &elders_info.prefix,
+                section_key,
+            ) {
+                return self.update_our_section(core, details);
+            }
 
-        if let Some(details) = self.section_update_barrier.handle_info(
-            core.name(),
-            self.shared_state.our_prefix(),
-            elders_info,
-        ) {
-            return self.update_our_section(core, details);
+            if let Some(details) = self.section_update_barrier.handle_info(
+                core.name(),
+                self.shared_state.our_prefix(),
+                elders_info,
+            ) {
+                return self.update_our_section(core, details);
+            }
+        } else {
+            // Other section
+            self.update_neighbour_info(core, section_key, elders_info)
         }
 
         Ok(())
@@ -1367,16 +1373,6 @@ impl Approved {
         section_key: Proven<bls::PublicKey>,
         elders_info: EldersInfo,
     ) {
-        self.update_neighbour_info(core, section_key, elders_info)
-    }
-
-    fn handle_neighbour_info_event(
-        &mut self,
-        core: &mut Core,
-        section_key: Proven<bls::PublicKey>,
-        elders_info: EldersInfo,
-    ) {
-        info!("handle NeighbourInfo: {:?}", elders_info);
         self.update_neighbour_info(core, section_key, elders_info)
     }
 
@@ -1532,8 +1528,7 @@ impl Approved {
             | AccumulatingEvent::ParsecPrune => false,
 
             // Keep: Additional signatures for neighbours for sec-msg-relay.
-            AccumulatingEvent::SectionInfo(ref elders_info, _)
-            | AccumulatingEvent::NeighbourInfo(ref elders_info, _) => {
+            AccumulatingEvent::SectionInfo(ref elders_info, _) => {
                 our_prefix.is_neighbour(&elders_info.prefix)
             }
 
