@@ -192,23 +192,23 @@ impl SharedState {
     /// Returns the removed `MemberInfo` or `None` if there was no such member.
     pub fn remove_member(
         &mut self,
-        pub_id: &PublicId,
+        name: &XorName,
         recommended_section_size: usize,
     ) -> Option<MemberInfo> {
-        match self.our_members.get(pub_id.name()).map(|info| &info.state) {
+        match self.our_members.get(name).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
-                trace!("not removing node {} - not a member", pub_id);
+                trace!("not removing node {} - not a member", name);
                 return None;
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
-                self.increment_age_counters(pub_id.name(), recommended_section_size)
+                self.increment_age_counters(name, recommended_section_size)
             }
         }
 
         self.relocate_queue
-            .retain(|details| &details.pub_id != pub_id);
-        self.our_members.remove(pub_id.name())
+            .retain(|details| details.pub_id.name() != name);
+        self.our_members.remove(name)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -320,8 +320,8 @@ impl SharedState {
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = &evt {
-                payload.p2p_node.public_id() == pub_id
+            if let AccumulatingEvent::Online { p2p_node, .. } = &evt {
+                p2p_node.public_id() == pub_id
             } else {
                 false
             }
