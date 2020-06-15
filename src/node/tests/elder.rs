@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, GenesisPrefixInfo, OnlinePayload, ParsecRequest},
+    consensus::{self, AccumulatingEvent, GenesisPrefixInfo, ParsecRequest},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -18,7 +18,9 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{EldersInfo, SectionKeyShare, MIN_AGE},
-    utils, ELDER_SIZE,
+    utils,
+    xor_space::XorName,
+    ELDER_SIZE,
 };
 use itertools::Itertools;
 use mock_quic_p2p::Network;
@@ -194,11 +196,11 @@ impl Env {
     fn accumulate_online(&mut self, p2p_node: P2pNode) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::Online(OnlinePayload {
+            iter::once(AccumulatingEvent::Online {
                 p2p_node,
                 age: MIN_AGE,
                 their_knowledge: None,
-            })),
+            }),
         );
     }
 
@@ -259,7 +261,7 @@ impl Env {
         let _ = self.create_gossip();
     }
 
-    fn accumulate_offline(&mut self, offline_payload: PublicId) {
+    fn accumulate_offline(&mut self, offline_payload: XorName) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
             iter::once(AccumulatingEvent::Offline(offline_payload)),
@@ -323,13 +325,13 @@ impl Env {
     // its place.
     fn new_elders_info_after_offline_and_promote(
         &mut self,
-        dropped_elder_id: &PublicId,
+        dropped_elder_name: &XorName,
         promoted_adult_node: P2pNode,
     ) -> DkgToSectionInfo {
         assert!(
             self.other_ids
                 .iter()
-                .any(|(full_id, _)| { full_id.public_id() == dropped_elder_id }),
+                .any(|(full_id, _)| { full_id.public_id().name() == dropped_elder_name }),
             "dropped node must be one of the other elders"
         );
 
@@ -337,7 +339,7 @@ impl Env {
             .elders_info
             .elders
             .iter()
-            .filter(|(_, node)| node.public_id() != dropped_elder_id)
+            .filter(|(_, node)| node.name() != dropped_elder_name)
             .map(|(name, node)| (*name, node.clone()))
             .chain(iter::once((
                 *promoted_adult_node.name(),
@@ -369,13 +371,13 @@ impl Env {
     // completion by casting all necessary votes and letting them accumulate.
     fn perform_offline_and_promote(
         &mut self,
-        dropped_elder_id: &PublicId,
+        dropped_elder_name: XorName,
         promoted_adult_node: P2pNode,
     ) {
-        let new_info =
-            self.new_elders_info_after_offline_and_promote(dropped_elder_id, promoted_adult_node);
+        let new_info = self
+            .new_elders_info_after_offline_and_promote(&dropped_elder_name, promoted_adult_node);
 
-        self.accumulate_offline(*dropped_elder_id);
+        self.accumulate_offline(dropped_elder_name);
         self.accumulate_start_dkg(&new_info);
         self.accumulate_our_key_and_section_info_if_vote(&new_info);
         self.accumulate_voted_unconsensused_events();
@@ -504,7 +506,7 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     env.elders_info = info1.new_elders_info;
     env.public_key_set = info1.new_pk_set;
 
-    env.accumulate_offline(*env.candidate.public_id());
+    env.accumulate_offline(*env.candidate.name());
     env.accumulate_start_dkg(&info2);
 
     assert!(!env.has_unpolled_observations());
@@ -527,7 +529,7 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
     env.elders_info = info1.new_elders_info;
     env.public_key_set = info1.new_pk_set;
 
-    env.accumulate_offline(*env.candidate.public_id());
+    env.accumulate_offline(*env.candidate.name());
     env.accumulate_start_dkg(&info2);
     env.accumulate_our_key_and_section_info_if_vote(&info2);
     env.accumulate_voted_unconsensused_events();
@@ -569,8 +571,8 @@ fn send_genesis_update() {
 
     // Remove one existing elder and promote an adult to take its place. This created new section
     // key.
-    let dropped_id = *env.other_ids[0].0.public_id();
-    env.perform_offline_and_promote(&dropped_id, adult0.to_p2p_node());
+    let dropped_name = *env.other_ids[0].0.public_id().name();
+    env.perform_offline_and_promote(dropped_name, adult0.to_p2p_node());
     let new_section_key = *env.subject.section_key().expect("subject is not approved");
 
     // Create `GenesisUpdate` message and check its proof contains the previous key as well as the
@@ -632,9 +634,9 @@ fn handle_bounced_untrusted_message() {
 
     // Simulate the section going through the elder change to generate new section key.
     let new = env.gen_peer().to_p2p_node();
-    let old = *env.other_ids[0].0.public_id();
+    let old = *env.other_ids[0].0.public_id().name();
     env.accumulate_online(new.clone());
-    env.perform_offline_and_promote(&old, new);
+    env.perform_offline_and_promote(old, new);
 
     let new_section_key = *env.subject.section_key().expect("subject is not approved");
 

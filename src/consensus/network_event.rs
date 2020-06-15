@@ -22,16 +22,6 @@ use std::{
     fmt::{self, Debug, Formatter},
 };
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct OnlinePayload {
-    // Identifier of the joining node.
-    pub p2p_node: P2pNode,
-    // The age the node should have after joining.
-    pub age: u8,
-    // The key of the destination section that the joining node knows, if any.
-    pub their_knowledge: Option<bls::PublicKey>,
-}
-
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -53,9 +43,16 @@ pub enum AccumulatingEvent {
     },
 
     /// Voted for node that is about to join our section
-    Online(OnlinePayload),
+    Online {
+        /// Identifier of the joining node.
+        p2p_node: P2pNode,
+        /// The age the node should have after joining.
+        age: u8,
+        /// The key of the destination section that the joining node knows, if any.
+        their_knowledge: Option<bls::PublicKey>,
+    },
     /// Voted for node we no longer consider online.
-    Offline(PublicId),
+    Offline(XorName),
 
     // Vote to update the elders info of a section.
     SectionInfo(EldersInfo),
@@ -176,7 +173,7 @@ impl AccumulatingEvent {
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             Self::SectionInfo(info) => Ok(bincode::serialize(info)?),
             // TODO: serialise these variants properly
-            Self::Online(_)
+            Self::Online { .. }
             | Self::Offline(_)
             | Self::SendNeighbourInfo { .. }
             | Self::TheirKnowledge { .. }
@@ -207,7 +204,17 @@ impl Debug for AccumulatingEvent {
                 "DkgResult {{ participants: {:?}, .. }}",
                 participants
             ),
-            Self::Online(payload) => write!(formatter, "Online({:?})", payload),
+            Self::Online {
+                p2p_node,
+                age,
+                their_knowledge,
+            } => formatter
+                .debug_struct("Online")
+                .field("p2p_node", p2p_node)
+                .field("age", age)
+                .field("their_knowledge", their_knowledge)
+                .finish(),
+
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
             Self::SendNeighbourInfo { dst, nonce } => write!(

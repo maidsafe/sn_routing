@@ -17,7 +17,7 @@ pub mod test_utils;
 pub use self::{
     event_accumulator::AccumulatingError,
     genesis_prefix_info::GenesisPrefixInfo,
-    network_event::{AccumulatingEvent, NetworkEvent, OnlinePayload},
+    network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
         generate_secret_key_set, Block, CreateGossipError, DkgResult, DkgResultWrapper,
         Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
