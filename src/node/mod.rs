@@ -37,6 +37,7 @@ use crate::{
 };
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
+use itertools::Itertools;
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
@@ -293,18 +294,10 @@ impl Node {
             .flat_map(|stage| stage.shared_state.sections.our_elders())
     }
 
-    /// Find out the closest Elders to a given XorName that we know of.
-    ///
-    /// Note that the Adults of a section only know about their section Elders. Hence they will
-    /// always return the section Elders' info.
-    pub fn closest_known_elders_to<'a>(
-        &'a self,
-        name: &'a XorName,
-    ) -> impl Iterator<Item = &'a P2pNode> {
-        self.stage
-            .approved()
-            .into_iter()
-            .flat_map(move |stage| stage.shared_state.sections.closest(name).1.elders.values())
+    /// Returns the elders of our section sorted by their distance to `name` (closest first).
+    pub fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
+        self.our_elders()
+            .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
     }
 
     /// Returns the information of all the current section adults.
@@ -318,9 +311,8 @@ impl Node {
     /// Returns the adults of our section sorted by their distance to `name` (closest first).
     /// If we are not elder or if there are no adults in the section, returns empty vec.
     pub fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
-        let mut output: Vec<_> = self.our_adults().collect();
-        output.sort_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()));
-        output
+        self.our_adults()
+            .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
     }
 
     /// Checks whether the given location represents self.
