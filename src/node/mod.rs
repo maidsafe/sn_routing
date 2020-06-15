@@ -814,7 +814,7 @@ impl Node {
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
-            genesis_prefix_info.elders_info.prefix,
+            genesis_prefix_info.elders_info.value.prefix,
         );
 
         let stage = Approved::new(&mut self.core, genesis_prefix_info, section_key, None)?;

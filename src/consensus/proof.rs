@@ -10,7 +10,7 @@ use crate::xor_space::{Prefix, XorName};
 use std::borrow::Borrow;
 
 /// Proof that a quorum of the section elders has agreed on something.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct Proof {
     pub public_key: bls::PublicKey,
     pub signature: bls::Signature,
@@ -32,7 +32,7 @@ impl ProofShare {
 }
 
 /// A value together with the proof that it was agreed on by the quorum of the section elders.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct Proven<T> {
     pub value: T,
     pub proof: Proof,

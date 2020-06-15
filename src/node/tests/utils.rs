@@ -14,6 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    consensus::{self, Proven},
     error::Result,
     id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageWithBytes},
@@ -33,7 +34,7 @@ pub fn create_elders_info(
     rng: &mut MainRng,
     network: &Network,
     elder_size: usize,
-) -> (EldersInfo, BTreeMap<XorName, FullId>) {
+) -> (Proven<EldersInfo>, BTreeMap<XorName, FullId>) {
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
             let id = FullId::gen(rng);
@@ -50,6 +51,10 @@ pub fn create_elders_info(
         .collect();
 
     let elders_info = EldersInfo::new(members_map, Prefix::default());
+
+    let sk = consensus::test_utils::gen_secret_key(rng);
+    let elders_info = consensus::test_utils::proven(&sk, elders_info);
+
     (elders_info, full_ids)
 }
 

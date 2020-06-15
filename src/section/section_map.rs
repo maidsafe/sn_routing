@@ -19,7 +19,7 @@ use std::{cmp::Ordering, collections::BTreeSet, iter};
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
     // Our section.
-    our: EldersInfo,
+    our: Proven<EldersInfo>,
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
     neighbours: PrefixMap<Proven<EldersInfo>>,
     // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
@@ -31,7 +31,7 @@ pub struct SectionMap {
 }
 
 impl SectionMap {
-    pub fn new(our_info: EldersInfo) -> Self {
+    pub fn new(our_info: Proven<EldersInfo>) -> Self {
         Self {
             our: our_info,
             neighbours: Default::default(),
@@ -42,6 +42,11 @@ impl SectionMap {
 
     /// Get our section info
     pub fn our(&self) -> &EldersInfo {
+        &self.our.value
+    }
+
+    /// Get our section info with its proof.
+    pub fn proven_our(&self) -> &Proven<EldersInfo> {
         &self.our
     }
 
@@ -63,7 +68,9 @@ impl SectionMap {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        iter::once(&self.our).chain(self.neighbours.iter().map(|info| &info.value))
+        iter::once(&self.our)
+            .chain(self.neighbours.iter())
+            .map(|info| &info.value)
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
@@ -102,10 +109,10 @@ impl SectionMap {
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
-        let elders_info = if self.our.prefix.matches(name) {
-            &self.our
+        let elders_info = if self.our.value.prefix.matches(name) {
+            &self.our.value
         } else {
-            self.neighbours.get_matching(name).map(|info| &info.value)?
+            &self.neighbours.get_matching(name)?.value
         };
 
         elders_info.elders.get(name)
@@ -117,7 +124,7 @@ impl SectionMap {
     }
 
     /// Set the new version of our section.
-    pub fn set_our(&mut self, elders_info: EldersInfo) {
+    pub fn set_our(&mut self, elders_info: Proven<EldersInfo>) {
         self.our = elders_info;
         self.prune_neighbours()
     }
@@ -129,7 +136,7 @@ impl SectionMap {
 
     // Remove sections that are no longer our neighbours.
     fn prune_neighbours(&mut self) {
-        let our_prefix = &self.our.prefix;
+        let our_prefix = &self.our.value.prefix;
         self.neighbours
             .retain(|info| our_prefix.is_neighbour(&info.value.prefix))
     }
@@ -245,8 +252,8 @@ impl SectionMap {
     /// Get `EldersInfo` of a known section with the given prefix.
     #[cfg(test)]
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if *prefix == self.our.prefix {
-            Some(&self.our)
+        if *prefix == self.our.value.prefix {
+            Some(&self.our.value)
         } else {
             self.neighbours.get(prefix).map(|info| &info.value)
         }
@@ -445,12 +452,14 @@ mod tests {
         updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
+        let sk = consensus::test_utils::gen_secret_key(rng);
         let elders_info = gen_elders_info(rng, our_prefix.parse().unwrap());
+        let elders_info = consensus::test_utils::proven(&sk, elders_info);
+
         let mut map = SectionMap::new(elders_info);
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
-            let sk = consensus::test_utils::gen_secret_key(rng);
             let proof = consensus::test_utils::prove(&sk, &(&prefix, key));
             let proven = Proven::new((prefix, *key), proof);
             map.update_keys(proven);
@@ -475,11 +484,14 @@ mod tests {
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
-        let mut map = SectionMap::new(gen_elders_info(rng, Default::default()));
+        let sk = consensus::test_utils::gen_secret_key(rng);
+        let elders_info = gen_elders_info(rng, Default::default());
+        let elders_info = consensus::test_utils::proven(&sk, elders_info);
+
+        let mut map = SectionMap::new(elders_info);
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
-            let sk = consensus::test_utils::gen_secret_key(rng);
             let payload = consensus::test_utils::proven(&sk, (prefix, version));
             map.update_knowledge(payload);
         }

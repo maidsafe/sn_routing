@@ -57,11 +57,6 @@ impl Env {
         let public_key_set = secret_key_set.public_keys();
         let public_key = public_key_set.public_key();
 
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info: elders_info.clone(),
-            parsec_version: 0,
-        };
-
         let mut full_and_bls_ids = full_ids
             .into_iter()
             .enumerate()
@@ -73,9 +68,18 @@ impl Env {
 
         let section_key_share = SectionKeyShare {
             public_key_set,
-            index: elders_info.position(full_id.public_id().name()).unwrap(),
+            index: elders_info
+                .value
+                .position(full_id.public_id().name())
+                .unwrap(),
             secret_key_share,
         };
+
+        let genesis_prefix_info = GenesisPrefixInfo {
+            elders_info,
+            parsec_version: 0,
+        };
+        let elders_info = genesis_prefix_info.elders_info.value.clone();
 
         let (subject, ..) = Node::approved(
             NodeConfig {
