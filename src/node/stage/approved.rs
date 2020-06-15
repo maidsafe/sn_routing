@@ -1046,6 +1046,10 @@ impl Approved {
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
+            AccumulatingEvent::OurKey { prefix, key } => {
+                let key = Proven::new(key, proof.expect("proof missing"));
+                self.handle_our_key_event(core, prefix, key)?
+            }
             AccumulatingEvent::TheirKey { prefix, key } => {
                 let key = Proven::new((prefix, key), proof.expect("proof missing"));
                 self.handle_their_key_event(key)
@@ -1432,7 +1436,29 @@ impl Approved {
         )
     }
 
+    fn handle_our_key_event(
+        &mut self,
+        core: &mut Core,
+        prefix: Prefix<XorName>,
+        section_key: Proven<bls::PublicKey>,
+    ) -> Result<()> {
+        if let Some(details) = self.section_update_barrier.handle_key(
+            core.name(),
+            self.shared_state.our_prefix(),
+            &prefix,
+            section_key,
+        ) {
+            self.update_our_section(core, details)
+        } else {
+            Ok(())
+        }
+    }
+
     fn handle_their_key_event(&mut self, section_key: Proven<(Prefix<XorName>, bls::PublicKey)>) {
+        // if section_key.value.0.is_extension_of(self.shared_state.our_prefix()) {
+        //     if let Some(details) = self.section_update_barrier.handle_key(core.name(), )
+        // }
+
         self.shared_state.sections.update_keys(section_key);
     }
 
@@ -1525,7 +1551,8 @@ impl Approved {
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::DkgResult { .. }
-            | AccumulatingEvent::ParsecPrune => false,
+            | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::OurKey { .. } => false,
 
             // Keep: Additional signatures for neighbours for sec-msg-relay.
             AccumulatingEvent::SectionInfo(ref elders_info, _) => {

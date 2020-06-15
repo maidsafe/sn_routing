@@ -68,6 +68,12 @@ pub enum AccumulatingEvent {
         nonce: MessageHash,
     },
 
+    // Voted to update our section key.
+    OurKey {
+        prefix: Prefix<XorName>,
+        key: bls::PublicKey,
+    },
+
     // Voted to update their section key.
     TheirKey {
         prefix: Prefix<XorName>,
@@ -161,6 +167,7 @@ impl AccumulatingEvent {
     fn serialise_for_signing(&self) -> Result<Vec<u8>> {
         match self {
             Self::SectionInfo(_, section_key) => Ok(bincode::serialize(section_key)?),
+            Self::OurKey { prefix: _, key } => Ok(bincode::serialize(key)?),
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
             // TODO: serialise these variants properly
             Self::Online(_)
@@ -202,6 +209,11 @@ impl Debug for AccumulatingEvent {
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
                 dst, nonce
             ),
+            Self::OurKey { prefix, key } => formatter
+                .debug_struct("OurKey")
+                .field("prefix", prefix)
+                .field("key", key)
+                .finish(),
             Self::TheirKey { prefix, key } => formatter
                 .debug_struct("TheirKey")
                 .field("prefix", prefix)
