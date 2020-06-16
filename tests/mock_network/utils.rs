@@ -814,15 +814,15 @@ pub fn send_user_message(
     dst: Prefix<XorName>,
     content: Vec<u8>,
 ) {
-    let src_location = SrcLocation::Section(src);
-    let dst_location = DstLocation::Section(dst.name());
-
     trace!(
         "send_user_message: {:?} -> {:?}: {:10}",
-        src_location,
-        dst_location,
+        src,
+        dst,
         hex_fmt::HexFmt(&content),
     );
+
+    let src_location = SrcLocation::Section(src);
+    let dst_location = DstLocation::Section(dst.name());
 
     for node in elders_with_prefix_mut(nodes, &src) {
         node.inner
@@ -852,7 +852,7 @@ pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], thr
         }
 
         if send_countdown == 0 {
-            send_countdown = POLL_ALL_MAX_ITERATIONS / max_sends;
+            send_countdown = POLL_UNTIL_MAX_ITERATIONS / max_sends;
 
             for (a, b) in outdated {
                 let content = gen_vec(&mut rng, 32);
