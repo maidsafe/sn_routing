@@ -81,12 +81,11 @@ impl Approved {
 
         // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
         // of the network there is no previous key. Sign with the current key instead.
-        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node);
+        let elders_info =
+            create_first_elders_info(&public_key_set, &secret_key_share, p2p_node.clone());
 
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info,
-            parsec_version: 0,
-        };
+        let mut shared_state = SharedState::new(elders_info, public_key);
+        shared_state.our_members.add(p2p_node, MIN_AGE);
 
         let section_key_share = SectionKeyShare {
             public_key_set,
@@ -94,50 +93,27 @@ impl Approved {
             secret_key_share,
         };
 
-        Self::new(
-            core,
-            genesis_prefix_info,
-            public_key,
-            Some(section_key_share),
-        )
+        Self::new(core, shared_state, 0, Some(section_key_share))
     }
 
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        genesis_prefix_info: GenesisPrefixInfo,
-        section_public_key: bls::PublicKey,
+        shared_state: SharedState,
+        parsec_version: u64,
         section_key_share: Option<SectionKeyShare>,
     ) -> Result<Self> {
-        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
-
-        let section_keys_provider = SectionKeysProvider::new(section_key_share);
-
-        let mut shared_state =
-            SharedState::new(genesis_prefix_info.elders_info.clone(), section_public_key);
-
-        if genesis_prefix_info
-            .elders_info
-            .value
-            .elders
-            .contains_key(core.name())
-        {
-            // We are being created already as elder so we need to insert all the section elders
-            // (including us) into our_members explicitly because we won't see their `Online`
-            // events. This only happens if we are the first node or in tests.
-            for p2p_node in genesis_prefix_info.elders_info.value.elders.values() {
-                shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
-            }
-        }
-
         let serialised_state = bincode::serialize(&shared_state)?;
         let consensus_engine = ConsensusEngine::new(
             &mut core.rng,
             core.full_id.clone(),
-            &genesis_prefix_info.elders_info.value,
+            shared_state.sections.our(),
             serialised_state,
-            genesis_prefix_info.parsec_version,
+            parsec_version,
         );
+
+        let section_keys_provider = SectionKeysProvider::new(section_key_share);
+        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         Ok(Self {
             consensus_engine,

@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, GenesisPrefixInfo, ParsecRequest},
+    consensus::{self, AccumulatingEvent, ParsecRequest},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -17,7 +17,7 @@ use crate::{
     },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeyShare, MIN_AGE},
+    section::{EldersInfo, SectionKeyShare, SharedState, MIN_AGE},
     utils,
     xor_space::XorName,
     ELDER_SIZE,
@@ -54,7 +54,10 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
+        let (proven_elders_info, full_ids) =
+            test_utils::create_elders_info(&mut rng, &network, sec_size);
+        let elders_info = proven_elders_info.value.clone();
+
         let secret_key_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
         let public_key_set = secret_key_set.public_keys();
         let public_key = public_key_set.public_key();
@@ -68,28 +71,24 @@ impl Env {
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
+        let mut shared_state = SharedState::new(proven_elders_info, public_key);
+        for p2p_node in elders_info.elders.values() {
+            shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
+        }
+
         let section_key_share = SectionKeyShare {
             public_key_set,
-            index: elders_info
-                .value
-                .position(full_id.public_id().name())
-                .unwrap(),
+            index: elders_info.position(full_id.public_id().name()).unwrap(),
             secret_key_share,
         };
-
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info,
-            parsec_version: 0,
-        };
-        let elders_info = genesis_prefix_info.elders_info.value.clone();
 
         let (subject, ..) = Node::approved(
             NodeConfig {
                 full_id: Some(full_id),
                 ..Default::default()
             },
-            genesis_prefix_info,
-            public_key,
+            shared_state,
+            0,
             Some(section_key_share),
         );
 

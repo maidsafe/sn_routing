@@ -31,6 +31,7 @@ use crate::{
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
+    section::SharedState,
     transport::PeerStatus,
     xor_space::{Prefix, XorName, Xorable},
     TransportConfig, TransportEvent,
@@ -44,7 +45,7 @@ use std::net::SocketAddr;
 use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
 use {
-    crate::section::{EldersInfo, SectionProofChain, SharedState},
+    crate::section::{EldersInfo, SectionProofChain},
     std::collections::BTreeSet,
 };
 
@@ -817,7 +818,14 @@ impl Node {
             genesis_prefix_info.elders_info.value.prefix,
         );
 
-        let stage = Approved::new(&mut self.core, genesis_prefix_info, section_key, None)?;
+        let shared_state = SharedState::new(genesis_prefix_info.elders_info.clone(), section_key);
+
+        let stage = Approved::new(
+            &mut self.core,
+            shared_state,
+            genesis_prefix_info.parsec_version,
+            None,
+        )?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);
@@ -1049,8 +1057,8 @@ impl Node {
     // Create new node which is already an approved member of a section.
     pub(crate) fn approved(
         config: NodeConfig,
-        genesis_prefix_info: GenesisPrefixInfo,
-        section_public_key: bls::PublicKey,
+        shared_state: SharedState,
+        parsec_version: u64,
         section_key_share: Option<SectionKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
@@ -1059,13 +1067,8 @@ impl Node {
 
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Approved::new(
-            &mut core,
-            genesis_prefix_info,
-            section_public_key,
-            section_key_share,
-        )
-        .unwrap();
+        let stage =
+            Approved::new(&mut core, shared_state, parsec_version, section_key_share).unwrap();
         let stage = Stage::Approved(stage);
 
         let node = Self {
