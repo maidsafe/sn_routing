@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{quic_p2p::QuicP2pError, xor_space::XorName};
-use bincode::ErrorKind;
 use err_derive::Error;
 
 /// The type returned by the routing message handling methods.
@@ -28,7 +27,7 @@ pub enum RoutingError {
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
     #[error(display = "Bincode error.")]
-    Bincode(Box<ErrorKind>),
+    Bincode(bincode::Error),
     #[error(display = "Peer not found.")]
     PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
