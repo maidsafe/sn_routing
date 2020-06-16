@@ -8,6 +8,7 @@
 
 use super::member_info::{MemberInfo, MemberState};
 use crate::{
+    consensus::Proof,
     id::P2pNode,
     xor_space::{Prefix, XorName},
 };
@@ -117,16 +118,18 @@ impl SectionMembers {
     }
 
     /// Adds a member to our section.
-    pub fn add(&mut self, p2p_node: P2pNode, age: u8) {
+    pub fn add(&mut self, p2p_node: P2pNode, age: u8, proof: Proof) {
         match self.members.entry(*p2p_node.name()) {
             Entry::Occupied(mut entry) => {
                 if entry.get().state == MemberState::Left {
                     // Node rejoining
                     // TODO: To properly support rejoining, either keep the previous age or set the
                     // new age to max(old_age, new_age)
-                    entry.get_mut().state = MemberState::Joined;
-                    entry.get_mut().set_age(age);
-                    entry.get_mut().section_version = self.version;
+                    let info = entry.get_mut();
+                    info.state = MemberState::Joined;
+                    info.set_age(age);
+                    info.section_version = self.version;
+                    info.proof = proof;
 
                     self.increment_version();
                 } else {
@@ -140,8 +143,7 @@ impl SectionMembers {
             }
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
-
-                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone(), self.version));
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone(), self.version, proof));
                 self.increment_version();
             }
         }
@@ -149,7 +151,7 @@ impl SectionMembers {
 
     /// Remove a member from our section. Returns the removed `MemberInfo` or `None` if there was
     /// no such member.
-    pub fn remove(&mut self, name: &XorName) -> Option<MemberInfo> {
+    pub fn remove(&mut self, name: &XorName, proof: Proof) -> Option<MemberInfo> {
         if let Some(info) = self
             .members
             .get_mut(name)
@@ -158,9 +160,11 @@ impl SectionMembers {
         {
             let output = info.clone();
             info.state = MemberState::Left;
+            info.proof = proof;
             self.increment_version();
             Some(output)
         } else {
+            // FIXME: we should still insert it in the `Left` state
             log_or_panic!(
                 log::Level::Error,
                 "Removing member that doesn't exist: {}",

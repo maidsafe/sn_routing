@@ -17,7 +17,7 @@ use crate::{
     },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeyShare, SharedState, MIN_AGE},
+    section::{member_info, EldersInfo, MemberState, SectionKeyShare, SharedState, MIN_AGE},
     utils,
     xor_space::XorName,
     ELDER_SIZE,
@@ -73,7 +73,13 @@ impl Env {
 
         let mut shared_state = SharedState::new(proven_elders_info, public_key);
         for p2p_node in elders_info.elders.values() {
-            shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
+            let proof = test_utils::create_proof(
+                &secret_key_set,
+                &member_info::to_sign(p2p_node.name(), MemberState::Joined),
+            );
+            shared_state
+                .our_members
+                .add(p2p_node.clone(), MIN_AGE, proof);
         }
 
         let section_key_share = SectionKeyShare {

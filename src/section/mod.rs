@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+pub mod member_info;
+
 mod elders_info;
-mod member_info;
 mod network_stats;
 mod prefix_map;
 mod section_keys;
