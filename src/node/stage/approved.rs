@@ -25,8 +25,8 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     section::{
-        EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
-        SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
+        member_info, EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare,
+        SectionKeysProvider, SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -36,6 +36,7 @@ use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
+use serde::Serialize;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
@@ -76,16 +77,13 @@ impl Approved {
 
         let secret_key_set = consensus::generate_secret_key_set(&mut core.rng, 1);
         let public_key_set = secret_key_set.public_keys();
-        let public_key = public_key_set.public_key();
         let secret_key_share = secret_key_set.secret_key_share(0);
 
         // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
         // of the network there is no previous key. Sign with the current key instead.
-        let elders_info =
-            create_first_elders_info(&public_key_set, &secret_key_share, p2p_node.clone());
-
-        let mut shared_state = SharedState::new(elders_info, public_key);
-        shared_state.our_members.add(p2p_node, MIN_AGE);
+        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node)?;
+        let shared_state =
+            create_first_shared_state(&public_key_set, &secret_key_share, elders_info)?;
 
         let section_key_share = SectionKeyShare {
             public_key_set,
@@ -894,7 +892,7 @@ impl Approved {
 
         if self.should_backlog_event(&event) {
             // TODO: backlog it with the proof.
-            self.backlog_event(event);
+            self.backlog_event(event, proof);
             Ok(false)
         } else {
             self.handle_accumulated_event(core, event, proof)?;
@@ -913,14 +911,14 @@ impl Approved {
             return Ok(false);
         }
 
-        if let Some(event) = self.shared_state.churn_event_backlog.pop_back() {
+        if let Some((event, proof)) = self.shared_state.churn_event_backlog.pop_back() {
             trace!(
                 "churn backlog poll {:?}, Others: {:?}",
                 event,
                 self.shared_state.churn_event_backlog
             );
 
-            self.handle_accumulated_event(core, event, None)?;
+            self.handle_accumulated_event(core, event, proof)?;
             Ok(true)
         } else {
             Ok(false)
@@ -938,13 +936,15 @@ impl Approved {
         is_churn_trigger && !self.is_ready_to_churn()
     }
 
-    fn backlog_event(&mut self, event: AccumulatingEvent) {
+    fn backlog_event(&mut self, event: AccumulatingEvent, proof: Option<Proof>) {
         trace!(
             "churn backlog {:?}, Other: {:?}",
             event,
             self.shared_state.churn_event_backlog
         );
-        self.shared_state.churn_event_backlog.push_front(event);
+        self.shared_state
+            .churn_event_backlog
+            .push_front((event, proof));
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
@@ -1033,25 +1033,48 @@ impl Approved {
                 p2p_node,
                 age,
                 their_knowledge,
-            } => self.handle_online_event(core, p2p_node, age, their_knowledge),
-            AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name),
-            AccumulatingEvent::SectionInfo(elders_info) => {
-                self.handle_section_info_event(core, elders_info, expect_proof(proof))?
+            } => self.handle_online_event(
+                core,
+                p2p_node,
+                age,
+                their_knowledge,
+                proof.expect("missing proof for Online"),
+            ),
+            AccumulatingEvent::Offline(name) => {
+                self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
             }
+            AccumulatingEvent::SectionInfo(elders_info) => self.handle_section_info_event(
+                core,
+                elders_info,
+                proof.expect("missing proof for SectionInfo"),
+            )?,
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::OurKey { prefix, key } => {
-                self.handle_our_key_event(core, prefix, key, expect_proof(proof))?
-            }
-            AccumulatingEvent::TheirKey { prefix, key } => {
-                self.handle_their_key_event(core, prefix, key, expect_proof(proof))?
-            }
-            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
-                self.handle_their_knowledge_event(prefix, knowledge, expect_proof(proof))
-            }
+            AccumulatingEvent::OurKey { prefix, key } => self.handle_our_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for OurKey"),
+            )?,
+            AccumulatingEvent::TheirKey { prefix, key } => self.handle_their_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for TheirKey"),
+            )?,
+            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => self
+                .handle_their_knowledge_event(
+                    prefix,
+                    knowledge,
+                    proof.expect("missing proof for TheirKnowledge"),
+                ),
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
-            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(core, payload)?,
+            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(
+                core,
+                payload,
+                proof.expect("missing proof for Relocate"),
+            )?,
             AccumulatingEvent::RelocatePrepare(pub_id, count) => {
                 self.handle_relocate_prepare_event(core, pub_id, count);
             }
@@ -1085,6 +1108,7 @@ impl Approved {
         p2p_node: P2pNode,
         age: u8,
         their_knowledge: Option<bls::PublicKey>,
+        proof: Proof,
     ) {
         if self.churn_in_progress {
             log_or_panic!(
@@ -1097,6 +1121,7 @@ impl Approved {
         if self.shared_state.add_member(
             p2p_node.clone(),
             age,
+            proof,
             core.network_params.recommended_section_size,
         ) {
             info!("handle Online: {} (age: {})", p2p_node, age);
@@ -1116,7 +1141,7 @@ impl Approved {
         }
     }
 
-    fn handle_offline_event(&mut self, core: &mut Core, name: XorName) {
+    fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
         if self.churn_in_progress {
             log_or_panic!(
                 log::Level::Error,
@@ -1125,10 +1150,11 @@ impl Approved {
             return;
         }
 
-        if let Some(info) = self
-            .shared_state
-            .remove_member(&name, core.network_params.recommended_section_size)
-        {
+        if let Some(info) = self.shared_state.remove_member(
+            &name,
+            proof,
+            core.network_params.recommended_section_size,
+        ) {
             info!("handle Offline: {}", name);
 
             self.members_changed = true;
@@ -1167,11 +1193,13 @@ impl Approved {
         &mut self,
         core: &mut Core,
         details: RelocateDetails,
+        proof: Proof,
     ) -> Result<(), RoutingError> {
         match self
             .shared_state
             .remove_member(
                 details.pub_id.name(),
+                proof,
                 core.network_params.recommended_section_size,
             )
             .map(|info| info.state)
@@ -1932,24 +1960,48 @@ fn create_first_elders_info(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     p2p_node: P2pNode,
-) -> Proven<EldersInfo> {
+) -> Result<Proven<EldersInfo>> {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
     let elders_info = EldersInfo::new(iter::once(node).collect(), Prefix::default());
-
-    let signature_share = sk_share
-        .sign(&bincode::serialize(&elders_info).expect("failed to serialise first elders info"));
-    let signature = pk_set
-        .combine_signatures(iter::once((0, &signature_share)))
-        .expect("failed to sign first elders info");
-    let proof = Proof {
-        public_key: pk_set.public_key(),
-        signature,
-    };
-
-    Proven::new(elders_info, proof)
+    let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
+    Ok(Proven::new(elders_info, proof))
 }
 
-fn expect_proof(proof: Option<Proof>) -> Proof {
-    proof.expect("missing proof")
+fn create_first_shared_state(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    elders_info: Proven<EldersInfo>,
+) -> Result<SharedState> {
+    let mut shared_state = SharedState::new(elders_info, pk_set.public_key());
+
+    for p2p_node in shared_state.sections.our().elders.values() {
+        let proof = create_first_proof(
+            pk_set,
+            sk_share,
+            &member_info::to_sign(p2p_node.name(), MemberState::Joined),
+        )?;
+        shared_state
+            .our_members
+            .add(p2p_node.clone(), MIN_AGE, proof);
+    }
+
+    Ok(shared_state)
+}
+
+fn create_first_proof<T: Serialize>(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    payload: &T,
+) -> Result<Proof> {
+    let bytes = bincode::serialize(payload)?;
+    let signature_share = sk_share.sign(&bytes);
+    let signature = pk_set
+        .combine_signatures(iter::once((0, &signature_share)))
+        .map_err(|_| RoutingError::InvalidSignatureShares)?;
+
+    Ok(Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    })
 }

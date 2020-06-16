@@ -8,7 +8,7 @@
 
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::{AccumulatingEvent, Proven},
+    consensus::{AccumulatingEvent, Proof, Proven},
     id::{P2pNode, PublicId},
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
@@ -36,7 +36,7 @@ pub struct SharedState {
     /// Info about known sections in the network.
     pub sections: SectionMap,
     /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
+    pub churn_event_backlog: VecDeque<(AccumulatingEvent, Option<Proof>)>,
     /// Queue of pending relocations.
     pub relocate_queue: VecDeque<RelocateDetails>,
 }
@@ -168,8 +168,11 @@ impl SharedState {
         &mut self,
         p2p_node: P2pNode,
         age: u8,
+        proof: Proof,
         recommended_section_size: usize,
     ) -> bool {
+        // FIXME: we should perform these checks before voting, but once the vote accumulates we
+        // must obey it:
         if !self.our_prefix().matches(p2p_node.name()) {
             trace!("not adding node {} - not matching our prefix", p2p_node);
             return false;
@@ -182,7 +185,7 @@ impl SharedState {
 
         let name = *p2p_node.name();
 
-        self.our_members.add(p2p_node, age);
+        self.our_members.add(p2p_node, age, proof);
         self.increment_age_counters(&name, recommended_section_size);
 
         true
@@ -193,10 +196,13 @@ impl SharedState {
     pub fn remove_member(
         &mut self,
         name: &XorName,
+        proof: Proof,
         recommended_section_size: usize,
     ) -> Option<MemberInfo> {
         match self.our_members.get(name).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
+                // FIXME: perform this check before voting, but once the vote accumulates we must
+                // obey it.
                 trace!("not removing node {} - not a member", name);
                 return None;
             }
@@ -208,7 +214,7 @@ impl SharedState {
 
         self.relocate_queue
             .retain(|details| details.pub_id.name() != name);
-        self.our_members.remove(name)
+        self.our_members.remove(name, proof)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -319,8 +325,8 @@ impl SharedState {
 
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
-        self.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online { p2p_node, .. } = &evt {
+        self.churn_event_backlog.iter().any(|(event, _)| {
+            if let AccumulatingEvent::Online { p2p_node, .. } = &event {
                 p2p_node.public_id() == pub_id
             } else {
                 false

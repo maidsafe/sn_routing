@@ -12,7 +12,7 @@ use crate::{
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
-    section::{EldersInfo, SectionKeyShare},
+    section::{member_info, EldersInfo, MemberState, SectionKeyShare},
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -171,14 +171,35 @@ impl AccumulatingEvent {
                 Ok(bincode::serialize(key)?)
             }
             Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
+            Self::TheirKnowledge { prefix, knowledge } => {
+                Ok(bincode::serialize(&(prefix, knowledge))?)
+            }
             Self::SectionInfo(info) => Ok(bincode::serialize(info)?),
+            Self::Online {
+                p2p_node,
+                age: _,
+                their_knowledge: _,
+            } => Ok(bincode::serialize(&member_info::to_sign(
+                p2p_node.name(),
+                MemberState::Joined,
+            ))?),
+            Self::Offline(name) => Ok(bincode::serialize(&member_info::to_sign(
+                name,
+                MemberState::Left,
+            ))?),
+            Self::Relocate(details) => {
+                // Note: signing the same fields as for `Offline` because we need to update the
+                // members map the same way as if the node went offline. The relocate details
+                // will be signed using a different vote, but that is not implemented yet.
+                Ok(bincode::serialize(&member_info::to_sign(
+                    details.pub_id.name(),
+                    MemberState::Left,
+                ))?)
+            }
+
             // TODO: serialise these variants properly
-            Self::Online { .. }
-            | Self::Offline(_)
-            | Self::SendNeighbourInfo { .. }
-            | Self::TheirKnowledge { .. }
+            Self::SendNeighbourInfo { .. }
             | Self::ParsecPrune
-            | Self::Relocate(_)
             | Self::RelocatePrepare(..)
             | Self::User(_) => Ok(vec![]),
             Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => unreachable!(),

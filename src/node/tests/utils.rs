@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{self, Proven},
+    consensus::{self, Proof, Proven},
     error::Result,
     id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageWithBytes},
@@ -28,6 +28,7 @@ use crate::{
 use crossbeam_channel::Receiver;
 use itertools::Itertools;
 use mock_quic_p2p::Network;
+use serde::Serialize;
 use std::{collections::BTreeMap, net::SocketAddr};
 
 pub fn create_elders_info(
@@ -56,6 +57,22 @@ pub fn create_elders_info(
     let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
     (elders_info, full_ids)
+}
+
+pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Proof {
+    let pk_set = sk_set.public_keys();
+    let bytes = bincode::serialize(payload).unwrap();
+    let signature_shares: Vec<_> = (0..sk_set.threshold() + 1)
+        .map(|index| sk_set.secret_key_share(index).sign(&bytes))
+        .collect();
+    let signature = pk_set
+        .combine_signatures(signature_shares.iter().enumerate())
+        .unwrap();
+
+    Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    }
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {
