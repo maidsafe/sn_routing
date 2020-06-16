@@ -53,18 +53,15 @@ impl Env {
             .clone();
         let public_key = public_key_set.public_key();
 
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info,
-            parsec_version: 0,
-        };
+        let shared_state = SharedState::new(elders_info, public_key);
 
         let (subject, ..) = Node::approved(
             NodeConfig {
                 network_params: NETWORK_PARAMS,
                 ..Default::default()
             },
-            genesis_prefix_info,
-            public_key,
+            shared_state,
+            0,
             None,
         );
 
