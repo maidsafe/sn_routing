@@ -163,38 +163,32 @@ impl AccumulatingEvent {
                 .unwrap_or(false)
     }
 
-    fn serialise_for_signing(&self) -> Result<Vec<u8>> {
+    fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
         match self {
             Self::OurKey { prefix: _, key } => {
                 // Note: the prefix is only needed to differentiate between the two subsections in
                 // case of split but it isn't part of the proven data.
-                Ok(bincode::serialize(key)?)
+                bincode::serialize(key)
             }
-            Self::TheirKey { prefix, key } => Ok(bincode::serialize(&(prefix, key))?),
-            Self::TheirKnowledge { prefix, knowledge } => {
-                Ok(bincode::serialize(&(prefix, knowledge))?)
-            }
-            Self::SectionInfo(info) => Ok(bincode::serialize(info)?),
+            Self::TheirKey { prefix, key } => bincode::serialize(&(prefix, key)),
+            Self::TheirKnowledge { prefix, knowledge } => bincode::serialize(&(prefix, knowledge)),
+            Self::SectionInfo(info) => bincode::serialize(info),
             Self::Online {
                 p2p_node,
                 age: _,
                 their_knowledge: _,
-            } => Ok(bincode::serialize(&member_info::to_sign(
-                p2p_node.name(),
-                MemberState::Joined,
-            ))?),
-            Self::Offline(name) => Ok(bincode::serialize(&member_info::to_sign(
-                name,
-                MemberState::Left,
-            ))?),
+            } => bincode::serialize(&member_info::to_sign(p2p_node.name(), MemberState::Joined)),
+            Self::Offline(name) => {
+                bincode::serialize(&member_info::to_sign(name, MemberState::Left))
+            }
             Self::Relocate(details) => {
                 // Note: signing the same fields as for `Offline` because we need to update the
                 // members map the same way as if the node went offline. The relocate details
                 // will be signed using a different vote, but that is not implemented yet.
-                Ok(bincode::serialize(&member_info::to_sign(
+                bincode::serialize(&member_info::to_sign(
                     details.pub_id.name(),
                     MemberState::Left,
-                ))?)
+                ))
             }
 
             // TODO: serialise these variants properly
