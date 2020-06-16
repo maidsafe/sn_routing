@@ -112,20 +112,16 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         self.name.common_prefix(name) >= self.bit_count()
     }
 
-    /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
-    /// `Greater` if `other` is closer, and compares the prefix directly if of equal distance
-    /// (this is to make sorting deterministic).
+    /// Compares the distance of `self` and `other` to `target` (returns `Less` if `self` is
+    /// closer to `target` than `other`).
     pub fn cmp_distance(&self, other: &Self, target: &T) -> Ordering {
-        if self.is_compatible(other) {
-            // Note that if bit_counts are equal, prefixes are also equal since
-            // one is a prefix of the other (is_compatible).
-            Ord::cmp(&self.bit_count, &other.bit_count)
-        } else {
-            Ord::cmp(
-                &other.name.common_prefix(target),
-                &self.name.common_prefix(target),
-            )
-        }
+        let lhs_len = self.bit_count();
+        let lhs_diff = lhs_len - self.common_prefix(target);
+
+        let rhs_len = other.bit_count();
+        let rhs_diff = rhs_len - other.common_prefix(target);
+
+        lhs_diff.cmp(&rhs_diff).then_with(|| rhs_len.cmp(&lhs_len))
     }
 
     /// Compares the prefixes using breadth-first order. That is, shorter prefixes are ordered
@@ -429,6 +425,30 @@ mod tests {
         assert!(!parse("0").is_sibling(&parse("")));
         assert!(!parse("0").is_sibling(&parse("0")));
         assert!(!parse("01").is_sibling(&parse("11")));
+    }
+
+    #[test]
+    fn cmp_distance() {
+        assert_eq!(
+            parse("0").cmp_distance(&parse("0"), &0b0100_0000),
+            Ordering::Equal
+        );
+        assert_eq!(
+            parse("01").cmp_distance(&parse("00"), &0b0100_0000),
+            Ordering::Less
+        );
+        assert_eq!(
+            parse("01").cmp_distance(&parse("0"), &0b0100_0000),
+            Ordering::Less
+        );
+        assert_eq!(
+            parse("00").cmp_distance(&parse("0"), &0b0100_0000),
+            Ordering::Greater
+        );
+        assert_eq!(
+            parse("01").cmp_distance(&parse("00"), &0b1000_0000),
+            Ordering::Equal
+        );
     }
 
     fn parse(input: &str) -> Prefix<u8> {

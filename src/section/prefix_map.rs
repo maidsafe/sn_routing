@@ -59,6 +59,11 @@ where
         old.map(|entry| entry.0)
     }
 
+    /// Removes the entry at `prefix` and returns it, if any.
+    pub fn remove(&mut self, prefix: &Prefix<XorName>) -> Option<T> {
+        self.0.take(prefix).map(|entry| entry.0)
+    }
+
     /// Get the entry at `prefix`, if any.
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&T> {
         self.0.get(prefix).map(|entry| &entry.0)
@@ -101,6 +106,11 @@ where
         self.0.iter().map(|entry| &entry.0)
     }
 
+    /// Returns an iterator over the prefixes
+    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> + Clone {
+        self.0.iter().map(|entry| entry.prefix())
+    }
+
     /// Returns an iterator over all entries whose prefixes are descendants (extensions) of
     /// `prefix`.
     pub fn descendants<'a>(
@@ -112,23 +122,6 @@ where
             .iter()
             .filter(move |entry| entry.0.borrow().is_extension_of(prefix))
             .map(|entry| &entry.0)
-    }
-
-    /// Retains only the elements specified by the predicate.
-    /// Note: unlike `HashMap::retain`, this doesn't allow mutating the values inside the predicate.
-    pub fn retain<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&T) -> bool,
-    {
-        let to_remove: Vec<_> = self
-            .0
-            .iter()
-            .filter(|entry| !f(&entry.0))
-            .map(|entry| *entry.prefix())
-            .collect();
-        for key in to_remove {
-            let _ = self.0.remove(&key);
-        }
     }
 
     // Remove `prefix` and any of its ancestors if they are covered by their descendants.

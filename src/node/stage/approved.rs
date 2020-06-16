@@ -1793,8 +1793,6 @@ impl Approved {
             return Ok(());
         }
 
-        trace!("Sending {:?} via targets {:?}", msg, targets);
-
         let targets: Vec<_> = targets.into_iter().map(|node| *node.peer_addr()).collect();
         let cheap_bytes_clone = msg.full_bytes().clone();
         core.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
