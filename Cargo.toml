@@ -31,8 +31,7 @@ lru_time_cache = "~0.10.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
 num-bigint = "~0.2.6"
 parsec = "~0.7.1"
-# quic-p2p = { version = "~0.6.2", features = ["upnp"] }
-quic-p2p = { git = "https://github.com/madadam/quic-p2p", branch = "update-deps", features = ["upnp"] }
+quic-p2p = { version = "~0.6.2", features = ["upnp"] }
 rand = "~0.7.3"
 # rand in the versions used by the threshold-crypto crate
 rand_crypto = { package = "rand", version = "~0.6.5" }
@@ -58,3 +57,7 @@ mock_base = [
     "env_logger",
 ]
 mock = ["mock_base"]
+
+[patch.crates-io]
+quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", features = ["upnp"] }
+
