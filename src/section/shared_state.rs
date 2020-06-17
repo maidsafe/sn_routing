@@ -9,7 +9,7 @@
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::{AccumulatingEvent, Proof, Proven},
-    id::{P2pNode, PublicId},
+    id::P2pNode,
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
     network_params::NetworkParams,
@@ -36,8 +36,6 @@ pub struct SharedState {
     pub our_members: SectionMembers,
     /// Info about known sections in the network.
     pub sections: SectionMap,
-    /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<(AccumulatingEvent, Option<Proof>)>,
     /// Queue of pending relocations.
     pub relocate_queue: VecDeque<RelocateDetails>,
 }
@@ -49,7 +47,6 @@ impl SharedState {
             our_history: SectionProofChain::new(section_pk),
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
-            churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
         }
     }
@@ -274,12 +271,6 @@ impl SharedState {
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        // Delay relocation until all backlogged churn events have been handled. Only allow one
-        // relocation at a time.
-        if !self.churn_event_backlog.is_empty() {
-            return None;
-        }
-
         let details = loop {
             if let Some(details) = self.relocate_queue.pop_back() {
                 if self.our_members.contains(details.pub_id.name()) {
@@ -322,17 +313,6 @@ impl SharedState {
         };
 
         self.our_history.slice(index..)
-    }
-
-    /// Check if we know this node but have not yet processed it.
-    pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
-        self.churn_event_backlog.iter().any(|(event, _)| {
-            if let AccumulatingEvent::Online { p2p_node, .. } = &event {
-                p2p_node.public_id() == pub_id
-            } else {
-                false
-            }
-        })
     }
 
     /// Update our knowledge of their section and their knowledge of ours. Returns the events to

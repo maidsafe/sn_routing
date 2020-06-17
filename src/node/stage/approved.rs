@@ -31,7 +31,6 @@ use crate::{
     signature_accumulator::SignatureAccumulator,
     time::Duration,
 };
-
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
@@ -676,11 +675,6 @@ impl Approved {
             return;
         }
 
-        if self.shared_state.is_in_online_backlog(&pub_id) {
-            debug!("Ignoring JoinRequest from {} - already in backlog.", pub_id);
-            return;
-        }
-
         // This joining node is being relocated to us.
         let (age, their_knowledge) = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {
@@ -862,10 +856,6 @@ impl Approved {
     // If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     // containers.
     fn poll_one(&mut self, core: &mut Core) -> Result<bool> {
-        if self.poll_churn_event_backlog(core)? {
-            return Ok(true);
-        }
-
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
         if self.promote_and_demote_elders(core) {
@@ -881,60 +871,14 @@ impl Approved {
             Some((event, proof)) => (event, proof),
         };
 
-        if self.should_backlog_event(&event) {
-            self.backlog_event(event, proof);
-            Ok(false)
-        } else {
-            self.handle_accumulated_event(core, event, proof)?;
-            Ok(true)
-        }
+        self.handle_accumulated_event(core, event, proof)?;
+
+        Ok(true)
     }
 
     // Can we perform an action right now that can result in churn?
     fn is_ready_to_churn(&self) -> bool {
         self.shared_state.handled_genesis_event && !self.churn_in_progress
-    }
-
-    // Polls and processes a backlogged churn event, if any.
-    fn poll_churn_event_backlog(&mut self, core: &mut Core) -> Result<bool> {
-        if !self.is_ready_to_churn() {
-            return Ok(false);
-        }
-
-        if let Some((event, proof)) = self.shared_state.churn_event_backlog.pop_back() {
-            trace!(
-                "churn backlog poll {:?}, Others: {:?}",
-                event,
-                self.shared_state.churn_event_backlog
-            );
-
-            self.handle_accumulated_event(core, event, proof)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn should_backlog_event(&self, event: &AccumulatingEvent) -> bool {
-        let is_churn_trigger = match event {
-            AccumulatingEvent::Online { .. }
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::Relocate(_) => true,
-            _ => false,
-        };
-
-        is_churn_trigger && !self.is_ready_to_churn()
-    }
-
-    fn backlog_event(&mut self, event: AccumulatingEvent, proof: Option<Proof>) {
-        trace!(
-            "churn backlog {:?}, Other: {:?}",
-            event,
-            self.shared_state.churn_event_backlog
-        );
-        self.shared_state
-            .churn_event_backlog
-            .push_front((event, proof));
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
@@ -1100,14 +1044,6 @@ impl Approved {
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) {
-        if self.churn_in_progress {
-            log_or_panic!(
-                log::Level::Error,
-                "can't handle Online when churn is in progress"
-            );
-            return;
-        }
-
         if self.shared_state.add_member(
             p2p_node.clone(),
             age,
@@ -1132,14 +1068,6 @@ impl Approved {
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
-        if self.churn_in_progress {
-            log_or_panic!(
-                log::Level::Error,
-                "can't handle Offline when churn is in progress"
-            );
-            return;
-        }
-
         if let Some(info) = self.shared_state.remove_member(
             &name,
             proof,

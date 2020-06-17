@@ -37,7 +37,12 @@ fn send() {
     let mut expected_recipients: HashMap<_, _> = expected_recipients(&nodes, &dst)
         .map(|index| (index, false))
         .collect();
-    assert!(expected_recipients.len() >= quorum);
+    assert!(
+        expected_recipients.len() >= quorum,
+        "too few expected recipients: {}/{}",
+        expected_recipients.len(),
+        quorum
+    );
 
     // Poll until every node that is expected to receive the message actually receives it.
     poll_until(&env, &mut nodes, |nodes| {
@@ -77,7 +82,7 @@ fn send_and_receive() {
     // For all expected recipients, poll until it receives the request message and sends
     // the response
     let expected_req_recipients: Vec<_> = expected_recipients(&nodes, &req_dst).collect();
-    assert!(expected_req_recipients.len() >= quorum);
+    assert!(expected_req_recipients.len() >= quorum,);
 
     for index in expected_req_recipients {
         // Poll until the node received the request...

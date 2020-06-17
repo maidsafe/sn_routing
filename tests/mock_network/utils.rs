@@ -374,10 +374,15 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
     for _ in 1..size {
         let config = TransportConfig::node().with_hard_coded_contact(endpoint);
         nodes.push(TestNode::builder(env).transport_config(config).create());
-
-        poll_until(env, &mut nodes, |nodes| node_joined(nodes, nodes.len() - 1));
-        verify_invariants_for_nodes(&env, &nodes);
     }
+
+    poll_until(env, &mut nodes, |nodes| {
+        all_nodes_joined(nodes, 0..nodes.len())
+    });
+    poll_until(env, &mut nodes, |nodes| {
+        elder_count_reached(nodes, &Prefix::default(), env.elder_size().min(size))
+    });
+    verify_invariants_for_nodes(&env, &nodes);
 
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected(Connected::First));
@@ -543,6 +548,9 @@ pub fn add_mature_nodes(
     info!("Adding {} final nodes", count0 + count1);
     add_nodes_to_subsections_and_poll(env, nodes, &prefix, count0, count1);
 
+    // Make sure the section has enough elders before proceeding to remove them.
+    poll_until_minimal_elder_count(env, nodes, prefix);
+
     // Remove 16 mature nodes to trigger 16 age increments.
     info!("Removing {} mature nodes", remove_count);
 
@@ -633,6 +641,37 @@ fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first
     poll_until(env, nodes, |nodes| {
         all_nodes_joined(nodes, first_index..nodes.len())
     })
+}
+
+// Poll until the section with `prefix` has at least 4 elders which is the miminum so that if one
+// elder is removed, the consensus on it can still be reached.
+fn poll_until_minimal_elder_count(
+    env: &Environment,
+    nodes: &mut [TestNode],
+    prefix: &Prefix<XorName>,
+) {
+    poll_until(env, nodes, |nodes| elder_count_reached(nodes, prefix, 4))
+}
+
+// Returns whether the section at `prefix` has at least `expected_count` elders.
+fn elder_count_reached(
+    nodes: &[TestNode],
+    prefix: &Prefix<XorName>,
+    expected_count: usize,
+) -> bool {
+    let actual_count = elders_with_prefix(nodes, prefix).count();
+
+    if actual_count >= expected_count {
+        true
+    } else {
+        trace!(
+            "Section {:?} has only {}/{} elders",
+            prefix,
+            actual_count,
+            expected_count,
+        );
+        false
+    }
 }
 
 // -----  Small misc functions  -----
