@@ -21,7 +21,7 @@ use routing::{
     RelocationOverrides, SrcLocation, TransportConfig,
 };
 use std::{
-    cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
+    cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, time::Duration,
 };
 use xor_name::{XorName, Xorable};
 
@@ -499,51 +499,53 @@ pub fn add_mature_nodes(
     count0: usize,
     count1: usize,
 ) {
-    // New nodes start as infants at age counter 16. We need to increase their age counters to 32
-    // in order for them to become adults. To do that, we need to add or remove 16 other mature
-    // nodes. Adding mature node can be done only by relocating it from another section, so for
-    // simplicity we will be only removing nodes here.
-
-    // TODO: consider using relocations from other sections (if there are any) too.
-
-    assert!(
-        env.elder_size() > 3,
-        "elder_size is {} which is less than 4 - the minimum needed to reach consensus on elder removal",
-        env.elder_size()
-    );
+    // Number of churn events to make an infant node become mature.
+    let churns_to_mature = 16usize;
 
     let sub_prefix0 = prefix.pushed(false);
     let sub_prefix1 = prefix.pushed(true);
 
-    // Number of times to increment the age counters so all nodes are mature. That is, the number
-    // of mature nodes to remove.
-    let remove_count = 16;
+    // Count the number of nodes per sub-prefix.
+    let start_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
+    let start_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
 
-    // Count already existing nodes in the prefix.
-    let current_count = nodes_with_prefix(nodes, &prefix).count();
-    assert!(
-        current_count <= remove_count,
-        "section must have less than {} nodes (has {}) in order to trigger split (this is a \
-         test-only limitation)",
-        remove_count,
-        current_count,
+    info!(
+        "Starting with {} initial nodes",
+        start_count0 + start_count1
     );
-
-    info!("Starting with {} initial nodes", current_count);
 
     let mut overrides = RelocationOverrides::new();
     overrides.suppress(*prefix);
 
-    // The order the nodes are added in is important because it influences which nodes will be
-    // promoted to replace previously removed elders and thus themselves being removed too. We want
-    // to first add the nodes that will be removed and then the nodes that will remain.
+    // Add temporary nodes to the section until it has 32 nodes. Purposefully make the section
+    // unbalanced to avoid splitting it just yet.
+    let temp_sub_prefix = match start_count0.cmp(&start_count1) {
+        Ordering::Less => &sub_prefix1,
+        Ordering::Greater => &sub_prefix0,
+        Ordering::Equal => {
+            if env.new_rng().gen() {
+                &sub_prefix1
+            } else {
+                &sub_prefix0
+            }
+        }
+    };
 
-    // First add the nodes that will be removed later. These can go into any sub-prefix.
-    let temp_count = remove_count.saturating_sub(current_count);
+    let temp_count = (2 * churns_to_mature).saturating_sub(start_count0 + start_count1);
     info!("Adding {} temporary nodes", temp_count);
-    add_nodes_to_section_and_poll(env, nodes, &prefix, temp_count);
+    add_nodes_to_section_and_poll(env, nodes, &temp_sub_prefix, temp_count);
 
-    // Of the remaining nodes, `count0` goes to the 0-ending sub-prefix and `count1` to the
+    // Make sure the section has enough elders before proceeding to remove them.
+    poll_until_minimal_elder_count(env, nodes, prefix);
+
+    // Remove 16 mature notes so the remaining nodes become all mature.
+    info!(
+        "Removing the first half ({}) of the temporary nodes",
+        churns_to_mature
+    );
+    remove_elders_from_section_and_poll(env, nodes, prefix, churns_to_mature);
+
+    // Add the final nodes. `count0` into the 0-ending sub-prefix and `count1` into the
     // 1-ending.
     info!("Adding {} final nodes", count0 + count1);
     add_nodes_to_subsections_and_poll(env, nodes, &prefix, count0, count1);
@@ -551,19 +553,16 @@ pub fn add_mature_nodes(
     // Make sure the section has enough elders before proceeding to remove them.
     poll_until_minimal_elder_count(env, nodes, prefix);
 
-    // Remove 16 mature nodes to trigger 16 age increments.
-    info!("Removing {} mature nodes", remove_count);
+    // Remove another 16 matures nodes (which are the remaining temporary nodes) so all the new
+    // nodes become mature too.
+    info!(
+        "Removing the remaining half ({}) of the temporary nodes",
+        churns_to_mature
+    );
+    remove_elders_from_section_and_poll(env, nodes, prefix, churns_to_mature);
 
-    for _ in 0..remove_count {
-        // Note: removing only elders for simplicity. Also making sure we don't remove any of the
-        // last `count0 + count1` nodes.
-        let removed_id =
-            remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
-        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-        update_neighbours_and_poll(env, nodes, 2);
-    }
-
-    // Count the number of nodes in each sub-prefix and verify they are as expected.
+    // We should now be left with just the final nodes who are now all mature.
+    // Verify it is the case.
     let actual_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
     let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
     assert_eq!((actual_count0, actual_count1), (count0, count1));
@@ -637,6 +636,19 @@ fn add_nodes_to_subsections_and_poll(
     poll_until_last_nodes_joined(env, nodes, first_index);
 }
 
+fn remove_elders_from_section_and_poll(
+    env: &Environment,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    count: usize,
+) {
+    for _ in 0..count {
+        let removed_id = remove_elder_from_section(nodes, prefix);
+        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
+        update_neighbours_and_poll(env, nodes, 2);
+    }
+}
+
 fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first_index: usize) {
     poll_until(env, nodes, |nodes| {
         all_nodes_joined(nodes, first_index..nodes.len())
@@ -650,7 +662,17 @@ fn poll_until_minimal_elder_count(
     nodes: &mut [TestNode],
     prefix: &Prefix<XorName>,
 ) {
-    poll_until(env, nodes, |nodes| elder_count_reached(nodes, prefix, 4))
+    let expected = 4;
+    assert!(
+        env.elder_size() >= expected,
+        "elder size must be at least {}, but is only {}",
+        expected,
+        env.elder_size()
+    );
+
+    poll_until(env, nodes, |nodes| {
+        elder_count_reached(nodes, prefix, expected)
+    })
 }
 
 // Returns whether the section at `prefix` has at least `expected_count` elders.
@@ -974,17 +996,7 @@ pub fn add_node_to_section_using_bootstrap_node(
 
 // Removes one elder node from the given prefix. Returns the name of the removed node.
 pub fn remove_elder_from_section(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) -> XorName {
-    remove_elder_from_section_in_range(nodes, prefix, 0..nodes.len())
-}
-
-// Removes one elder node from the given prefix but only from nodes in the given index range.
-// Returns the name of the removed node.
-fn remove_elder_from_section_in_range(
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
-    index_range: Range<usize>,
-) -> XorName {
-    let index = indexed_nodes_with_prefix(&nodes[index_range], prefix)
+    let index = indexed_nodes_with_prefix(&nodes, prefix)
         .find(|(_, node)| node.inner.is_elder())
         .map(|(index, _)| index)
         .unwrap();
@@ -1044,19 +1056,19 @@ fn validate_prefix_lenghts(prefix_lengths: &[usize]) {
     });
 
     match sum.cmp(&256) {
-        cmp::Ordering::Less => {
+        Ordering::Less => {
             panic!(
                 "The specified prefix lengths {:?} would not cover the entire address space",
                 prefix_lengths
             );
         }
-        cmp::Ordering::Greater => {
+        Ordering::Greater => {
             panic!(
                 "The specified prefix lengths {:?} would require overlapping sections",
                 prefix_lengths
             );
         }
-        cmp::Ordering::Equal => (),
+        Ordering::Equal => (),
     }
 }
 
