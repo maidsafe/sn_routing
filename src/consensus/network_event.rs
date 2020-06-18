@@ -91,9 +91,6 @@ pub enum AccumulatingEvent {
     // Voted for node to be relocated out of our section.
     Relocate(RelocateDetails),
 
-    // Voted to initiate the relocation if value <= 0, otherwise re-vote with value - 1.
-    RelocatePrepare(RelocateDetails, i32),
-
     // Opaque user-defined event.
     User(Vec<u8>),
 }
@@ -192,10 +189,7 @@ impl AccumulatingEvent {
             }
 
             // TODO: serialise these variants properly
-            Self::SendNeighbourInfo { .. }
-            | Self::ParsecPrune
-            | Self::RelocatePrepare(..)
-            | Self::User(_) => Ok(vec![]),
+            Self::SendNeighbourInfo { .. } | Self::ParsecPrune | Self::User(_) => Ok(vec![]),
             Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => unreachable!(),
         }
     }
@@ -254,9 +248,6 @@ impl Debug for AccumulatingEvent {
             ),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
             Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-            Self::RelocatePrepare(payload, count_down) => {
-                write!(formatter, "RelocatePrepare({:?}, {})", payload, count_down)
-            }
             Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }

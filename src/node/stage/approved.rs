@@ -47,10 +47,6 @@ use xor_name::{Prefix, XorName};
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
 const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Number of RelocatePrepare to consensus before actually relocating a node.
-/// This helps avoid relocated node receiving message they need to process from previous section.
-const RELOCATE_COOL_DOWN_STEPS: i32 = 10;
-
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub struct Approved {
@@ -255,7 +251,7 @@ impl Approved {
             }
         }
 
-        if self.consensus_engine.needs_pruning() {
+        if self.is_our_elder(core.id()) && self.consensus_engine.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
         }
 
@@ -927,10 +923,7 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_event(AccumulatingEvent::RelocatePrepare(
-                    details,
-                    RELOCATE_COOL_DOWN_STEPS,
-                ));
+                self.vote_for_event(AccumulatingEvent::Relocate(details));
             }
 
             return true;
@@ -1009,9 +1002,6 @@ impl Approved {
                 payload,
                 proof.expect("missing proof for Relocate"),
             )?,
-            AccumulatingEvent::RelocatePrepare(pub_id, count) => {
-                self.handle_relocate_prepare_event(core, pub_id, count);
-            }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
 
@@ -1087,23 +1077,6 @@ impl Approved {
             }
         } else {
             info!("ignore Offline: {}", name);
-        }
-    }
-
-    fn handle_relocate_prepare_event(
-        &mut self,
-        core: &Core,
-        payload: RelocateDetails,
-        count_down: i32,
-    ) {
-        if !self.is_our_elder(core.id()) {
-            return;
-        }
-
-        if count_down > 0 {
-            self.vote_for_event(AccumulatingEvent::RelocatePrepare(payload, count_down - 1))
-        } else {
-            self.vote_for_event(AccumulatingEvent::Relocate(payload))
         }
     }
 
@@ -1489,10 +1462,7 @@ impl Approved {
             // Only re-vote if still relevant to our new prefix.
             AccumulatingEvent::Online { p2p_node, .. } => our_prefix.matches(p2p_node.name()),
             AccumulatingEvent::Offline(name) => our_prefix.matches(name),
-            AccumulatingEvent::Relocate(details)
-            | AccumulatingEvent::RelocatePrepare(details, _) => {
-                our_prefix.matches(details.pub_id.name())
-            }
+            AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)
