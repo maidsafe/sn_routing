@@ -1427,11 +1427,12 @@ impl Approved {
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
+        let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
 
         self.update_our_key_and_info(core, details.our.key, details.our.info)?;
 
         if let Some(sibling) = details.sibling {
-            self.update_sibling_key(core, sibling.key);
+            self.shared_state.sections.update_keys(sibling.key);
             self.update_neighbour_info(core, sibling.info);
         }
 
@@ -1461,6 +1462,16 @@ impl Approved {
             self.shared_state.demote();
             core.send_event(Event::Demoted);
             return Ok(());
+        }
+
+        // We can update the sibling knowledge already because we know they also reached consensus
+        // on our `OurKey` so they know our latest key. Need to vote for it first though, to
+        // accumulate the signatures.
+        if let Some(prefix) = sibling_prefix {
+            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
+                prefix,
+                knowledge: self.shared_state.our_history.last_key_index(),
+            })
         }
 
         self.send_genesis_updates(core);
@@ -1513,24 +1524,6 @@ impl Approved {
         self.shared_state.sections.add_neighbour(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
-    }
-
-    fn update_sibling_key(
-        &mut self,
-        core: &Core,
-        section_key: Proven<(Prefix<XorName>, bls::PublicKey)>,
-    ) {
-        // We can update their knowledge already because we know they also reached consensus on
-        // our `OurKey` so they know our latest key. Need to vote for it first though, to
-        // accumulate the signatures.
-        if self.is_our_elder(core.id()) {
-            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
-                prefix: section_key.value.0,
-                knowledge: self.shared_state.our_history.last_key_index(),
-            })
-        }
-
-        self.shared_state.sections.update_keys(section_key);
     }
 
     ////////////////////////////////////////////////////////////////////////////
