@@ -109,6 +109,7 @@ fn message_with_invalid_security(fail_type: FailType) {
 }
 
 #[test]
+#[ignore] // We cannot create a message with invalid sig FIXME (possibly we want to do so via mock)
 #[should_panic(expected = "FailedSignature")]
 fn message_with_invalid_signature() {
     message_with_invalid_security(FailType::TrustedProofInvalidSig);

@@ -47,7 +47,7 @@ impl AccumulatingMessage {
     }
 
     /// Add the signature shares of `other` into this message.
-    /// Note: currently no validation is performed that the messages have the same content.
+    /// FIXME Note: currently no validation is performed that the messages have the same content.
     pub fn add_signature_shares(&mut self, mut other: Self) {
         self.signature_shares.append(&mut other.signature_shares)
     }
@@ -87,6 +87,7 @@ impl AccumulatingMessage {
         ) {
             Ok(signature) => signature,
             Err(error) => {
+                // FIXME, we must handle this error
                 log_or_panic!(
                     log::Level::Error,
                     "Combining signatures failed on {:?}: {:?}. \
@@ -100,17 +101,24 @@ impl AccumulatingMessage {
                 return None;
             }
         };
-
-        Some(Message {
-            src: SrcAuthority::Section {
-                prefix: self.content.src,
-                signature,
-                proof: self.proof,
-            },
-            dst: self.content.dst,
-            variant: self.content.variant,
-            dst_key: Some(self.content.dst_key),
-        })
+        let src = SrcAuthority::Section {
+            prefix: self.content.src,
+            signature,
+            proof: self.proof,
+        };
+        match Message::new_signed(
+            self.content.dst,
+            src,
+            self.content.variant,
+            Some(self.content.dst_key),
+        ) {
+            Ok(msg) => Some(msg),
+            Err(e) => {
+                log_or_panic!(log::Level::Error, "In combine sigs, {}", e);
+                // TODO method should return result probably?
+                None
+            }
+        }
     }
 
     // Computes the cryptographic hash of this message. Messages with identical `content` have the
@@ -161,7 +169,7 @@ pub struct PlainMessage {
 
 impl PlainMessage {
     fn serialize_for_signing(&self) -> Result<Vec<u8>> {
-        super::serialize_for_section_signing(&self.dst, Some(&self.dst_key), &self.variant)
+        super::serialize_for_signing(&self.dst, Some(&self.dst_key), &self.variant)
     }
 }
 

@@ -10,18 +10,16 @@ mod accumulating_message;
 mod hash;
 mod src_authority;
 mod variant;
-mod with_bytes;
 
 pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     hash::MessageHash,
     src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, Variant},
-    with_bytes::MessageWithBytes,
 };
 use crate::{
     error::{Result, RoutingError},
-    id::{FullId, PublicId},
+    id::FullId,
     location::DstLocation,
 };
 
@@ -37,62 +35,114 @@ use xor_name::{Prefix, XorName};
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Message {
     /// Destination location.
-    pub dst: DstLocation,
+    dst: DstLocation,
     /// Source authority.
-    pub src: SrcAuthority,
+    /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
+    /// agains the pub key and we know the pub key then we are good. If the proof is not recodnised we
+    /// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
+    src: SrcAuthority,
     /// The body of the message.
-    pub variant: Variant,
+    variant: Variant,
     /// Source's knowledge of the destination section key. If present, the destination can use it
     /// to determine the length of the proof of messages sent to the source so the source would
     /// trust it (the proof needs to start at this key).
-    pub dst_key: Option<bls::PublicKey>,
-}
+    dst_key: Option<bls::PublicKey>,
 
-/// Partially deserialized message.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
-pub struct PartialMessage {
-    /// Destination location.
-    pub dst: DstLocation,
-}
-
-impl PartialMessage {
-    /// Deserialize the message.
-    pub fn from_bytes(bytes: &Bytes) -> Result<Self> {
-        Ok(bincode::deserialize(&bytes[..])?)
-    }
+    /// Serialised message, this is a signed and fully serialised message ready to send.
+    #[serde(skip)]
+    serialized: Bytes,
+    #[serde(skip)]
+    hash: MessageHash,
 }
 
 impl Message {
-    /// Deserialize the message.
+    /// Deserialize the message. Only called on message receipt.
+    #[allow(unused)] // prefix field not used below
     pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
-        Ok(bincode::deserialize(&bytes[..])?)
+        let mut msg: Message = bincode::deserialize(&bytes[..])?;
+        let signed_bytes = serialize_for_signing(&msg.dst, msg.dst_key.as_ref(), &msg.variant)?;
+        match msg.src.clone() {
+            SrcAuthority::Node {
+                public_id,
+                signature,
+            } => {
+                if public_id.verify(&signed_bytes, &signature) {
+                    msg.serialized = bytes.clone();
+                    msg.hash = MessageHash::from_bytes(bytes);
+                    Ok(msg)
+                } else {
+                    Err(RoutingError::FailedSignature)
+                }
+            }
+            SrcAuthority::Section {
+                prefix,
+                signature,
+                proof,
+            } => {
+                // FIXME Assumes the nodes proof last key is the one signing this message
+                if proof.last_key().verify(&signature, &signed_bytes) {
+                    msg.serialized = bytes.clone();
+                    msg.hash = MessageHash::from_bytes(bytes);
+                    Ok(msg)
+                } else {
+                    Err(RoutingError::FailedSignature)
+                }
+            }
+        }
     }
 
-    /// Serialize the message.
-    pub(crate) fn to_bytes(&self) -> Result<Bytes> {
-        Ok(bincode::serialize(self)?.into())
+    /// send across wire
+    pub(crate) fn to_bytes(&self) -> Bytes {
+        self.serialized.clone()
     }
 
-    /// Creates a message from single node.
+    /// Creates a signed message where signature is assumed valid.
+    pub fn new_signed(
+        dst: DstLocation,
+        src: SrcAuthority,
+        variant: Variant,
+        dst_key: Option<bls::PublicKey>,
+    ) -> Result<Message> {
+        let mut msg = Message {
+            dst,
+            src,
+            variant,
+            dst_key,
+            serialized: Default::default(),
+            hash: Default::default(),
+        };
+        let bytes: Bytes = bincode::serialize(&msg)?.into();
+        msg.serialized = bytes.clone();
+        msg.hash = MessageHash::from_bytes(&bytes);
+        Ok(msg)
+    }
+
+    /// Creates a signed message from single node.
     pub(crate) fn single_src(
         src: &FullId,
         dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
     ) -> Result<Self> {
-        let serialized =
-            serialize_for_node_signing(src.public_id(), &dst, dst_key.as_ref(), &variant)?;
+        let serialized = serialize_for_signing(&dst, dst_key.as_ref(), &variant)?;
         let signature = src.sign(&serialized);
+        let src = SrcAuthority::Node {
+            public_id: *src.public_id(),
+            signature,
+        };
 
-        Ok(Self {
+        let mut msg = Message {
             dst,
-            src: SrcAuthority::Node {
-                public_id: *src.public_id(),
-                signature,
-            },
+            src,
             variant,
             dst_key,
-        })
+            serialized: Default::default(),
+            hash: Default::default(),
+        };
+        let bytes: Bytes = bincode::serialize(&msg)?.into();
+        msg.serialized = bytes.clone();
+        msg.hash = MessageHash::from_bytes(&bytes);
+        Ok(msg)
     }
 
     /// Verify this message is properly signed and trusted.
@@ -111,8 +161,28 @@ impl Message {
         }
     }
 
-    pub(crate) fn to_partial(&self) -> PartialMessage {
-        PartialMessage { dst: self.dst }
+    /// Getter
+    pub fn dst(&self) -> &DstLocation {
+        &self.dst
+    }
+
+    /// Getter
+    pub fn variant(&self) -> &Variant {
+        &self.variant
+    }
+
+    /// Getter
+    pub fn src(&self) -> &SrcAuthority {
+        &self.src
+    }
+
+    /// Getter
+    pub fn dst_key(&self) -> &Option<bls::PublicKey> {
+        &self.dst_key
+    }
+    /// Getter
+    pub fn hash(&self) -> &MessageHash {
+        &self.hash
     }
 }
 
@@ -120,7 +190,7 @@ impl Debug for Message {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         formatter
             .debug_struct("Message")
-            .field("src", &self.src.location())
+            .field("src", &self.src.src_location())
             .field("dst", &self.dst)
             .field("variant", &self.variant)
             .finish()
@@ -178,19 +248,10 @@ pub enum MessageStatus {
     Unknown,
 }
 
-fn serialize_for_section_signing(
+fn serialize_for_signing(
     dst: &DstLocation,
     dst_key: Option<&bls::PublicKey>,
     variant: &Variant,
 ) -> Result<Vec<u8>> {
     Ok(bincode::serialize(&(dst, dst_key, variant))?)
-}
-
-fn serialize_for_node_signing(
-    src: &PublicId,
-    dst: &DstLocation,
-    dst_key: Option<&bls::PublicKey>,
-    variant: &Variant,
-) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(&(src, dst, dst_key, variant))?)
 }

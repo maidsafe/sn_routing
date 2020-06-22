@@ -19,6 +19,10 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+/// Src of message and authority to send it. Authority is validate by the signature.
+/// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
+/// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we
+/// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
 pub enum SrcAuthority {
     Node {
         public_id: PublicId,
@@ -32,7 +36,7 @@ pub enum SrcAuthority {
 }
 
 impl SrcAuthority {
-    pub fn location(&self) -> SrcLocation {
+    pub fn src_location(&self) -> SrcLocation {
         match self {
             Self::Node { public_id, .. } => SrcLocation::Node(*public_id.name()),
             Self::Section { prefix, .. } => SrcLocation::Section(*prefix),
@@ -95,7 +99,7 @@ impl SrcAuthority {
                 public_id,
                 signature,
             } => {
-                let bytes = super::serialize_for_node_signing(public_id, dst, dst_key, variant)?;
+                let bytes = super::serialize_for_signing(dst, dst_key, variant)?;
                 if !public_id.verify(&bytes, signature) {
                     return Err(RoutingError::FailedSignature);
                 }
@@ -116,7 +120,7 @@ impl SrcAuthority {
                     TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
                 };
 
-                let bytes = super::serialize_for_section_signing(dst, dst_key, variant)?;
+                let bytes = super::serialize_for_signing(dst, dst_key, variant)?;
                 if !proof.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }

@@ -64,7 +64,7 @@ impl Bootstrapping {
     }
 
     pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
-        match msg.variant {
+        match msg.variant() {
             Variant::BootstrapResponse(_) => {
                 verify_message(msg)?;
                 Ok(MessageStatus::Useful)

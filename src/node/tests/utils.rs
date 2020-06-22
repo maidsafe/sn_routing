@@ -17,7 +17,7 @@ use crate::{
     consensus::{self, Proof, Proven},
     error::Result,
     id::{FullId, P2pNode},
-    messages::{AccumulatingMessage, Message, MessageWithBytes},
+    messages::{AccumulatingMessage, Message},
     node::Node,
     quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::MainRng,
@@ -77,7 +77,6 @@ pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Pr
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {
-    let msg = MessageWithBytes::new(msg)?;
     node.try_handle_message(sender, msg)?;
     node.handle_messages();
     Ok(())

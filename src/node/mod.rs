@@ -22,10 +22,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{
-        BootstrapResponse, Message, MessageHash, MessageStatus, MessageWithBytes, QueuedMessage,
-        Variant,
-    },
+    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant},
     network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
@@ -487,7 +484,7 @@ impl Node {
     }
 
     fn handle_new_message(&mut self, sender: SocketAddr, bytes: Bytes) {
-        let msg = match MessageWithBytes::partial_from_bytes(bytes) {
+        let msg = match Message::from_bytes(&bytes) {
             Ok(msg) => msg,
             Err(error) => {
                 debug!("Failed to deserialize message: {:?}", error);
@@ -535,51 +532,32 @@ impl Node {
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn try_handle_message(
-        &mut self,
-        sender: SocketAddr,
-        mut msg_with_bytes: MessageWithBytes,
-    ) -> Result<()> {
-        trace!("try handle message {:?}", msg_with_bytes);
+    fn try_handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+        trace!("try handle message {:?}", msg);
 
-        self.try_relay_message(&msg_with_bytes)?;
+        self.try_relay_message(&msg)?;
 
-        if !self.in_dst_location(msg_with_bytes.message_dst()) {
+        if !self.in_dst_location(msg.dst()) {
             return Ok(());
         }
 
-        if self.core.msg_filter.contains_incoming(&msg_with_bytes) {
-            trace!(
-                "not handling message - already handled: {:?}",
-                msg_with_bytes
-            );
+        if self.core.msg_filter.contains_incoming(&msg) {
+            trace!("not handling message - already handled: {:?}", msg);
             return Ok(());
         }
-
-        let msg = msg_with_bytes.take_or_deserialize_message()?;
 
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
-                self.core.msg_filter.insert_incoming(&msg_with_bytes);
-                self.handle_message(sender, msg, msg_with_bytes.full_crypto_hash())
+                self.core.msg_filter.insert_incoming(&msg);
+                self.handle_message(sender, msg)
             }
             MessageStatus::Untrusted => {
-                debug!(
-                    "Untrusted message from {}: {:?} (hash: {:?})",
-                    sender,
-                    msg,
-                    msg_with_bytes.full_crypto_hash()
-                );
+                debug!("Untrusted message from {}: {:?} ", sender, msg,);
                 self.handle_untrusted_message(sender, msg)
             }
             MessageStatus::Unknown => {
-                debug!(
-                    "Unknown message from {}: {:?} (hash: {:?})",
-                    sender,
-                    msg,
-                    msg_with_bytes.full_crypto_hash(),
-                );
-                self.handle_unknown_message(sender, msg, msg_with_bytes.full_bytes().clone())
+                debug!("Unknown message from {}: {:?} ", sender, msg,);
+                self.handle_unknown_message(sender, msg)
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {}: {:?}", sender, msg);
@@ -588,8 +566,8 @@ impl Node {
         }
     }
 
-    fn try_relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
-        if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_section() {
+    fn try_relay_message(&mut self, msg: &Message) -> Result<()> {
+        if !self.in_dst_location(msg.dst()) || msg.dst().is_section() {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.relay_message(msg)
         } else {
@@ -597,7 +575,7 @@ impl Node {
         }
     }
 
-    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, msg: &Message) -> Result<()> {
         match &mut self.stage {
             Stage::Approved(stage) => stage.relay_message(&mut self.core, msg),
             Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => Ok(()),
@@ -613,14 +591,9 @@ impl Node {
         }
     }
 
-    fn handle_message(
-        &mut self,
-        sender: SocketAddr,
-        msg: Message,
-        msg_hash: &MessageHash,
-    ) -> Result<()> {
+    fn handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(self.core.name(), &msg, msg_hash);
+            stage.update_section_knowledge(self.core.name(), &msg);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
@@ -630,7 +603,7 @@ impl Node {
 
     fn handle_messages(&mut self) {
         while let Some(QueuedMessage { message, sender }) = self.core.msg_queue.pop_front() {
-            if self.in_dst_location(&message.dst) {
+            if self.in_dst_location(message.dst()) {
                 match self.dispatch_message(sender, message) {
                     Ok(()) => (),
                     Err(err) => debug!("Routing message dispatch failed: {:?}", err),
@@ -643,48 +616,53 @@ impl Node {
         trace!("Got {:?}", msg);
 
         match &mut self.stage {
-            Stage::Bootstrapping(stage) => match msg.variant {
+            Stage::Bootstrapping(stage) => match msg.variant() {
                 Variant::BootstrapResponse(response) => {
                     if let Some(params) = stage.handle_bootstrap_response(
                         &mut self.core,
-                        msg.src.to_sender_node(sender)?,
-                        response,
+                        msg.src().to_sender_node(sender)?,
+                        response.clone(),
                     )? {
                         self.join(params);
                     }
                 }
                 _ => unreachable!(),
             },
-            Stage::Joining(stage) => match msg.variant {
+            Stage::Joining(stage) => match msg.variant() {
                 Variant::BootstrapResponse(BootstrapResponse::Join {
                     elders_info,
                     section_key,
                 }) => stage.handle_bootstrap_response(
                     &mut self.core,
-                    msg.src.to_sender_node(sender)?,
-                    elders_info,
-                    section_key,
+                    msg.src().to_sender_node(sender)?,
+                    elders_info.clone(),
+                    *section_key,
                 )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
-                    let section_key = *msg.src.as_section_key()?;
+                    let section_key = *msg.src().as_section_key()?;
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, genesis_prefix_info, section_key, msg_backlog)?
+                    self.approve(
+                        connect_type,
+                        genesis_prefix_info.clone(),
+                        section_key,
+                        msg_backlog,
+                    )?
                 }
                 _ => unreachable!(),
             },
-            Stage::Approved(stage) => match msg.variant {
+            Stage::Approved(stage) => match msg.variant() {
                 Variant::NeighbourInfo { elders_info, .. } => {
-                    msg.dst.check_is_section()?;
-                    let src_key = *msg.src.as_section_key()?;
-                    stage.handle_neighbour_info(elders_info, src_key);
+                    msg.dst().check_is_section()?;
+                    let src_key = *msg.src().as_section_key()?;
+                    stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
                 Variant::GenesisUpdate(info) => {
-                    let section_key = *msg.src.as_section_key()?;
-                    stage.handle_genesis_update(&mut self.core, info, section_key)?;
+                    let section_key = *msg.src().as_section_key()?;
+                    stage.handle_genesis_update(&mut self.core, info.clone(), section_key)?;
                 }
                 Variant::Relocate(_) => {
-                    msg.src.check_is_section()?;
+                    msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
                     if let Some(params) = stage.handle_relocate(&mut self.core, signed_relocate) {
                         self.relocate(params)
@@ -693,59 +671,62 @@ impl Node {
                 Variant::MessageSignature(accumulating_msg) => {
                     stage.handle_message_signature(
                         &mut self.core,
-                        *accumulating_msg,
-                        *msg.src.as_node()?,
+                        *accumulating_msg.clone(),
+                        *msg.src().as_node()?,
                     )?;
                 }
                 Variant::BootstrapRequest(name) => stage.handle_bootstrap_request(
                     &mut self.core,
-                    msg.src.to_sender_node(sender)?,
-                    name,
+                    msg.src().to_sender_node(sender)?,
+                    *name,
                 ),
                 Variant::JoinRequest(join_request) => stage.handle_join_request(
                     &mut self.core,
-                    msg.src.to_sender_node(sender)?,
-                    *join_request,
+                    msg.src().to_sender_node(sender)?,
+                    *join_request.clone(),
                 ),
                 Variant::ParsecPoke(version) => stage.handle_parsec_poke(
                     &mut self.core,
-                    msg.src.to_sender_node(sender)?,
-                    version,
+                    msg.src().to_sender_node(sender)?,
+                    *version,
                 ),
                 Variant::ParsecRequest(version, request) => {
                     stage.handle_parsec_request(
                         &mut self.core,
-                        version,
-                        request,
-                        msg.src.to_sender_node(sender)?,
+                        *version,
+                        request.clone(),
+                        msg.src().to_sender_node(sender)?,
                     )?;
                 }
                 Variant::ParsecResponse(version, response) => {
                     stage.handle_parsec_response(
                         &mut self.core,
-                        version,
-                        response,
-                        *msg.src.as_node()?,
+                        *version,
+                        response.clone(),
+                        *msg.src().as_node()?,
                     )?;
                 }
                 Variant::UserMessage(content) => {
                     self.core.send_event(Event::MessageReceived {
-                        content,
-                        src: msg.src.location(),
-                        dst: msg.dst,
+                        content: content.clone(),
+                        src: msg.src().src_location(),
+                        dst: *msg.dst(),
                     });
                 }
-                Variant::BouncedUntrustedMessage(message) => {
-                    stage.handle_bounced_untrusted_message(&mut self.core, msg.dst_key, *message)?
-                }
+                Variant::BouncedUntrustedMessage(message) => stage
+                    .handle_bounced_untrusted_message(
+                        &mut self.core,
+                        *msg.dst_key(),
+                        *message.clone(),
+                    )?,
                 Variant::BouncedUnknownMessage {
                     message,
                     parsec_version,
                 } => stage.handle_bounced_unknown_message(
                     &mut self.core,
-                    msg.src.to_sender_node(sender)?,
-                    message,
-                    parsec_version,
+                    msg.src().to_sender_node(sender)?,
+                    message.clone(),
+                    *parsec_version,
                 ),
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
@@ -766,17 +747,12 @@ impl Node {
         }
     }
 
-    fn handle_unknown_message(
-        &mut self,
-        sender: SocketAddr,
-        msg: Message,
-        msg_bytes: Bytes,
-    ) -> Result<()> {
+    fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Joining(stage) => stage.handle_unknown_message(sender, msg),
             Stage::Approved(stage) => {
-                stage.handle_unknown_message(&mut self.core, Some(sender), msg_bytes)?
+                stage.handle_unknown_message(&mut self.core, Some(sender), msg.to_bytes())?
             }
             Stage::Terminated => (),
         }
@@ -911,7 +887,7 @@ impl Node {
         delivery_group_size: usize,
         message: Message,
     ) -> Result<(), RoutingError> {
-        let message = message.to_bytes()?;
+        let message = message.to_bytes();
         self.core
             .send_message_to_targets(dst_targets, delivery_group_size, message);
         Ok(())

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    messages::{AccumulatingMessage, Message, MessageHash, MessageWithBytes},
+    messages::{AccumulatingMessage, Message, MessageHash},
     time::{Duration, Instant},
 };
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub struct SignatureAccumulator {
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `Message`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<MessageWithBytes> {
+    pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<Message> {
         self.remove_expired();
         let hash = msg.crypto_hash().ok()?;
         if let Some((existing_msg, _)) = self.msgs.get_mut(&hash) {
@@ -35,14 +35,7 @@ impl SignatureAccumulator {
             let _ = self.msgs.insert(hash, (Some(msg), Instant::now()));
         }
 
-        let msg = self.remove_if_complete(&hash)?;
-        match MessageWithBytes::new(msg) {
-            Ok(msg) => Some(msg),
-            Err(error) => {
-                error!("Failed to make message: {:?}", error);
-                None
-            }
-        }
+        self.remove_if_complete(&hash)
     }
 
     fn remove_expired(&mut self) {
@@ -212,25 +205,23 @@ mod tests {
             for signature_msg in msg_and_sigs.signature_msgs {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
-                let result = match signature_msg.variant {
-                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg),
+                let result = match signature_msg.variant() {
+                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
-                if let Some(mut returned_msg) = result {
-                    let returned_msg = returned_msg.take_or_deserialize_message().unwrap();
-
+                if let Some(returned_msg) = result {
                     // the message hash is not being removed upon accumulation, only when it
                     // expires
                     assert_eq!(sig_accumulator.msgs.len(), old_num_msgs);
                     assert_eq!(
                         SrcLocation::Section(msg_and_sigs.signed_msg.content.src),
-                        returned_msg.src.location()
+                        returned_msg.src().src_location()
                     );
-                    assert_eq!(msg_and_sigs.signed_msg.content.dst, returned_msg.dst);
+                    assert_eq!(msg_and_sigs.signed_msg.content.dst, *returned_msg.dst());
                     assert_eq!(
                         msg_and_sigs.signed_msg.content.variant,
-                        returned_msg.variant
+                        *returned_msg.variant()
                     );
                     count += 1;
                 }

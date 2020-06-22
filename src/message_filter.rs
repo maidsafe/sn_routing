@@ -9,7 +9,7 @@
 use crate::{
     id::PublicId,
     location::DstLocation,
-    messages::{MessageHash, MessageWithBytes},
+    messages::{Message, MessageHash},
 };
 use lru_time_cache::LruCache;
 use std::time::Duration;
@@ -49,36 +49,29 @@ impl MessageFilter {
         }
     }
 
-    pub fn contains_incoming(&self, msg: &MessageWithBytes) -> bool {
-        self.incoming.contains_key(msg.full_crypto_hash())
+    pub fn contains_incoming(&self, msg: &Message) -> bool {
+        let hash = msg.hash();
+        self.incoming.contains_key(hash)
     }
 
-    pub fn insert_incoming(&mut self, msg: &MessageWithBytes) {
+    pub fn insert_incoming(&mut self, msg: &Message) {
         // Not filtering direct messages.
-        if let DstLocation::Direct = msg.message_dst() {
+        if let DstLocation::Direct = msg.dst() {
             return;
         }
-
-        let _ = self.incoming.insert(*msg.full_crypto_hash(), ());
+        let _ = self.incoming.insert(*msg.hash(), ());
     }
 
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    // Return `KnownMessage` also if hashing the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(
-        &mut self,
-        msg: &MessageWithBytes,
-        pub_id: &PublicId,
-    ) -> FilteringResult {
+    pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &PublicId) -> FilteringResult {
         // Not filtering direct messages.
-        if let DstLocation::Direct = msg.message_dst() {
+        if let DstLocation::Direct = msg.dst() {
             return FilteringResult::NewMessage;
         }
 
-        let hash = msg.full_crypto_hash();
-
-        if self.outgoing.insert((*hash, *pub_id), ()).is_some() {
+        if self.outgoing.insert((*msg.hash(), *pub_id), ()).is_some() {
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage

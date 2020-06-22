@@ -306,7 +306,7 @@ fn handle_unknown_message() {
 
     for (sender, msg) in env.elders[0].received_messages() {
         if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant, Variant::BouncedUnknownMessage { .. })
+            && matches!(msg.variant(), Variant::BouncedUnknownMessage { .. })
         {
             return;
         }
@@ -331,7 +331,7 @@ fn handle_untrusted_accumulated_message() {
 
     for (sender, msg) in env.elders[0].received_messages() {
         if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant, Variant::BouncedUntrustedMessage(_))
+            && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
         {
             return;
         }
@@ -354,7 +354,7 @@ fn handle_untrusted_accumulating_message() {
 
     for (sender, msg) in env.elders[0].received_messages() {
         if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant, Variant::BouncedUntrustedMessage(_))
+            && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
         {
             return;
         }

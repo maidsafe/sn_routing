@@ -69,7 +69,7 @@ fn lose_proxy_connection() {
         assert_eq!(peer.peer_addr(), node_b_endpoint);
 
         let message = Message::from_bytes(&msg).unwrap();
-        match message.variant {
+        match message.variant() {
             Variant::BootstrapRequest(_) => (),
             _ => panic!("Should have received a `BootstrapRequest`."),
         };
