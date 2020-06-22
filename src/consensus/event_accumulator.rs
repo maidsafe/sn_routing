@@ -148,7 +148,7 @@ impl EventAccumulator {
             Entry::Occupied(mut entry) => {
                 entry
                     .get_mut()
-                    .add(voter_name, proof_share.index, proof_share.signature_share)?;
+                    .add(voter_name, proof_share.index, proof_share.signature_share);
                 if entry
                     .get()
                     .has_enough_votes(proof_share.public_key_set.threshold(), elders_info)
@@ -221,16 +221,9 @@ impl State {
         voter_name: XorName,
         voter_index: usize,
         signature_share: bls::SignatureShare,
-    ) -> Result<(), AccumulatingError> {
-        if self.shares.insert(voter_index, signature_share).is_some() {
-            return Err(AccumulatingError::ReplacedAlreadyInserted);
-        }
-
-        if !self.voters.insert(voter_name) {
-            return Err(AccumulatingError::ReplacedAlreadyInserted);
-        }
-
-        Ok(())
+    ) {
+        let _ = self.shares.insert(voter_index, signature_share);
+        let _ = self.voters.insert(voter_name);
     }
 
     fn has_enough_votes(&self, threshold: usize, elders_info: &EldersInfo) -> bool {
@@ -242,7 +235,6 @@ impl State {
 pub enum AccumulatingError {
     NotEnoughVotes,
     AlreadyAccumulated,
-    ReplacedAlreadyInserted,
     InvalidSignatureShare,
     CombineSignaturesFailed(bls::error::Error),
 }

@@ -676,7 +676,7 @@ impl Node {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst.check_is_section()?;
                     let src_key = *msg.src.as_section_key()?;
-                    stage.handle_neighbour_info(elders_info, src_key)?;
+                    stage.handle_neighbour_info(elders_info, src_key);
                 }
                 Variant::GenesisUpdate(info) => {
                     let section_key = *msg.src.as_section_key()?;

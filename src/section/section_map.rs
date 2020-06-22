@@ -25,11 +25,9 @@ pub struct SectionMap {
     our: Proven<EldersInfo>,
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
     neighbours: PrefixMap<Proven<EldersInfo>>,
-    // BLS public keys of known sections excluding ours. The proof is for the whole `(prefix, key)`
-    // pair.
+    // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix<XorName>, bls::PublicKey)>>,
-    // Indices of our section keys that are trusted by other sections. The proof is for the
-    // `(prefix, knowledge)` pair.
+    // Indices of our section keys that are trusted by other sections.
     knowledge: PrefixMap<Proven<(Prefix<XorName>, u64)>>,
 }
 
@@ -557,7 +555,7 @@ mod tests {
     // keys are as expected.
     //
     // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs that are
-    //           applied in sequenceby calling `update_keys`
+    //           applied in sequence by calling `update_keys`
     // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
     //           order.
     fn update_keys_and_check(
