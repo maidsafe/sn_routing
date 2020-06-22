@@ -21,6 +21,12 @@ impl MessageHash {
     }
 }
 
+impl Default for MessageHash {
+    fn default() -> MessageHash {
+        MessageHash([0u8; 32])
+    }
+}
+
 impl Debug for MessageHash {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:10}", HexFmt(&self.0))

@@ -46,7 +46,7 @@ pub struct SignedRelocateDetails {
 
 impl SignedRelocateDetails {
     pub fn new(signed_msg: Message) -> Result<Self, RoutingError> {
-        if let Variant::Relocate(_) = &signed_msg.variant {
+        if let Variant::Relocate(_) = &signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
             Err(RoutingError::InvalidMessage)
@@ -54,7 +54,7 @@ impl SignedRelocateDetails {
     }
 
     pub fn relocate_details(&self) -> &RelocateDetails {
-        if let Variant::Relocate(details) = &self.signed_msg.variant {
+        if let Variant::Relocate(details) = &self.signed_msg.variant() {
             details
         } else {
             panic!("SignedRelocateDetails always contain Variant::Relocate")

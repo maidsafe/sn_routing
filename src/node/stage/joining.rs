@@ -74,7 +74,7 @@ impl Joining {
     }
 
     pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
-        match msg.variant {
+        match msg.variant() {
             Variant::NodeApproval(_) => {
                 match &self.join_type {
                     JoinType::Relocate(payload) => {

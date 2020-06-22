@@ -125,15 +125,7 @@ impl Core {
             }
         };
 
-        let bytes = match message.to_bytes() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                error!("Failed to serialize message {:?}: {:?}", message, error);
-                return;
-            }
-        };
-
-        self.send_message_to_target(recipient, bytes)
+        self.send_message_to_target(recipient, message.to_bytes())
     }
 
     pub fn handle_unsent_message(

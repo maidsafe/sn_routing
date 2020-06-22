@@ -19,7 +19,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageHash,
-        MessageStatus, MessageWithBytes, PlainMessage, Variant, VerifyStatus,
+        MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -287,14 +287,14 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     pub fn decide_message_status(&self, our_id: &PublicId, msg: &Message) -> Result<MessageStatus> {
-        match &msg.variant {
+        match msg.variant() {
             Variant::NeighbourInfo { .. } => {
                 if !self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::UserMessage(_) => {
-                if !self.should_handle_user_message(our_id, &msg.dst) {
+                if !self.should_handle_user_message(our_id, msg.dst()) {
                     return Ok(MessageStatus::Unknown);
                 }
             }
@@ -328,7 +328,7 @@ impl Approved {
 
         if self.verify_message(msg)? {
             Ok(MessageStatus::Useful)
-        } else if msg.src.is_section() {
+        } else if msg.src().is_section() {
             Ok(MessageStatus::Untrusted)
         } else {
             Ok(MessageStatus::Useless)
@@ -376,7 +376,7 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
-        let src = msg.src.location();
+        let src = msg.src().src_location();
         let bounce_dst = src.to_dst();
         let bounce_dst_key = *self.shared_state.section_key_by_location(&bounce_dst);
 
@@ -386,7 +386,7 @@ impl Approved {
             Some(bounce_dst_key),
             Variant::BouncedUntrustedMessage(Box::new(msg)),
         )?;
-        let bounce_msg = bounce_msg.to_bytes()?;
+        let bounce_msg = bounce_msg.to_bytes();
 
         if let Some(sender) = sender {
             core.send_message_to_target(&sender, bounce_msg)
@@ -415,7 +415,7 @@ impl Approved {
                 parsec_version: self.consensus_engine.parsec_version(),
             },
         )?;
-        let bounce_msg = bounce_msg.to_bytes()?;
+        let bounce_msg = bounce_msg.to_bytes();
 
         // If the message came from one of our elders then bounce it only to them to avoid message
         // explosion.
@@ -438,7 +438,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         dst_key: Option<bls::PublicKey>,
-        mut bounced_msg: Message,
+        bounced_msg: Message,
     ) -> Result<()> {
         let dst_key = if let Some(dst_key) = dst_key {
             dst_key
@@ -451,7 +451,8 @@ impl Approved {
         };
 
         if let Err(error) = bounced_msg
-            .src
+            .src()
+            .clone()
             .extend_proof(&dst_key, &self.shared_state.our_history)
         {
             trace!(
@@ -468,8 +469,7 @@ impl Approved {
             bounced_msg
         );
 
-        let msg = MessageWithBytes::new(bounced_msg)?;
-        self.relay_message(core, &msg)
+        self.relay_message(core, &bounced_msg)
     }
 
     pub fn handle_bounced_unknown_message(
@@ -792,11 +792,11 @@ impl Approved {
         }
     }
 
-    fn try_relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
+    fn try_relay_message(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
         if !msg
-            .message_dst()
+            .dst()
             .contains(core.name(), self.shared_state.our_prefix())
-            || msg.message_dst().is_section()
+            || msg.dst().is_section()
         {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.relay_message(core, msg)
@@ -805,37 +805,28 @@ impl Approved {
         }
     }
 
-    fn handle_accumulated_message(
-        &mut self,
-        core: &mut Core,
-        mut msg_with_bytes: MessageWithBytes,
-    ) -> Result<()> {
-        trace!("accumulated message {:?}", msg_with_bytes);
+    fn handle_accumulated_message(&mut self, core: &mut Core, msg: Message) -> Result<()> {
+        trace!("accumulated message {:?}", msg);
 
         // TODO: this is almost the same as `Node::try_handle_message` - find a way
         // to avoid the duplication.
-        self.try_relay_message(core, &msg_with_bytes)?;
+        self.try_relay_message(core, &msg)?;
 
-        if !msg_with_bytes
-            .message_dst()
+        if !msg
+            .dst()
             .contains(core.name(), self.shared_state.our_prefix())
         {
             return Ok(());
         }
 
-        if core.msg_filter.contains_incoming(&msg_with_bytes) {
-            trace!(
-                "not handling message - already handled: {:?}",
-                msg_with_bytes
-            );
+        if core.msg_filter.contains_incoming(&msg) {
+            trace!("not handling message - already handled: {:?}", msg);
             return Ok(());
         }
 
-        let msg = msg_with_bytes.take_or_deserialize_message()?;
-
         match self.decide_message_status(core.id(), &msg)? {
             MessageStatus::Useful => {
-                core.msg_filter.insert_incoming(&msg_with_bytes);
+                core.msg_filter.insert_incoming(&msg);
                 core.msg_queue.push_back(msg.into_queued(None));
                 Ok(())
             }
@@ -845,7 +836,7 @@ impl Approved {
             }
             MessageStatus::Unknown => {
                 trace!("Unknown accumulated message: {:?}", msg);
-                self.handle_unknown_message(core, None, msg_with_bytes.full_bytes().clone())
+                self.handle_unknown_message(core, None, msg.to_bytes())
             }
             MessageStatus::Useless => {
                 trace!("Useless accumulated message: {:?}", msg);
@@ -1764,9 +1755,9 @@ impl Approved {
     }
 
     // Send message over the network.
-    pub fn relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
+    pub fn relay_message(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
         let (targets, dg_size) = delivery_group::delivery_targets(
-            msg.message_dst(),
+            msg.dst(),
             core.id(),
             &self.shared_state.our_members,
             &self.shared_state.sections,
@@ -1786,8 +1777,7 @@ impl Approved {
         }
 
         let targets: Vec<_> = targets.into_iter().map(|node| *node.peer_addr()).collect();
-        let cheap_bytes_clone = msg.full_bytes().clone();
-        core.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
+        core.send_message_to_targets(&targets, dg_size, msg.to_bytes());
 
         Ok(())
     }
@@ -1821,7 +1811,6 @@ impl Approved {
         // short
         if !src.is_section() {
             let msg = Message::single_src(&core.full_id, dst, None, variant)?;
-            let msg = MessageWithBytes::new(msg)?;
             return self.handle_accumulated_message(core, msg);
         }
 
@@ -1917,17 +1906,13 @@ impl Approved {
     }
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub fn update_section_knowledge(
-        &mut self,
-        our_name: &XorName,
-        msg: &Message,
-        msg_hash: &MessageHash,
-    ) {
+    pub fn update_section_knowledge(&mut self, our_name: &XorName, msg: &Message) {
+        let hash = msg.hash();
         let events = self.shared_state.update_section_knowledge(
             our_name,
-            &msg.src,
-            msg.dst_key.as_ref(),
-            msg_hash,
+            msg.src(),
+            msg.dst_key().as_ref(),
+            hash,
         );
 
         for event in events {
