@@ -23,7 +23,7 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
-    routing_table,
+    delivery_group,
     section::{
         EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
         SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
@@ -1769,7 +1769,7 @@ impl Approved {
 
     // Send message over the network.
     pub fn relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) = routing_table::delivery_targets(
+        let (targets, dg_size) =  delivery_group::delivery_targets(
             msg.message_dst(),
             core.id(),
             &self.shared_state.our_members,
@@ -1834,7 +1834,7 @@ impl Approved {
         let accumulating_msg =
             self.to_accumulating_message(dst, variant, proof_start_index_override)?;
 
-        let targets = routing_table::signature_targets(
+        let targets = delivery_group::signature_targets(
             &dst,
             self.shared_state.sections.our_elders().cloned(),
         );
