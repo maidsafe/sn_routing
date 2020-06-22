@@ -106,10 +106,10 @@ pub mod rng;
 #[cfg(feature = "mock_base")]
 pub use self::{
     consensus::generate_bls_threshold_secret_key,
+    delivery_group::delivery_group_size,
     messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
-    delivery_group::delivery_group_size,
     section::{quorum_count, EldersInfo, IndexedSecretKeyShare, SectionProofChain, MIN_AGE},
     xor_space::Xorable,
 };
@@ -133,6 +133,7 @@ pub use self::mock::parsec::init_mock;
 
 mod consensus;
 mod core;
+mod delivery_group;
 mod error;
 mod id;
 mod location;
@@ -144,7 +145,6 @@ mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
-mod delivery_group;
 mod section;
 mod signature_accumulator;
 mod time;

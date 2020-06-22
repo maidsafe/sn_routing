@@ -12,6 +12,7 @@ use crate::{
         GenesisPrefixInfo, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
     },
     core::Core,
+    delivery_group,
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
@@ -23,7 +24,6 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
-    delivery_group,
     section::{
         EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
         SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
@@ -1769,7 +1769,7 @@ impl Approved {
 
     // Send message over the network.
     pub fn relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) =  delivery_group::delivery_targets(
+        let (targets, dg_size) = delivery_group::delivery_targets(
             msg.message_dst(),
             core.id(),
             &self.shared_state.our_members,
