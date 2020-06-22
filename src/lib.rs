@@ -109,7 +109,7 @@ pub use self::{
     messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
-    routing_table::delivery_group_size,
+    delivery_group::delivery_group_size,
     section::{quorum_count, EldersInfo, IndexedSecretKeyShare, SectionProofChain, MIN_AGE},
     xor_space::Xorable,
 };
@@ -144,7 +144,7 @@ mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
-mod routing_table;
+mod delivery_group;
 mod section;
 mod signature_accumulator;
 mod time;
