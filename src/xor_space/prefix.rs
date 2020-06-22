@@ -97,9 +97,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns `true` if the `other` prefix differs only in the last bit from this one.
     pub fn is_sibling(&self, other: &Self) -> bool {
         let i = self.name.common_prefix(&other.name);
-        self.bit_count() == other.bit_count()
-            && self.bit_count() == i + 1
-            && self.name.bit(i) != other.name.bit(i)
+        self.bit_count() == other.bit_count() && self.bit_count() == i + 1
     }
 
     /// Returns the number of common leading bits with the input name, capped with prefix length.

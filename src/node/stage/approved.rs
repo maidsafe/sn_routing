@@ -504,18 +504,19 @@ impl Approved {
         core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
-    pub fn handle_neighbour_info(
-        &mut self,
-        elders_info: EldersInfo,
-        src_key: bls::PublicKey,
-    ) -> Result<()> {
+    pub fn handle_neighbour_info(&mut self, elders_info: EldersInfo, src_key: bls::PublicKey) {
         if !self.shared_state.sections.has_key(&src_key) {
             self.vote_for_event(AccumulatingEvent::TheirKey {
                 prefix: elders_info.prefix,
                 key: src_key,
             });
         } else {
-            trace!("Ignore not new section key of {:?}", elders_info.prefix);
+            trace!(
+                "Ignore not new section key of {:?}: {:?}",
+                elders_info,
+                src_key
+            );
+            return;
         }
 
         if elders_info
@@ -524,8 +525,6 @@ impl Approved {
         {
             self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info));
         }
-
-        Ok(())
     }
 
     pub fn handle_genesis_update(
@@ -891,7 +890,6 @@ impl Approved {
         };
 
         if self.should_backlog_event(&event) {
-            // TODO: backlog it with the proof.
             self.backlog_event(event, proof);
             Ok(false)
         } else {

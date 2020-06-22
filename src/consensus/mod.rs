@@ -129,11 +129,6 @@ impl ConsensusEngine {
                     Ok((event, proof)) => Some((event, Some(proof))),
                     Err(AccumulatingError::NotEnoughVotes)
                     | Err(AccumulatingError::AlreadyAccumulated) => None,
-                    Err(AccumulatingError::ReplacedAlreadyInserted) => {
-                        // TODO: penalise
-                        log_or_panic!(log::Level::Warn, "Attempt to insert duplicate event");
-                        None
-                    }
                     Err(AccumulatingError::InvalidSignatureShare) => {
                         // TODO: penalise
                         log_or_panic!(
