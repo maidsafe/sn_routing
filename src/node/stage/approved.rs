@@ -18,8 +18,8 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{
-        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageHash,
-        MessageStatus, PlainMessage, SignatureAccumulator, Variant, VerifyStatus,
+        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageAccumulator,
+        MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -52,7 +52,7 @@ pub struct Approved {
     pub consensus_engine: ConsensusEngine,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
-    sig_accumulator: SignatureAccumulator,
+    message_accumulator: MessageAccumulator,
     timer_token: u64,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
@@ -112,7 +112,7 @@ impl Approved {
             consensus_engine,
             shared_state,
             section_keys_provider,
-            sig_accumulator: Default::default(),
+            message_accumulator: Default::default(),
             timer_token,
             dkg_cache: Default::default(),
             section_update_barrier: Default::default(),
@@ -132,7 +132,7 @@ impl Approved {
             msg_queue: core.msg_queue,
             transport: core.transport,
             transport_rx: None,
-            sig_accumulator: self.sig_accumulator,
+            msg_accumulator: self.message_accumulator,
             section_update_barrier: self.section_update_barrier,
         }
     }
@@ -169,7 +169,7 @@ impl Approved {
             consensus_engine: state.consensus_engine,
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
-            sig_accumulator: state.sig_accumulator,
+            message_accumulator: state.msg_accumulator,
             timer_token,
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
@@ -592,7 +592,7 @@ impl Approved {
             // Need to verify whether there are any security implications with doing this.
         }
 
-        if let Some(msg) = self.sig_accumulator.add_proof(msg) {
+        if let Some(msg) = self.message_accumulator.add_proof(msg) {
             self.handle_accumulated_message(core, msg)?
         }
 
@@ -1727,7 +1727,7 @@ impl Approved {
 
         for target in targets {
             if target.name() == core.name() {
-                if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
+                if let Some(msg) = self.message_accumulator.add_proof(accumulating_msg.clone()) {
                     self.handle_accumulated_message(core, msg)?;
                 }
             } else {

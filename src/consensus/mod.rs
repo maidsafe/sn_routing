@@ -11,6 +11,7 @@ mod genesis_prefix_info;
 mod network_event;
 mod parsec;
 mod proof;
+mod signature_accumulator;
 #[cfg(test)]
 pub mod test_utils;
 

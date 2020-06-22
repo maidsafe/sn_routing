@@ -17,11 +17,11 @@ use std::collections::HashMap;
 pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
-pub struct SignatureAccumulator {
+pub struct MessageAccumulator {
     msgs: HashMap<MessageHash, (Option<AccumulatingMessage>, Instant)>,
 }
 
-impl SignatureAccumulator {
+impl MessageAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `Message`. Returns the message, if it has enough signatures now.
     pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<Message> {
@@ -187,7 +187,7 @@ mod tests {
     fn section_src_add_signature_last() {
         use fake_clock::FakeClock;
 
-        let mut sig_accumulator = SignatureAccumulator::default();
+        let mut sig_accumulator = MessageAccumulator::default();
         let env = Env::new();
 
         // Add each message with the section list added - none should accumulate.
