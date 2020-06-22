@@ -10,10 +10,9 @@ use crate::{
     consensus::ConsensusEngine,
     id::FullId,
     message_filter::MessageFilter,
-    messages::QueuedMessage,
+    messages::{QueuedMessage, SignatureAccumulator},
     network_params::NetworkParams,
     section::{SectionKeysProvider, SectionUpdateBarrier, SharedState},
-    signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
 };

@@ -146,7 +146,6 @@ mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
 mod section;
-mod signature_accumulator;
 mod time;
 mod timer;
 mod transport;

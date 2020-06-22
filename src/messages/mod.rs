@@ -8,12 +8,14 @@
 
 mod accumulating_message;
 mod hash;
+mod signature_accumulator;
 mod src_authority;
 mod variant;
 
 pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     hash::MessageHash,
+    signature_accumulator::{SignatureAccumulator, ACCUMULATION_TIMEOUT},
     src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };

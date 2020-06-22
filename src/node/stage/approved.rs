@@ -19,7 +19,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageHash,
-        MessageStatus, PlainMessage, Variant, VerifyStatus,
+        MessageStatus, PlainMessage, SignatureAccumulator, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -28,7 +28,6 @@ use crate::{
         member_info, EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare,
         SectionKeysProvider, SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
     },
-    signature_accumulator::SignatureAccumulator,
     time::Duration,
 };
 use bytes::Bytes;
