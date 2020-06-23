@@ -7,16 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
-use crate::{
-    consensus::Proven,
-    id::P2pNode,
-    location::DstLocation,
-    xor_space::{Prefix, XorName},
-};
+use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
+
 use std::{
     collections::{BTreeSet, HashSet},
     iter,
 };
+use xor_name::{Prefix, XorName};
 
 /// Container for storing information about sections in the network.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

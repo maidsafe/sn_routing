@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{quic_p2p::QuicP2pError, xor_space::XorName};
+use crate::quic_p2p::QuicP2pError;
 use err_derive::Error;
+use xor_name::XorName;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;

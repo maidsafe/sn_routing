@@ -7,13 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
-use crate::{
-    error::Result,
-    section::SectionProofChain,
-    xor_space::{Prefix, XorName},
-};
+use crate::{error::Result, section::SectionProofChain};
 use bincode::serialize;
 use std::{collections::BTreeSet, mem};
+use xor_name::{Prefix, XorName};
 
 /// Section-source message that is in the process of signature accumulation.
 /// When enough signatures are collected, it can be converted into full `Message` by calling

@@ -11,9 +11,9 @@ use crate::{
     consensus::{DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::PublicId,
-    xor_space::XorName,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Clone)]

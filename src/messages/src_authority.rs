@@ -13,9 +13,10 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     section::{SectionProofChain, TrustStatus},
-    xor_space::{Prefix, XorName},
 };
+
 use std::net::SocketAddr;
+use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SrcAuthority {

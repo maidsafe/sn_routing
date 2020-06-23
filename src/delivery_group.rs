@@ -13,9 +13,10 @@ use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
     section::{SectionMap, SectionMembers},
-    xor_space::{XorName, Xorable},
 };
+
 use itertools::Itertools;
+use xor_name::{XorName, Xorable};
 
 /// Returns the delivery group size based on the section size `n`
 pub const fn delivery_group_size(n: usize) -> usize {

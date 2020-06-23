@@ -7,17 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::member_info::{MemberInfo, MemberState};
-use crate::{
-    consensus::Proof,
-    id::P2pNode,
-    xor_space::{Prefix, XorName},
-};
+use crate::{consensus::Proof, id::P2pNode};
+
 use itertools::Itertools;
 use std::{
     cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap},
     mem,
 };
+use xor_name::{Prefix, XorName};
 
 /// Container for storing information about members of our section.
 #[derive(Default, Debug, Eq, Serialize, Deserialize)]

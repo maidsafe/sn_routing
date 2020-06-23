@@ -39,9 +39,9 @@ use crate::{
     rng::MainRng,
     section::EldersInfo,
     time::Duration,
-    xor_space::XorName,
 };
 use std::collections::BTreeSet;
+use xor_name::XorName;
 
 // Distributed consensus mechanism backed by the Parsec algorithm.
 pub struct ConsensusEngine {

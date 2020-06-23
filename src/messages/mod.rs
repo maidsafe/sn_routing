@@ -23,14 +23,15 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::DstLocation,
-    xor_space::{Prefix, XorName},
 };
+
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
+use xor_name::{Prefix, XorName};
 
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]

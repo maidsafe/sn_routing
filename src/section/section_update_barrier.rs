@@ -7,10 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::EldersInfo;
-use crate::{
-    consensus::Proven,
-    xor_space::{Prefix, XorName},
-};
+use crate::consensus::Proven;
+
+use xor_name::{Prefix, XorName};
 
 /// Helper structure to synchronize the events necessary to update our section.
 #[derive(Default)]

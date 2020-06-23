@@ -17,9 +17,10 @@ use crate::{
     },
     relocation::RelocatePayload,
     section::EldersInfo,
-    xor_space::Prefix,
 };
+
 use std::{mem, net::SocketAddr, time::Duration};
+use xor_name::Prefix;
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);

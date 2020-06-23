@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{consensus::Proof, id::P2pNode, xor_space::XorName};
+use crate::{consensus::Proof, id::P2pNode};
+use xor_name::XorName;
 
 /// The type for counting the churn events experienced by a node
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

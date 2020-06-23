@@ -9,7 +9,6 @@
 use crate::{
     crypto::{encryption, signing},
     rng::{self, MainRng, RngCompat},
-    xor_space::XorName,
 };
 use bincode::{deserialize, serialize};
 use rand_crypto::Rng as _;
@@ -22,6 +21,7 @@ use std::{
     ops::RangeInclusive,
     rc::Rc,
 };
+use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]

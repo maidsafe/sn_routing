@@ -33,13 +33,14 @@ use crate::{
     rng::{self, MainRng},
     section::SharedState,
     transport::PeerStatus,
-    xor_space::{Prefix, XorName, Xorable},
     TransportConfig, TransportEvent,
 };
+
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
 use itertools::Itertools;
 use std::net::SocketAddr;
+use xor_name::{Prefix, XorName, Xorable};
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
