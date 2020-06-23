@@ -17,11 +17,12 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
-    xor_space::{Prefix, XorName},
 };
+
 use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeMap, net::SocketAddr};
+use xor_name::{Prefix, XorName};
 
 const ELDER_SIZE: usize = 3;
 const NETWORK_PARAMS: NetworkParams = NetworkParams {

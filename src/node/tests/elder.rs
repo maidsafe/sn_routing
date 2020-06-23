@@ -18,14 +18,14 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{member_info, EldersInfo, MemberState, SectionKeyShare, SharedState, MIN_AGE},
-    utils,
-    xor_space::XorName,
-    ELDER_SIZE,
+    utils, ELDER_SIZE,
 };
 use itertools::Itertools;
+
 use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeSet, iter, net::SocketAddr};
+use xor_name::XorName;
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;

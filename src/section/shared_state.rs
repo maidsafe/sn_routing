@@ -560,13 +560,14 @@ mod test {
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::EldersInfo,
-        xor_space::{Prefix, XorName},
     };
+
     use rand::{seq::SliceRandom, Rng};
     use std::{
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
+    use xor_name::{Prefix, XorName};
 
     // Note: The following tests were move over from the former `chain` module.
 

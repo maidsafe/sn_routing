@@ -22,14 +22,15 @@ use crate::{
     quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::MainRng,
     section::EldersInfo,
-    xor_space::{Prefix, XorName},
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;
+
 use itertools::Itertools;
 use mock_quic_p2p::Network;
 use serde::Serialize;
 use std::{collections::BTreeMap, net::SocketAddr};
+use xor_name::{Prefix, XorName};
 
 pub fn create_elders_info(
     rng: &mut MainRng,

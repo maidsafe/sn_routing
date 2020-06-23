@@ -18,11 +18,12 @@ use routing::{
     mock::Environment,
     rng::MainRng,
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
-    RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
+    RelocationOverrides, SrcLocation, TransportConfig,
 };
 use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
 };
+use xor_name::{XorName, Xorable};
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
 pub const LOWERED_ELDER_SIZE: usize = 4;
