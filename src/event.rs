@@ -6,15 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    location::{DstLocation, SrcLocation},
-    xor_space::{Prefix, XorName},
-};
+use crate::location::{DstLocation, SrcLocation};
+
 use hex_fmt::HexFmt;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
 };
+use xor_name::{Prefix, XorName};
 
 /// An Event raised as node complete joining
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

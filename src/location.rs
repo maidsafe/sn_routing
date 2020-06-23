@@ -6,10 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    error::{Result, RoutingError},
-    xor_space::{Prefix, XorName},
-};
+use crate::error::{Result, RoutingError};
+use xor_name::{Prefix, XorName};
 
 /// Message source location.
 #[allow(clippy::large_enum_variant)]

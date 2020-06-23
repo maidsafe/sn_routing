@@ -14,14 +14,15 @@ use crate::{
     messages::{MessageHash, SrcAuthority},
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
-    xor_space::{Prefix, XorName, Xorable},
 };
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
     iter,
     net::SocketAddr,
 };
+use xor_name::{Prefix, XorName, Xorable};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

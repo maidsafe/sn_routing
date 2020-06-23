@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::{Prefix, XorName};
 use std::borrow::Borrow;
+use xor_name::{Prefix, XorName};
 
 /// Proof that a quorum of the section elders has agreed on something.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]

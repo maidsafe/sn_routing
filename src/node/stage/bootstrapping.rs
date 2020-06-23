@@ -14,10 +14,11 @@ use crate::{
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     time::Duration,
-    xor_space::Prefix,
 };
+
 use fxhash::FxHashSet;
 use std::{collections::HashMap, iter, mem, net::SocketAddr};
+use xor_name::Prefix;
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);

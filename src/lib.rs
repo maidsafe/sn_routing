@@ -86,8 +86,9 @@ pub use self::{
     pause::PausedState,
     quic_p2p::Config as TransportConfig,
     quic_p2p::Event as TransportEvent,
-    xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
+
+pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// Routing events.
 pub mod event;
 
@@ -111,7 +112,6 @@ pub use self::{
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
     section::{quorum_count, EldersInfo, SectionProofChain, MIN_AGE},
-    xor_space::Xorable,
 };
 
 #[cfg(feature = "mock_base")]
@@ -151,7 +151,6 @@ mod time;
 mod timer;
 mod transport;
 mod utils;
-mod xor_space;
 
 // Cryptography
 #[cfg(not(feature = "mock_base"))]

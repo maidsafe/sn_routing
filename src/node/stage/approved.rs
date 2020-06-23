@@ -30,8 +30,8 @@ use crate::{
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
-    xor_space::{Prefix, XorName},
 };
+
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
@@ -43,6 +43,7 @@ use std::{
     iter,
     net::SocketAddr,
 };
+use xor_name::{Prefix, XorName};
 
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
 const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);

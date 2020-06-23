@@ -10,13 +10,14 @@ use super::{
     network_event::AccumulatingEvent,
     proof::{Proof, ProofShare},
 };
-use crate::{error::Result, id::PublicId, section::EldersInfo, xor_space::XorName};
+use crate::{error::Result, id::PublicId, section::EldersInfo};
 use serde::Serialize;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
     iter, mem,
     rc::Rc,
 };
+use xor_name::XorName;
 
 /// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
 /// missed votes among the certain number (defined by UNRESPONSIVE_WINDOW) of recent consensused

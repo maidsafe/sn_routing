@@ -11,7 +11,6 @@ use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
-    xor_space::XorName,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -20,6 +19,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
+use xor_name::XorName;
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]

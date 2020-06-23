@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::{Prefix, XorName};
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -14,6 +13,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter::FromIterator,
 };
+use xor_name::{Prefix, XorName};
 
 /// Container that acts as a map whose keys are prefixes.
 ///
@@ -237,13 +237,6 @@ where
 impl<T: Debug> Debug for Entry<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-// Allow pairs of `(Prefix, T)` for any `T` to be used as entries in `PrefixMap`.
-impl<T> Borrow<Prefix<XorName>> for (Prefix<XorName>, T) {
-    fn borrow(&self) -> &Prefix<XorName> {
-        &self.0
     }
 }
 

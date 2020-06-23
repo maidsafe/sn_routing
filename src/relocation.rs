@@ -13,10 +13,11 @@ use crate::{
     error::RoutingError,
     id::{FullId, PublicId},
     messages::{Message, Variant},
-    xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
+
 use bincode::serialize;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
+use xor_name::{Prefix, XorName, XOR_NAME_LEN};
 
 #[cfg(feature = "mock_base")]
 pub use self::overrides::Overrides;
