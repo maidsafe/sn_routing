@@ -245,6 +245,7 @@ mod tests {
     use super::*;
     use crate::rng;
     use rand::Rng;
+    use xor_name::Prefix;
 
     #[test]
     fn insert_existing_prefix() {

@@ -437,14 +437,11 @@ where
 #[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
-    use crate::{
-        id::P2pNode,
-        rng::MainRng,
-        section::EldersInfo,
-        xor_space::{Prefix, XorName},
-    };
+    use crate::{id::P2pNode, rng::MainRng, section::EldersInfo};
+
     use serde::Serialize;
     use std::net::SocketAddr;
+    use xor_name::{Prefix, XorName};
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 
