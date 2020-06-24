@@ -11,7 +11,6 @@ mod churn;
 mod drop;
 mod messages;
 mod node_ageing;
-mod secure_message_delivery;
 pub mod utils;
 
 use self::utils::*;
