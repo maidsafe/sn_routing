@@ -82,13 +82,14 @@ pub use self::{
     error::RoutingError,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    network_params::NetworkParams,
     node::{Node, NodeConfig},
     pause::PausedState,
     quic_p2p::Config as TransportConfig,
     quic_p2p::Event as TransportEvent,
 };
 
-pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
+pub use xor_name::{Prefix, XorName, Xorable, XOR_NAME_LEN}; // TODO remove pub on API update
 /// Routing events.
 pub mod event;
 
@@ -106,12 +107,8 @@ pub mod rng;
 /// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
-    consensus::generate_secret_key_set,
-    delivery_group::delivery_group_size,
-    messages::{Message, MessageHash, PlainMessage, SrcAuthority, Variant},
-    network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
-    section::{quorum_count, EldersInfo, SectionProofChain, MIN_AGE},
+    section::{quorum_count, MIN_AGE},
 };
 
 #[cfg(feature = "mock_base")]

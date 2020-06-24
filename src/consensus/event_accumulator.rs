@@ -94,7 +94,13 @@ impl VoteStatuses {
 pub(crate) struct EventAccumulator {
     // A map containing network events that have not been accumulated yet, together with their
     // signature shares that have been collected so far.
+    //
     // FIXME: Purge votes that are older than a given period.
+    //
+    // TODO: replace this with `SignatureAccumulator<AccumulatingEvent>` after we bump the BLS
+    // threshold to at least 1/2. This is because `SignatureAccumulator` is based on BLS signature
+    // only and currently the threshold is 1/3 which not enough for proper voting (it's not
+    // majority).
     unaccumulated_events: BTreeMap<(AccumulatingEvent, bls::PublicKey), State>,
     // Events that were already accumulated: Further incoming shares for these can be ignored.
     // When an event is accumulated, it cannot be inserted again.
