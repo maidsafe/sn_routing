@@ -17,15 +17,17 @@ use crate::{
     },
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{member_info, EldersInfo, MemberState, SectionKeyShare, SharedState, MIN_AGE},
+    section::{
+        member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain, SharedState,
+        MIN_AGE,
+    },
     utils, ELDER_SIZE,
 };
 use itertools::Itertools;
-
 use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeSet, iter, net::SocketAddr};
-use xor_name::XorName;
+use xor_name::{Prefix, XorName};
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;
@@ -410,19 +412,12 @@ impl Env {
         };
 
         let public_key_set = self.subject.public_key_set().unwrap();
-        let accumulating_msgs = self
-            .subject
-            .secret_key_share()
-            .ok()
-            .into_iter()
-            .chain(self.other_ids.iter().map(|(_, share)| share))
-            .enumerate()
-            .map(|(index, secret_key_share)| {
-                let proof_share = content
-                    .prove(public_key_set.clone(), index, secret_key_share)
-                    .unwrap();
-                AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share)
-            });
+        let accumulating_msgs = self.secret_key_shares().map(|(index, secret_key_share)| {
+            let proof_share = content
+                .prove(public_key_set.clone(), index, secret_key_share)
+                .unwrap();
+            AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share)
+        });
         test_utils::accumulate_messages(accumulating_msgs)
     }
 
@@ -436,6 +431,36 @@ impl Env {
             .map(|p2p_node| p2p_node.peer_addr());
 
         MockTransport::new(addr)
+    }
+
+    fn sign_by_section(&self, payload: &[u8]) -> (bls::PublicKey, bls::Signature) {
+        let public_key_set = self.subject.public_key_set().unwrap();
+        let signature_shares: Vec<_> = self
+            .secret_key_shares()
+            .map(|(_, sk_share)| sk_share.sign(payload))
+            .collect();
+        let signature = public_key_set
+            .combine_signatures(signature_shares.iter().enumerate())
+            .unwrap();
+
+        (public_key_set.public_key(), signature)
+    }
+
+    // Returns the secret key shares of all the nodes together with the node indices.
+    fn secret_key_shares(&self) -> impl Iterator<Item = (usize, &bls::SecretKeyShare)> {
+        iter::once((
+            self.subject.name(),
+            self.subject.secret_key_share().unwrap(),
+        ))
+        .chain(
+            self.other_ids
+                .iter()
+                .map(|(full_id, sk_share)| (full_id.public_id().name(), sk_share)),
+        )
+        .map(move |(name, sk_share)| {
+            let index = self.elders_info.position(name).unwrap();
+            (index, sk_share)
+        })
     }
 }
 
@@ -669,6 +694,69 @@ fn handle_bounced_untrusted_message() {
 
     assert!(proof.has_key(&old_section_key)); // FIXME Why does this fail!
     assert!(proof.has_key(&new_section_key));
+}
+
+#[test]
+#[should_panic(expected = "FailedSignature")]
+fn receive_message_with_invalid_signature() {
+    let mut env = Env::new(ELDER_SIZE);
+
+    let sk1 = consensus::test_utils::gen_secret_key(&mut env.rng);
+    let pk1 = sk1.public_key();
+
+    let (pk0, signature1) = env.sign_by_section(&bincode::serialize(&pk1).unwrap());
+    let mut proof_chain = SectionProofChain::new(pk0);
+    proof_chain.push(pk1, signature1);
+
+    let src = SrcAuthority::Section {
+        prefix: Prefix::default(),
+        signature: sk1.sign(b"bad data"),
+        proof: proof_chain,
+    };
+    let msg = Message::unverified(
+        src,
+        DstLocation::Section(*env.subject.name()),
+        Some(pk0),
+        Variant::UserMessage(b"hello".to_vec()),
+    )
+    .unwrap();
+
+    let sender = env.network.gen_addr();
+    test_utils::handle_message(&mut env.subject, sender, msg).unwrap()
+}
+
+#[test]
+#[should_panic(expected = "UntrustedMessage")]
+fn receive_message_with_invalid_proof_chain() {
+    let mut env = Env::new(ELDER_SIZE);
+
+    let pk0 = *env.subject.section_key().expect("subject is not approved");
+    let sk1 = consensus::test_utils::gen_secret_key(&mut env.rng);
+    let pk1 = sk1.public_key();
+
+    let invalid_sk0 = consensus::test_utils::gen_secret_key(&mut env.rng);
+    let invalid_signature1 = invalid_sk0.sign(&bincode::serialize(&pk1).unwrap());
+
+    let mut proof_chain = SectionProofChain::new(pk0);
+    proof_chain.push_without_validation(pk1, invalid_signature1);
+
+    let msg = PlainMessage {
+        src: Prefix::default(),
+        dst: DstLocation::Section(*env.subject.name()),
+        dst_key: pk0,
+        variant: Variant::UserMessage(b"hello".to_vec()),
+    };
+
+    let signature = sk1.sign(&bincode::serialize(&msg.as_signable()).unwrap());
+    let src = SrcAuthority::Section {
+        prefix: Prefix::default(),
+        signature,
+        proof: proof_chain,
+    };
+    let msg = Message::unverified(src, msg.dst, Some(msg.dst_key), msg.variant).unwrap();
+
+    let sender = env.network.gen_addr();
+    test_utils::handle_message(&mut env.subject, sender, msg).unwrap();
 }
 
 struct OtherNode {

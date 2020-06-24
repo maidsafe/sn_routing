@@ -67,7 +67,7 @@ impl PlainMessage {
         })
     }
 
-    pub(super) fn as_signable(&self) -> SignableView {
+    pub(crate) fn as_signable(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
             dst_key: Some(&self.dst_key),

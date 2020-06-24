@@ -143,6 +143,17 @@ impl Message {
         Self::new_signed(src, dst, dst_key, variant)
     }
 
+    /// Creates a message but does not enforce that it is valid. Use only for testing.
+    #[cfg(all(test, feature = "mock"))]
+    pub(crate) fn unverified(
+        src: SrcAuthority,
+        dst: DstLocation,
+        dst_key: Option<bls::PublicKey>,
+        variant: Variant,
+    ) -> Result<Self> {
+        Self::new_signed(src, dst, dst_key, variant)
+    }
+
     /// Verify this message is properly signed and trusted.
     pub(crate) fn verify<'a, I>(&'a self, their_keys: I) -> Result<VerifyStatus>
     where
@@ -248,7 +259,7 @@ pub enum MessageStatus {
 
 // View of a message that can be serialized for the purpose of signing.
 #[derive(Serialize)]
-struct SignableView<'a> {
+pub(crate) struct SignableView<'a> {
     // TODO: why don't we include also `src`?
     dst: &'a DstLocation,
     dst_key: Option<&'a bls::PublicKey>,
