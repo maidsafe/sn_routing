@@ -592,7 +592,7 @@ impl Approved {
             // Need to verify whether there are any security implications with doing this.
         }
 
-        if let Some(msg) = self.message_accumulator.add_proof(msg) {
+        if let Some(msg) = self.message_accumulator.add(msg) {
             self.handle_accumulated_message(core, msg)?
         }
 
@@ -1727,7 +1727,7 @@ impl Approved {
 
         for target in targets {
             if target.name() == core.name() {
-                if let Some(msg) = self.message_accumulator.add_proof(accumulating_msg.clone()) {
+                if let Some(msg) = self.message_accumulator.add(accumulating_msg.clone()) {
                     self.handle_accumulated_message(core, msg)?;
                 }
             } else {

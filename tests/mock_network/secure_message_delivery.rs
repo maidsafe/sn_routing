@@ -9,8 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, TestNode, MIN_ELDER_SIZE};
 use routing::{
     generate_secret_key_set, mock::Environment, rng::MainRng, AccumulatingMessage, DstLocation,
-    EldersInfo, FullId, Message, MessageHash, NetworkParams, P2pNode, PlainMessage, Prefix,
-    SectionProofChain, Variant, XorName,
+    EldersInfo, FullId, Message, MessageAccumulator, MessageHash, NetworkParams, P2pNode,
+    PlainMessage, Prefix, SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -98,7 +98,9 @@ fn message_with_invalid_security(fail_type: FailType) {
 
         let proof_share = content.prove(pk_set, 0, &sk_share).unwrap();
         let msg = AccumulatingMessage::new(content, proof_chain, proof_share);
-        msg.combine_signatures().unwrap()
+
+        let mut accumulator = MessageAccumulator::default();
+        accumulator.add(msg).unwrap()
     };
 
     // Act/Assert:

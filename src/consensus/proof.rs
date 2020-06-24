@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    fmt::{self, Debug, Formatter},
+};
 use xor_name::{Prefix, XorName};
 
 /// Proof that a quorum of the section elders has agreed on something.
@@ -32,6 +35,17 @@ impl ProofShare {
         self.public_key_set
             .public_key_share(self.index)
             .verify(&self.signature_share, signed_bytes)
+    }
+}
+
+impl Debug for ProofShare {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "ProofShare {{ public_key: {:?}, index: {}, .. }}",
+            self.public_key_set.public_key(),
+            self.index
+        )
     }
 }
 

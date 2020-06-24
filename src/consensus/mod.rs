@@ -25,6 +25,7 @@ pub use self::{
         GOSSIP_PERIOD,
     },
     proof::{Proof, ProofShare, Proven},
+    signature_accumulator::{AccumulationError, SignatureAccumulator},
 };
 
 #[cfg(feature = "mock_base")]

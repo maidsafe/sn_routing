@@ -108,7 +108,10 @@ pub mod rng;
 pub use self::{
     consensus::generate_secret_key_set,
     delivery_group::delivery_group_size,
-    messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
+    messages::{
+        AccumulatingMessage, Message, MessageAccumulator, MessageHash, PlainMessage, SrcAuthority,
+        Variant,
+    },
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
     section::{quorum_count, EldersInfo, SectionProofChain, MIN_AGE},

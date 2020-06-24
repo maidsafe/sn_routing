@@ -18,32 +18,40 @@ use crate::{
 use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
+/// Source authority of a message.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 /// Src of message and authority to send it. Authority is validated by the signature.
 /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
 /// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we
 /// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
 pub enum SrcAuthority {
+    /// Authority of a single node.
     Node {
+        /// Id of the source node.
         public_id: PublicId,
+        /// ed-25519 signature of the message corresponding to the public key of the source node.
         signature: SimpleSignature,
     },
+    /// Authority of a whole section.
     Section {
+        /// Prefix of the source section.
         prefix: Prefix<XorName>,
+        /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
+        /// Proof chain whole last key is the section public key corresponding to the signature.
         proof: SectionProofChain,
     },
 }
 
 impl SrcAuthority {
-    pub fn src_location(&self) -> SrcLocation {
+    pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
             Self::Node { public_id, .. } => SrcLocation::Node(*public_id.name()),
             Self::Section { prefix, .. } => SrcLocation::Section(*prefix),
         }
     }
 
-    pub fn check_is_section(&self) -> Result<()> {
+    pub(crate) fn check_is_section(&self) -> Result<()> {
         if self.is_section() {
             Ok(())
         } else {
@@ -51,11 +59,11 @@ impl SrcAuthority {
         }
     }
 
-    pub fn is_section(&self) -> bool {
+    pub(crate) fn is_section(&self) -> bool {
         matches!(self, Self::Section { .. })
     }
 
-    pub fn as_node(&self) -> Result<&PublicId> {
+    pub(crate) fn as_node(&self) -> Result<&PublicId> {
         match self {
             Self::Node { public_id, .. } => Ok(public_id),
             Self::Section { .. } => Err(RoutingError::BadLocation),
@@ -63,7 +71,7 @@ impl SrcAuthority {
     }
 
     // If this is `Section`, return the last section key, otherwise error.
-    pub fn as_section_key(&self) -> Result<&bls::PublicKey> {
+    pub(crate) fn as_section_key(&self) -> Result<&bls::PublicKey> {
         match self {
             Self::Section { proof, .. } => Ok(proof.last_key()),
             Self::Node { .. } => Err(RoutingError::BadLocation),
@@ -71,20 +79,20 @@ impl SrcAuthority {
     }
 
     // If this is `Section`, returns the prefix and the latest key, otherwise error.
-    pub fn as_section_prefix_and_key(&self) -> Result<(&Prefix<XorName>, &bls::PublicKey)> {
+    pub(crate) fn as_section_prefix_and_key(&self) -> Result<(&Prefix<XorName>, &bls::PublicKey)> {
         match self {
             Self::Section { prefix, proof, .. } => Ok((prefix, proof.last_key())),
             Self::Node { .. } => Err(RoutingError::BadLocation),
         }
     }
 
-    pub fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
+    pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
         let pub_id = *self.as_node()?;
         let conn_info = sender.ok_or(RoutingError::InvalidSource)?;
         Ok(P2pNode::new(pub_id, conn_info))
     }
 
-    pub fn verify<'a, I>(
+    pub(crate) fn verify<'a, I>(
         &'a self,
         dst: &DstLocation,
         dst_key: Option<&bls::PublicKey>,
@@ -137,7 +145,7 @@ impl SrcAuthority {
     // Extend the current message proof so it starts at `new_first_key` while keeping the last key
     // (and therefore the signature) intact.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn extend_proof(
+    pub(crate) fn extend_proof(
         &mut self,
         new_first_key: &bls::PublicKey,
         section_proof_chain: &SectionProofChain,

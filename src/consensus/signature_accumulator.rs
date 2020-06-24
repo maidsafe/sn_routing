@@ -48,6 +48,11 @@ where
         }
     }
 
+    /// Returns the expiration duration.
+    pub fn expiration(&self) -> Duration {
+        self.expiration
+    }
+
     /// Add new share into the accumulator.
     pub fn add(
         &mut self,
