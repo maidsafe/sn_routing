@@ -10,7 +10,7 @@ use super::{create_connected_nodes_until_split, poll_all, TestNode, MIN_ELDER_SI
 use routing::{
     generate_secret_key_set, mock::Environment, rng::MainRng, AccumulatingMessage, DstLocation,
     EldersInfo, FullId, Message, MessageHash, NetworkParams, P2pNode, PlainMessage, Prefix,
-    ProofShare, SectionProofChain, Variant, XorName,
+    SectionProofChain, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -96,12 +96,7 @@ fn message_with_invalid_security(fail_type: FailType) {
             }
         };
 
-        let proof_share = ProofShare {
-            public_key_set: pk_set,
-            index: 0,
-            signature_share: sk_share.sign(&content.serialize_for_signing().unwrap()),
-        };
-
+        let proof_share = content.prove(pk_set, 0, &sk_share).unwrap();
         let msg = AccumulatingMessage::new(content, proof_chain, proof_share);
         msg.combine_signatures().unwrap()
     };

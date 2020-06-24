@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        NetworkEvent, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven,
+        NetworkEvent, ParsecRequest, ParsecResponse, Proof, Proven,
     },
     core::Core,
     delivery_group,
@@ -1759,15 +1759,11 @@ impl Approved {
             variant,
         };
 
-        let signature_share = key_share
-            .secret_key_share
-            .sign(&content.serialize_for_signing()?);
-
-        let proof_share = ProofShare {
-            public_key_set: key_share.public_key_set.clone(),
-            index: key_share.index,
-            signature_share,
-        };
+        let proof_share = content.prove(
+            key_share.public_key_set.clone(),
+            key_share.index,
+            &key_share.secret_key_share,
+        )?;
 
         Ok(AccumulatingMessage::new(content, proof_chain, proof_share))
     }

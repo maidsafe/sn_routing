@@ -67,7 +67,7 @@ impl MessageAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        consensus::{self, generate_secret_key_set, ProofShare},
+        consensus::{self, generate_secret_key_set},
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
@@ -103,12 +103,9 @@ mod tests {
                 .values()
                 .next()
                 .expect("secret_key_shares can't be empty");
-            let msg_sender_proof_share = ProofShare {
-                public_key_set: pk_set.clone(),
-                index: 0,
-                signature_share: msg_sender_secret_key_share
-                    .sign(&content.serialize_for_signing().unwrap()),
-            };
+            let msg_sender_proof_share = content
+                .prove(pk_set.clone(), 0, msg_sender_secret_key_share)
+                .unwrap();
 
             let signed_msg = AccumulatingMessage::new(
                 content.clone(),
@@ -122,12 +119,7 @@ mod tests {
                 .enumerate()
                 .skip(1)
                 .map(|(index, (id, sk_share))| {
-                    let proof_share = ProofShare {
-                        public_key_set: pk_set.clone(),
-                        index,
-                        signature_share: sk_share.sign(&content.serialize_for_signing().unwrap()),
-                    };
-
+                    let proof_share = content.prove(pk_set.clone(), index, sk_share).unwrap();
                     let msg =
                         AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share);
 

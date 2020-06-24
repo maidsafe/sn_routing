@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Variant, VerifyStatus};
+use super::{SignableView, Variant, VerifyStatus};
 use crate::{
     crypto::signing::Signature as SimpleSignature,
     error::{Result, RoutingError},
@@ -94,12 +94,17 @@ impl SrcAuthority {
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
     {
+        let bytes = bincode::serialize(&SignableView {
+            dst,
+            dst_key,
+            variant,
+        })?;
+
         match self {
             Self::Node {
                 public_id,
                 signature,
             } => {
-                let bytes = super::serialize_for_signing(dst, dst_key, variant)?;
                 if !public_id.verify(&bytes, signature) {
                     return Err(RoutingError::FailedSignature);
                 }
@@ -120,7 +125,6 @@ impl SrcAuthority {
                     TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
                 };
 
-                let bytes = super::serialize_for_signing(dst, dst_key, variant)?;
                 if !proof.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }

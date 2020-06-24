@@ -61,7 +61,13 @@ impl Message {
     /// Deserialize the message. Only called on message receipt.
     pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
         let mut msg: Message = bincode::deserialize(&bytes[..])?;
-        let signed_bytes = serialize_for_signing(&msg.dst, msg.dst_key.as_ref(), &msg.variant)?;
+
+        let signed_bytes = bincode::serialize(&SignableView {
+            dst: &msg.dst,
+            dst_key: msg.dst_key.as_ref(),
+            variant: &msg.variant,
+        })?;
+
         match msg.src.clone() {
             SrcAuthority::Node {
                 public_id,
@@ -123,7 +129,11 @@ impl Message {
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
     ) -> Result<Self> {
-        let serialized = serialize_for_signing(&dst, dst_key.as_ref(), &variant)?;
+        let serialized = bincode::serialize(&SignableView {
+            dst: &dst,
+            dst_key: dst_key.as_ref(),
+            variant: &variant,
+        })?;
         let signature = src.sign(&serialized);
         let src = SrcAuthority::Node {
             public_id: *src.public_id(),
@@ -236,10 +246,11 @@ pub enum MessageStatus {
     Unknown,
 }
 
-fn serialize_for_signing(
-    dst: &DstLocation,
-    dst_key: Option<&bls::PublicKey>,
-    variant: &Variant,
-) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(&(dst, dst_key, variant))?)
+// View of a message that can be serialized for the purpose of signing.
+#[derive(Serialize)]
+struct SignableView<'a> {
+    // TODO: why don't we include also `src`?
+    dst: &'a DstLocation,
+    dst_key: Option<&'a bls::PublicKey>,
+    variant: &'a Variant,
 }

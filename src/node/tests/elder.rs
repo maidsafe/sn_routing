@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, ParsecRequest, ProofShare},
+    consensus::{self, AccumulatingEvent, ParsecRequest},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -418,13 +418,9 @@ impl Env {
             .chain(self.other_ids.iter().map(|(_, share)| share))
             .enumerate()
             .map(|(index, secret_key_share)| {
-                let proof_share = ProofShare {
-                    public_key_set: public_key_set.clone(),
-                    index,
-                    signature_share: secret_key_share
-                        .sign(&content.serialize_for_signing().unwrap()),
-                };
-
+                let proof_share = content
+                    .prove(public_key_set.clone(), index, secret_key_share)
+                    .unwrap();
                 AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share)
             });
         test_utils::accumulate_messages(accumulating_msgs)

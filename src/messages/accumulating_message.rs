@@ -6,13 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
-use crate::{
-    consensus::ProofShare,
-    error::Result,
-    section::SectionProofChain,
-};
-use bincode::serialize;
+use super::{DstLocation, Message, MessageHash, SignableView, SrcAuthority, Variant};
+use crate::{consensus::ProofShare, error::Result, section::SectionProofChain};
 use std::{collections::BTreeSet, mem};
 use xor_name::{Prefix, XorName};
 
@@ -62,7 +57,7 @@ impl AccumulatingMessage {
         // We also check (again) that all messages are from valid senders, because the message
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
-        let bytes = match self.content.serialize_for_signing() {
+        let bytes = match bincode::serialize(&self.content.as_signable()) {
             Ok(bytes) => bytes,
             Err(error) => {
                 warn!("Failed to serialise {:?}: {:?}", self, error);
@@ -127,7 +122,7 @@ impl AccumulatingMessage {
     // TODO: include also the BLS public key in the serialized data so identical messages
     // signed with different key sets are accumulated separately.
     pub(crate) fn crypto_hash(&self) -> Result<MessageHash> {
-        let bytes = serialize(&self.content)?;
+        let bytes = bincode::serialize(&self.content)?;
         Ok(MessageHash::from_bytes(&bytes))
     }
 
@@ -168,9 +163,29 @@ pub struct PlainMessage {
 }
 
 impl PlainMessage {
-    /// Serialize this message for the purpose of signing it.
-    pub fn serialize_for_signing(&self) -> Result<Vec<u8>> {
-        super::serialize_for_signing(&self.dst, Some(&self.dst_key), &self.variant)
+    /// Create ProofShare for this message.
+    pub fn prove(
+        &self,
+        public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
+    ) -> Result<ProofShare> {
+        let bytes = bincode::serialize(&self.as_signable())?;
+        let signature_share = secret_key_share.sign(&bytes);
+
+        Ok(ProofShare {
+            public_key_set,
+            index,
+            signature_share,
+        })
+    }
+
+    pub(super) fn as_signable(&self) -> SignableView {
+        SignableView {
+            dst: &self.dst,
+            dst_key: Some(&self.dst_key),
+            variant: &self.variant,
+        }
     }
 }
 
@@ -269,13 +284,9 @@ mod tests {
         content: &PlainMessage,
     ) -> ProofShare {
         let sk_share = sk_set.secret_key_share(index);
-        let signature_share = sk_share.sign(&content.serialize_for_signing().unwrap());
-
-        ProofShare {
-            public_key_set: sk_set.public_keys(),
-            index,
-            signature_share,
-        }
+        content
+            .prove(sk_set.public_keys(), index, &sk_share)
+            .unwrap()
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
