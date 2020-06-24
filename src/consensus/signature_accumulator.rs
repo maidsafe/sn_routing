@@ -9,6 +9,7 @@
 // TODO: remove this allow
 #![allow(unused)]
 
+use super::ProofShare;
 use crate::{
     crypto::{self, Digest256},
     time::{Duration, Instant},
@@ -51,29 +52,26 @@ where
     pub fn add(
         &mut self,
         payload: T,
-        public_key_set: &bls::PublicKeySet,
-        signatory_index: usize,
-        signature_share: bls::SignatureShare,
+        proof_share: ProofShare,
     ) -> Result<(T, bls::Signature), AccumulationError> {
         self.remove_expired();
 
         let mut bytes = bincode::serialize(&payload)?;
 
-        let public_key_share = public_key_set.public_key_share(signatory_index);
-        if !public_key_share.verify(&signature_share, &bytes) {
+        if !proof_share.verify(&bytes) {
             return Err(AccumulationError::InvalidShare);
         }
 
         // Use the hash of the payload + the public key as the key in the map to avoid mixing
         // entries that have the same payload but are signed using different keys.
-        let public_key = public_key_set.public_key();
+        let public_key = proof_share.public_key_set.public_key();
         bytes.extend_from_slice(&public_key.to_bytes());
         let hash = crypto::sha3_256(&bytes);
 
         self.map
             .entry(hash)
             .or_insert_with(|| State::new(payload))
-            .add(public_key_set, signatory_index, signature_share)
+            .add(proof_share)
     }
 
     fn remove_expired(&mut self) {
@@ -135,22 +133,21 @@ impl<T> State<T> {
         }
     }
 
-    fn add(
-        &mut self,
-        public_key_set: &bls::PublicKeySet,
-        signatory_index: usize,
-        signature_share: bls::SignatureShare,
-    ) -> Result<(T, bls::Signature), AccumulationError> {
+    fn add(&mut self, proof_share: ProofShare) -> Result<(T, bls::Signature), AccumulationError> {
         match self {
             Self::Accumulating {
                 shares, modified, ..
             } => {
-                if shares.insert(signatory_index, signature_share).is_none() {
+                if shares
+                    .insert(proof_share.index, proof_share.signature_share)
+                    .is_none()
+                {
                     *modified = Instant::now();
                 }
 
-                if shares.len() > public_key_set.threshold() {
-                    let signature = public_key_set
+                if shares.len() > proof_share.public_key_set.threshold() {
+                    let signature = proof_share
+                        .public_key_set
                         .combine_signatures(shares.iter().map(|(&index, share)| (index, share)))?;
 
                     let modified = *modified;
@@ -193,9 +190,8 @@ mod tests {
 
         // Not enough shares yet
         for index in 0..threshold {
-            let sk_share = sk_set.secret_key_share(index);
-            let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-            let result = accumulator.add(payload.clone(), &pk_set, index, signature_share);
+            let proof_share = create_proof_share(&sk_set, index, &payload);
+            let result = accumulator.add(payload.clone(), proof_share);
 
             match result {
                 Err(AccumulationError::NotEnoughShares) => (),
@@ -204,11 +200,9 @@ mod tests {
         }
 
         // Enough shares now
-        let sk_share = sk_set.secret_key_share(threshold);
-        let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-        let (accumulated_payload, signature) = accumulator
-            .add(payload.clone(), &pk_set, threshold, signature_share)
-            .unwrap();
+        let proof_share = create_proof_share(&sk_set, threshold, &payload);
+        let (accumulated_payload, signature) =
+            accumulator.add(payload.clone(), proof_share).unwrap();
 
         assert_eq!(accumulated_payload, payload);
 
@@ -219,9 +213,8 @@ mod tests {
         ));
 
         // Extra shares are ignored
-        let sk_share = sk_set.secret_key_share(threshold + 1);
-        let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-        let result = accumulator.add(payload, &pk_set, threshold + 1, signature_share);
+        let proof_share = create_proof_share(&sk_set, threshold + 1, &payload);
+        let result = accumulator.add(payload, proof_share);
 
         match result {
             Err(AccumulationError::AlreadyAccumulated) => (),
@@ -241,15 +234,13 @@ mod tests {
 
         // First insert less than threshold + 1 valid shares.
         for index in 0..threshold {
-            let sk_share = sk_set.secret_key_share(index);
-            let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-            let _ = accumulator.add(payload.clone(), &pk_set, index, signature_share);
+            let proof_share = create_proof_share(&sk_set, index, &payload);
+            let _ = accumulator.add(payload.clone(), proof_share);
         }
 
         // Then try to insert invalid share.
-        let sk_share = sk_set.secret_key_share(threshold);
-        let invalid_signature_share = sk_share.sign(&bincode::serialize("bad").unwrap());
-        let result = accumulator.add(payload.clone(), &pk_set, threshold, invalid_signature_share);
+        let invalid_proof_share = create_proof_share(&sk_set, threshold, &"bad".to_string());
+        let result = accumulator.add(payload.clone(), invalid_proof_share);
 
         match result {
             Err(AccumulationError::InvalidShare) => (),
@@ -258,11 +249,8 @@ mod tests {
 
         // The invalid share doesn't spoil the accumulation - we can still accumulate once enough
         // valid shares are inserted.
-        let sk_share = sk_set.secret_key_share(threshold + 1);
-        let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-        let (accumulated_payload, signature) = accumulator
-            .add(payload, &pk_set, threshold + 1, signature_share)
-            .unwrap();
+        let proof_share = create_proof_share(&sk_set, threshold + 1, &payload);
+        let (accumulated_payload, signature) = accumulator.add(payload, proof_share).unwrap();
 
         let pk = pk_set.public_key();
         assert!(pk.verify(
@@ -285,21 +273,34 @@ mod tests {
         let payload = "hello".to_string();
 
         for index in 0..threshold {
-            let sk_share = sk_set.secret_key_share(index);
-            let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-            let _ = accumulator.add(payload.clone(), &pk_set, index, signature_share);
+            let proof_share = create_proof_share(&sk_set, index, &payload);
+            let _ = accumulator.add(payload.clone(), proof_share);
         }
 
         FakeClock::advance_time(DEFAULT_EXPIRATION.as_secs() * 1000 + 1);
 
         // Adding another share does nothing now, because the previous shares expired.
-        let sk_share = sk_set.secret_key_share(threshold);
-        let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
-        let result = accumulator.add(payload, &pk_set, threshold, signature_share);
+        let proof_share = create_proof_share(&sk_set, threshold, &payload);
+        let result = accumulator.add(payload, proof_share);
 
         match result {
             Err(AccumulationError::NotEnoughShares) => (),
             _ => panic!("unexpected result: {:?}", result),
+        }
+    }
+
+    fn create_proof_share<T: Serialize>(
+        sk_set: &bls::SecretKeySet,
+        index: usize,
+        payload: &T,
+    ) -> ProofShare {
+        let sk_share = sk_set.secret_key_share(index);
+        let signature_share = sk_share.sign(&bincode::serialize(&payload).unwrap());
+
+        ProofShare {
+            public_key_set: sk_set.public_keys(),
+            index,
+            signature_share,
         }
     }
 }
