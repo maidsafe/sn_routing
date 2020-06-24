@@ -7,7 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
-use crate::{error::Result, section::SectionProofChain};
+use crate::{
+    consensus::ProofShare,
+    error::Result,
+    section::SectionProofChain,
+};
 use bincode::serialize;
 use std::{collections::BTreeSet, mem};
 use xor_name::{Prefix, XorName};
@@ -19,7 +23,7 @@ use xor_name::{Prefix, XorName};
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct AccumulatingMessage {
     pub content: PlainMessage,
-    pub proof: SectionProofChain,
+    pub proof_chain: SectionProofChain,
     pub public_key_set: bls::PublicKeySet,
     pub signature_shares: BTreeSet<(usize, bls::SignatureShare)>,
 }
@@ -28,22 +32,18 @@ impl AccumulatingMessage {
     /// Create new `AccumulatingMessage`
     pub fn new(
         content: PlainMessage,
-        public_key_set: bls::PublicKeySet,
-        index: usize,
-        secret_key_share: &bls::SecretKeyShare,
-        proof: SectionProofChain,
-    ) -> Result<Self> {
-        let bytes = content.serialize_for_signing()?;
+        proof_chain: SectionProofChain,
+        proof_share: ProofShare,
+    ) -> Self {
         let mut signature_shares = BTreeSet::new();
-        let sig_share = secret_key_share.sign(&bytes);
-        let _ = signature_shares.insert((index, sig_share));
+        let _ = signature_shares.insert((proof_share.index, proof_share.signature_share));
 
-        Ok(Self {
+        Self {
             content,
-            proof,
-            public_key_set,
+            proof_chain,
+            public_key_set: proof_share.public_key_set,
             signature_shares,
-        })
+        }
     }
 
     /// Add the signature shares of `other` into this message.
@@ -96,7 +96,7 @@ impl AccumulatingMessage {
                     error,
                     self.signature_shares,
                     self.public_key_set,
-                    self.proof,
+                    self.proof_chain,
                 );
                 return None;
             }
@@ -104,7 +104,7 @@ impl AccumulatingMessage {
         let src = SrcAuthority::Section {
             prefix: self.content.src,
             signature,
-            proof: self.proof,
+            proof: self.proof_chain,
         };
         match Message::new_signed(
             src,
@@ -168,7 +168,8 @@ pub struct PlainMessage {
 }
 
 impl PlainMessage {
-    fn serialize_for_signing(&self) -> Result<Vec<u8>> {
+    /// Serialize this message for the purpose of signing it.
+    pub fn serialize_for_signing(&self) -> Result<Vec<u8>> {
         super::serialize_for_signing(&self.dst, Some(&self.dst_key), &self.variant)
     }
 }
@@ -192,23 +193,17 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = sk_set.secret_key_share(0);
-        let sk_share_1 = sk_set.secret_key_share(1);
-
         let content = gen_message(&mut rng);
-        let proof = make_proof_chain(&pk_set);
+        let proof_chain = make_proof_chain(&pk_set);
 
-        let mut msg_0 = AccumulatingMessage::new(
-            content.clone(),
-            pk_set.clone(),
-            0,
-            &sk_share_0,
-            proof.clone(),
-        )
-        .unwrap();
+        let proof_share_0 = make_proof_share(&sk_set, 0, &content);
+        let proof_share_1 = make_proof_share(&sk_set, 1, &content);
+
+        let mut msg_0 =
+            AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share_0);
         assert!(!msg_0.check_fully_signed());
 
-        let msg_1 = AccumulatingMessage::new(content, pk_set, 1, &sk_share_1, proof).unwrap();
+        let msg_1 = AccumulatingMessage::new(content, proof_chain, proof_share_1);
         msg_0.add_signature_shares(msg_1);
         assert!(msg_0.check_fully_signed());
 
@@ -228,29 +223,20 @@ mod tests {
         let pk_set = sk_set.public_keys();
         let pk = pk_set.public_key();
 
-        let sk_share_0 = sk_set.secret_key_share(0);
-        let sk_share_1 = sk_set.secret_key_share(1);
-        let sk_share_2 = sk_set.secret_key_share(2);
-
         let content = gen_message(&mut rng);
-        let proof = make_proof_chain(&pk_set);
+        let proof_chain = make_proof_chain(&pk_set);
 
         // Message with valid signature
-        let mut msg_0 = AccumulatingMessage::new(
-            content.clone(),
-            pk_set.clone(),
-            0,
-            &sk_share_0,
-            proof.clone(),
-        )
-        .unwrap();
+        let proof_share = make_proof_share(&sk_set, 0, &content);
+        let mut msg_0 = AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share);
 
         // Message with invalid signature
+        let sk_share_1 = sk_set.secret_key_share(1);
         let invalid_signature_share = sk_share_1.sign(b"bad message");
         let msg_1 = AccumulatingMessage {
             content: content.clone(),
-            proof: proof.clone(),
-            public_key_set: pk_set.clone(),
+            proof_chain: proof_chain.clone(),
+            public_key_set: pk_set,
             signature_shares: iter::once((1, invalid_signature_share)).collect(),
         };
 
@@ -261,7 +247,8 @@ mod tests {
         assert!(!msg_0.check_fully_signed());
 
         // Another valid signature
-        let msg_2 = AccumulatingMessage::new(content, pk_set, 2, &sk_share_2, proof).unwrap();
+        let proof_share = make_proof_share(&sk_set, 2, &content);
+        let msg_2 = AccumulatingMessage::new(content, proof_chain, proof_share);
         msg_0.add_signature_shares(msg_2);
 
         // There are now two valid signatures which is enough.
@@ -274,6 +261,21 @@ mod tests {
             msg.verify(iter::once((&Prefix::default(), &pk))).unwrap(),
             VerifyStatus::Full
         );
+    }
+
+    fn make_proof_share(
+        sk_set: &bls::SecretKeySet,
+        index: usize,
+        content: &PlainMessage,
+    ) -> ProofShare {
+        let sk_share = sk_set.secret_key_share(index);
+        let signature_share = sk_share.sign(&content.serialize_for_signing().unwrap());
+
+        ProofShare {
+            public_key_set: sk_set.public_keys(),
+            index,
+            signature_share,
+        }
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {

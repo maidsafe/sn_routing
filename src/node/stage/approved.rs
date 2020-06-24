@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        NetworkEvent, ParsecRequest, ParsecResponse, Proof, Proven,
+        NetworkEvent, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven,
     },
     core::Core,
     delivery_group,
@@ -1748,7 +1748,7 @@ impl Approved {
         variant: Variant,
         proof_start_index_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
-        let proof = self.shared_state.prove(&dst, proof_start_index_override);
+        let proof_chain = self.shared_state.prove(&dst, proof_start_index_override);
         let key_share = self.section_keys_provider.key_share()?;
         let dst_key = *self.shared_state.section_key_by_location(&dst);
 
@@ -1759,13 +1759,17 @@ impl Approved {
             variant,
         };
 
-        AccumulatingMessage::new(
-            content,
-            key_share.public_key_set.clone(),
-            key_share.index,
-            &key_share.secret_key_share,
-            proof,
-        )
+        let signature_share = key_share
+            .secret_key_share
+            .sign(&content.serialize_for_signing()?);
+
+        let proof_share = ProofShare {
+            public_key_set: key_share.public_key_set.clone(),
+            index: key_share.index,
+            signature_share,
+        };
+
+        Ok(AccumulatingMessage::new(content, proof_chain, proof_share))
     }
 
     // TODO: consider changing this so it sends only to a subset of the elders

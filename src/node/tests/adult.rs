@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, GenesisPrefixInfo},
+    consensus::{self, GenesisPrefixInfo, ProofShare},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -230,15 +230,16 @@ fn create_genesis_update_accumulating_message(
 
 fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<AccumulatingMessage> {
     let key_share = sender.section_keys_provider.key_share().unwrap();
-    let proof = sender.state.prove(&content.dst, None);
+    let proof_chain = sender.state.prove(&content.dst, None);
+    let proof_share = ProofShare {
+        public_key_set: key_share.public_key_set.clone(),
+        index: key_share.index,
+        signature_share: key_share
+            .secret_key_share
+            .sign(&content.serialize_for_signing()?),
+    };
 
-    AccumulatingMessage::new(
-        content,
-        key_share.public_key_set.clone(),
-        key_share.index,
-        &key_share.secret_key_share,
-        proof,
-    )
+    Ok(AccumulatingMessage::new(content, proof_chain, proof_share))
 }
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {

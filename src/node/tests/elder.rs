@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, ParsecRequest},
+    consensus::{self, AccumulatingEvent, ParsecRequest, ProofShare},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -399,7 +399,7 @@ impl Env {
             .subject
             .shared_state()
             .expect("subject is not approved");
-        let proof = state.prove(&dst, None);
+        let proof_chain = state.prove(&dst, None);
         let dst_key = *state.section_key_by_location(&dst);
 
         let content = PlainMessage {
@@ -418,14 +418,14 @@ impl Env {
             .chain(self.other_ids.iter().map(|(_, share)| share))
             .enumerate()
             .map(|(index, secret_key_share)| {
-                AccumulatingMessage::new(
-                    content.clone(),
-                    public_key_set.clone(),
+                let proof_share = ProofShare {
+                    public_key_set: public_key_set.clone(),
                     index,
-                    secret_key_share,
-                    proof.clone(),
-                )
-                .unwrap()
+                    signature_share: secret_key_share
+                        .sign(&content.serialize_for_signing().unwrap()),
+                };
+
+                AccumulatingMessage::new(content.clone(), proof_chain.clone(), proof_share)
             });
         test_utils::accumulate_messages(accumulating_msgs)
     }
@@ -585,9 +585,9 @@ fn send_genesis_update() {
     let message = utils::exactly_one(env.subject.create_genesis_updates());
     assert_eq!(message.0, adult1.to_p2p_node());
 
-    let proof = &message.1.proof;
-    assert!(proof.has_key(&old_section_key));
-    assert!(proof.has_key(&new_section_key));
+    let proof_chain = &message.1.proof_chain;
+    assert!(proof_chain.has_key(&old_section_key));
+    assert!(proof_chain.has_key(&new_section_key));
 }
 
 #[test]

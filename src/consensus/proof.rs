@@ -16,15 +16,19 @@ pub struct Proof {
     pub signature: bls::Signature,
 }
 
+/// Single share of `Proof`.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ProofShare {
+    /// BLS public key set.
     pub public_key_set: bls::PublicKeySet,
+    /// Index of the node that created this proof share.
     pub index: usize,
+    /// BLS signature share corresponding to the `index`-th public key share of the public key set.
     pub signature_share: bls::SignatureShare,
 }
 
 impl ProofShare {
-    pub fn verify(&self, signed_bytes: &[u8]) -> bool {
+    pub(crate) fn verify(&self, signed_bytes: &[u8]) -> bool {
         self.public_key_set
             .public_key_share(self.index)
             .verify(&self.signature_share, signed_bytes)

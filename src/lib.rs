@@ -106,7 +106,7 @@ pub mod rng;
 /// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
-    consensus::generate_secret_key_set,
+    consensus::{generate_secret_key_set, ProofShare},
     delivery_group::delivery_group_size,
     messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
