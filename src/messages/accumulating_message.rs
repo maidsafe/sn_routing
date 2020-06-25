@@ -57,14 +57,12 @@ impl PlainMessage {
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
     ) -> Result<ProofShare> {
-        let bytes = bincode::serialize(&self.as_signable())?;
-        let signature_share = secret_key_share.sign(&bytes);
-
-        Ok(ProofShare {
+        Ok(ProofShare::new(
             public_key_set,
             index,
-            signature_share,
-        })
+            secret_key_share,
+            &bincode::serialize(&self.as_signable())?,
+        ))
     }
 
     pub(crate) fn as_signable(&self) -> SignableView {

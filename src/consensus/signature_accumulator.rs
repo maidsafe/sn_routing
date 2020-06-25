@@ -6,26 +6,42 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// TODO: remove this allow
-#![allow(unused)]
-
-use super::ProofShare;
+use super::proof::{Proof, ProofShare};
 use crate::{
     crypto::{self, Digest256},
     time::{Duration, Instant},
 };
 use err_derive::Error;
 use serde::Serialize;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    fmt::{self, Debug, Formatter},
-    iter, mem,
-};
+use std::{collections::HashMap, fmt::Debug, mem};
 
 /// Default duration since their last modification after which all unaccumulated entries expire.
 pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(120);
 
 /// Accumulator for signature shares for arbitrary payloads.
+///
+/// This accumulator allows to collect BLS signature shares for some payload one by one until enough
+/// of them are collected. At that point it combines them into a full BLS signature of the given
+/// payload. It also automatically rejects invalid signature shares and expires entries that did not
+/// collect enough signature shares within a given time.
+///
+/// The accumulated payload needs to implement `Serialize` which is used in two ways:
+///
+/// 1. to calculate a cryptographic hash of the payload which is then used to compute the
+///    accumulation key.
+///    This means that two signature shares with payloads that serialize into the same byte sequence
+///    are accumulated together.
+/// 2. to verify the signature share - the serialized payload is what is passed to the `verify`
+///    function.
+///
+/// The serialization is performed using `bincode::serialize` which also needs to be used to
+/// create the signature share.
+///
+/// This accumulator also handles the case when the same payload is signed with a signature share
+/// corresponding to a different BLS public key. In that case, the payloads will be accumulated
+/// separately. This avoids mixing signature shares created from different curves which would
+/// otherwise lead to invalid signature being produces event though all the shares are valid.
+///
 pub struct SignatureAccumulator<T> {
     map: HashMap<Digest256, State<T>>,
     expiration: Duration,
@@ -48,17 +64,26 @@ where
         }
     }
 
-    /// Returns the expiration duration.
-    pub fn expiration(&self) -> Duration {
-        self.expiration
-    }
-
-    /// Add new share into the accumulator.
+    /// Add new share into the accumulator. If enough valid signature shares were collected, returns
+    /// the payload and its corresponding `Proof` (signature + public key). Otherwise returns error
+    /// which details why the accumulation did not succeed yet.
+    ///
+    /// Note: returned `AccumulationError::NotEnoughShares` does not indicate a failure. It simply
+    /// means more shares still need to be added for that particular payload. Similarly,
+    /// `AccumulationError::AlreadyAccumulated` means the signature was already accumulated and
+    /// adding more shares has no effect. These two errors could be safely ignored (they might
+    /// still be useful perhaps for debugging). The other error variants, however, indicate
+    /// failures and should be treated a such. See [AccumulationError](enum.AccumulationError.html)
+    /// for more info.
+    ///
+    /// Note: the `signature_share` field in the `proof_share` must be created by serializing the
+    /// `payload` with `bincode::serialize` and signing the resulting bytes. Other serialization
+    /// formats are not currently supported.
     pub fn add(
         &mut self,
         payload: T,
         proof_share: ProofShare,
-    ) -> Result<(T, bls::Signature), AccumulationError> {
+    ) -> Result<(T, Proof), AccumulationError> {
         self.remove_expired();
 
         let mut bytes = bincode::serialize(&payload)?;
@@ -77,6 +102,15 @@ where
             .entry(hash)
             .or_insert_with(|| State::new(payload))
             .add(proof_share)
+            .map(|(payload, signature)| {
+                (
+                    payload,
+                    Proof {
+                        public_key,
+                        signature,
+                    },
+                )
+            })
     }
 
     fn remove_expired(&mut self) {
@@ -104,16 +138,28 @@ where
     }
 }
 
+/// Error returned from SignatureAccumulator::add.
 #[derive(Debug, Error)]
 pub enum AccumulationError {
+    /// There are not enough signature shares yet, more need to be added. This is not a failure.
     #[error(display = "not enough signature shares")]
     NotEnoughShares,
+    /// Enough signature share were already collected before and adding more has no effect. This is
+    /// not a failure.
     #[error(display = "signature already accumulated")]
     AlreadyAccumulated,
+    /// The signature share being added is invalid. Such share is rejected but the already collected
+    /// shares are kept intact. If enough new valid shares are collected afterwards, the
+    /// accumulation might still succeed.
     #[error(display = "signature share is invalid")]
     InvalidShare,
+    /// The payload failed to be serialised and can't be inserted into the accumulator. This doesn't
+    /// affect other entries already present and the accumulator can still be used normally
+    /// afterwards.
     #[error(display = "failed to serialise payload: {}", _0)]
     Serialise(#[error(source)] bincode::Error),
+    /// The signature combination failed even though there are enough valid signature shares. This
+    /// should probably never happen.
     #[error(display = "failed to combine signature shares: {}", _0)]
     Combine(#[error(from)] bls::error::Error),
 }
@@ -188,7 +234,6 @@ mod tests {
         let mut rng = rng::new();
         let threshold = 3;
         let sk_set = bls::SecretKeySet::random(threshold, &mut rng);
-        let pk_set = sk_set.public_keys();
 
         let mut accumulator = SignatureAccumulator::new();
         let payload = "hello".to_string();
@@ -206,16 +251,10 @@ mod tests {
 
         // Enough shares now
         let proof_share = create_proof_share(&sk_set, threshold, &payload);
-        let (accumulated_payload, signature) =
-            accumulator.add(payload.clone(), proof_share).unwrap();
+        let (accumulated_payload, proof) = accumulator.add(payload.clone(), proof_share).unwrap();
 
         assert_eq!(accumulated_payload, payload);
-
-        let pk = pk_set.public_key();
-        assert!(pk.verify(
-            &signature,
-            bincode::serialize(&accumulated_payload).unwrap()
-        ));
+        assert!(proof.verify(&bincode::serialize(&accumulated_payload).unwrap()));
 
         // Extra shares are ignored
         let proof_share = create_proof_share(&sk_set, threshold + 1, &payload);
@@ -232,7 +271,6 @@ mod tests {
         let mut rng = rng::new();
         let threshold = 3;
         let sk_set = bls::SecretKeySet::random(threshold, &mut rng);
-        let pk_set = sk_set.public_keys();
 
         let mut accumulator = SignatureAccumulator::new();
         let payload = "good".to_string();
@@ -255,13 +293,8 @@ mod tests {
         // The invalid share doesn't spoil the accumulation - we can still accumulate once enough
         // valid shares are inserted.
         let proof_share = create_proof_share(&sk_set, threshold + 1, &payload);
-        let (accumulated_payload, signature) = accumulator.add(payload, proof_share).unwrap();
-
-        let pk = pk_set.public_key();
-        assert!(pk.verify(
-            &signature,
-            bincode::serialize(&accumulated_payload).unwrap()
-        ))
+        let (accumulated_payload, proof) = accumulator.add(payload, proof_share).unwrap();
+        assert!(proof.verify(&bincode::serialize(&accumulated_payload).unwrap()))
     }
 
     #[cfg(feature = "mock_base")]
@@ -272,7 +305,6 @@ mod tests {
         let mut rng = rng::new();
         let threshold = 3;
         let sk_set = bls::SecretKeySet::random(threshold, &mut rng);
-        let pk_set = sk_set.public_keys();
 
         let mut accumulator = SignatureAccumulator::new();
         let payload = "hello".to_string();

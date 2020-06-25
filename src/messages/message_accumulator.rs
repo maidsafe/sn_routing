@@ -27,10 +27,13 @@ impl MessageAccumulator {
         };
 
         match self.0.add(payload, accumulating_msg.proof_share) {
-            Ok((payload, signature)) => {
+            Ok((payload, proof)) => {
+                // TODO: should we verify that `proof.public_key` is the same as
+                // `proof_chain.last_key()`?
+
                 let src = SrcAuthority::Section {
                     prefix: payload.content.src,
-                    signature,
+                    signature: proof.signature,
                     proof: payload.proof_chain,
                 };
 
