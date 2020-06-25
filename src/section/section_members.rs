@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::member_info::{MemberInfo, MemberState};
+use super::{
+    member_info::{MemberInfo, MemberState},
+    EldersInfo,
+};
 use crate::{consensus::Proof, id::P2pNode};
 
 use itertools::Itertools;
@@ -70,8 +73,12 @@ impl SectionMembers {
     }
 
     /// Returns the candidates for elders out of all the nodes in this section.
-    pub fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
-        elder_candidates(elder_size, self.joined())
+    pub fn elder_candidates(
+        &self,
+        elder_size: usize,
+        current_elders: &EldersInfo,
+    ) -> BTreeMap<XorName, P2pNode> {
+        elder_candidates(elder_size, current_elders, self.joined())
     }
 
     /// Returns the candidates for elders out of all nodes matching the prefix.
@@ -79,9 +86,11 @@ impl SectionMembers {
         &self,
         prefix: &Prefix<XorName>,
         elder_size: usize,
+        current_elders: &EldersInfo,
     ) -> BTreeMap<XorName, P2pNode> {
         elder_candidates(
             elder_size,
+            current_elders,
             self.joined()
                 .filter(|info| prefix.matches(info.p2p_node.name())),
         )
@@ -182,13 +191,17 @@ impl PartialEq for SectionMembers {
 }
 
 // Returns the nodes that should become the next elders out of the given members.
-fn elder_candidates<'a, I>(elder_size: usize, members: I) -> BTreeMap<XorName, P2pNode>
+fn elder_candidates<'a, I>(
+    elder_size: usize,
+    current_elders: &EldersInfo,
+    members: I,
+) -> BTreeMap<XorName, P2pNode>
 where
     I: IntoIterator<Item = &'a MemberInfo>,
 {
     members
         .into_iter()
-        .sorted_by(|lhs, rhs| cmp_elder_candidates(lhs, rhs))
+        .sorted_by(|lhs, rhs| cmp_elder_candidates(lhs, rhs, current_elders))
         .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
         .take(elder_size)
         .collect()
@@ -196,11 +209,25 @@ where
 
 // Compare candidates for the next elders. The one comparing `Less` is more likely to become
 // elder.
-fn cmp_elder_candidates(lhs: &MemberInfo, rhs: &MemberInfo) -> Ordering {
-    // Older nodes are preferred. Break ties by comparing by the proof signatures because it's
-    // impossible for a node to predict its signature and therefore game its chances of
-    // promotion.
+fn cmp_elder_candidates(
+    lhs: &MemberInfo,
+    rhs: &MemberInfo,
+    current_elders: &EldersInfo,
+) -> Ordering {
+    // Older nodes are preferred. In case of a tie, preffer current elders. If still a tie, break
+    // it comparing by the proof signatures because it's impossible for a node to predict its
+    // signature and therefore game its chances of promotion.
     rhs.age_counter
         .cmp(&lhs.age_counter)
+        .then_with(|| {
+            let lhs_is_elder = current_elders.elders.contains_key(lhs.p2p_node.name());
+            let rhs_is_elder = current_elders.elders.contains_key(rhs.p2p_node.name());
+
+            match (lhs_is_elder, rhs_is_elder) {
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                _ => Ordering::Equal,
+            }
+        })
         .then_with(|| lhs.proof.signature.cmp(&rhs.proof.signature))
 }

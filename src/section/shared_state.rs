@@ -417,12 +417,16 @@ impl SharedState {
         let our_prefix = self.our_prefix().pushed(next_bit);
         let other_prefix = self.our_prefix().pushed(!next_bit);
 
-        let our_elders = self
-            .our_members
-            .elder_candidates_matching_prefix(&our_prefix, network_params.elder_size);
-        let other_elders = self
-            .our_members
-            .elder_candidates_matching_prefix(&other_prefix, network_params.elder_size);
+        let our_elders = self.our_members.elder_candidates_matching_prefix(
+            &our_prefix,
+            network_params.elder_size,
+            self.sections.our(),
+        );
+        let other_elders = self.our_members.elder_candidates_matching_prefix(
+            &other_prefix,
+            network_params.elder_size,
+            self.sections.our(),
+        );
 
         let our_info = EldersInfo::new(our_elders, our_prefix);
         let other_info = EldersInfo::new(other_elders, other_prefix);
@@ -433,7 +437,9 @@ impl SharedState {
     // Returns the candidates for elders out of all the nodes in the section, even out of the
     // relocating nodes if there would not be enough instead.
     fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
-        let mut elders = self.our_members.elder_candidates(elder_size);
+        let mut elders = self
+            .our_members
+            .elder_candidates(elder_size, self.sections.our());
 
         // Ensure that we can still handle one node lost when relocating.
         // Ensure that the node we eject are the one we want to relocate first.
