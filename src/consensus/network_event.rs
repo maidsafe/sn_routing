@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::{DkgResultWrapper, Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
-    consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
+    error::Result,
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
-    section::EldersInfo,
+    section::{member_info, EldersInfo, MemberState, SectionKeyShare},
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -21,45 +22,40 @@ use std::{
     fmt::{self, Debug, Formatter},
 };
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct OnlinePayload {
-    // Identifier of the joining node.
-    pub p2p_node: P2pNode,
-    // The age the node should have after joining.
-    pub age: u8,
-    // The key of the destination section that the joining node knows, if any.
-    pub their_knowledge: Option<bls::PublicKey>,
-}
-
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Genesis event. This is output-only event.
+    /// Genesis event. This is output-only unsigned event.
     Genesis {
         group: BTreeSet<PublicId>,
         related_info: Vec<u8>,
     },
 
-    /// Vote to start a DKG instance. This is input-only event.
+    /// Vote to start a DKG instance. This is input-only unsigned event.
     StartDkg(BTreeSet<PublicId>),
 
-    /// Result of a DKG. This is output-only event.
+    /// Result of a DKG. This is output-only unsigned event.
     DkgResult {
         participants: BTreeSet<PublicId>,
         dkg_result: DkgResultWrapper,
     },
 
     /// Voted for node that is about to join our section
-    Online(OnlinePayload),
+    Online {
+        /// Identifier of the joining node.
+        p2p_node: P2pNode,
+        /// The age the node should have after joining.
+        age: u8,
+        /// The key of the destination section that the joining node knows, if any.
+        their_knowledge: Option<bls::PublicKey>,
+    },
     /// Voted for node we no longer consider online.
-    Offline(PublicId),
+    Offline(XorName),
 
-    SectionInfo(EldersInfo, bls::PublicKey),
-
-    // Voted for received message with info about a neighbour section.
-    NeighbourInfo(EldersInfo, bls::PublicKey),
+    // Vote to update the elders info of a section.
+    SectionInfo(EldersInfo),
 
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
@@ -69,8 +65,16 @@ pub enum AccumulatingEvent {
         nonce: MessageHash,
     },
 
-    // Voted for received message with keys to update their_keys
-    TheirKeyInfo {
+    // Voted to update our section key.
+    OurKey {
+        // In case of split, this prefix is used to differentiate the subsections. Not part of
+        // the proof.
+        prefix: Prefix<XorName>,
+        key: bls::PublicKey,
+    },
+
+    // Voted to update their section key.
+    TheirKey {
         prefix: Prefix<XorName>,
         key: bls::PublicKey,
     },
@@ -95,21 +99,104 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<bls::SignatureShare>) {
-        (event.payload, event.signature)
-    }
-
-    pub fn into_network_event(self) -> NetworkEvent {
-        NetworkEvent {
-            payload: self,
-            signature: None,
+    pub fn needs_signature(&self) -> bool {
+        match self {
+            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => false,
+            _ => true,
         }
     }
 
-    pub fn into_network_event_with(self, signature: Option<bls::SignatureShare>) -> NetworkEvent {
+    /// Sign and convert this event into `NetworkEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `false`
+    pub fn into_signed_network_event(
+        self,
+        section_key_share: &SectionKeyShare,
+    ) -> Result<NetworkEvent> {
+        let signature_share = self.sign(&section_key_share.secret_key_share)?;
+        let proof_share = ProofShare {
+            public_key_set: section_key_share.public_key_set.clone(),
+            index: section_key_share.index,
+            signature_share,
+        };
+
+        Ok(NetworkEvent {
+            payload: self,
+            proof_share: Some(proof_share),
+        })
+    }
+
+    /// Convert this event into unsigned `NetworkEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `true`
+    #[cfg(all(test, feature = "mock"))]
+    pub fn into_unsigned_network_event(self) -> NetworkEvent {
+        assert!(!self.needs_signature());
+
         NetworkEvent {
             payload: self,
-            signature,
+            proof_share: None,
+        }
+    }
+
+    /// Create a signature share of this event using `secret key share`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.needs_signature()` is `false`
+    pub fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Result<bls::SignatureShare> {
+        assert!(self.needs_signature());
+
+        let bytes = self.serialise_for_signing()?;
+        Ok(secret_key_share.sign(&bytes))
+    }
+
+    pub fn verify(&self, proof_share: &ProofShare) -> bool {
+        self.needs_signature()
+            && self
+                .serialise_for_signing()
+                .map(|bytes| proof_share.verify(&bytes))
+                .unwrap_or(false)
+    }
+
+    fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
+        match self {
+            Self::OurKey { prefix: _, key } => {
+                // Note: the prefix is only needed to differentiate between the two subsections in
+                // case of split but it isn't part of the proven data.
+                bincode::serialize(key)
+            }
+            Self::TheirKey { prefix, key } => bincode::serialize(&(prefix, key)),
+            Self::TheirKnowledge { prefix, knowledge } => bincode::serialize(&(prefix, knowledge)),
+            Self::SectionInfo(info) => bincode::serialize(info),
+            Self::Online {
+                p2p_node,
+                age: _,
+                their_knowledge: _,
+            } => bincode::serialize(&member_info::to_sign(p2p_node.name(), MemberState::Joined)),
+            Self::Offline(name) => {
+                bincode::serialize(&member_info::to_sign(name, MemberState::Left))
+            }
+            Self::Relocate(details) => {
+                // Note: signing the same fields as for `Offline` because we need to update the
+                // members map the same way as if the node went offline. The relocate details
+                // will be signed using a different vote, but that is not implemented yet.
+                bincode::serialize(&member_info::to_sign(
+                    details.pub_id.name(),
+                    MemberState::Left,
+                ))
+            }
+
+            // TODO: serialise these variants properly
+            Self::SendNeighbourInfo { .. }
+            | Self::ParsecPrune
+            | Self::RelocatePrepare(..)
+            | Self::User(_) => Ok(vec![]),
+            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => unreachable!(),
         }
     }
 }
@@ -122,7 +209,7 @@ impl Debug for AccumulatingEvent {
                 related_info,
             } => write!(
                 formatter,
-                "Genesis {{ group: {:?}, related_info: {:?} }}",
+                "Genesis {{ group: {:?}, related_info: {:10} }}",
                 group,
                 HexFmt(related_info)
             ),
@@ -132,22 +219,34 @@ impl Debug for AccumulatingEvent {
                 "DkgResult {{ participants: {:?}, .. }}",
                 participants
             ),
-            Self::Online(payload) => write!(formatter, "Online({:?})", payload),
+            Self::Online {
+                p2p_node,
+                age,
+                their_knowledge,
+            } => formatter
+                .debug_struct("Online")
+                .field("p2p_node", p2p_node)
+                .field("age", age)
+                .field("their_knowledge", their_knowledge)
+                .finish(),
+
             Self::Offline(id) => write!(formatter, "Offline({})", id),
-            Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?}, ..)", info),
-            Self::NeighbourInfo(elders_info, _) => {
-                write!(formatter, "NeighbourInfo({:?}, ..)", elders_info)
-            }
+            Self::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
             Self::SendNeighbourInfo { dst, nonce } => write!(
                 formatter,
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
                 dst, nonce
             ),
-            Self::TheirKeyInfo { prefix, key } => write!(
-                formatter,
-                "TheirKeyInfo {{ prefix: {:?}, key: {:?} }}",
-                prefix, key
-            ),
+            Self::OurKey { prefix, key } => formatter
+                .debug_struct("OurKey")
+                .field("prefix", prefix)
+                .field("key", key)
+                .finish(),
+            Self::TheirKey { prefix, key } => formatter
+                .debug_struct("TheirKey")
+                .field("prefix", prefix)
+                .field("key", key)
+                .finish(),
             Self::TheirKnowledge { prefix, knowledge } => write!(
                 formatter,
                 "TheirKnowledge {{ prefix: {:?}, knowledge: {} }}",
@@ -166,7 +265,7 @@ impl Debug for AccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<bls::SignatureShare>,
+    pub proof_share: Option<ProofShare>,
 }
 
 impl NetworkEvent {
@@ -186,8 +285,8 @@ impl ParsecNetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if self.signature.is_some() {
-            write!(formatter, "{:?}(signature)", self.payload)
+        if let Some(share) = self.proof_share.as_ref() {
+            write!(formatter, "{:?} (sig #{})", self.payload, share.index)
         } else {
             self.payload.fmt(formatter)
         }

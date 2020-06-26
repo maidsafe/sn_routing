@@ -19,13 +19,14 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig, XorName, Xorable,
+    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::{self, Display, Formatter},
     usize,
 };
+use xor_name::{XorName, Xorable};
 
 #[test]
 fn aggressive_churn() {
@@ -545,7 +546,7 @@ impl Display for MessageKey {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            "{:?} {:?} -> {:?}",
+            "{:10} {:?} -> {:?}",
             HexFmt(&self.content),
             self.src,
             self.dst

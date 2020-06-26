@@ -11,7 +11,6 @@ use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
-    xor_space::XorName,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -20,6 +19,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
+use xor_name::XorName;
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -85,7 +85,7 @@ impl Debug for Variant {
                 .field("elders_info", elders_info)
                 .field("nonce", nonce)
                 .finish(),
-            Self::UserMessage(payload) => write!(f, "UserMessage({})", HexFmt(payload)),
+            Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),

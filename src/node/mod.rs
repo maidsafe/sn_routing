@@ -31,21 +31,23 @@ use crate::{
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
+    section::SharedState,
     transport::PeerStatus,
-    xor_space::{Prefix, XorName, Xorable},
     TransportConfig, TransportEvent,
 };
+
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
 use itertools::Itertools;
 use std::net::SocketAddr;
+use xor_name::{Prefix, XorName, Xorable};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage};
+use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
 use {
-    crate::section::{EldersInfo, SectionProofChain, SharedState},
-    std::collections::{BTreeMap, BTreeSet},
+    crate::section::{EldersInfo, SectionProofChain},
+    std::collections::BTreeSet,
 };
 
 /// Node configuration.
@@ -298,6 +300,7 @@ impl Node {
     pub fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
         self.our_elders()
             .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Returns the information of all the current section adults.
@@ -313,6 +316,7 @@ impl Node {
     pub fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<&P2pNode> {
         self.our_adults()
             .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Checks whether the given location represents self.
@@ -397,7 +401,8 @@ impl Node {
     pub fn public_key_set(&self) -> Result<&bls::PublicKeySet> {
         self.stage
             .approved()
-            .map(|stage| stage.public_key_set())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| &share.public_key_set)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -406,7 +411,8 @@ impl Node {
     pub fn secret_key_share(&self) -> Result<&bls::SecretKeyShare> {
         self.stage
             .approved()
-            .and_then(|stage| stage.secret_key_share())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| &share.secret_key_share)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -415,7 +421,8 @@ impl Node {
     pub fn our_index(&self) -> Result<usize> {
         self.stage
             .approved()
-            .and_then(|stage| stage.our_index())
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| share.index)
             .ok_or(RoutingError::InvalidState)
     }
 
@@ -613,7 +620,7 @@ impl Node {
         msg_hash: &MessageHash,
     ) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(&msg, msg_hash);
+            stage.update_section_knowledge(self.core.name(), &msg, msg_hash);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
@@ -659,9 +666,10 @@ impl Node {
                     section_key,
                 )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
+                    let section_key = *msg.src.as_section_key()?;
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, genesis_prefix_info, msg_backlog)?
+                    self.approve(connect_type, genesis_prefix_info, section_key, msg_backlog)?
                 }
                 _ => unreachable!(),
             },
@@ -669,11 +677,11 @@ impl Node {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst.check_is_section()?;
                     let src_key = *msg.src.as_section_key()?;
-                    stage.handle_neighbour_info(elders_info, src_key)?;
+                    stage.handle_neighbour_info(elders_info, src_key);
                 }
                 Variant::GenesisUpdate(info) => {
-                    msg.src.check_is_section()?;
-                    stage.handle_genesis_update(&mut self.core, info)?;
+                    let section_key = *msg.src.as_section_key()?;
+                    stage.handle_genesis_update(&mut self.core, info, section_key)?;
                 }
                 Variant::Relocate(_) => {
                     msg.src.check_is_section()?;
@@ -803,14 +811,22 @@ impl Node {
         &mut self,
         connect_type: Connected,
         genesis_prefix_info: GenesisPrefixInfo,
+        section_key: bls::PublicKey,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
-            genesis_prefix_info.elders_info.prefix,
+            genesis_prefix_info.elders_info.value.prefix,
         );
 
-        let stage = Approved::new(&mut self.core, genesis_prefix_info, None)?;
+        let shared_state = SharedState::new(genesis_prefix_info.elders_info.clone(), section_key);
+
+        let stage = Approved::new(
+            &mut self.core,
+            shared_state,
+            genesis_prefix_info.parsec_version,
+            None,
+        )?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);
@@ -918,7 +934,7 @@ impl Node {
     pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
         self.shared_state()
             .into_iter()
-            .flat_map(|state| state.sections.other().map(|(_, info)| info))
+            .flat_map(|state| state.sections.neighbours())
     }
 
     /// Returns the info about our sections or `None` if we are not joined yet.
@@ -969,11 +985,10 @@ impl Node {
     }
 
     /// Returns their knowledge
-    pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
+    pub fn get_their_knowledge(&self, prefix: &Prefix<XorName>) -> u64 {
         self.shared_state()
-            .map(|state| state.sections.knowledge())
-            .cloned()
-            .unwrap_or_default()
+            .map(|state| state.sections.knowledge_by_section(prefix))
+            .unwrap_or(0)
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -1043,8 +1058,9 @@ impl Node {
     // Create new node which is already an approved member of a section.
     pub(crate) fn approved(
         config: NodeConfig,
-        genesis_prefix_info: GenesisPrefixInfo,
-        secret_key_share: Option<bls::SecretKeyShare>,
+        shared_state: SharedState,
+        parsec_version: u64,
+        section_key_share: Option<SectionKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
@@ -1052,7 +1068,8 @@ impl Node {
 
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Approved::new(&mut core, genesis_prefix_info, secret_key_share).unwrap();
+        let stage =
+            Approved::new(&mut core, shared_state, parsec_version, section_key_share).unwrap();
         let stage = Stage::Approved(stage);
 
         let node = Self {

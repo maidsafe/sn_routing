@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{generate_bls_threshold_secret_key, GenesisPrefixInfo},
+    consensus::{self, GenesisPrefixInfo},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -16,12 +16,13 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, IndexedSecretKeyShare, SectionKeysProvider, SharedState},
-    xor_space::{Prefix, XorName},
+    section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
 };
+
 use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeMap, net::SocketAddr};
+use xor_name::{Prefix, XorName};
 
 const ELDER_SIZE: usize = 3;
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
@@ -43,18 +44,25 @@ impl Env {
 
         let (elders_info, full_ids) =
             test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
-        let elders = create_elders(&mut rng, elders_info.clone(), full_ids);
+        let elders = create_elders(&mut rng, elders_info.value.clone(), full_ids);
 
-        let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
-        let genesis_prefix_info =
-            test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
+        let public_key_set = elders[0]
+            .section_keys_provider
+            .key_share()
+            .unwrap()
+            .public_key_set
+            .clone();
+        let public_key = public_key_set.public_key();
+
+        let shared_state = SharedState::new(elders_info, public_key);
 
         let (subject, ..) = Node::approved(
             NodeConfig {
                 network_params: NETWORK_PARAMS,
                 ..Default::default()
             },
-            genesis_prefix_info,
+            shared_state,
+            0,
             None,
         );
 
@@ -71,14 +79,10 @@ impl Env {
     }
 
     fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
-        test_utils::create_genesis_prefix_info(
-            self.elders[0].state.our_info().clone(),
-            self.elders[0]
-                .section_keys_provider
-                .public_key_set()
-                .clone(),
+        GenesisPrefixInfo {
+            elders_info: self.elders[0].state.sections.proven_our().clone(),
             parsec_version,
-        )
+        }
     }
 
     fn perform_elders_change(&mut self) {
@@ -112,7 +116,9 @@ impl Env {
             dst,
             dst_key: self.elders[0]
                 .section_keys_provider
-                .public_key_set()
+                .key_share()
+                .unwrap()
+                .public_key_set
                 .public_key(),
             variant: Variant::UserMessage(content),
         };
@@ -151,26 +157,33 @@ fn create_elders(
     elders_info: EldersInfo,
     full_ids: BTreeMap<XorName, FullId>,
 ) -> Vec<Elder> {
-    let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
+    let secret_key_set = consensus::generate_secret_key_set(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
-    let genesis_prefix_info =
-        test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
+    let public_key = public_key_set.public_key();
+
+    let fake_prev_secret_key = consensus::test_utils::gen_secret_key(rng);
+    let elders_info = consensus::test_utils::proven(&fake_prev_secret_key, elders_info);
+
+    let genesis_prefix_info = GenesisPrefixInfo {
+        elders_info,
+        parsec_version: 0,
+    };
 
     full_ids
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let state = SharedState::new(
-                genesis_prefix_info.elders_info.clone(),
-                genesis_prefix_info.public_keys.public_key(),
-            );
-            let section_keys_provider = SectionKeysProvider::new(
-                genesis_prefix_info.public_keys.clone(),
-                Some(IndexedSecretKeyShare::from_set(&secret_key_set, index)),
-            );
+            let state = SharedState::new(genesis_prefix_info.elders_info.clone(), public_key);
+
+            let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare {
+                public_key_set: public_key_set.clone(),
+                index,
+                secret_key_share: secret_key_set.secret_key_share(index),
+            }));
 
             let addr = genesis_prefix_info
                 .elders_info
+                .value
                 .elders
                 .get(full_id.public_id().name())
                 .map(|p2p_node| p2p_node.peer_addr());
@@ -203,7 +216,12 @@ fn create_genesis_update_accumulating_message(
     let content = PlainMessage {
         src: Prefix::default(),
         dst: DstLocation::Node(dst),
-        dst_key: sender.section_keys_provider.public_key_set().public_key(),
+        dst_key: sender
+            .section_keys_provider
+            .key_share()
+            .unwrap()
+            .public_key_set
+            .public_key(),
         variant: Variant::GenesisUpdate(genesis_prefix_info),
     };
 
@@ -211,11 +229,16 @@ fn create_genesis_update_accumulating_message(
 }
 
 fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<AccumulatingMessage> {
-    let secret_key_share = sender.section_keys_provider.secret_key_share().unwrap();
-    let public_key_set = sender.section_keys_provider.public_key_set().clone();
+    let key_share = sender.section_keys_provider.key_share().unwrap();
     let proof = sender.state.prove(&content.dst, None);
 
-    AccumulatingMessage::new(content, secret_key_share, public_key_set, proof)
+    AccumulatingMessage::new(
+        content,
+        key_share.public_key_set.clone(),
+        key_share.index,
+        &key_share.secret_key_share,
+        proof,
+    )
 }
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {

@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{quic_p2p::QuicP2pError, xor_space::XorName};
-use bincode::ErrorKind;
+use crate::quic_p2p::QuicP2pError;
 use err_derive::Error;
+use xor_name::XorName;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
@@ -28,7 +28,7 @@ pub enum RoutingError {
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
     #[error(display = "Bincode error.")]
-    Bincode(Box<ErrorKind>),
+    Bincode(bincode::Error),
     #[error(display = "Peer not found.")]
     PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
@@ -39,8 +39,8 @@ pub enum RoutingError {
     InvalidProvingSection,
     #[error(display = "A signed message could not be trusted.")]
     UntrustedMessage,
-    #[error(display = "A new SectionInfo is invalid.")]
-    InvalidNewSectionInfo,
+    #[error(display = "Some or all signature shares are invalid.")]
+    InvalidSignatureShares,
     #[error(display = "A Relocation is invalid.")]
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]

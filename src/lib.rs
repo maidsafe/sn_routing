@@ -67,7 +67,7 @@
 #![allow(clippy::single_component_path_imports)]
 
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -86,8 +86,9 @@ pub use self::{
     pause::PausedState,
     quic_p2p::Config as TransportConfig,
     quic_p2p::Event as TransportEvent,
-    xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
+
+pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// Routing events.
 pub mod event;
 
@@ -105,13 +106,12 @@ pub mod rng;
 /// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
-    consensus::generate_bls_threshold_secret_key,
+    consensus::generate_secret_key_set,
+    delivery_group::delivery_group_size,
     messages::{AccumulatingMessage, Message, MessageHash, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
-    routing_table::delivery_group_size,
-    section::{quorum_count, EldersInfo, IndexedSecretKeyShare, SectionProofChain, MIN_AGE},
-    xor_space::Xorable,
+    section::{quorum_count, EldersInfo, SectionProofChain, MIN_AGE},
 };
 
 #[cfg(feature = "mock_base")]
@@ -133,6 +133,7 @@ pub use self::mock::parsec::init_mock;
 
 mod consensus;
 mod core;
+mod delivery_group;
 mod error;
 mod id;
 mod location;
@@ -144,14 +145,12 @@ mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
-mod routing_table;
 mod section;
 mod signature_accumulator;
 mod time;
 mod timer;
 mod transport;
 mod utils;
-mod xor_space;
 
 // Cryptography
 #[cfg(not(feature = "mock_base"))]

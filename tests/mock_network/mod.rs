@@ -396,11 +396,7 @@ fn sibling_knowledge_update_after_split() {
                 return false;
             }
 
-            if !node
-                .inner
-                .get_their_knowledge()
-                .contains_key(&node.our_prefix().sibling())
-            {
+            if node.inner.get_their_knowledge(&node.our_prefix().sibling()) == 0 {
                 trace!("Node {} does not have sibling knowledge yet", node.name());
                 return false;
             }

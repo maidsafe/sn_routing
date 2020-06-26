@@ -8,101 +8,45 @@
 
 use super::elders_info::EldersInfo;
 use crate::{
-    consensus::{AccumulatingProof, DkgResult, DkgResultWrapper},
+    consensus::{DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::PublicId,
-    xor_space::XorName,
 };
-use serde::Serialize;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Debug,
-};
-
-/// Secret key share with its index.
-#[derive(Clone)]
-pub struct IndexedSecretKeyShare {
-    /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
-    pub index: usize,
-    /// Secret Key share
-    pub key: bls::SecretKeyShare,
-}
-
-impl IndexedSecretKeyShare {
-    /// Create a new share finding the index within the elders.
-    pub fn new(
-        key: bls::SecretKeyShare,
-        our_name: &XorName,
-        elders_info: &EldersInfo,
-    ) -> Option<Self> {
-        let index = elders_info
-            .elders
-            .keys()
-            .position(|name| name == our_name)?;
-
-        Some(Self { index, key })
-    }
-
-    /// Extracts the `index`-th share from `secret_key_set`.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub fn from_set(secret_key_set: &bls::SecretKeySet, index: usize) -> Self {
-        Self {
-            index,
-            key: secret_key_set.secret_key_share(index),
-        }
-    }
-}
+use std::collections::{BTreeMap, BTreeSet};
+use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Clone)]
-pub struct SectionKeys {
+pub struct SectionKeyShare {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
-    /// Secret Key share and index. None if the node was not participating in the DKG.
-    pub secret_key_share: Option<IndexedSecretKeyShare>,
-}
-
-impl SectionKeys {
-    pub fn new(
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<IndexedSecretKeyShare>,
-    ) -> Self {
-        Self {
-            public_key_set,
-            secret_key_share,
-        }
-    }
+    /// Index of the owner of this key share within the set of all section elders.
+    pub index: usize,
+    /// Secret Key share.
+    pub secret_key_share: bls::SecretKeyShare,
 }
 
 /// Struct that holds the current section keys and helps with new key generation.
 pub struct SectionKeysProvider {
     /// Our current section BLS keys.
-    keys: SectionKeys,
+    current: Option<SectionKeyShare>,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
     /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
     /// then members are disjoint. We are working around not having access to the prefix for the
     /// DkgResult but only the list of participants.
-    new_keys: BTreeMap<XorName, DkgResult>,
+    new: BTreeMap<XorName, DkgResult>,
 }
 
 impl SectionKeysProvider {
-    pub fn new(
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<IndexedSecretKeyShare>,
-    ) -> Self {
+    pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
-            keys: SectionKeys::new(public_key_set, secret_key_share),
-            new_keys: Default::default(),
+            current,
+            new: Default::default(),
         }
     }
 
-    pub fn public_key_set(&self) -> &bls::PublicKeySet {
-        &self.keys.public_key_set
-    }
-
-    pub fn secret_key_share(&self) -> Result<&IndexedSecretKeyShare> {
-        self.keys
-            .secret_key_share
+    pub fn key_share(&self) -> Result<&SectionKeyShare> {
+        self.current
             .as_ref()
             .ok_or(RoutingError::InvalidElderDkgResult)
     }
@@ -115,7 +59,7 @@ impl SectionKeysProvider {
     ) -> Result<()> {
         if let Some(first) = participants.iter().next() {
             if self
-                .new_keys
+                .new
                 .insert(*first.name(), dkg_result.0.clone())
                 .is_some()
             {
@@ -133,54 +77,25 @@ impl SectionKeysProvider {
             .next()
             .ok_or(RoutingError::InvalidElderDkgResult)?;
         let dkg_result = self
-            .new_keys
+            .new
             .remove(first_name)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
-        let secret_key_share = dkg_result
-            .secret_key_share
-            .and_then(|key| IndexedSecretKeyShare::new(key, our_name, elders_info));
+        let public_key_set = dkg_result.public_key_set;
 
-        self.keys = SectionKeys::new(dkg_result.public_key_set, secret_key_share);
-        self.new_keys.clear();
+        self.current = dkg_result
+            .secret_key_share
+            .and_then(|secret_key_share| {
+                elders_info
+                    .position(our_name)
+                    .map(|index| (index, secret_key_share))
+            })
+            .map(|(index, secret_key_share)| SectionKeyShare {
+                public_key_set,
+                index,
+                secret_key_share,
+            });
+        self.new.clear();
 
         Ok(())
     }
-
-    pub fn check_and_combine_signatures<S: Serialize + Debug>(
-        &self,
-        our_elders: &EldersInfo,
-        signed_payload: &S,
-        proofs: AccumulatingProof,
-    ) -> Result<bls::Signature> {
-        let signed_bytes = bincode::serialize(signed_payload).map_err(|err| {
-            log_or_panic!(
-                log::Level::Error,
-                "Failed to serialise accumulated event: {:?} for {:?}",
-                err,
-                signed_payload
-            );
-            err
-        })?;
-
-        proofs
-            .check_and_combine_signatures(our_elders, self.public_key_set(), &signed_bytes)
-            .or_else(|| {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Failed to combine signatures for accumulated event: {:?}",
-                    signed_payload
-                );
-                None
-            })
-            .ok_or(RoutingError::InvalidNewSectionInfo)
-    }
-}
-
-// Generate random BLS `SecretKey`. For tests only.
-#[cfg(test)]
-pub fn gen_secret_key(rng: &mut crate::rng::MainRng) -> bls::SecretKey {
-    use crate::rng::RngCompat;
-    use rand_crypto::Rng;
-
-    RngCompat(rng).gen()
 }

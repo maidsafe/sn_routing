@@ -11,17 +11,19 @@ mod genesis_prefix_info;
 mod network_event;
 mod parsec;
 mod proof;
+#[cfg(test)]
+pub mod test_utils;
 
 pub use self::{
-    event_accumulator::{AccumulatingProof, InsertError},
+    event_accumulator::AccumulatingError,
     genesis_prefix_info::GenesisPrefixInfo,
-    network_event::{AccumulatingEvent, NetworkEvent, OnlinePayload},
+    network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
-        generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
-        DkgResult, DkgResultWrapper, Observation, ParsecNetworkEvent, Request as ParsecRequest,
-        Response as ParsecResponse, GOSSIP_PERIOD,
+        generate_secret_key_set, Block, CreateGossipError, DkgResult, DkgResultWrapper,
+        Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
+        GOSSIP_PERIOD,
     },
-    proof::{Proof, ProofSet},
+    proof::{Proof, ProofShare, Proven},
 };
 
 #[cfg(feature = "mock_base")]
@@ -39,6 +41,7 @@ use crate::{
     time::Duration,
 };
 use std::collections::BTreeSet;
+use xor_name::XorName;
 
 // Distributed consensus mechanism backed by the Parsec algorithm.
 pub struct ConsensusEngine {
@@ -64,10 +67,7 @@ impl ConsensusEngine {
     }
 
     /// Returns the next consensused and accumulated event, if any.
-    pub fn poll(
-        &mut self,
-        our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    pub fn poll(&mut self, our_elders: &EldersInfo) -> Option<(AccumulatingEvent, Option<Proof>)> {
         while let Some(block) = self.parsec_map.poll() {
             if let Some(output) = self.handle_parsec_block(block, our_elders) {
                 return Some(output);
@@ -81,7 +81,7 @@ impl ConsensusEngine {
         &mut self,
         block: Block,
         our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    ) -> Option<(AccumulatingEvent, Option<Proof>)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
             Observation::Genesis {
@@ -102,47 +102,47 @@ impl ConsensusEngine {
                         group: group.clone(),
                         related_info: related_info.clone(),
                     },
-                    AccumulatingProof::default(),
+                    None,
                 ))
             }
             Observation::OpaquePayload(event) => {
-                let proof = block.proofs().iter().next()?;
-                let proof = Proof {
-                    pub_id: *proof.public_id(),
-                    sig: *proof.signature(),
-                };
+                let voter_name = *block.proofs().iter().next()?.public_id().name();
+
+                let NetworkEvent {
+                    payload: event,
+                    proof_share,
+                } = event.clone();
+
+                let proof_share = proof_share?;
 
                 trace!(
                     "Parsec OpaquePayload v{}: {} - {:?}",
                     self.parsec_map.last_version(),
-                    proof.pub_id(),
+                    voter_name,
                     event
                 );
 
-                let (event, signature) = AccumulatingEvent::from_network_event(event.clone());
-
-                // TODO: merge these three steps (add_proof, incomplete_events, poll_event) into a
-                // single one, to make the process less fragile.
-                match self.accumulator.add_proof(event, proof, signature) {
-                    Ok(()) | Err(InsertError::AlreadyComplete) => {
-                        // Proof added or event already completed.
+                match self
+                    .accumulator
+                    .insert(event, voter_name, proof_share, our_elders)
+                {
+                    Ok((event, proof)) => Some((event, Some(proof))),
+                    Err(AccumulatingError::NotEnoughVotes)
+                    | Err(AccumulatingError::AlreadyAccumulated) => None,
+                    Err(AccumulatingError::InvalidSignatureShare) => {
+                        // TODO: penalise
+                        log_or_panic!(
+                            log::Level::Warn,
+                            "Attempt to insert event with invalid signature share"
+                        );
+                        None
                     }
-                    Err(InsertError::ReplacedAlreadyInserted) => {
-                        // TODO: If detecting duplicate vote from peer, penalise.
-                        log_or_panic!(log::Level::Warn, "Duplicate proof in the accumulator");
+                    Err(AccumulatingError::CombineSignaturesFailed(error)) => {
+                        // This should never happen
+                        log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
+                        None
                     }
                 }
-
-                let event = self
-                    .accumulator
-                    .unaccumulated_events()
-                    .find(|(event, proofs)| {
-                        self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
-                    })
-                    .map(|(event, _)| event.clone())?;
-
-                self.accumulator
-                    .poll_event(event, our_elders.elder_ids().cloned().collect())
             }
             Observation::DkgResult {
                 participants,
@@ -158,7 +158,7 @@ impl ConsensusEngine {
                         participants: participants.clone(),
                         dkg_result: dkg_result.clone(),
                     },
-                    AccumulatingProof::default(),
+                    None,
                 ))
             }
             Observation::Add { .. }
@@ -177,41 +177,13 @@ impl ConsensusEngine {
         }
     }
 
-    fn is_accumulated(
-        &self,
-        event: &AccumulatingEvent,
-        proofs: &ProofSet,
-        our_elders: &EldersInfo,
-    ) -> bool {
-        match event {
-            AccumulatingEvent::SectionInfo(..)
-            | AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::NeighbourInfo { .. }
-            | AccumulatingEvent::SendNeighbourInfo { .. }
-            | AccumulatingEvent::TheirKeyInfo { .. }
-            | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::User(_) => our_elders.is_quorum(proofs),
-
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::DkgResult { .. } => unreachable!(
-                "unexpected event present in the event accumulator: {:?}",
-                event
-            ),
-        }
-    }
-
     // Prepares for reset of the consensus engine. Returns all events voted by us that have not
     // accumulated yet, so they can be voted for again. Should be followed by `finalise_reset`.
-    pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<NetworkEvent> {
+    pub fn prepare_reset(&mut self, our_name: &XorName) -> Vec<AccumulatingEvent> {
         let RemainingEvents {
             unaccumulated_events,
             accumulated_events,
-        } = self.accumulator.reset_accumulator(our_id);
+        } = self.accumulator.reset(our_name);
 
         unaccumulated_events
             .into_iter()
@@ -229,9 +201,9 @@ impl ConsensusEngine {
                         | parsec::Observation::DkgResult { .. }
                         | parsec::Observation::DkgMessage(_) => None,
                     })
-                    .cloned(),
+                    .map(|event| event.payload.clone()),
             )
-            .filter(|event| !accumulated_events.contains(&event.payload))
+            .filter(|event| !accumulated_events.contains(event))
             .collect()
     }
 
@@ -248,11 +220,8 @@ impl ConsensusEngine {
             .init(rng, full_id, elders_info, serialised_state, parsec_version)
     }
 
-    pub fn detect_unresponsive<'a>(
-        &self,
-        members: impl IntoIterator<Item = &'a PublicId>,
-    ) -> BTreeSet<PublicId> {
-        self.accumulator.detect_unresponsive(members)
+    pub fn detect_unresponsive(&self, elders_info: &EldersInfo) -> BTreeSet<PublicId> {
+        self.accumulator.detect_unresponsive(elders_info)
     }
 
     pub fn vote_for(&mut self, event: NetworkEvent) {
@@ -286,8 +255,8 @@ impl ConsensusEngine {
             .handle_response(msg_version, response, pub_id)
     }
 
-    pub fn prune_if_needed(&mut self) {
-        self.parsec_map.prune_if_needed()
+    pub fn needs_pruning(&self) -> bool {
+        self.parsec_map.needs_pruning()
     }
 
     pub fn parsec_version(&self) -> u64 {

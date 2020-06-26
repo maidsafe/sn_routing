@@ -19,11 +19,11 @@ use crate::{
     rng::{self, MainRng},
     timer::Timer,
     transport::{PeerStatus, Transport},
-    xor_space::XorName,
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use std::{collections::VecDeque, net::SocketAddr, slice};
+use xor_name::XorName;
 
 // Core components of the node.
 pub struct Core {

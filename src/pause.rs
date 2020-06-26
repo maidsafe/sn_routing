@@ -7,12 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{ConsensusEngine, GenesisPrefixInfo},
+    consensus::ConsensusEngine,
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
     network_params::NetworkParams,
-    section::{SectionKeysProvider, SharedState, SplitCache},
+    section::{SectionKeysProvider, SectionUpdateBarrier, SharedState},
     signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
@@ -34,12 +34,11 @@ pub struct PausedState {
     pub(super) shared_state: SharedState,
     pub(super) section_keys_provider: SectionKeysProvider,
     pub(super) full_id: FullId,
-    pub(super) genesis_prefix_info: GenesisPrefixInfo,
     pub(super) msg_filter: MessageFilter,
     pub(super) msg_queue: VecDeque<QueuedMessage>,
     // TODO: instead of storing both transport and network_rx, store only the network config.
     pub(super) transport: Transport,
     pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
-    pub(super) split_cache: Option<SplitCache>,
+    pub(super) section_update_barrier: SectionUpdateBarrier,
 }

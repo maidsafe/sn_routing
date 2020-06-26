@@ -6,101 +6,83 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{elders_info::EldersInfo, network_stats::NetworkStats};
-use crate::{
-    id::P2pNode,
-    location::DstLocation,
-    xor_space::{Prefix, XorName},
-};
+use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
+use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
+
 use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeSet, HashSet},
     iter,
 };
-
-// Number of recent keys we keep: i.e how many other section churns we can handle before a
-// message sent with a previous version of a section is no longer trusted.
-// With low churn rate, an ad hoc 20 should be big enough to avoid losing messages.
-const MAX_RECENT_KEYS: usize = 20;
+use xor_name::{Prefix, XorName};
 
 /// Container for storing information about sections in the network.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
     // Our section.
-    our: EldersInfo,
+    our: Proven<EldersInfo>,
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
-    // Note that after a split, the section's latest section info could be the one from the
-    // pre-split parent section, so the value's prefix doesn't always match the key.
-    neighbours: BTreeMap<Prefix<XorName>, EldersInfo>,
-    // BLS public keys of known sections
-    keys: BTreeMap<Prefix<XorName>, bls::PublicKey>,
-    // Recent keys removed from `keys`. Contains at most `MAX_RECENT_KEYS` entries.
-    recent_keys: VecDeque<(Prefix<XorName>, bls::PublicKey)>,
+    neighbours: PrefixMap<Proven<EldersInfo>>,
+    // BLS public keys of known sections excluding ours.
+    keys: PrefixMap<Proven<(Prefix<XorName>, bls::PublicKey)>>,
     // Indices of our section keys that are trusted by other sections.
-    knowledge: BTreeMap<Prefix<XorName>, u64>,
+    knowledge: PrefixMap<Proven<(Prefix<XorName>, u64)>>,
 }
 
 impl SectionMap {
-    pub fn new(our_info: EldersInfo, our_key: bls::PublicKey) -> Self {
-        let prefix = our_info.prefix;
-
+    pub fn new(our_info: Proven<EldersInfo>) -> Self {
         Self {
             our: our_info,
             neighbours: Default::default(),
-            keys: iter::once((prefix, our_key)).collect(),
-            recent_keys: Default::default(),
+            keys: Default::default(),
             knowledge: Default::default(),
         }
     }
 
     /// Get our section info
     pub fn our(&self) -> &EldersInfo {
+        &self.our.value
+    }
+
+    /// Get our section info with its proof.
+    pub fn proven_our(&self) -> &Proven<EldersInfo> {
         &self.our
     }
 
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
-    pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_prefix = &self.our().prefix;
-        let mut best_info = self.our();
-        for (prefix, info) in self.all() {
-            // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.elders.is_empty()
-                && best_prefix.cmp_distance(prefix, name) == Ordering::Greater
-            {
-                best_prefix = prefix;
-                best_info = info;
-            }
-        }
-
-        (best_prefix, best_info)
+    pub fn closest(&self, name: &XorName) -> &EldersInfo {
+        self.all()
+            .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name))
+            .unwrap_or(&self.our.value)
     }
 
     /// Returns iterator over all known sections.
-    pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
-        iter::once((&self.our.prefix, &self.our)).chain(&self.neighbours)
+    pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
+        iter::once(&self.our)
+            .chain(self.neighbours.iter())
+            .map(|info| &info.value)
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
-    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<&EldersInfo> {
         let mut result: Vec<_> = self.all().collect();
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, name));
+        result.sort_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name));
         result
     }
 
     /// Returns prefixes of all known sections.
     pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> + Clone {
-        self.all().map(|(prefix, _)| prefix)
+        self.all().map(|elders_info| &elders_info.prefix)
     }
 
     /// Returns whether the given name is in any of our neighbour sections.
     pub fn is_in_neighbour(&self, name: &XorName) -> bool {
-        self.neighbours.keys().any(|prefix| prefix.matches(name))
+        self.neighbours.contains_matching(name)
     }
 
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.all().flat_map(|(_, info)| info.elders.values())
+        self.all().flat_map(|info| info.elders.values())
     }
 
     /// Returns all elders from our section.
@@ -111,15 +93,19 @@ impl SectionMap {
     /// Returns all elders from neighbour sections.
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbours
-            .values()
-            .flat_map(|info| info.elders.values())
+            .iter()
+            .flat_map(|info| info.value.elders.values())
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
-        self.all()
-            .find(|(prefix, _)| prefix.matches(name))
-            .and_then(|(_, elders_info)| elders_info.elders.get(name))
+        let elders_info = if self.our.value.prefix.matches(name) {
+            &self.our.value
+        } else {
+            &self.neighbours.get_matching(name)?.value
+        };
+
+        elders_info.elders.get(name)
     }
 
     /// Returns whether the given peer is elder in a known sections.
@@ -128,36 +114,31 @@ impl SectionMap {
     }
 
     /// Set the new version of our section.
-    pub fn set_our(&mut self, elders_info: EldersInfo) {
+    pub fn set_our(&mut self, elders_info: Proven<EldersInfo>) {
         self.our = elders_info;
         self.prune_neighbours()
     }
 
-    pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
-        let parent_prefix = elders_info.prefix.popped();
-        let sibling_prefix = elders_info.prefix.sibling();
-
-        let _ = self.neighbours.insert(elders_info.prefix, elders_info);
-
-        // If we just split an existing neighbour and we also need its sibling,
-        // add the sibling prefix with the parent info.
-        if let Some(parent_info) = self.neighbours.remove(&parent_prefix) {
-            if self.our().prefix.is_neighbour(&sibling_prefix)
-                && !self.neighbours.contains_key(&sibling_prefix)
-            {
-                let _ = self.neighbours.insert(sibling_prefix, parent_info);
-            }
-        }
-
+    pub fn add_neighbour(&mut self, elders_info: Proven<EldersInfo>) {
+        let _ = self.neighbours.insert(elders_info);
         self.prune_neighbours();
     }
 
     // Remove sections that are no longer our neighbours.
     fn prune_neighbours(&mut self) {
+        let our_prefix = &self.our.value.prefix;
         let to_remove: Vec<_> = self
             .neighbours
-            .keys()
-            .filter(|prefix| !self.our().prefix.is_neighbour(prefix))
+            .prefixes()
+            .filter(|prefix| {
+                can_prune_neighbour(
+                    our_prefix,
+                    prefix,
+                    self.neighbours
+                        .descendants(prefix)
+                        .map(|info| &info.value.prefix),
+                )
+            })
             .copied()
             .collect();
 
@@ -166,106 +147,64 @@ impl SectionMap {
         }
     }
 
-    /// Returns the known section keys and any recent keys we still hold.
+    /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
         self.keys
             .iter()
-            .chain(self.recent_keys.iter().map(|(p, k)| (p, k)))
+            .map(|entry| (&entry.value.0, &entry.value.1))
     }
 
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys().any(|(_, known_key)| known_key == key)
+        self.keys.iter().any(|entry| entry.value.1 == *key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        // `keys()` yields the keys from newest to oldest because it is a `chain` of `keys` and
-        // `recent_keys` in that order, so in case of multiple compatible keys, the newest one
-        // is returned.
-        self.keys()
-            .find(|(prefix, _)| prefix.matches(name))
-            .map(|(_, key)| key)
+        self.keys.get_matching(name).map(|entry| &entry.value.1)
     }
 
-    /// Returns the latest known key for the prefix that is compatible with `dst`.
-    pub fn key_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
-        // TODO: should we use `self.keys()` instead of `self.keys` ?
-        self.keys
-            .iter()
-            .find(|(prefix, _)| dst.is_compatible(prefix))
-            .map(|(_, key)| key)
-    }
-
-    /// Updates the entry in `keys` for `prefix` to the latest known key; if a split
-    /// occurred in the meantime, the keys for sections covering the rest of the address space are
-    /// initialised to the old key that was stored for their common ancestor
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn update_keys(&mut self, prefix: Prefix<XorName>, new_key: bls::PublicKey) {
-        trace!("attempts to update keys for {:?}: {:?}", prefix, new_key);
-
-        if self
-            .recent_keys
-            .iter()
-            .any(|(_, old_key)| *old_key == new_key)
-        {
-            return;
-        }
-
-        if let Some((&old_prefix, &old_key)) = self
-            .keys
-            .iter()
-            .find(|(old_prefix, _)| old_prefix.is_compatible(&prefix))
-        {
-            if old_key == new_key || old_prefix.is_extension_of(&prefix) {
-                // Do not overwrite existing keys or prefix extensions
-                return;
-            }
-
-            let _ = self.keys.remove(&old_prefix);
-
-            self.recent_keys.push_front((old_prefix, old_key));
-            if self.recent_keys.len() > MAX_RECENT_KEYS {
-                let _ = self.recent_keys.pop_back();
-            }
-
-            trace!("    from {:?} to {:?}", old_key, new_key);
-
-            let old_prefix_sibling = old_prefix.sibling();
-            let mut current_prefix = prefix.sibling();
-            while !self.keys.contains_key(&current_prefix) && current_prefix != old_prefix_sibling {
-                let _ = self.keys.insert(current_prefix, old_key);
-                current_prefix = current_prefix.popped().sibling();
-            }
-        }
-        let _ = self.keys.insert(prefix, new_key);
+    /// Updates the entry in `keys` for `prefix` to the latest known key.
+    pub fn update_keys(&mut self, new_key: Proven<(Prefix<XorName>, bls::PublicKey)>) {
+        trace!(
+            "update key for {:?}: {:?}",
+            new_key.value.0,
+            new_key.value.1
+        );
+        let _ = self.keys.insert(new_key);
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
     /// section.
     pub fn knowledge_by_section(&self, prefix: &Prefix<XorName>) -> u64 {
-        self.knowledge.get(prefix).copied().unwrap_or(0)
+        self.knowledge
+            .get_equal_or_ancestor(prefix)
+            .map(|entry| entry.value.1)
+            .unwrap_or(0)
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
     /// location
-    pub fn knowledge_by_location(&self, target: &DstLocation) -> u64 {
-        let (prefix, &index) = if let Some(pair) = self
-            .knowledge
-            .iter()
-            .filter(|(prefix, _)| target.is_compatible(prefix))
-            .min_by_key(|(_, &index)| index)
-        {
-            pair
+    pub fn knowledge_by_location(&self, dst: &DstLocation) -> u64 {
+        let name = if let Some(name) = dst.name() {
+            name
         } else {
             return 0;
         };
 
-        if let Some(sibling_index) = self.knowledge.get(&prefix.sibling()) {
+        let (prefix, index) = if let Some(entry) = self.knowledge.get_matching(name) {
+            (&entry.value.0, entry.value.1)
+        } else {
+            return 0;
+        };
+
+        // TODO: we might not need to do this anymore because we have the bounce untrusted messages
+        // mechanism now.
+        if let Some(sibling_entry) = self.knowledge.get_equal_or_ancestor(&prefix.sibling()) {
             // The sibling section might not have processed the split yet, so it might still be in
-            // `target`'s location. Because of that, we need to return index that would be trusted
+            // `dst`'s location. Because of that, we need to return index that would be trusted
             // by them too.
-            index.min(*sibling_index)
+            index.min(sibling_entry.value.1)
         } else {
             index
         }
@@ -274,43 +213,14 @@ impl SectionMap {
     /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
     /// occurred in the meantime, the index for sections covering the rest of the address space
     /// are initialised to the old index that was stored for their common ancestor
-    pub fn update_knowledge(&mut self, prefix: Prefix<XorName>, new_index: u64) {
+    pub fn update_knowledge(&mut self, new_index: Proven<(Prefix<XorName>, u64)>) {
         trace!(
             "update knowledge of section ({:b}) about our section to {}",
-            prefix,
-            new_index,
+            new_index.value.0,
+            new_index.value.1,
         );
 
-        if let Some((&old_prefix, &old_index)) = self
-            .knowledge
-            .iter()
-            .find(|(other_prefix, _)| other_prefix.is_compatible(&prefix))
-        {
-            if old_prefix.is_extension_of(&prefix) || old_index > new_index {
-                // Do not overwrite newer index or prefix extensions
-                return;
-            }
-
-            let _ = self.knowledge.remove(&old_prefix);
-
-            trace!(
-                "    from ({:b}): {} to ({:b}): {}",
-                old_prefix,
-                old_index,
-                prefix,
-                new_index
-            );
-
-            let old_prefix_sibling = old_prefix.sibling();
-            let mut current_prefix = prefix.sibling();
-            while !self.knowledge.contains_key(&current_prefix)
-                && current_prefix != old_prefix_sibling
-            {
-                let _ = self.knowledge.insert(current_prefix, old_index);
-                current_prefix = current_prefix.popped().sibling();
-            }
-        }
-        let _ = self.knowledge.insert(prefix, new_index);
+        let _ = self.knowledge.insert(new_index);
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our
@@ -348,22 +258,17 @@ impl SectionMap {
     /// Get `EldersInfo` of a known section with the given prefix.
     #[cfg(test)]
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if *prefix == self.our.prefix {
-            Some(&self.our)
+        if *prefix == self.our.value.prefix {
+            Some(&self.our.value)
         } else {
-            self.neighbours.get(prefix)
+            self.neighbours.get(prefix).map(|info| &info.value)
         }
     }
 
     /// Returns iterator over all neighbours sections.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn other(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.neighbours.iter()
-    }
-
-    #[cfg(feature = "mock_base")]
-    pub fn knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        &self.knowledge
+    pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
+        self.neighbours.iter().map(|info| &info.value)
     }
 }
 
@@ -389,13 +294,66 @@ impl NeighbourEldersRemovedBuilder {
     }
 }
 
+// Check whether we can remove `other` from our neighbours given `our` prefix and all `known`
+// descendants of `other`.
+//
+// We can remove `other` if:
+// - it is not our neighbour anymore, or
+// - the intersection of the address space covered by `other` and our neighbourhood is fully
+//   covered by prefixes we know.
+//
+// Example:
+// - We are (00) and we know (1). Then we add (10). Now (10) covers the whole address space of (1)
+//   that is also in our neighbourhood (because (11) is not our neighbour) which means we can
+//   remove (1).
+// - We are (000) and we know (1). Then we add (100). None of (101), (110) and (111) is our
+//   neighbour which means that (100) again covers the whole address space of (1) that is in our
+//   neighbourhood so we can remove (1)
+// - We are (0) and we know (1). Then we add (10). We can't remove (1) yet because we don't know
+//   (11) which is also our neighbour.
+fn can_prune_neighbour<'a, I>(our: &Prefix<XorName>, other: &Prefix<XorName>, known: I) -> bool
+where
+    I: IntoIterator<Item = &'a Prefix<XorName>>,
+{
+    let known: HashSet<_> = known
+        .into_iter()
+        .filter(|prefix| prefix.is_extension_of(other))
+        .collect();
+
+    fn check(
+        our: &Prefix<XorName>,
+        other: &Prefix<XorName>,
+        known: &HashSet<&Prefix<XorName>>,
+    ) -> bool {
+        if !other.is_neighbour(our) {
+            return true;
+        }
+
+        if known.contains(other) {
+            return true;
+        }
+
+        if other.bit_count() >= our.bit_count() {
+            return false;
+        }
+
+        let child0 = other.pushed(false);
+        let child1 = other.pushed(true);
+
+        check(our, &child0, known) && check(our, &child1, known)
+    };
+
+    check(our, other, &known)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
+        consensus,
         id::FullId,
         location::DstLocation,
-        rng::{self, MainRng, RngCompat},
+        rng::{self, MainRng},
     };
     use rand::Rng;
 
@@ -405,12 +363,12 @@ mod tests {
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
         let k2 = gen_key(&mut rng);
-        let k3 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k3)],
-            vec![("0", &k0), ("1", &k3), ("1", &k2), ("1", &k1)],
+            "0",
+            vec![("1", &k0), ("1", &k1), ("1", &k2)],
+            vec![("1", &k2)],
         );
     }
 
@@ -419,59 +377,69 @@ mod tests {
         let mut rng = rng::new();
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("1", &k1), ("1", &k2), ("1", &k1)],
-            vec![("0", &k0), ("1", &k2), ("1", &k1)],
+            "0",
+            vec![("1", &k0), ("1", &k1), ("1", &k0)],
+            vec![("1", &k0)],
         );
     }
 
     #[test]
-    fn update_keys_split() {
+    fn update_keys_complete_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+        let k2 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            "0",
+            vec![("1", &k0), ("10", &k1), ("11", &k2)],
+            vec![("10", &k1), ("11", &k2)],
+        );
+    }
+
+    #[test]
+    fn update_keys_partial_split() {
+        let mut rng = rng::new();
+        let k0 = gen_key(&mut rng);
+        let k1 = gen_key(&mut rng);
+
+        update_keys_and_check(
+            &mut rng,
+            "0",
+            vec![("1", &k0), ("10", &k1)],
+            vec![("1", &k0), ("10", &k1)],
+        );
+    }
+
+    #[test]
+    fn update_keys_indirect_complete_split() {
         let mut rng = rng::new();
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
         let k2 = gen_key(&mut rng);
         let k3 = gen_key(&mut rng);
+        let k4 = gen_key(&mut rng);
 
         update_keys_and_check(
             &mut rng,
-            vec![("0", &k0), ("10", &k1), ("11", &k2), ("101", &k3)],
+            "0",
             vec![
-                ("0", &k0),
+                ("1", &k0),
                 ("100", &k1),
-                ("101", &k3),
-                ("11", &k2),
-                ("10", &k1),
+                ("101", &k2),
+                ("110", &k3),
+                ("111", &k4),
             ],
+            vec![("100", &k1), ("101", &k2), ("110", &k3), ("111", &k4)],
         );
     }
 
     #[test]
-    fn update_keys_our_section_not_sibling_of_ancestor() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
-
-        // 01 Not the sibling of the single bit parent prefix of 111
-        update_keys_and_check(
-            &mut rng::new(),
-            vec![("01", &k0), ("1", &k1), ("111", &k2)],
-            vec![
-                ("01", &k0),
-                ("10", &k1),
-                ("110", &k1),
-                ("111", &k2),
-                ("1", &k1),
-            ],
-        );
-    }
-
-    #[test]
-    fn update_keys_multiple_split() {
+    fn update_keys_indirect_partial_split() {
         let mut rng = rng::new();
         let k0 = gen_key(&mut rng);
         let k1 = gen_key(&mut rng);
@@ -479,18 +447,9 @@ mod tests {
 
         update_keys_and_check(
             &mut rng::new(),
-            vec![("0", &k0), ("1", &k1), ("1011001", &k2)],
-            vec![
-                ("0", &k0),
-                ("100", &k1),
-                ("1010", &k1),
-                ("1011000", &k1),
-                ("1011001", &k2),
-                ("101101", &k1),
-                ("10111", &k1),
-                ("11", &k1),
-                ("1", &k1),
-            ],
+            "0",
+            vec![("1", &k0), ("100", &k1), ("101", &k2)],
+            vec![("1", &k0), ("100", &k1), ("101", &k2)],
         );
     }
 
@@ -506,20 +465,15 @@ mod tests {
         // Late keys ignored
         update_keys_and_check(
             &mut rng,
+            "0",
             vec![
-                ("0", &k0),
+                ("1", &k0),
                 ("10", &k1),
                 ("11", &k2),
                 ("101", &k3),
                 ("10", &k4),
             ],
-            vec![
-                ("0", &k0),
-                ("100", &k1),
-                ("101", &k3),
-                ("11", &k2),
-                ("10", &k1),
-            ],
+            vec![("10", &k1), ("101", &k3), ("11", &k2)],
         );
     }
 
@@ -543,25 +497,80 @@ mod tests {
         )
     }
 
+    #[test]
+    fn closest() {
+        let mut rng = rng::new();
+        let sk = consensus::test_utils::gen_secret_key(&mut rng);
+
+        let p00: Prefix<_> = "00".parse().unwrap();
+        let p01: Prefix<_> = "01".parse().unwrap();
+        let p10: Prefix<_> = "10".parse().unwrap();
+        let p11: Prefix<_> = "11".parse().unwrap();
+
+        // Create map containing sections (00), (01) and (10)
+        let mut map = SectionMap::new(gen_proven_elders_info(&mut rng, &sk, p00));
+        map.add_neighbour(gen_proven_elders_info(&mut rng, &sk, p01));
+        map.add_neighbour(gen_proven_elders_info(&mut rng, &sk, p10));
+
+        let n00 = p00.substituted_in(rng.gen());
+        let n01 = p01.substituted_in(rng.gen());
+        let n10 = p10.substituted_in(rng.gen());
+        let n11 = p11.substituted_in(rng.gen());
+
+        assert_eq!(map.closest(&n00).prefix, p00);
+        assert_eq!(map.closest(&n01).prefix, p01);
+        assert_eq!(map.closest(&n10).prefix, p10);
+        assert_eq!(map.closest(&n11).prefix, p10);
+    }
+
+    #[test]
+    fn prune_neighbours() {
+        let mut rng = rng::new();
+        let sk = consensus::test_utils::gen_secret_key(&mut rng);
+
+        let p00 = "00".parse().unwrap();
+        let section00 = gen_proven_elders_info(&mut rng, &sk, p00);
+        let mut map = SectionMap::new(section00);
+
+        let p1 = "1".parse().unwrap();
+        let section1 = gen_proven_elders_info(&mut rng, &sk, p1);
+        map.add_neighbour(section1);
+
+        assert!(map.prefixes().any(|&prefix| prefix == p1));
+
+        // (10) is a neighbour of (00), but (11) is not. So by inserting (10),
+        // we no longer need (1)
+        let p10 = "10".parse().unwrap();
+        let section10 = gen_proven_elders_info(&mut rng, &sk, p10);
+        map.add_neighbour(section10);
+
+        assert!(map.prefixes().any(|&prefix| prefix == p10));
+        assert!(map.prefixes().all(|&prefix| prefix != p1));
+    }
+
     // Create a `SectionMap` and apply a series of `update_keys` calls to it, then verify the stored
     // keys are as expected.
     //
-    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs. The first pair
-    //           is our section and its initial key. The following ones are then applied in sequence
-    //           by calling `update_keys`
+    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs that are
+    //           applied in sequence by calling `update_keys`
     // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
     //           order.
     fn update_keys_and_check(
         rng: &mut MainRng,
-        mut updates: Vec<(&str, &bls::PublicKey)>,
+        our_prefix: &str,
+        updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
-        let (our_prefix, our_key) = updates.remove(0);
-        let elders_info = gen_elders_info(rng, our_prefix.parse().unwrap());
-        let mut map = SectionMap::new(elders_info, *our_key);
+        let sk = consensus::test_utils::gen_secret_key(rng);
+        let elders_info = gen_proven_elders_info(rng, &sk, our_prefix.parse().unwrap());
+
+        let mut map = SectionMap::new(elders_info);
 
         for (prefix, key) in updates {
-            map.update_keys(prefix.parse().unwrap(), *key);
+            let prefix = prefix.parse().unwrap();
+            let proof = consensus::test_utils::prove(&sk, &(&prefix, key));
+            let proven = Proven::new((prefix, *key), proof);
+            map.update_keys(proven);
         }
 
         let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
@@ -583,11 +592,15 @@ mod tests {
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
-        let mut map = SectionMap::new(gen_elders_info(rng, Default::default()), gen_key(rng));
+        let sk = consensus::test_utils::gen_secret_key(rng);
+        let elders_info = gen_proven_elders_info(rng, &sk, Default::default());
+
+        let mut map = SectionMap::new(elders_info);
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
-            map.update_knowledge(prefix, version);
+            let payload = consensus::test_utils::proven(&sk, (prefix, version));
+            map.update_knowledge(payload);
         }
 
         for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {
@@ -597,6 +610,15 @@ mod tests {
 
             assert_eq!(map.knowledge_by_location(&dst), expected_index);
         }
+    }
+
+    fn gen_proven_elders_info(
+        rng: &mut MainRng,
+        sk: &bls::SecretKey,
+        prefix: Prefix<XorName>,
+    ) -> Proven<EldersInfo> {
+        let elders_info = gen_elders_info(rng, prefix);
+        consensus::test_utils::proven(sk, elders_info)
     }
 
     fn gen_elders_info(rng: &mut MainRng, prefix: Prefix<XorName>) -> EldersInfo {
@@ -615,7 +637,6 @@ mod tests {
     }
 
     fn gen_key(rng: &mut MainRng) -> bls::PublicKey {
-        let secret_key: bls::SecretKey = rand_crypto::Rng::gen(&mut RngCompat(rng));
-        secret_key.public_key()
+        consensus::test_utils::gen_secret_key(rng).public_key()
     }
 }

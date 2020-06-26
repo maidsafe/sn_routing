@@ -8,10 +8,11 @@
 
 use crate::{
     consensus::{
-        self, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResultWrapper,
-        GenesisPrefixInfo, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
+        self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
+        NetworkEvent, ParsecRequest, ParsecResponse, Proof, Proven,
     },
     core::Core,
+    delivery_group,
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
@@ -23,25 +24,26 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
-    routing_table,
     section::{
-        EldersInfo, IndexedSecretKeyShare, MemberState, NeighbourEldersRemoved,
-        SectionKeysProvider, SharedState, SplitCache, MIN_AGE,
+        member_info, EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare,
+        SectionKeysProvider, SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
-    xor_space::{Prefix, XorName},
 };
+
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
+use serde::Serialize;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     iter,
     net::SocketAddr,
 };
+use xor_name::{Prefix, XorName};
 
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
 const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -57,12 +59,10 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     sig_accumulator: SignatureAccumulator,
-    genesis_prefix_info: GenesisPrefixInfo,
     timer_token: u64,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    // The accumulated info during a split.
-    split_cache: Option<SplitCache>,
+    section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
     // Flag indicating that our section members changed (a node joined or left) and we might need
@@ -75,67 +75,53 @@ impl Approved {
     pub fn first(core: &mut Core) -> Result<Self> {
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(*core.id(), connection_info);
-        let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info: create_first_elders_info(p2p_node),
-            public_keys: first_dkg_result.public_key_set,
-            parsec_version: 0,
+
+        let secret_key_set = consensus::generate_secret_key_set(&mut core.rng, 1);
+        let public_key_set = secret_key_set.public_keys();
+        let secret_key_share = secret_key_set.secret_key_share(0);
+
+        // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
+        // of the network there is no previous key. Sign with the current key instead.
+        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node)?;
+        let shared_state =
+            create_first_shared_state(&public_key_set, &secret_key_share, elders_info)?;
+
+        let section_key_share = SectionKeyShare {
+            public_key_set,
+            index: 0,
+            secret_key_share,
         };
 
-        Self::new(core, genesis_prefix_info, first_dkg_result.secret_key_share)
+        Self::new(core, shared_state, 0, Some(section_key_share))
     }
 
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        genesis_prefix_info: GenesisPrefixInfo,
-        secret_key_share: Option<bls::SecretKeyShare>,
+        shared_state: SharedState,
+        parsec_version: u64,
+        section_key_share: Option<SectionKeyShare>,
     ) -> Result<Self> {
-        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
-
-        let section_keys_provider = SectionKeysProvider::new(
-            genesis_prefix_info.public_keys.clone(),
-            secret_key_share.and_then(|key| {
-                IndexedSecretKeyShare::new(key, core.name(), &genesis_prefix_info.elders_info)
-            }),
-        );
-
-        let mut shared_state = SharedState::new(
-            genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.public_key(),
-        );
-
-        if genesis_prefix_info
-            .elders_info
-            .elders
-            .contains_key(core.name())
-        {
-            // We are being created already as elder so we need to insert all the section elders
-            // (including us) into our_members explicitly because we won't see their `Online`
-            // events. This only happens if we are the first node or in tests.
-            for p2p_node in genesis_prefix_info.elders_info.elders.values() {
-                shared_state.our_members.add(p2p_node.clone(), MIN_AGE);
-            }
-        }
-
         let serialised_state = bincode::serialize(&shared_state)?;
         let consensus_engine = ConsensusEngine::new(
             &mut core.rng,
             core.full_id.clone(),
-            &genesis_prefix_info.elders_info,
+            shared_state.sections.our(),
             serialised_state,
-            genesis_prefix_info.parsec_version,
+            parsec_version,
         );
+
+        let section_keys_provider = SectionKeysProvider::new(section_key_share);
+        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         Ok(Self {
             consensus_engine,
             shared_state,
             section_keys_provider,
             sig_accumulator: Default::default(),
-            genesis_prefix_info,
             timer_token,
             dkg_cache: Default::default(),
-            split_cache: None,
+            section_update_barrier: Default::default(),
             churn_in_progress: false,
             members_changed: false,
         })
@@ -148,13 +134,12 @@ impl Approved {
             shared_state: self.shared_state,
             section_keys_provider: self.section_keys_provider,
             full_id: core.full_id,
-            genesis_prefix_info: self.genesis_prefix_info,
             msg_filter: core.msg_filter,
             msg_queue: core.msg_queue,
             transport: core.transport,
             transport_rx: None,
             sig_accumulator: self.sig_accumulator,
-            split_cache: self.split_cache,
+            section_update_barrier: self.section_update_barrier,
         }
     }
 
@@ -191,9 +176,8 @@ impl Approved {
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             sig_accumulator: state.sig_accumulator,
-            genesis_prefix_info: state.genesis_prefix_info,
             timer_token,
-            split_cache: state.split_cache,
+            section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
             dkg_cache: Default::default(),
             churn_in_progress: false,
@@ -204,7 +188,18 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.consensus_engine.vote_for(event.into_network_event())
+        match self
+            .section_keys_provider
+            .key_share()
+            .and_then(|share| event.into_signed_network_event(share))
+        {
+            Ok(event) => self.consensus_engine.vote_for(event),
+            Err(error) => log_or_panic!(
+                log::Level::Error,
+                "Failed to create NetworkEvent: {}",
+                error
+            ),
+        }
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
@@ -227,16 +222,16 @@ impl Approved {
     }
 
     pub fn handle_peer_lost(&mut self, core: &Core, peer_addr: SocketAddr) {
-        let pub_id = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
+        let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
-            *node.public_id()
+            *node.name()
         } else {
             trace!("Lost unknown peer {}", peer_addr);
             return;
         };
 
-        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(pub_id.name()) {
-            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&name) {
+            self.vote_for_event(AccumulatingEvent::Offline(name))
         }
     }
 
@@ -261,7 +256,10 @@ impl Approved {
             }
         }
 
-        self.consensus_engine.prune_if_needed();
+        if self.consensus_engine.needs_pruning() {
+            self.vote_for_event(AccumulatingEvent::ParsecPrune);
+        }
+
         self.send_parsec_gossip(core, None);
     }
 
@@ -280,24 +278,8 @@ impl Approved {
     }
 
     /// Returns the current BLS public key set
-    pub fn public_key_set(&self) -> &bls::PublicKeySet {
-        self.section_keys_provider.public_key_set()
-    }
-
-    /// Returns the current BLS secret key share, if any
-    pub fn secret_key_share(&self) -> Option<&bls::SecretKeyShare> {
-        self.section_keys_provider
-            .secret_key_share()
-            .ok()
-            .map(|share| &share.key)
-    }
-
-    /// Returns the node's index in the current BLS group
-    pub fn our_index(&self) -> Option<usize> {
-        self.section_keys_provider
-            .secret_key_share()
-            .ok()
-            .map(|share| share.index)
+    pub fn section_key_share(&self) -> Option<&SectionKeyShare> {
+        self.section_keys_provider.key_share().ok()
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -360,7 +342,7 @@ impl Approved {
         genesis_prefix_info: &GenesisPrefixInfo,
     ) -> bool {
         !self.is_our_elder(our_id)
-            && genesis_prefix_info.parsec_version > self.genesis_prefix_info.parsec_version
+            && genesis_prefix_info.parsec_version > self.consensus_engine.parsec_version()
     }
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
@@ -376,7 +358,7 @@ impl Approved {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.shared_state.sections.keys()) {
+        match msg.verify(self.shared_state.section_keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::Unknown) => Ok(false),
             Err(error) => {
@@ -396,21 +378,12 @@ impl Approved {
     ) -> Result<()> {
         let src = msg.src.location();
         let bounce_dst = src.to_dst();
-        let bounce_dst_key = self
-            .shared_state
-            .sections
-            .key_by_location(&bounce_dst)
-            .copied();
-
-        if bounce_dst_key.is_none() {
-            trace!("Untrusted message from unknown src {:?} - discarding", src);
-            return Ok(());
-        }
+        let bounce_dst_key = *self.shared_state.section_key_by_location(&bounce_dst);
 
         let bounce_msg = Message::single_src(
             &core.full_id,
             bounce_dst,
-            bounce_dst_key,
+            Some(bounce_dst_key),
             Variant::BouncedUntrustedMessage(Box::new(msg)),
         )?;
         let bounce_msg = bounce_msg.to_bytes()?;
@@ -532,29 +505,42 @@ impl Approved {
         core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
-    pub fn handle_neighbour_info(
-        &mut self,
-        elders_info: EldersInfo,
-        src_key: bls::PublicKey,
-    ) -> Result<()> {
+    pub fn handle_neighbour_info(&mut self, elders_info: EldersInfo, src_key: bls::PublicKey) {
         if !self.shared_state.sections.has_key(&src_key) {
-            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info, src_key));
+            self.vote_for_event(AccumulatingEvent::TheirKey {
+                prefix: elders_info.prefix,
+                key: src_key,
+            });
         } else {
-            trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
+            trace!(
+                "Ignore not new section key of {:?}: {:?}",
+                elders_info,
+                src_key
+            );
+            return;
         }
-        Ok(())
+
+        if elders_info
+            .prefix
+            .is_neighbour(self.shared_state.our_prefix())
+        {
+            self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info));
+        }
     }
 
     pub fn handle_genesis_update(
         &mut self,
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
+        section_key: bls::PublicKey,
     ) -> Result<()> {
         info!("Received GenesisUpdate: {:?}", genesis_prefix_info);
 
         core.msg_filter.reset();
-        self.handle_elders_update(core, genesis_prefix_info);
-        Ok(())
+
+        self.shared_state = SharedState::new(genesis_prefix_info.elders_info, section_key);
+        self.section_keys_provider = SectionKeysProvider::new(None);
+        self.reset_parsec(core, genesis_prefix_info.parsec_version)
     }
 
     pub fn handle_relocate(
@@ -643,7 +629,6 @@ impl Approved {
                 .shared_state
                 .sections
                 .closest(&destination)
-                .1
                 .elders
                 .values()
                 .map(|p2p_node| *p2p_node.peer_addr())
@@ -735,11 +720,11 @@ impl Approved {
             (MIN_AGE, None)
         };
 
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
+        self.vote_for_event(AccumulatingEvent::Online {
             p2p_node,
             age,
             their_knowledge,
-        }))
+        })
     }
 
     pub fn handle_parsec_poke(&mut self, core: &mut Core, p2p_node: P2pNode, version: u64) {
@@ -906,7 +891,7 @@ impl Approved {
         };
 
         if self.should_backlog_event(&event) {
-            self.backlog_event(event);
+            self.backlog_event(event, proof);
             Ok(false)
         } else {
             self.handle_accumulated_event(core, event, proof)?;
@@ -925,14 +910,14 @@ impl Approved {
             return Ok(false);
         }
 
-        if let Some(event) = self.shared_state.churn_event_backlog.pop_back() {
+        if let Some((event, proof)) = self.shared_state.churn_event_backlog.pop_back() {
             trace!(
                 "churn backlog poll {:?}, Others: {:?}",
                 event,
                 self.shared_state.churn_event_backlog
             );
 
-            self.handle_accumulated_event(core, event, AccumulatingProof::default())?;
+            self.handle_accumulated_event(core, event, proof)?;
             Ok(true)
         } else {
             Ok(false)
@@ -941,7 +926,7 @@ impl Approved {
 
     fn should_backlog_event(&self, event: &AccumulatingEvent) -> bool {
         let is_churn_trigger = match event {
-            AccumulatingEvent::Online(_)
+            AccumulatingEvent::Online { .. }
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::Relocate(_) => true,
             _ => false,
@@ -950,13 +935,15 @@ impl Approved {
         is_churn_trigger && !self.is_ready_to_churn()
     }
 
-    fn backlog_event(&mut self, event: AccumulatingEvent) {
+    fn backlog_event(&mut self, event: AccumulatingEvent, proof: Option<Proof>) {
         trace!(
             "churn backlog {:?}, Other: {:?}",
             event,
             self.shared_state.churn_event_backlog
         );
-        self.shared_state.churn_event_backlog.push_front(event);
+        self.shared_state
+            .churn_event_backlog
+            .push_front((event, proof));
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
@@ -987,7 +974,10 @@ impl Approved {
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+            self.consensus_engine.vote_for(NetworkEvent {
+                payload: AccumulatingEvent::StartDkg(participants),
+                proof_share: None,
+            });
         }
 
         true
@@ -1002,7 +992,10 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_relocate_prepare(details, RELOCATE_COOL_DOWN_STEPS);
+                self.vote_for_event(AccumulatingEvent::RelocatePrepare(
+                    details,
+                    RELOCATE_COOL_DOWN_STEPS,
+                ));
             }
 
             return true;
@@ -1015,7 +1008,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
-        proof: AccumulatingProof,
+        proof: Option<Proof>,
     ) -> Result<()> {
         trace!("Handle accumulated event: {:?}", event);
 
@@ -1035,25 +1028,52 @@ impl Approved {
                 participants,
                 dkg_result,
             } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
-            AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
-            AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
-            AccumulatingEvent::SectionInfo(elders_info, key) => {
-                self.handle_section_info_event(core, elders_info, key, proof)?
+            AccumulatingEvent::Online {
+                p2p_node,
+                age,
+                their_knowledge,
+            } => self.handle_online_event(
+                core,
+                p2p_node,
+                age,
+                their_knowledge,
+                proof.expect("missing proof for Online"),
+            ),
+            AccumulatingEvent::Offline(name) => {
+                self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
             }
-            AccumulatingEvent::NeighbourInfo(elders_info, key) => {
-                self.handle_neighbour_info_event(core, elders_info, key)?
-            }
+            AccumulatingEvent::SectionInfo(elders_info) => self.handle_section_info_event(
+                core,
+                elders_info,
+                proof.expect("missing proof for SectionInfo"),
+            )?,
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::TheirKeyInfo { prefix, key } => {
-                self.handle_their_key_info_event(prefix, key)
-            }
-            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => {
-                self.handle_their_knowledge_event(prefix, knowledge)
-            }
+            AccumulatingEvent::OurKey { prefix, key } => self.handle_our_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for OurKey"),
+            )?,
+            AccumulatingEvent::TheirKey { prefix, key } => self.handle_their_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for TheirKey"),
+            )?,
+            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => self
+                .handle_their_knowledge_event(
+                    prefix,
+                    knowledge,
+                    proof.expect("missing proof for TheirKnowledge"),
+                ),
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
-            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(core, payload)?,
+            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(
+                core,
+                payload,
+                proof.expect("missing proof for Relocate"),
+            )?,
             AccumulatingEvent::RelocatePrepare(pub_id, count) => {
                 self.handle_relocate_prepare_event(core, pub_id, count);
             }
@@ -1081,7 +1101,14 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) {
+    fn handle_online_event(
+        &mut self,
+        core: &mut Core,
+        p2p_node: P2pNode,
+        age: u8,
+        their_knowledge: Option<bls::PublicKey>,
+        proof: Proof,
+    ) {
         if self.churn_in_progress {
             log_or_panic!(
                 log::Level::Error,
@@ -1091,28 +1118,29 @@ impl Approved {
         }
 
         if self.shared_state.add_member(
-            payload.p2p_node.clone(),
-            payload.age,
+            p2p_node.clone(),
+            age,
+            proof,
             core.network_params.recommended_section_size,
         ) {
-            info!("handle Online: {:?}.", payload);
+            info!("handle Online: {} (age: {})", p2p_node, age);
 
             self.members_changed = true;
 
             if self.is_our_elder(core.id()) {
                 core.send_event(Event::MemberJoined {
-                    name: *payload.p2p_node.name(),
-                    age: payload.age,
+                    name: *p2p_node.name(),
+                    age,
                 });
-                self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
+                self.send_node_approval(core, p2p_node, their_knowledge);
                 self.print_network_stats();
             }
         } else {
-            info!("ignore Online: {:?}.", payload);
+            info!("ignore Online: {}", p2p_node);
         }
     }
 
-    fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) {
+    fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
         if self.churn_in_progress {
             log_or_panic!(
                 log::Level::Error,
@@ -1121,11 +1149,12 @@ impl Approved {
             return;
         }
 
-        if let Some(info) = self
-            .shared_state
-            .remove_member(&pub_id, core.network_params.recommended_section_size)
-        {
-            info!("handle Offline: {}", pub_id);
+        if let Some(info) = self.shared_state.remove_member(
+            &name,
+            proof,
+            core.network_params.recommended_section_size,
+        ) {
+            info!("handle Offline: {}", name);
 
             self.members_changed = true;
 
@@ -1133,12 +1162,12 @@ impl Approved {
 
             if self.is_our_elder(core.id()) {
                 core.send_event(Event::MemberLeft {
-                    name: *pub_id.name(),
+                    name,
                     age: info.age(),
                 });
             }
         } else {
-            info!("ignore Offline: {}", pub_id);
+            info!("ignore Offline: {}", name);
         }
     }
 
@@ -1153,9 +1182,9 @@ impl Approved {
         }
 
         if count_down > 0 {
-            self.vote_for_relocate_prepare(payload, count_down - 1);
+            self.vote_for_event(AccumulatingEvent::RelocatePrepare(payload, count_down - 1))
         } else {
-            self.vote_for_relocate(payload);
+            self.vote_for_event(AccumulatingEvent::Relocate(payload))
         }
     }
 
@@ -1163,11 +1192,13 @@ impl Approved {
         &mut self,
         core: &mut Core,
         details: RelocateDetails,
+        proof: Proof,
     ) -> Result<(), RoutingError> {
         match self
             .shared_state
             .remove_member(
-                &details.pub_id,
+                details.pub_id.name(),
+                proof,
                 core.network_params.recommended_section_size,
             )
             .map(|info| info.state)
@@ -1228,7 +1259,22 @@ impl Approved {
 
         if let Some(info) = self.dkg_cache.remove(participants) {
             info!("handle DkgResult: {:?}", participants);
-            self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
+
+            let key = dkg_result.0.public_key_set.public_key();
+
+            self.vote_for_event(AccumulatingEvent::OurKey {
+                prefix: info.prefix,
+                key,
+            });
+
+            if info.prefix.is_extension_of(self.shared_state.our_prefix()) {
+                self.vote_for_event(AccumulatingEvent::TheirKey {
+                    prefix: info.prefix,
+                    key,
+                });
+            }
+
+            self.vote_for_event(AccumulatingEvent::SectionInfo(info));
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -1244,185 +1290,29 @@ impl Approved {
         &mut self,
         core: &mut Core,
         elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        proof: AccumulatingProof,
+        proof: Proof,
     ) -> Result<()> {
-        let old_prefix = *self.shared_state.our_prefix();
-        let was_elder = self.is_our_elder(core.id());
+        let elders_info = Proven::new(elders_info, proof);
 
-        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
-        let neighbour_elders_removed =
-            if self.add_new_elders_info(core.name(), elders_info, section_key, proof)? {
-                neighbour_elders_removed.build(&self.shared_state.sections)
-            } else {
-                return Ok(());
-            };
-
-        let elders_info = self.shared_state.our_info();
-        let info_prefix = elders_info.prefix;
-        let is_elder = elders_info.elders.contains_key(core.name());
-
-        core.msg_filter.reset();
-
-        if was_elder || is_elder {
-            info!("handle SectionInfo: {:?}", elders_info);
-        } else {
-            trace!("unhandled SectionInfo");
-            return Ok(());
-        }
-
-        if info_prefix.is_extension_of(&old_prefix) {
-            info!("Split");
-        } else if old_prefix.is_extension_of(&info_prefix) {
-            panic!("Merge not supported: {:?} -> {:?}", old_prefix, info_prefix);
-        }
-
-        let complete_data = self.prepare_parsec_reset(core.id())?;
-
-        if !is_elder {
-            // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
-            // i.e the one that would be received with NodeApproval.
-            self.handle_elders_update(core, complete_data.genesis_prefix_info);
-
-            info!("Demoted");
-            core.send_event(Event::Demoted);
-
-            return Ok(());
-        }
-
-        self.finalise_parsec_reset(
-            core,
-            complete_data.genesis_prefix_info,
-            complete_data.to_vote_again,
-        )?;
-
-        self.prune_neighbour_connections(core, &neighbour_elders_removed);
-        self.send_genesis_updates(core);
-        self.send_parsec_poke(core);
-
-        self.print_network_stats();
-
-        if !was_elder {
-            info!("Promoted");
-            core.send_event(Event::Promoted);
-        }
-
-        core.send_event(Event::EldersChanged {
-            prefix: *self.shared_state.our_prefix(),
-            key: *self.shared_state.our_history.last_key(),
-            elders: self
-                .shared_state
-                .our_info()
-                .elders
-                .keys()
-                .copied()
-                .collect(),
-        });
-
-        Ok(())
-    }
-
-    // Handles our own section info, or the section info of our sibling directly after a split.
-    // Returns whether the event should be handled by the caller.
-    fn add_new_elders_info(
-        &mut self,
-        our_name: &XorName,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        proofs: AccumulatingProof,
-    ) -> Result<bool> {
-        // Split handling alone. wouldn't cater to merge
-        if elders_info
-            .prefix
-            .is_extension_of(self.shared_state.our_prefix())
+        if elders_info.value.prefix == *self.shared_state.our_prefix()
+            || elders_info
+                .value
+                .prefix
+                .is_extension_of(self.shared_state.our_prefix())
         {
-            match self.split_cache.take() {
-                None => {
-                    self.split_cache = Some(SplitCache {
-                        elders_info,
-                        section_key,
-                        proofs,
-                    });
-                    Ok(false)
-                }
-                Some(cached) => {
-                    let cached_prefix = cached.elders_info.prefix;
-
-                    // Add our_info first so when we add sibling info, its a valid neighbour prefix
-                    // which does not get immediately purged.
-                    if cached_prefix.matches(our_name) {
-                        self.add_our_elders_info(
-                            our_name,
-                            cached.elders_info,
-                            cached.section_key,
-                            cached.proofs,
-                        )?;
-                        self.add_sibling_elders_info(elders_info, section_key);
-                    } else {
-                        self.add_our_elders_info(our_name, elders_info, section_key, proofs)?;
-                        self.add_sibling_elders_info(cached.elders_info, cached.section_key);
-                    }
-                    Ok(true)
-                }
+            // Our section
+            if let Some(details) = self.section_update_barrier.handle_info(
+                core.name(),
+                self.shared_state.our_prefix(),
+                elders_info,
+            ) {
+                self.update_our_section(core, details)?
             }
         } else {
-            self.add_our_elders_info(our_name, elders_info, section_key, proofs)?;
-            Ok(true)
-        }
-    }
-
-    fn add_our_elders_info(
-        &mut self,
-        our_name: &XorName,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        proofs: AccumulatingProof,
-    ) -> Result<(), RoutingError> {
-        let signature = self.section_keys_provider.check_and_combine_signatures(
-            self.shared_state.sections.our(),
-            &section_key,
-            proofs,
-        )?;
-        self.section_keys_provider
-            .finalise_dkg(our_name, &elders_info)?;
-        self.shared_state
-            .update_our_section(elders_info, section_key, signature);
-        self.churn_in_progress = false;
-        Ok(())
-    }
-
-    fn add_sibling_elders_info(&mut self, elders_info: EldersInfo, section_key: bls::PublicKey) {
-        let prefix = elders_info.prefix;
-        self.shared_state.sections.add_neighbour(elders_info);
-        self.shared_state.sections.update_keys(prefix, section_key);
-
-        // We can update their knowledge already because we know they also reached consensus on
-        // our `SectionInfo` so they know our latest key.
-        self.shared_state
-            .sections
-            .update_knowledge(prefix, self.shared_state.our_history.last_key_index());
-    }
-
-    fn handle_neighbour_info_event(
-        &mut self,
-        core: &mut Core,
-        elders_info: EldersInfo,
-        key: bls::PublicKey,
-    ) -> Result<()> {
-        info!("handle NeighbourInfo: {:?}", elders_info);
-
-        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
-        self.shared_state
-            .sections
-            .update_keys(elders_info.prefix, key);
-        self.shared_state.sections.add_neighbour(elders_info);
-        let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
-
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
+            // Other section
+            self.update_neighbour_info(core, elders_info)
         }
 
-        self.prune_neighbour_connections(core, &neighbour_elders_removed);
         Ok(())
     }
 
@@ -1448,17 +1338,67 @@ impl Approved {
         )
     }
 
-    fn handle_their_key_info_event(&mut self, prefix: Prefix<XorName>, key: bls::PublicKey) {
-        self.shared_state.sections.update_keys(prefix, key);
+    fn handle_our_key_event(
+        &mut self,
+        core: &mut Core,
+        prefix: Prefix<XorName>,
+        key: bls::PublicKey,
+        proof: Proof,
+    ) -> Result<()> {
+        if !prefix.matches(core.name()) {
+            return Ok(());
+        }
+
+        let key = Proven::new(key, proof);
+
+        if let Some(details) = self
+            .section_update_barrier
+            .handle_our_key(self.shared_state.our_prefix(), key)
+        {
+            self.update_our_section(core, details)
+        } else {
+            Ok(())
+        }
     }
 
-    fn handle_their_knowledge_event(&mut self, prefix: Prefix<XorName>, knowledge: u64) {
-        self.shared_state
-            .sections
-            .update_knowledge(prefix, knowledge)
+    fn handle_their_key_event(
+        &mut self,
+        core: &mut Core,
+        prefix: Prefix<XorName>,
+        key: bls::PublicKey,
+        proof: Proof,
+    ) -> Result<()> {
+        if prefix.matches(core.name()) {
+            return Ok(());
+        }
+
+        let key = Proven::new((prefix, key), proof);
+
+        if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
+            if let Some(details) = self
+                .section_update_barrier
+                .handle_their_key(self.shared_state.our_prefix(), key)
+            {
+                self.update_our_section(core, details)?
+            }
+        } else {
+            self.shared_state.sections.update_keys(key)
+        }
+
+        Ok(())
     }
 
-    fn handle_prune_event(&mut self, core: &mut Core) -> Result<(), RoutingError> {
+    fn handle_their_knowledge_event(
+        &mut self,
+        prefix: Prefix<XorName>,
+        knowledge: u64,
+        proof: Proof,
+    ) {
+        let knowledge = Proven::new((prefix, knowledge), proof);
+        self.shared_state.sections.update_knowledge(knowledge)
+    }
+
+    fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
         if !self.is_our_elder(core.id()) {
             debug!("ignore ParsecPrune event - not elder");
             return Ok(());
@@ -1470,12 +1410,8 @@ impl Approved {
         }
 
         info!("handle ParsecPrune");
-        let complete_data = self.prepare_parsec_reset(core.id())?;
-        self.finalise_parsec_reset(
-            core,
-            complete_data.genesis_prefix_info,
-            complete_data.to_vote_again,
-        )?;
+
+        self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
         self.send_genesis_updates(core);
         self.send_parsec_poke(core);
         Ok(())
@@ -1487,138 +1423,198 @@ impl Approved {
         Ok(())
     }
 
+    fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
+        let old_prefix = *self.shared_state.our_prefix();
+        let was_elder = self.is_our_elder(core.id());
+        let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
+
+        self.update_our_key_and_info(core, details.our.key, details.our.info)?;
+
+        if let Some(sibling) = details.sibling {
+            self.shared_state.sections.update_keys(sibling.key);
+            self.update_neighbour_info(core, sibling.info);
+        }
+
+        let elders_info = self.shared_state.our_info();
+        let new_prefix = elders_info.prefix;
+        let is_elder = elders_info.elders.contains_key(core.name());
+
+        core.msg_filter.reset();
+
+        if was_elder || is_elder {
+            info!("handle SectionInfo: {:?}", elders_info);
+        } else {
+            trace!("unhandled SectionInfo");
+            return Ok(());
+        }
+
+        if new_prefix.is_extension_of(&old_prefix) {
+            info!("Split");
+        } else if old_prefix.is_extension_of(&new_prefix) {
+            panic!("Merge not supported: {:?} -> {:?}", old_prefix, new_prefix);
+        }
+
+        self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
+
+        if !is_elder {
+            info!("Demoted");
+            self.shared_state.demote();
+            core.send_event(Event::Demoted);
+            return Ok(());
+        }
+
+        // We can update the sibling knowledge already because we know they also reached consensus
+        // on our `OurKey` so they know our latest key. Need to vote for it first though, to
+        // accumulate the signatures.
+        if let Some(prefix) = sibling_prefix {
+            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
+                prefix,
+                knowledge: self.shared_state.our_history.last_key_index(),
+            })
+        }
+
+        self.send_genesis_updates(core);
+        self.send_parsec_poke(core);
+
+        self.print_network_stats();
+
+        if !was_elder {
+            info!("Promoted");
+            core.send_event(Event::Promoted);
+        }
+
+        core.send_event(Event::EldersChanged {
+            prefix: *self.shared_state.our_prefix(),
+            key: *self.shared_state.our_history.last_key(),
+            elders: self
+                .shared_state
+                .our_info()
+                .elders
+                .keys()
+                .copied()
+                .collect(),
+        });
+
+        Ok(())
+    }
+
+    fn update_our_key_and_info(
+        &mut self,
+        core: &mut Core,
+        section_key: Proven<bls::PublicKey>,
+        elders_info: Proven<EldersInfo>,
+    ) -> Result<(), RoutingError> {
+        self.section_keys_provider
+            .finalise_dkg(core.name(), &elders_info.value)?;
+
+        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
+        self.shared_state
+            .update_our_section(elders_info, section_key);
+        let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
+        self.prune_neighbour_connections(core, &neighbour_elders_removed);
+
+        self.churn_in_progress = false;
+
+        Ok(())
+    }
+
+    fn update_neighbour_info(&mut self, core: &mut Core, elders_info: Proven<EldersInfo>) {
+        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
+        self.shared_state.sections.add_neighbour(elders_info);
+        let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
+        self.prune_neighbour_connections(core, &neighbour_elders_removed);
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Parsec and Chain management
     ////////////////////////////////////////////////////////////////////////////
 
-    /// Gets the data needed to initialise a new Parsec instance
-    fn prepare_parsec_reset(&mut self, our_id: &PublicId) -> Result<ParsecResetData> {
-        self.shared_state.handled_genesis_event = false;
+    fn reset_parsec(&mut self, core: &mut Core, new_parsec_version: u64) -> Result<()> {
+        let is_elder = self.is_our_elder(core.id());
+
+        let events = self.consensus_engine.prepare_reset(core.name());
+        let events = self.filter_events_to_revote(events);
+
+        let serialised_state = if is_elder {
+            bincode::serialize(&self.shared_state)?
+        } else {
+            vec![]
+        };
+
+        self.consensus_engine.finalise_reset(
+            &mut core.rng,
+            core.full_id.clone(),
+            self.shared_state.our_info(),
+            serialised_state,
+            new_parsec_version,
+        );
+
+        if is_elder {
+            self.shared_state.handled_genesis_event = false;
+
+            for event in events {
+                self.vote_for_event(event);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn filter_events_to_revote(
+        &self,
+        mut events: Vec<AccumulatingEvent>,
+    ) -> Vec<AccumulatingEvent> {
         let our_prefix = *self.shared_state.our_prefix();
 
-        let mut to_vote_again = self.consensus_engine.prepare_reset(our_id);
-        to_vote_again.retain(|event| match event.payload {
+        events.retain(|event| match &event {
             // Only re-vote if still relevant to our new prefix.
-            AccumulatingEvent::Online(ref payload) => our_prefix.matches(payload.p2p_node.name()),
-            AccumulatingEvent::Offline(pub_id) => our_prefix.matches(pub_id.name()),
-            AccumulatingEvent::Relocate(ref details)
-            | AccumulatingEvent::RelocatePrepare(ref details, _) => {
+            AccumulatingEvent::Online { p2p_node, .. } => our_prefix.matches(p2p_node.name()),
+            AccumulatingEvent::Offline(name) => our_prefix.matches(name),
+            AccumulatingEvent::Relocate(details)
+            | AccumulatingEvent::RelocatePrepare(details, _) => {
                 our_prefix.matches(details.pub_id.name())
             }
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::DkgResult { .. }
-            | AccumulatingEvent::ParsecPrune => false,
+            | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::OurKey { .. } => false,
 
             // Keep: Additional signatures for neighbours for sec-msg-relay.
-            AccumulatingEvent::SectionInfo(ref elders_info, _)
-            | AccumulatingEvent::NeighbourInfo(ref elders_info, _) => {
+            AccumulatingEvent::SectionInfo(elders_info) => {
                 our_prefix.is_neighbour(&elders_info.prefix)
             }
 
             // Only revote if the recipient is still our neighbour
-            AccumulatingEvent::SendNeighbourInfo { ref dst, .. } => {
+            AccumulatingEvent::SendNeighbourInfo { dst, .. } => {
                 self.shared_state.sections.is_in_neighbour(dst)
             }
 
             // Keep: Still relevant after prefix change.
-            AccumulatingEvent::TheirKeyInfo { .. }
+            AccumulatingEvent::TheirKey { .. }
             | AccumulatingEvent::TheirKnowledge { .. }
             | AccumulatingEvent::User(_) => true,
         });
-
-        let genesis_prefix_info = GenesisPrefixInfo {
-            elders_info: self.shared_state.our_info().clone(),
-            public_keys: self.section_keys_provider.public_key_set().clone(),
-            parsec_version: self.consensus_engine.parsec_version() + 1,
-        };
-
-        Ok(ParsecResetData {
-            genesis_prefix_info,
-            to_vote_again,
-        })
+        events
     }
 
-    // Finalise parsec reset and revotes for all previously unaccumulated events.
-    fn finalise_parsec_reset(
-        &mut self,
-        core: &mut Core,
-        genesis_prefix_info: GenesisPrefixInfo,
-        to_vote_again: Vec<NetworkEvent>,
-    ) -> Result<()> {
-        let serialised_state = bincode::serialize(&self.shared_state)?;
-
-        self.genesis_prefix_info = genesis_prefix_info;
-        self.consensus_engine.finalise_reset(
-            &mut core.rng,
-            core.full_id.clone(),
-            &self.genesis_prefix_info.elders_info,
-            serialised_state,
-            self.genesis_prefix_info.parsec_version,
-        );
-
-        for event in to_vote_again {
-            self.consensus_engine.vote_for(event);
+    fn create_genesis_prefix_info(&self) -> GenesisPrefixInfo {
+        GenesisPrefixInfo {
+            elders_info: self.shared_state.sections.proven_our().clone(),
+            parsec_version: self.consensus_engine.parsec_version(),
         }
-
-        Ok(())
-    }
-
-    // Handles change to the section elders as non-elder.
-    fn handle_elders_update(&mut self, core: &mut Core, genesis_prefix_info: GenesisPrefixInfo) {
-        self.section_keys_provider =
-            SectionKeysProvider::new(genesis_prefix_info.public_keys.clone(), None);
-        self.consensus_engine.finalise_reset(
-            &mut core.rng,
-            core.full_id.clone(),
-            &genesis_prefix_info.elders_info,
-            vec![],
-            genesis_prefix_info.parsec_version,
-        );
-        self.shared_state = SharedState::new(
-            genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.public_key(),
-        );
-        self.genesis_prefix_info = genesis_prefix_info;
     }
 
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self) {
-        let members = self.shared_state.our_info().elder_ids();
-        let unresponsive_nodes = self.consensus_engine.detect_unresponsive(members);
+        let unresponsive_nodes = self
+            .consensus_engine
+            .detect_unresponsive(self.shared_state.our_info());
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
-            self.consensus_engine
-                .vote_for(AccumulatingEvent::Offline(*pub_id).into_network_event());
+            self.vote_for_event(AccumulatingEvent::Offline(*pub_id.name()));
         }
-    }
-
-    fn vote_for_relocate(&mut self, details: RelocateDetails) {
-        self.consensus_engine
-            .vote_for(AccumulatingEvent::Relocate(details).into_network_event())
-    }
-
-    fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
-        self.consensus_engine
-            .vote_for(AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event());
-    }
-
-    fn vote_for_section_info(
-        &mut self,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-    ) -> Result<(), RoutingError> {
-        let signature_share = self
-            .section_keys_provider
-            .secret_key_share()?
-            .key
-            .sign(&section_key.to_bytes()[..]);
-
-        let event = AccumulatingEvent::SectionInfo(elders_info, section_key);
-        let event = event.into_network_event_with(Some(signature_share));
-        self.consensus_engine.vote_for(event);
-        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1640,10 +1636,12 @@ impl Approved {
             p2p_node
         );
 
-        let src = SrcLocation::Section(self.genesis_prefix_info.elders_info.prefix);
+        let genesis_prefix_info = self.create_genesis_prefix_info();
+
+        let src = SrcLocation::Section(genesis_prefix_info.elders_info.value.prefix);
         let dst = DstLocation::Node(*p2p_node.name());
 
-        let variant = Variant::NodeApproval(self.genesis_prefix_info.clone());
+        let variant = Variant::NodeApproval(genesis_prefix_info);
         let their_knowledge =
             their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
 
@@ -1655,11 +1653,7 @@ impl Approved {
     // Send `GenesisUpdate` message to all non-elders.
     fn send_genesis_updates(&mut self, core: &mut Core) {
         for (recipient, msg) in self.create_genesis_updates() {
-            trace!(
-                "Send GenesisUpdate({:?}) to {}",
-                self.genesis_prefix_info,
-                recipient
-            );
+            trace!("Send {:?} to {}", msg.content, recipient);
 
             core.send_direct_message(
                 recipient.peer_addr(),
@@ -1670,11 +1664,13 @@ impl Approved {
 
     // TODO: make non-pub
     pub fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
+        let genesis_prefix_info = self.create_genesis_prefix_info();
+
         self.shared_state
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(self.genesis_prefix_info.clone());
+                let variant = Variant::GenesisUpdate(genesis_prefix_info.clone());
                 let dst = DstLocation::Node(*recipient.name());
                 let proof_start_index = self
                     .shared_state
@@ -1769,7 +1765,7 @@ impl Approved {
 
     // Send message over the network.
     pub fn relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) = routing_table::delivery_targets(
+        let (targets, dg_size) = delivery_group::delivery_targets(
             msg.message_dst(),
             core.id(),
             &self.shared_state.our_members,
@@ -1788,8 +1784,6 @@ impl Approved {
         if targets.is_empty() {
             return Ok(());
         }
-
-        trace!("Sending {:?} via targets {:?}", msg, targets);
 
         let targets: Vec<_> = targets.into_iter().map(|node| *node.peer_addr()).collect();
         let cheap_bytes_clone = msg.full_bytes().clone();
@@ -1834,7 +1828,7 @@ impl Approved {
         let accumulating_msg =
             self.to_accumulating_message(dst, variant, proof_start_index_override)?;
 
-        let targets = routing_table::signature_targets(
+        let targets = delivery_group::signature_targets(
             &dst,
             self.shared_state.sections.our_elders().cloned(),
         );
@@ -1869,14 +1863,8 @@ impl Approved {
         proof_start_index_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
         let proof = self.shared_state.prove(&dst, proof_start_index_override);
-        let pk_set = self.section_keys_provider.public_key_set().clone();
-        let sk_share = self.section_keys_provider.secret_key_share()?;
-
-        let dst_key = *self
-            .shared_state
-            .sections
-            .key_by_location(&dst)
-            .unwrap_or_else(|| self.shared_state.our_history.first_key());
+        let key_share = self.section_keys_provider.key_share()?;
+        let dst_key = *self.shared_state.section_key_by_location(&dst);
 
         let content = PlainMessage {
             src: *self.shared_state.our_prefix(),
@@ -1885,7 +1873,13 @@ impl Approved {
             variant,
         };
 
-        AccumulatingMessage::new(content, sk_share, pk_set, proof)
+        AccumulatingMessage::new(
+            content,
+            key_share.public_key_set.clone(),
+            key_share.index,
+            &key_share.secret_key_share,
+            proof,
+        )
     }
 
     // TODO: consider changing this so it sends only to a subset of the elders
@@ -1923,10 +1917,18 @@ impl Approved {
     }
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub fn update_section_knowledge(&mut self, msg: &Message, msg_hash: &MessageHash) {
-        let events =
-            self.shared_state
-                .update_section_knowledge(&msg.src, msg.dst_key.as_ref(), msg_hash);
+    pub fn update_section_knowledge(
+        &mut self,
+        our_name: &XorName,
+        msg: &Message,
+        msg_hash: &MessageHash,
+    ) {
+        let events = self.shared_state.update_section_knowledge(
+            our_name,
+            &msg.src,
+            msg.dst_key.as_ref(),
+            msg_hash,
+        );
 
         for event in events {
             self.vote_for_event(event)
@@ -1938,23 +1940,58 @@ impl Approved {
     }
 }
 
-// Data needed to finalise parsec reset.
-struct ParsecResetData {
-    // The new genesis prefix info.
-    genesis_prefix_info: GenesisPrefixInfo,
-    // The cached events that should be revoted. Not shared state: only the ones we voted for.
-    // Also contains our votes that never reached consensus.
-    to_vote_again: Vec<NetworkEvent>,
-}
-
 pub struct RelocateParams {
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,
 }
 
 // Create `EldersInfo` for the first node.
-fn create_first_elders_info(p2p_node: P2pNode) -> EldersInfo {
+fn create_first_elders_info(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    p2p_node: P2pNode,
+) -> Result<Proven<EldersInfo>> {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default())
+    let elders_info = EldersInfo::new(iter::once(node).collect(), Prefix::default());
+    let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
+    Ok(Proven::new(elders_info, proof))
+}
+
+fn create_first_shared_state(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    elders_info: Proven<EldersInfo>,
+) -> Result<SharedState> {
+    let mut shared_state = SharedState::new(elders_info, pk_set.public_key());
+
+    for p2p_node in shared_state.sections.our().elders.values() {
+        let proof = create_first_proof(
+            pk_set,
+            sk_share,
+            &member_info::to_sign(p2p_node.name(), MemberState::Joined),
+        )?;
+        shared_state
+            .our_members
+            .add(p2p_node.clone(), MIN_AGE, proof);
+    }
+
+    Ok(shared_state)
+}
+
+fn create_first_proof<T: Serialize>(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    payload: &T,
+) -> Result<Proof> {
+    let bytes = bincode::serialize(payload)?;
+    let signature_share = sk_share.sign(&bytes);
+    let signature = pk_set
+        .combine_signatures(iter::once((0, &signature_share)))
+        .map_err(|_| RoutingError::InvalidSignatureShares)?;
+
+    Ok(Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    })
 }

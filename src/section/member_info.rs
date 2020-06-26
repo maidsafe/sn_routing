@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::P2pNode;
+use crate::{consensus::Proof, id::P2pNode};
+use xor_name::XorName;
 
 /// The type for counting the churn events experienced by a node
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -58,16 +59,19 @@ pub struct MemberInfo {
     pub p2p_node: P2pNode,
     // Section version at the time this node joined.
     pub section_version: u64,
+    // Proof of this info. See `data_for_proof` for more info.
+    pub proof: Proof,
 }
 
 impl MemberInfo {
     /// Create new `MemberInfo` in the `Joined` state.
-    pub fn new(age: u8, p2p_node: P2pNode, section_version: u64) -> Self {
+    pub fn new(age: u8, p2p_node: P2pNode, section_version: u64, proof: Proof) -> Self {
         Self {
             age_counter: AgeCounter::from_age(age),
             state: MemberState::Joined,
             p2p_node,
             section_version,
+            proof,
         }
     }
 
@@ -96,6 +100,12 @@ impl MemberInfo {
     pub fn age_counter_value(&self) -> u32 {
         self.age_counter.0
     }
+}
+
+/// Get the fields of `MemberInfo` that should be signed.
+// TODO: should also include age and possibly the socket address.
+pub fn to_sign(name: &XorName, state: MemberState) -> (&XorName, MemberState) {
+    (name, state)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]

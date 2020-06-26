@@ -7,13 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::ProofSet,
     id::{P2pNode, PublicId},
     Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Borrow,
     collections::BTreeMap,
     fmt::{self, Debug, Formatter},
 };
@@ -40,12 +40,28 @@ impl EldersInfo {
     }
 
     /// Returns `true` if the proofs are from a quorum of this section.
-    pub(crate) fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs
-            .ids()
-            .filter(|id| self.elders.contains_key(id.name()))
+    pub(crate) fn is_quorum<'a, I>(&self, names: I) -> bool
+    where
+        I: IntoIterator<Item = &'a XorName>,
+    {
+        names
+            .into_iter()
+            .filter(|name| self.elders.contains_key(name))
             .count()
             >= quorum_count(self.elders.len())
+    }
+
+    /// Returns the index of the elder with `name` in this set of elders.
+    /// This is useful for BLS signatures where the signature share needs to be mapped to a
+    /// "field element" which is typically a numeric index.
+    pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
+        self.elders.keys().position(|other_name| other_name == name)
+    }
+}
+
+impl Borrow<Prefix<XorName>> for EldersInfo {
+    fn borrow(&self) -> &Prefix<XorName> {
+        &self.prefix
     }
 }
 

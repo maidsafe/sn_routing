@@ -18,11 +18,12 @@ use routing::{
     mock::Environment,
     rng::MainRng,
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
-    RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
+    RelocationOverrides, SrcLocation, TransportConfig,
 };
 use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
 };
+use xor_name::{XorName, Xorable};
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
 pub const LOWERED_ELDER_SIZE: usize = 4;
@@ -408,10 +409,11 @@ pub fn create_connected_nodes_until_split(
     let final_prefixes = gen_prefixes(&mut rng, prefix_lengths);
 
     // The sequence of prefixes to split in order to reach `final_prefixes`.
-    let mut split_sequence = final_prefixes
+    let mut split_sequence: Vec<_> = final_prefixes
         .iter()
         .flat_map(|prefix| prefix.ancestors())
-        .sorted_by(|lhs, rhs| lhs.cmp_breadth_first(rhs));
+        .sorted_by(|lhs, rhs| lhs.cmp_breadth_first(rhs))
+        .collect();
     split_sequence.dedup();
 
     let mut nodes = Vec::new();
@@ -424,7 +426,11 @@ pub fn create_connected_nodes_until_split(
     let actual_prefixes: BTreeSet<_> = current_sections(&nodes).collect();
     assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect());
 
-    let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).sorted();
+    let actual_prefix_lengths: Vec<_> = actual_prefixes
+        .iter()
+        .map(Prefix::bit_count)
+        .sorted()
+        .collect();
     assert_eq!(&actual_prefix_lengths[..], prefix_lengths);
 
     trace!("Created testnet comprising {:?}", actual_prefixes);
@@ -809,15 +815,15 @@ pub fn send_user_message(
     dst: Prefix<XorName>,
     content: Vec<u8>,
 ) {
-    let src_location = SrcLocation::Section(src);
-    let dst_location = DstLocation::Section(dst.name());
-
     trace!(
-        "send_user_message: {:?} -> {:?}: {:?}",
-        src_location,
-        dst_location,
+        "send_user_message: {:?} -> {:?}: {:10}",
+        src,
+        dst,
         hex_fmt::HexFmt(&content),
     );
+
+    let src_location = SrcLocation::Section(src);
+    let dst_location = DstLocation::Section(dst.name());
 
     for node in elders_with_prefix_mut(nodes, &src) {
         node.inner
@@ -847,7 +853,7 @@ pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], thr
         }
 
         if send_countdown == 0 {
-            send_countdown = POLL_ALL_MAX_ITERATIONS / max_sends;
+            send_countdown = POLL_UNTIL_MAX_ITERATIONS / max_sends;
 
             for (a, b) in outdated {
                 let content = gen_vec(&mut rng, 32);

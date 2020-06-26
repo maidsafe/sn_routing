@@ -206,12 +206,17 @@ impl ParsecMap {
     pub fn vote_for(&mut self, event: NetworkEvent) {
         trace!("Vote for Event {:?}", event);
 
+        let prune = matches!(&event.payload, AccumulatingEvent::ParsecPrune);
+
         if let Some(parsec) = self.map.values_mut().last() {
             let obs = event.into_obs();
 
             match parsec.vote_for(obs) {
                 Ok(()) => {
                     self.send_gossip = true;
+                    if prune {
+                        self.size_counter.set_pruning_voted_for();
+                    }
                 }
                 Err(err) => trace!("Parsec vote error: {:?}", err),
             }
@@ -281,11 +286,8 @@ impl ParsecMap {
         parsec.has_unpolled_observations()
     }
 
-    pub fn prune_if_needed(&mut self) {
-        if self.size_counter.needs_pruning() {
-            self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event());
-            self.size_counter.set_pruning_voted_for();
-        }
+    pub fn needs_pruning(&self) -> bool {
+        self.size_counter.needs_pruning()
     }
 
     // Returns whether we should send parsec gossip now.
@@ -360,22 +362,9 @@ impl ParsecMap {
     }
 }
 
-// Generate a DkgResult that can be used for the first node
-pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
-    let participants = 1;
-    let index = 0;
-
-    let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
-    let secret_key_share = secret_key_set.secret_key_share(index);
-    DkgResult::new(secret_key_set.public_keys(), Some(secret_key_share))
-}
-
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
-pub fn generate_bls_threshold_secret_key(
-    rng: &mut MainRng,
-    participants: usize,
-) -> bls::SecretKeySet {
+pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     let threshold = participants.saturating_sub(1) / 3;
@@ -448,14 +437,11 @@ where
 #[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
-    use crate::{
-        id::P2pNode,
-        rng::MainRng,
-        section::EldersInfo,
-        xor_space::{Prefix, XorName},
-    };
+    use crate::{id::P2pNode, rng::MainRng, section::EldersInfo};
+
     use serde::Serialize;
     use std::net::SocketAddr;
+    use xor_name::{Prefix, XorName};
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 

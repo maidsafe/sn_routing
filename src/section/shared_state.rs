@@ -8,19 +8,21 @@
 
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::AccumulatingEvent,
+    consensus::{AccumulatingEvent, Proof, Proven},
     id::{P2pNode, PublicId},
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
-    xor_space::{Prefix, XorName, Xorable},
 };
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
+    iter,
     net::SocketAddr,
 };
+use xor_name::{Prefix, XorName, Xorable};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,17 +37,17 @@ pub struct SharedState {
     /// Info about known sections in the network.
     pub sections: SectionMap,
     /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
+    pub churn_event_backlog: VecDeque<(AccumulatingEvent, Option<Proof>)>,
     /// Queue of pending relocations.
     pub relocate_queue: VecDeque<RelocateDetails>,
 }
 
 impl SharedState {
-    pub fn new(elders_info: EldersInfo, section_pk: bls::PublicKey) -> Self {
+    pub fn new(elders_info: Proven<EldersInfo>, section_pk: bls::PublicKey) -> Self {
         Self {
             handled_genesis_event: false,
             our_history: SectionProofChain::new(section_pk),
-            sections: SectionMap::new(elders_info, section_pk),
+            sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
@@ -71,6 +73,15 @@ impl SharedState {
 
         *self = new;
         self.handled_genesis_event = true;
+    }
+
+    // Clear all data except that which is needed for non-elders.
+    pub fn demote(&mut self) {
+        // TODO: avoid this clone.
+        let elders_info = self.sections.proven_our().clone();
+        let section_key = *self.our_history.last_key();
+
+        *self = Self::new(elders_info, section_key);
     }
 
     /// Returns our own current section info.
@@ -127,14 +138,42 @@ impl SharedState {
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
+    pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
+        iter::once((&self.sections.our().prefix, self.our_history.last_key()))
+            .chain(self.sections.keys())
+    }
+
+    pub fn section_key_by_location(&self, dst: &DstLocation) -> &bls::PublicKey {
+        if let Some(name) = dst.name() {
+            self.section_key_by_name(name)
+        } else {
+            // We don't know the section if `dst` is `Direct`, so return the root key which should
+            // be trusted by everyone.
+            self.our_history.first_key()
+        }
+    }
+
+    pub fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
+        if self.our_prefix().matches(name) {
+            self.our_history.last_key()
+        } else {
+            self.sections
+                .key_by_name(name)
+                .unwrap_or_else(|| self.our_history.first_key())
+        }
+    }
+
     /// Adds new member if its name matches our prefix and it's not already joined.
     /// Returns whether the member was actually added.
     pub fn add_member(
         &mut self,
         p2p_node: P2pNode,
         age: u8,
+        proof: Proof,
         recommended_section_size: usize,
     ) -> bool {
+        // FIXME: we should perform these checks before voting, but once the vote accumulates we
+        // must obey it:
         if !self.our_prefix().matches(p2p_node.name()) {
             trace!("not adding node {} - not matching our prefix", p2p_node);
             return false;
@@ -147,7 +186,7 @@ impl SharedState {
 
         let name = *p2p_node.name();
 
-        self.our_members.add(p2p_node, age);
+        self.our_members.add(p2p_node, age, proof);
         self.increment_age_counters(&name, recommended_section_size);
 
         true
@@ -157,23 +196,26 @@ impl SharedState {
     /// Returns the removed `MemberInfo` or `None` if there was no such member.
     pub fn remove_member(
         &mut self,
-        pub_id: &PublicId,
+        name: &XorName,
+        proof: Proof,
         recommended_section_size: usize,
     ) -> Option<MemberInfo> {
-        match self.our_members.get(pub_id.name()).map(|info| &info.state) {
+        match self.our_members.get(name).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
-                trace!("not removing node {} - not a member", pub_id);
+                // FIXME: perform this check before voting, but once the vote accumulates we must
+                // obey it.
+                trace!("not removing node {} - not a member", name);
                 return None;
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
-                self.increment_age_counters(pub_id.name(), recommended_section_size)
+                self.increment_age_counters(name, recommended_section_size)
             }
         }
 
         self.relocate_queue
-            .retain(|details| &details.pub_id != pub_id);
-        self.our_members.remove(pub_id.name())
+            .retain(|details| details.pub_id.name() != name);
+        self.our_members.remove(name, proof)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -221,16 +263,14 @@ impl SharedState {
 
     pub fn update_our_section(
         &mut self,
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-        signature: bls::Signature,
+        elders_info: Proven<EldersInfo>,
+        section_key: Proven<bls::PublicKey>,
     ) {
         self.our_members
-            .remove_not_matching_our_prefix(&elders_info.prefix);
-        self.our_history.push(section_key, signature);
+            .remove_not_matching_our_prefix(&elders_info.value.prefix);
+        self.our_history
+            .push(section_key.value, section_key.proof.signature);
         self.sections.set_our(elders_info);
-        self.sections
-            .update_keys(self.sections.our().prefix, section_key);
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
@@ -286,9 +326,9 @@ impl SharedState {
 
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
-        self.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = &evt {
-                payload.p2p_node.public_id() == pub_id
+        self.churn_event_backlog.iter().any(|(event, _)| {
+            if let AccumulatingEvent::Online { p2p_node, .. } = &event {
+                p2p_node.public_id() == pub_id
             } else {
                 false
             }
@@ -299,6 +339,7 @@ impl SharedState {
     /// vote for (if any).
     pub fn update_section_knowledge(
         &mut self,
+        our_name: &XorName,
         src: &SrcAuthority,
         dst_key: Option<&bls::PublicKey>,
         hash: &MessageHash,
@@ -314,20 +355,20 @@ impl SharedState {
         // There will be at most two events returned because the only possible event combinations
         // are these:
         // - `[]`
-        // - `[TheirKeyInfo]`
-        // - `[TheirKeyInfo, TheirKnowledge]`
+        // - `[TheirKey]`
+        // - `[TheirKey, TheirKnowledge]`
         // - `[SendNeighbourInfo]`
         // - `[SendNeighbourInfo, TheirKnowledge]`
         let mut events = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 
-        if !self.sections.has_key(new_key) {
+        if !prefix.matches(our_name) && !self.sections.has_key(new_key) {
             // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
             // via `NeighbourInfo`.
             if is_neighbour {
                 vote_send_neighbour_info = true;
             } else {
-                events.push(AccumulatingEvent::TheirKeyInfo {
+                events.push(AccumulatingEvent::TheirKey {
                     prefix,
                     key: *new_key,
                 });
@@ -515,17 +556,18 @@ impl SharedState {
 mod test {
     use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
+        consensus,
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::EldersInfo,
-        xor_space::{Prefix, XorName},
     };
+
     use rand::{seq::SliceRandom, Rng};
     use std::{
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
+    use xor_name::{Prefix, XorName};
 
     // Note: The following tests were move over from the former `chain` module.
 
@@ -572,16 +614,16 @@ mod test {
     fn add_neighbour_elders_info(
         state: &mut SharedState,
         our_id: &PublicId,
-        neighbour_info: EldersInfo,
+        neighbour_info: Proven<EldersInfo>,
     ) {
         assert!(
-            !neighbour_info.prefix.matches(our_id.name()),
+            !neighbour_info.value.prefix.matches(our_id.name()),
             "Only add neighbours."
         );
         state.sections.add_neighbour(neighbour_info)
     }
 
-    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId)
+    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId, bls::SecretKey)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -600,21 +642,23 @@ mod test {
         let our_pub_id = *our_id.public_id();
         let mut sections_iter = section_members.into_iter();
 
-        let elders_info = sections_iter.next().expect("section members");
-        let participants = elders_info.elders.len();
-        let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
-        let public_key = secret_key_set.public_keys().public_key();
+        let sk = consensus::test_utils::gen_secret_key(rng);
+        let pk = sk.public_key();
 
-        let mut state = SharedState::new(elders_info, public_key);
+        let elders_info = sections_iter.next().expect("section members");
+        let elders_info = consensus::test_utils::proven(&sk, elders_info);
+
+        let mut state = SharedState::new(elders_info, pk);
 
         for info in sections_iter {
+            let info = consensus::test_utils::proven(&sk, info);
             add_neighbour_elders_info(&mut state, &our_pub_id, info);
         }
 
-        (state, our_pub_id)
+        (state, our_pub_id, sk)
     }
 
-    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId) {
+    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId, bls::SecretKey) {
         let elder_size: usize = 7;
         gen_state(
             rng,
@@ -628,7 +672,7 @@ mod test {
 
     fn check_infos_for_duplication(state: &SharedState) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
-        for (_, info) in state.sections.all() {
+        for info in state.sections.all() {
             if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(&info.prefix)) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
@@ -643,7 +687,7 @@ mod test {
     fn generate_state() {
         let mut rng = rng::new();
 
-        let (state, our_id) = gen_00_state(&mut rng);
+        let (state, our_id, _) = gen_00_state(&mut rng);
 
         assert_eq!(
             state
@@ -660,10 +704,10 @@ mod test {
     #[test]
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
-        let (mut state, our_id) = gen_00_state(&mut rng);
+        let (mut state, our_id, sk) = gen_00_state(&mut rng);
         for _ in 0..100 {
             let (new_info, _) = {
-                let old_info: Vec<_> = state.sections.other().map(|(_, info)| info).collect();
+                let old_info: Vec<_> = state.sections.neighbours().collect();
                 let info = old_info.choose(&mut rng).expect("neighbour infos");
                 if rng.gen_bool(0.5) {
                     gen_section_info(&mut rng, SecInfoGen::Add(info))
@@ -672,6 +716,7 @@ mod test {
                 }
             };
 
+            let new_info = consensus::test_utils::proven(&sk, new_info);
             add_neighbour_elders_info(&mut state, &our_id, new_info);
             assert!(state.our_history.self_verify());
             check_infos_for_duplication(&state);

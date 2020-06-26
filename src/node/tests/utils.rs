@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::GenesisPrefixInfo,
+    consensus::{self, Proof, Proven},
     error::Result,
     id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageWithBytes},
@@ -22,19 +22,21 @@ use crate::{
     quic_p2p::{EventSenders, Peer, QuicP2p},
     rng::MainRng,
     section::EldersInfo,
-    xor_space::{Prefix, XorName},
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;
+
 use itertools::Itertools;
 use mock_quic_p2p::Network;
+use serde::Serialize;
 use std::{collections::BTreeMap, net::SocketAddr};
+use xor_name::{Prefix, XorName};
 
 pub fn create_elders_info(
     rng: &mut MainRng,
     network: &Network,
     elder_size: usize,
-) -> (EldersInfo, BTreeMap<XorName, FullId>) {
+) -> (Proven<EldersInfo>, BTreeMap<XorName, FullId>) {
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
             let id = FullId::gen(rng);
@@ -51,18 +53,26 @@ pub fn create_elders_info(
         .collect();
 
     let elders_info = EldersInfo::new(members_map, Prefix::default());
+
+    let sk = consensus::test_utils::gen_secret_key(rng);
+    let elders_info = consensus::test_utils::proven(&sk, elders_info);
+
     (elders_info, full_ids)
 }
 
-pub fn create_genesis_prefix_info(
-    elders_info: EldersInfo,
-    public_keys: bls::PublicKeySet,
-    parsec_version: u64,
-) -> GenesisPrefixInfo {
-    GenesisPrefixInfo {
-        elders_info,
-        public_keys,
-        parsec_version,
+pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Proof {
+    let pk_set = sk_set.public_keys();
+    let bytes = bincode::serialize(payload).unwrap();
+    let signature_shares: Vec<_> = (0..sk_set.threshold() + 1)
+        .map(|index| sk_set.secret_key_share(index).sign(&bytes))
+        .collect();
+    let signature = pk_set
+        .combine_signatures(signature_shares.iter().enumerate())
+        .unwrap();
+
+    Proof {
+        public_key: pk_set.public_key(),
+        signature,
     }
 }
 

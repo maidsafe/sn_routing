@@ -6,34 +6,26 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+pub mod member_info;
+
 mod elders_info;
-mod member_info;
 mod network_stats;
+mod prefix_map;
 mod section_keys;
 mod section_map;
 mod section_members;
 mod section_proof_chain;
+mod section_update_barrier;
 mod shared_state;
 
 pub use self::{
     elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_stats::NetworkStats,
-    section_keys::{IndexedSecretKeyShare, SectionKeys, SectionKeysProvider},
+    section_keys::{SectionKeyShare, SectionKeysProvider},
     section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
     section_proof_chain::{SectionProofChain, TrustStatus},
+    section_update_barrier::{SectionUpdateBarrier, SectionUpdateDetails},
     shared_state::SharedState,
 };
-
-#[cfg(test)]
-pub use self::section_keys::gen_secret_key;
-
-use crate::consensus::AccumulatingProof;
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct SplitCache {
-    pub elders_info: EldersInfo,
-    pub section_key: bls::PublicKey,
-    pub proofs: AccumulatingProof,
-}
