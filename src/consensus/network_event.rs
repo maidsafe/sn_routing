@@ -69,19 +69,19 @@ pub enum AccumulatingEvent {
     OurKey {
         // In case of split, this prefix is used to differentiate the subsections. Not part of
         // the proof.
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         key: bls::PublicKey,
     },
 
     // Voted to update their section key.
     TheirKey {
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         key: bls::PublicKey,
     },
 
     // Voted to update their knowledge of our section.
     TheirKnowledge {
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         knowledge: u64,
     },
 

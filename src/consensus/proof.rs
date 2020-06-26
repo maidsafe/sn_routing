@@ -10,7 +10,7 @@ use std::{
     borrow::Borrow,
     fmt::{self, Debug, Formatter},
 };
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 /// Proof that a quorum of the section elders has agreed on something.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
@@ -86,11 +86,11 @@ impl<T> Proven<T> {
     }
 }
 
-impl<T> Borrow<Prefix<XorName>> for Proven<T>
+impl<T> Borrow<Prefix> for Proven<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
-    fn borrow(&self) -> &Prefix<XorName> {
+    fn borrow(&self) -> &Prefix {
         self.value.borrow()
     }
 }

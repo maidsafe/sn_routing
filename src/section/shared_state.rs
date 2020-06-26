@@ -18,11 +18,12 @@ use crate::{
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    convert::TryInto,
     fmt::Debug,
     iter,
     net::SocketAddr,
 };
-use xor_name::{Prefix, XorName, Xorable};
+use xor_name::{Prefix, XorName};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,7 +88,7 @@ impl SharedState {
     }
 
     /// Returns our own current section's prefix.
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
+    pub fn our_prefix(&self) -> &Prefix {
         &self.our_info().prefix
     }
 
@@ -135,7 +136,7 @@ impl SharedState {
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
-    pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &bls::PublicKey)> {
+    pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
         iter::once((&self.sections.our().prefix, self.our_history.last_key()))
             .chain(self.sections.keys())
     }
@@ -392,7 +393,13 @@ impl SharedState {
         network_params: &NetworkParams,
         our_name: &XorName,
     ) -> Option<(EldersInfo, EldersInfo)> {
-        let next_bit_index = self.our_prefix().bit_count();
+        let next_bit_index = if let Ok(index) = self.our_prefix().bit_count().try_into() {
+            index
+        } else {
+            // Already at the longest prefix, can't split further.
+            return None;
+        };
+
         let next_bit = our_name.bit(next_bit_index);
 
         let (our_new_size, sibling_new_size) = self
@@ -553,12 +560,12 @@ mod test {
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use xor_name::{Prefix, XorName};
+    use xor_name::Prefix;
 
     // Note: The following tests were move over from the former `chain` module.
 
     enum SecInfoGen<'a> {
-        New(Prefix<XorName>, usize),
+        New(Prefix, usize),
         Add(&'a EldersInfo),
         Remove(&'a EldersInfo),
     }
@@ -611,7 +618,7 @@ mod test {
 
     fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId, bls::SecretKey)
     where
-        T: IntoIterator<Item = (Prefix<XorName>, usize)>,
+        T: IntoIterator<Item = (Prefix, usize)>,
     {
         let mut our_id = None;
         let mut section_members = vec![];
@@ -657,7 +664,7 @@ mod test {
     }
 
     fn check_infos_for_duplication(state: &SharedState) {
-        let mut prefixes: Vec<Prefix<XorName>> = vec![];
+        let mut prefixes: Vec<Prefix> = vec![];
         for info in state.sections.all() {
             if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(&info.prefix)) {
                 panic!(

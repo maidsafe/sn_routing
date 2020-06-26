@@ -26,7 +26,7 @@ use std::{
     fmt::{self, Display, Formatter},
     usize,
 };
-use xor_name::{XorName, Xorable};
+use xor_name::XorName;
 
 #[test]
 fn aggressive_churn() {
@@ -363,7 +363,7 @@ struct SectionCounts {
 }
 
 // Count the number of elders and the number of non-elders for each section in the network.
-fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, SectionCounts> {
+fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix, SectionCounts> {
     let mut output: HashMap<_, SectionCounts> = HashMap::new();
 
     for node in nodes {
@@ -375,14 +375,14 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
 }
 
 /// Sub prefix with smaller member counts.
-pub fn sub_perfixes_for_balanced_add(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
-    let mut counts: BTreeMap<Prefix<XorName>, (usize, usize)> = BTreeMap::new();
+pub fn sub_perfixes_for_balanced_add(nodes: &[TestNode]) -> BTreeSet<Prefix> {
+    let mut counts: BTreeMap<Prefix, (usize, usize)> = BTreeMap::new();
     for node in nodes {
         let prefix = *node.our_prefix();
         let name = node.name();
 
         let (bit_0, bit_1) = counts.entry(prefix).or_default();
-        if name.bit(prefix.bit_count()) {
+        if name.bit(prefix.bit_count() as u8) {
             *bit_1 += 1;
         } else {
             *bit_0 += 1;
@@ -725,7 +725,7 @@ fn setup_expectations(
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
 
-    let prefix: Prefix<XorName> = current_sections(nodes).choose(rng).unwrap();
+    let prefix: Prefix = current_sections(nodes).choose(rng).unwrap();
     let section_name = prefix.substituted_in(rng.gen());
 
     let src_n0 = SrcLocation::Node(*nodes[index0].name());

@@ -69,7 +69,7 @@ pub enum Event {
     /// The set of elders in our section has changed.
     EldersChanged {
         /// The prefix of our section.
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         /// The BLS public key of our section.
         key: bls::PublicKey,
         /// The set of elders of our section.

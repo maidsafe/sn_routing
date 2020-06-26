@@ -17,14 +17,14 @@ pub struct SectionUpdateBarrier {
     our_key: Option<Proven<bls::PublicKey>>,
     our_info: Option<Proven<EldersInfo>>,
 
-    sibling_key: Option<Proven<(Prefix<XorName>, bls::PublicKey)>>,
+    sibling_key: Option<Proven<(Prefix, bls::PublicKey)>>,
     sibling_info: Option<Proven<EldersInfo>>,
 }
 
 impl SectionUpdateBarrier {
     pub fn handle_our_key(
         &mut self,
-        our_prefix: &Prefix<XorName>,
+        our_prefix: &Prefix,
         new_key: Proven<bls::PublicKey>,
     ) -> Option<SectionUpdateDetails> {
         self.our_key = Some(new_key);
@@ -33,8 +33,8 @@ impl SectionUpdateBarrier {
 
     pub fn handle_their_key(
         &mut self,
-        our_prefix: &Prefix<XorName>,
-        new_key: Proven<(Prefix<XorName>, bls::PublicKey)>,
+        our_prefix: &Prefix,
+        new_key: Proven<(Prefix, bls::PublicKey)>,
     ) -> Option<SectionUpdateDetails> {
         self.sibling_key = Some(new_key);
         self.try_get_details(our_prefix)
@@ -43,7 +43,7 @@ impl SectionUpdateBarrier {
     pub fn handle_info(
         &mut self,
         our_name: &XorName,
-        our_prefix: &Prefix<XorName>,
+        our_prefix: &Prefix,
         new_info: Proven<EldersInfo>,
     ) -> Option<SectionUpdateDetails> {
         if new_info.value.prefix.matches(our_name) {
@@ -55,7 +55,7 @@ impl SectionUpdateBarrier {
         self.try_get_details(our_prefix)
     }
 
-    fn try_get_details(&mut self, our_prefix: &Prefix<XorName>) -> Option<SectionUpdateDetails> {
+    fn try_get_details(&mut self, our_prefix: &Prefix) -> Option<SectionUpdateDetails> {
         match (
             self.our_key.take(),
             self.our_info.take(),
@@ -108,7 +108,7 @@ pub struct OurDetails {
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct SiblingDetails {
-    pub key: Proven<(Prefix<XorName>, bls::PublicKey)>,
+    pub key: Proven<(Prefix, bls::PublicKey)>,
     pub info: Proven<EldersInfo>,
 }
 
@@ -123,7 +123,7 @@ mod tests {
     fn simple() {
         let mut rng = rng::new();
 
-        let our_prefix: Prefix<XorName> = "01".parse().unwrap();
+        let our_prefix: Prefix = "01".parse().unwrap();
         let our_name = our_prefix.substituted_in(rng.gen());
 
         let old_sk = test_utils::gen_secret_key(&mut rng);
@@ -153,7 +153,7 @@ mod tests {
     fn split() {
         let mut rng = rng::new();
 
-        let our_prefix: Prefix<XorName> = "01".parse().unwrap();
+        let our_prefix: Prefix = "01".parse().unwrap();
         let old_sk = test_utils::gen_secret_key(&mut rng);
 
         let our_new_prefix = our_prefix.pushed(rng.gen());
@@ -210,13 +210,13 @@ mod tests {
     #[derive(Clone, Debug)]
     enum Op {
         OurKey(Proven<bls::PublicKey>),
-        TheirKey(Proven<(Prefix<XorName>, bls::PublicKey)>),
+        TheirKey(Proven<(Prefix, bls::PublicKey)>),
         Info(Proven<EldersInfo>),
     }
 
     fn execute(
         our_name: &XorName,
-        our_prefix: &Prefix<XorName>,
+        our_prefix: &Prefix,
         ops: Vec<Op>,
     ) -> Option<SectionUpdateDetails> {
         let mut barrier = SectionUpdateBarrier::default();
@@ -232,7 +232,7 @@ mod tests {
         output
     }
 
-    fn dummy_elders_info(prefix: Prefix<XorName>) -> EldersInfo {
+    fn dummy_elders_info(prefix: Prefix) -> EldersInfo {
         EldersInfo {
             prefix,
             elders: Default::default(),

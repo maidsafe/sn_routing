@@ -16,7 +16,7 @@ use crate::{
 };
 
 use std::net::SocketAddr;
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 /// Source authority of a message.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub enum SrcAuthority {
     /// Authority of a whole section.
     Section {
         /// Prefix of the source section.
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
         /// Proof chain whole last key is the section public key corresponding to the signature.
@@ -79,7 +79,7 @@ impl SrcAuthority {
     }
 
     // If this is `Section`, returns the prefix and the latest key, otherwise error.
-    pub(crate) fn as_section_prefix_and_key(&self) -> Result<(&Prefix<XorName>, &bls::PublicKey)> {
+    pub(crate) fn as_section_prefix_and_key(&self) -> Result<(&Prefix, &bls::PublicKey)> {
         match self {
             Self::Section {
                 prefix,
@@ -104,7 +104,7 @@ impl SrcAuthority {
         trusted_key_infos: I,
     ) -> Result<VerifyStatus>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
+        I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
     {
         let bytes = bincode::serialize(&SignableView {
             dst,

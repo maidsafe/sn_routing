@@ -26,12 +26,12 @@ pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to a `P2pNode`.
     pub elders: BTreeMap<XorName, P2pNode>,
     /// The section prefix. It matches all the members' names.
-    pub prefix: Prefix<XorName>,
+    pub prefix: Prefix,
 }
 
 impl EldersInfo {
     /// Creates a new `EldersInfo` with the given members, prefix and version.
-    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix<XorName>) -> Self {
+    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix) -> Self {
         Self { elders, prefix }
     }
 
@@ -59,8 +59,8 @@ impl EldersInfo {
     }
 }
 
-impl Borrow<Prefix<XorName>> for EldersInfo {
-    fn borrow(&self) -> &Prefix<XorName> {
+impl Borrow<Prefix> for EldersInfo {
+    fn borrow(&self) -> &Prefix {
         &self.prefix
     }
 }

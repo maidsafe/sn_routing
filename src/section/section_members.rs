@@ -84,7 +84,7 @@ impl SectionMembers {
     /// Returns the candidates for elders out of all nodes matching the prefix.
     pub fn elder_candidates_matching_prefix(
         &self,
-        prefix: &Prefix<XorName>,
+        prefix: &Prefix,
         elder_size: usize,
         current_elders: &EldersInfo,
     ) -> BTreeMap<XorName, P2pNode> {
@@ -175,7 +175,7 @@ impl SectionMembers {
 
     /// Remove all members whose name does not match our prefix and assigns them to
     /// `post_split_siblings`.
-    pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix<XorName>) {
+    pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix) {
         let (members, siblings) = mem::take(&mut self.members)
             .into_iter()
             .partition(|(name, _)| prefix.matches(name));

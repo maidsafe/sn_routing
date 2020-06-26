@@ -16,7 +16,7 @@ use crate::{
 };
 
 use itertools::Itertools;
-use xor_name::{XorName, Xorable};
+use xor_name::XorName;
 
 /// Returns the delivery group size based on the section size `n`
 pub const fn delivery_group_size(n: usize) -> usize {
