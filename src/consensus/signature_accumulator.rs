@@ -40,7 +40,7 @@ pub const DEFAULT_EXPIRATION: Duration = Duration::from_secs(120);
 /// This accumulator also handles the case when the same payload is signed with a signature share
 /// corresponding to a different BLS public key. In that case, the payloads will be accumulated
 /// separately. This avoids mixing signature shares created from different curves which would
-/// otherwise lead to invalid signature being produces event though all the shares are valid.
+/// otherwise lead to invalid signature to be produced even though all the shares are valid.
 ///
 pub struct SignatureAccumulator<T> {
     map: HashMap<Digest256, State<T>>,
@@ -194,6 +194,9 @@ impl<T> State<T> {
                     .is_none()
                 {
                     *modified = Instant::now();
+                } else {
+                    // Duplicate share
+                    return Err(AccumulationError::NotEnoughShares);
                 }
 
                 if shares.len() > proof_share.public_key_set.threshold() {
