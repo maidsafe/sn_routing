@@ -107,10 +107,10 @@ impl AccumulatingMessage {
             proof: self.proof,
         };
         match Message::new_signed(
-            self.content.dst,
             src,
-            self.content.variant,
+            self.content.dst,
             Some(self.content.dst_key),
+            self.content.variant,
         ) {
             Ok(msg) => Some(msg),
             Err(e) => {
