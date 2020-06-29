@@ -447,7 +447,7 @@ impl Approved {
         if let Err(error) = bounced_msg
             .src()
             .clone()
-            .extend_proof(&dst_key, &self.shared_state.our_history)
+            .extend_proof_chain(&dst_key, &self.shared_state.our_history)
         {
             trace!(
                 "Received BouncedUntrustedMessage({:?}) - extending proof failed, \

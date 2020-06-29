@@ -684,16 +684,18 @@ fn handle_bounced_untrusted_message() {
     test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
     env.poll();
 
-    let proof = other_node
+    let proof_chain = other_node
         .received_messages()
-        .find_map(|(_, msg)| match (msg.variant(), msg.src().clone()) {
-            (Variant::UserMessage(_), SrcAuthority::Section { proof, .. }) => Some(proof),
+        .find_map(|(_, msg)| match (msg.variant(), msg.src()) {
+            (Variant::UserMessage(_), SrcAuthority::Section { proof_chain, .. }) => {
+                Some(proof_chain.clone())
+            }
             _ => None,
         })
         .expect("message was not resent");
 
-    assert!(proof.has_key(&old_section_key)); // FIXME Why does this fail!
-    assert!(proof.has_key(&new_section_key));
+    assert!(proof_chain.has_key(&old_section_key)); // FIXME Why does this fail!
+    assert!(proof_chain.has_key(&new_section_key));
 }
 
 #[test]
@@ -711,7 +713,7 @@ fn receive_message_with_invalid_signature() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature: sk1.sign(b"bad data"),
-        proof: proof_chain,
+        proof_chain,
     };
     let msg = Message::unverified(
         src,
@@ -751,7 +753,7 @@ fn receive_message_with_invalid_proof_chain() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature,
-        proof: proof_chain,
+        proof_chain,
     };
     let msg = Message::unverified(src, msg.dst, Some(msg.dst_key), msg.variant).unwrap();
 

@@ -34,7 +34,7 @@ impl MessageAccumulator {
                 let src = SrcAuthority::Section {
                     prefix: payload.content.src,
                     signature: proof.signature,
-                    proof: payload.proof_chain,
+                    proof_chain: payload.proof_chain,
                 };
 
                 match Message::new_signed(

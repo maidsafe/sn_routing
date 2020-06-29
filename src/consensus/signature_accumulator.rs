@@ -155,7 +155,8 @@ pub enum AccumulationError {
     InvalidShare,
     /// The payload failed to be serialised and can't be inserted into the accumulator. This doesn't
     /// affect other entries already present and the accumulator can still be used normally
-    /// afterwards.
+    /// afterwards. In practice, this error should never happen unless the host machine runs out of
+    /// memory or a similar catastrophic failure.
     #[error(display = "failed to serialise payload: {}", _0)]
     Serialise(#[error(source)] bincode::Error),
     /// The signature combination failed even though there are enough valid signature shares. This

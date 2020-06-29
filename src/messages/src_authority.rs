@@ -39,7 +39,7 @@ pub enum SrcAuthority {
         /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
         /// Proof chain whole last key is the section public key corresponding to the signature.
-        proof: SectionProofChain,
+        proof_chain: SectionProofChain,
     },
 }
 
@@ -73,7 +73,7 @@ impl SrcAuthority {
     // If this is `Section`, return the last section key, otherwise error.
     pub(crate) fn as_section_key(&self) -> Result<&bls::PublicKey> {
         match self {
-            Self::Section { proof, .. } => Ok(proof.last_key()),
+            Self::Section { proof_chain, .. } => Ok(proof_chain.last_key()),
             Self::Node { .. } => Err(RoutingError::BadLocation),
         }
     }
@@ -81,7 +81,11 @@ impl SrcAuthority {
     // If this is `Section`, returns the prefix and the latest key, otherwise error.
     pub(crate) fn as_section_prefix_and_key(&self) -> Result<(&Prefix<XorName>, &bls::PublicKey)> {
         match self {
-            Self::Section { prefix, proof, .. } => Ok((prefix, proof.last_key())),
+            Self::Section {
+                prefix,
+                proof_chain,
+                ..
+            } => Ok((prefix, proof_chain.last_key())),
             Self::Node { .. } => Err(RoutingError::BadLocation),
         }
     }
@@ -120,20 +124,26 @@ impl SrcAuthority {
             Self::Section {
                 prefix,
                 signature,
-                proof,
+                proof_chain,
             } => {
                 let trusted_key_infos = trusted_key_infos
                     .into_iter()
                     .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
                     .map(|(_, key_info)| key_info);
 
-                match proof.check_trust(trusted_key_infos) {
+                match proof_chain.check_trust(trusted_key_infos) {
                     TrustStatus::Trusted => (),
                     TrustStatus::Unknown => return Ok(VerifyStatus::Unknown),
                     TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
                 };
 
-                if !proof.last_key().verify(signature, &bytes) {
+                let bytes = bincode::serialize(&SignableView {
+                    dst,
+                    dst_key,
+                    variant,
+                })?;
+
+                if !proof_chain.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
             }
@@ -145,17 +155,17 @@ impl SrcAuthority {
     // Extend the current message proof so it starts at `new_first_key` while keeping the last key
     // (and therefore the signature) intact.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub(crate) fn extend_proof(
+    pub(crate) fn extend_proof_chain(
         &mut self,
         new_first_key: &bls::PublicKey,
         section_proof_chain: &SectionProofChain,
     ) -> Result<(), ExtendProofError> {
-        let proof = match self {
-            Self::Section { proof, .. } => proof,
+        let proof_chain = match self {
+            Self::Section { proof_chain, .. } => proof_chain,
             Self::Node { .. } => return Err(ExtendProofError::MustBeSection),
         };
 
-        if proof.has_key(new_first_key) {
+        if proof_chain.has_key(new_first_key) {
             return Err(ExtendProofError::ProofAlreadySufficient);
         }
 
@@ -165,13 +175,13 @@ impl SrcAuthority {
             return Err(ExtendProofError::InvalidFirstKey);
         };
 
-        let index_to = if let Some(index) = section_proof_chain.index_of(proof.last_key()) {
+        let index_to = if let Some(index) = section_proof_chain.index_of(proof_chain.last_key()) {
             index
         } else {
             return Err(ExtendProofError::InvalidLastKey);
         };
 
-        *proof = section_proof_chain.slice(index_from..=index_to);
+        *proof_chain = section_proof_chain.slice(index_from..=index_to);
 
         Ok(())
     }
