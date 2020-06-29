@@ -38,8 +38,8 @@ pub struct Message {
     dst: DstLocation,
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
-    /// agains the pub key and we know the pub key then we are good. If the proof is not recodnised we
-    /// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
+    /// agains the public key and we know the pub key then we are good. If the proof is not recognised we
+    /// ask for a longer chain that can be recognised). Therefor we don't need to sign this field.
     src: SrcAuthority,
     /// The body of the message.
     variant: Variant,
