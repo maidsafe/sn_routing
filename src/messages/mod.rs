@@ -57,7 +57,6 @@ pub struct Message {
 
 impl Message {
     /// Deserialize the message. Only called on message receipt.
-    #[allow(unused)] // prefix field not used below
     pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
         let mut msg: Message = bincode::deserialize(&bytes[..])?;
         let signed_bytes = serialize_for_signing(&msg.dst, msg.dst_key.as_ref(), &msg.variant)?;
@@ -75,9 +74,9 @@ impl Message {
                 }
             }
             SrcAuthority::Section {
-                prefix,
                 signature,
                 proof,
+                ..
             } => {
                 // FIXME Assumes the nodes proof last key is the one signing this message
                 if proof.last_key().verify(&signature, &signed_bytes) {
@@ -97,11 +96,11 @@ impl Message {
     }
 
     /// Creates a signed message where signature is assumed valid.
-    pub fn new_signed(
-        dst: DstLocation,
+    fn new_signed(
         src: SrcAuthority,
-        variant: Variant,
+        dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
+        variant: Variant,
     ) -> Result<Message> {
         let mut msg = Message {
             dst,
@@ -131,18 +130,7 @@ impl Message {
             signature,
         };
 
-        let mut msg = Message {
-            dst,
-            src,
-            variant,
-            dst_key,
-            serialized: Default::default(),
-            hash: Default::default(),
-        };
-        let bytes: Bytes = bincode::serialize(&msg)?.into();
-        msg.serialized = bytes.clone();
-        msg.hash = MessageHash::from_bytes(&bytes);
-        Ok(msg)
+        Self::new_signed(src, dst, dst_key, variant)
     }
 
     /// Verify this message is properly signed and trusted.

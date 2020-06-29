@@ -707,8 +707,8 @@ impl OtherNode {
 
     fn expect_bootstrap_response(&self) -> BootstrapResponse {
         self.received_messages()
-            .find_map(|msg| match msg.variant().clone() {
-                Variant::BootstrapResponse(response) => Some(response),
+            .find_map(|msg| match msg.variant() {
+                Variant::BootstrapResponse(response) => Some(response.clone()),
                 _ => None,
             })
             .expect("BootstrapResponse not received")
