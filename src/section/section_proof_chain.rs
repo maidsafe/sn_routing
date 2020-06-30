@@ -20,6 +20,7 @@ pub struct SectionProofChain {
     tail: Vec<Block>,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl SectionProofChain {
     /// Creates new chain consisting of only one block.
     pub fn new(first: bls::PublicKey) -> Self {
@@ -51,40 +52,43 @@ impl SectionProofChain {
         self.tail.push(Block { key, signature })
     }
 
-    pub(crate) fn first_key(&self) -> &bls::PublicKey {
+    /// Returns the first key of the chain.
+    pub fn first_key(&self) -> &bls::PublicKey {
         &self.head
     }
 
-    pub(crate) fn last_key(&self) -> &bls::PublicKey {
+    /// Returns the last key of the chain.
+    pub fn last_key(&self) -> &bls::PublicKey {
         self.tail
             .last()
             .map(|block| &block.key)
             .unwrap_or(&self.head)
     }
 
-    pub(crate) fn keys(&self) -> impl DoubleEndedIterator<Item = &bls::PublicKey> {
+    /// Returns all the keys from the chain as a DoubleEndedIterator.
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &bls::PublicKey> {
         iter::once(&self.head).chain(self.tail.iter().map(|block| &block.key))
     }
 
     /// Returns whether this chain contains the given key.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub(crate) fn has_key(&self, key: &bls::PublicKey) -> bool {
+    pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys().any(|existing_key| existing_key == key)
     }
 
     /// Returns the index of the key in the chain or `None` if not present in the chain.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub(crate) fn index_of(&self, key: &bls::PublicKey) -> Option<u64> {
+    pub fn index_of(&self, key: &bls::PublicKey) -> Option<u64> {
         self.keys()
             .position(|existing_key| existing_key == key)
             .map(|index| index as u64)
     }
 
-    /// Returns a slice of this chain with the given index range.
+    /// Returns a subset of this chain specified by the given index range.
     ///
     /// Note: unlike `std::slice`, if the range is invalid or out of bounds, it is silently adjusted
     /// to the nearest valid range and so this function never panics.
-    pub(crate) fn slice<B: RangeBounds<u64>>(&self, range: B) -> Self {
+    pub fn slice<B: RangeBounds<u64>>(&self, range: B) -> Self {
         let start = match range.start_bound() {
             Bound::Included(index) => *index as usize,
             Bound::Excluded(index) => *index as usize + 1,
@@ -114,12 +118,12 @@ impl SectionProofChain {
     }
 
     /// Number of blocks in the chain (including the first block)
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         1 + self.tail.len()
     }
 
     /// Index of the last key in the chain.
-    pub(crate) fn last_key_index(&self) -> u64 {
+    pub fn last_key_index(&self) -> u64 {
         self.tail.len() as u64
     }
 
@@ -127,7 +131,7 @@ impl SectionProofChain {
     /// The first one cannot be verified and requires matching against already trusted keys. Thus
     /// this function alone cannot be used to determine whether this chain is trusted. Use
     /// `check_trust` for that.
-    pub(crate) fn self_verify(&self) -> bool {
+    pub fn self_verify(&self) -> bool {
         let mut current_key = &self.head;
         for block in &self.tail {
             if !block.verify(current_key) {
@@ -140,7 +144,7 @@ impl SectionProofChain {
     }
 
     /// Verify this proof chain against the given trusted keys.
-    pub(crate) fn check_trust<'a, I>(&self, trusted_keys: I) -> TrustStatus
+    pub fn check_trust<'a, I>(&self, trusted_keys: I) -> TrustStatus
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {

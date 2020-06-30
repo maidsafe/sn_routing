@@ -88,6 +88,7 @@ pub use self::{
     pause::PausedState,
     quic_p2p::Config as TransportConfig,
     quic_p2p::Event as TransportEvent,
+    section::SectionProofChain,
 };
 
 pub use xor_name::{Prefix, XorName, Xorable, XOR_NAME_LEN}; // TODO remove pub on API update
