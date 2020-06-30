@@ -214,7 +214,7 @@ fn cmp_elder_candidates(
     rhs: &MemberInfo,
     current_elders: &EldersInfo,
 ) -> Ordering {
-    // Older nodes are preferred. In case of a tie, preffer current elders. If still a tie, break
+    // Older nodes are preferred. In case of a tie, prefer current elders. If still a tie, break
     // it comparing by the proof signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
     rhs.age_counter

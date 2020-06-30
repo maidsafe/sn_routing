@@ -20,8 +20,8 @@ use std::iter;
 // These params are selected such that there can be a section size which allows relocation and at the same time
 // allows churn to happen which doesn't trigger split or allow churn to not increase age.
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
-    elder_size: LOWERED_ELDER_SIZE,
-    recommended_section_size: LOWERED_ELDER_SIZE + 4,
+    elder_size: MIN_ELDER_SIZE,
+    recommended_section_size: MIN_ELDER_SIZE + 4,
 };
 
 #[test]

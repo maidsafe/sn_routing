@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
+use super::{create_connected_nodes_until_split, poll_all, TestNode, MIN_ELDER_SIZE};
 use routing::{
     generate_secret_key_set, mock::Environment, rng::MainRng, AccumulatingMessage, DstLocation,
     EldersInfo, FullId, Message, MessageHash, NetworkParams, P2pNode, PlainMessage, Prefix,
@@ -47,8 +47,8 @@ fn message_with_invalid_security(fail_type: FailType) {
     // Arrange
     //
     let mut env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
     env.expect_panic();
     let mut rng = env.new_rng();

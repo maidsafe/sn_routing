@@ -27,11 +27,11 @@ use std::collections::BTreeMap;
 // -----  Miscellaneous tests below  -----
 
 fn test_nodes(percentage_size: usize) {
-    let size = LOWERED_ELDER_SIZE * percentage_size / 100;
+    let size = MIN_ELDER_SIZE * percentage_size / 100;
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
         // Require at least one non-elder to make things more interesting.
-        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+        recommended_section_size: MIN_ELDER_SIZE + 1,
     });
     let nodes = create_connected_nodes(&env, size);
     verify_invariants_for_nodes(&env, &nodes);
@@ -47,8 +47,8 @@ fn create_node_with_contact(env: &Environment, contact: &mut TestNode) -> TestNo
 #[ignore]
 fn disconnect_on_rebootstrap() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
     let mut nodes = create_connected_nodes(&env, 2);
 
@@ -92,10 +92,10 @@ fn more_than_section_size_nodes() {
 #[test]
 fn node_joins_in_front() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&env, 2 * LOWERED_ELDER_SIZE);
+    let mut nodes = create_connected_nodes(&env, 2 * MIN_ELDER_SIZE);
     let transport_config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
@@ -111,8 +111,8 @@ fn node_joins_in_front() {
 #[test]
 fn multiple_joining_nodes() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
 
     let iterations = 10;
@@ -120,7 +120,7 @@ fn multiple_joining_nodes() {
     let max_adds_per_iteration = 10;
 
     let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
+    let mut nodes = create_connected_nodes(&env, MIN_ELDER_SIZE);
 
     for _ in 0..iterations {
         let adds = rng.gen_range(min_adds_per_iteration, max_adds_per_iteration + 1);
@@ -146,11 +146,11 @@ fn multiple_joining_nodes() {
 #[test]
 fn single_split() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
         // The smallest `recommended_section_size` where when a split happens, the set of elders
         // post-split in at least one of the sub-sections might be completely different from the
         // set of elders pre-split. This setup exposed a bug before and we want to have it covered.
-        recommended_section_size: LOWERED_ELDER_SIZE + 3,
+        recommended_section_size: MIN_ELDER_SIZE + 3,
     });
     let mut nodes = vec![];
     trigger_split(&env, &mut nodes, &Prefix::default());
@@ -159,8 +159,8 @@ fn single_split() {
 #[test]
 fn multi_split() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE + 1,
     });
     let nodes = create_connected_nodes_until_split(&env, &[2, 2, 2, 2]);
     verify_invariants_for_nodes(&env, &nodes);
@@ -259,8 +259,8 @@ fn all_sections_have_enough_elders(env: &Environment, nodes: &[TestNode]) -> boo
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
     let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
@@ -287,8 +287,8 @@ fn simultaneous_joining_nodes_two_sections() {
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
     let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
@@ -315,8 +315,8 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
 fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     // TODO: Use same section size once we have a reliable message relay that handle split.
     // Allow for more routes otherwise NodeApproval get losts during soak test.
-    let elder_size = LOWERED_ELDER_SIZE + 1;
-    let recommended_section_size = LOWERED_ELDER_SIZE + 1;
+    let elder_size = MIN_ELDER_SIZE + 1;
+    let recommended_section_size = MIN_ELDER_SIZE + 1;
 
     // Create a network with three sections:
     let env = Environment::new(NetworkParams {
@@ -366,10 +366,10 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 #[test]
 fn check_close_names_for_elder_size_nodes() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
+    let mut nodes = create_connected_nodes(&env, MIN_ELDER_SIZE);
 
     poll_until(&env, &mut nodes, |nodes| {
         nodes
@@ -470,8 +470,8 @@ fn carry_out_parsec_pruning() {
 #[test]
 fn node_pause_and_resume_simple() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE + 1,
     });
 
     let mut nodes = create_connected_nodes(&env, env.recommended_section_size());
@@ -502,8 +502,8 @@ fn node_pause_and_resume_simple() {
 #[test]
 fn node_pause_and_resume_during_split() {
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE + 1,
     });
 
     let mut nodes = vec![];
@@ -555,8 +555,8 @@ fn neighbour_update() {
     // 4. Verify A's view of B is up to date.
 
     let env = Environment::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        recommended_section_size: LOWERED_ELDER_SIZE + 1,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE + 1,
     });
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
@@ -574,7 +574,7 @@ fn neighbour_update() {
 
     // Remove at most elder_size - 1 elders, so section A still knows at least one elder from B and
     // so can still contact them.
-    let num_elders_to_remove = rng.gen_range(1, LOWERED_ELDER_SIZE);
+    let num_elders_to_remove = rng.gen_range(1, MIN_ELDER_SIZE);
     info!(
         "Removing {} elders from {:?}",
         num_elders_to_remove, prefix_b

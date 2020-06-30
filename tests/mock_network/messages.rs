@@ -82,7 +82,7 @@ fn send_and_receive() {
     // For all expected recipients, poll until it receives the request message and sends
     // the response
     let expected_req_recipients: Vec<_> = expected_recipients(&nodes, &req_dst).collect();
-    assert!(expected_req_recipients.len() >= quorum,);
+    assert!(expected_req_recipients.len() >= quorum);
 
     for index in expected_req_recipients {
         // Poll until the node received the request...

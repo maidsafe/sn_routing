@@ -26,7 +26,7 @@ use std::{
 use xor_name::{XorName, Xorable};
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
-pub const LOWERED_ELDER_SIZE: usize = 4;
+pub const MIN_ELDER_SIZE: usize = 4;
 
 // Maximum number of iterations of the `poll_until` function. This is several orders higher than
 // the anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
@@ -662,16 +662,15 @@ fn poll_until_minimal_elder_count(
     nodes: &mut [TestNode],
     prefix: &Prefix<XorName>,
 ) {
-    let expected = 4;
     assert!(
-        env.elder_size() >= expected,
+        env.elder_size() >= MIN_ELDER_SIZE,
         "elder size must be at least {}, but is only {}",
-        expected,
+        MIN_ELDER_SIZE,
         env.elder_size()
     );
 
     poll_until(env, nodes, |nodes| {
-        elder_count_reached(nodes, prefix, expected)
+        elder_count_reached(nodes, prefix, MIN_ELDER_SIZE)
     })
 }
 
