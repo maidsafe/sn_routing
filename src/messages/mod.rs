@@ -23,9 +23,11 @@ use crate::{
     error::{Result, RoutingError},
     id::FullId,
     location::DstLocation,
+    section::SectionProofChain,
 };
 
 use bytes::Bytes;
+use err_derive::Error;
 use itertools::Itertools;
 use std::{
     fmt::{self, Debug, Formatter},
@@ -59,7 +61,7 @@ pub struct Message {
 
 impl Message {
     /// Deserialize the message. Only called on message receipt.
-    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
+    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self, CreateError> {
         let mut msg: Message = bincode::deserialize(&bytes[..])?;
 
         let signed_bytes = bincode::serialize(&SignableView {
@@ -78,7 +80,7 @@ impl Message {
                     msg.hash = MessageHash::from_bytes(bytes);
                     Ok(msg)
                 } else {
-                    Err(RoutingError::FailedSignature)
+                    Err(CreateError::FailedSignature)
                 }
             }
             SrcAuthority::Section {
@@ -92,7 +94,7 @@ impl Message {
                     msg.hash = MessageHash::from_bytes(bytes);
                     Ok(msg)
                 } else {
-                    Err(RoutingError::FailedSignature)
+                    Err(CreateError::FailedSignature)
                 }
             }
         }
@@ -109,7 +111,7 @@ impl Message {
         dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
-    ) -> Result<Message> {
+    ) -> Result<Message, CreateError> {
         let mut msg = Message {
             dst,
             src,
@@ -118,9 +120,10 @@ impl Message {
             serialized: Default::default(),
             hash: Default::default(),
         };
-        let bytes: Bytes = bincode::serialize(&msg)?.into();
-        msg.serialized = bytes.clone();
-        msg.hash = MessageHash::from_bytes(&bytes);
+
+        msg.serialized = bincode::serialize(&msg)?.into();
+        msg.hash = MessageHash::from_bytes(&msg.serialized);
+
         Ok(msg)
     }
 
@@ -130,7 +133,7 @@ impl Message {
         dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
-    ) -> Result<Self> {
+    ) -> Result<Self, CreateError> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
@@ -152,7 +155,7 @@ impl Message {
         dst: DstLocation,
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
-    ) -> Result<Self> {
+    ) -> Result<Self, CreateError> {
         Self::new_signed(src, dst, dst_key, variant)
     }
 
@@ -194,6 +197,45 @@ impl Message {
     /// Getter
     pub fn hash(&self) -> &MessageHash {
         &self.hash
+    }
+
+    // Extend the current message proof so it starts at `new_first_key` while keeping the last key
+    // (and therefore the signature) intact.
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub(crate) fn extend_proof_chain(
+        mut self,
+        new_first_key: &bls::PublicKey,
+        section_proof_chain: &SectionProofChain,
+    ) -> Result<Self, ExtendProofChainError> {
+        let proof_chain = match &mut self.src {
+            SrcAuthority::Section { proof_chain, .. } => proof_chain,
+            SrcAuthority::Node { .. } => return Err(ExtendProofChainError::MustBeSection),
+        };
+
+        if proof_chain.has_key(new_first_key) {
+            return Err(ExtendProofChainError::AlreadySufficient);
+        }
+
+        let index_from = if let Some(index) = section_proof_chain.index_of(new_first_key) {
+            index
+        } else {
+            return Err(ExtendProofChainError::InvalidFirstKey);
+        };
+
+        let index_to = if let Some(index) = section_proof_chain.index_of(proof_chain.last_key()) {
+            index
+        } else {
+            return Err(ExtendProofChainError::InvalidLastKey);
+        };
+
+        *proof_chain = section_proof_chain.slice(index_from..=index_to);
+
+        Ok(Self::new_signed(
+            self.src,
+            self.dst,
+            self.dst_key,
+            self.variant,
+        )?)
     }
 }
 
@@ -257,6 +299,38 @@ pub enum MessageStatus {
     /// We don't know how to handle the message because we are not in the right state (e.g. it
     /// needs elder but we are not)
     Unknown,
+}
+
+#[derive(Debug, Error)]
+pub enum CreateError {
+    #[error(display = "bincode error: {}", _0)]
+    Bincode(#[error(source)] bincode::Error),
+    #[error(display = "signature check failed")]
+    FailedSignature,
+}
+
+impl From<CreateError> for RoutingError {
+    fn from(src: CreateError) -> Self {
+        match src {
+            CreateError::Bincode(inner) => Self::Bincode(inner),
+            CreateError::FailedSignature => Self::FailedSignature,
+        }
+    }
+}
+
+/// Error returned from `SrcAuthority::extend_proof`.
+#[derive(Debug, Error)]
+pub enum ExtendProofChainError {
+    #[error(display = "extending proof chain not supported on messages with Node src")]
+    MustBeSection,
+    #[error(display = "invalid first key")]
+    InvalidFirstKey,
+    #[error(display = "invalid last key")]
+    InvalidLastKey,
+    #[error(display = "proof chain already sufficient")]
+    AlreadySufficient,
+    #[error(display = "failed to re-create the message: {}", _0)]
+    Create(#[error(source)] CreateError),
 }
 
 // View of a message that can be serialized for the purpose of signing.

@@ -434,36 +434,27 @@ impl Approved {
         dst_key: Option<bls::PublicKey>,
         bounced_msg: Message,
     ) -> Result<()> {
+        trace!("Received BouncedUntrustedMessage({:?})...", bounced_msg);
+
         let dst_key = if let Some(dst_key) = dst_key {
             dst_key
         } else {
-            trace!(
-                "Received BouncedUntrustedMessage({:?}) - missing dst key, discarding",
-                bounced_msg,
-            );
+            trace!("    ...missing dst key, discarding");
             return Ok(());
         };
 
-        if let Err(error) = bounced_msg
-            .src()
-            .clone()
-            .extend_proof_chain(&dst_key, &self.shared_state.our_history)
-        {
-            trace!(
-                "Received BouncedUntrustedMessage({:?}) - extending proof failed, \
-                 discarding: {:?}",
-                bounced_msg,
-                error,
-            );
-            return Ok(());
-        }
+        let resend_msg =
+            match bounced_msg.extend_proof_chain(&dst_key, &self.shared_state.our_history) {
+                Ok(msg) => msg,
+                Err(error) => {
+                    trace!("    ...extending proof failed, discarding: {:?}", error);
+                    return Ok(());
+                }
+            };
 
-        trace!(
-            "Received BouncedUntrustedMessage({:?}) - resending with extended proof",
-            bounced_msg
-        );
+        trace!("    ...resending with extended proof");
 
-        self.relay_message(core, &bounced_msg)
+        self.relay_message(core, &resend_msg)
     }
 
     pub fn handle_bounced_unknown_message(
