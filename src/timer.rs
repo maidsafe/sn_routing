@@ -9,9 +9,11 @@
 use crate::time::{Duration, Instant};
 use crossbeam_channel as mpmc;
 use itertools::Itertools;
+#[cfg(feature = "mock_base")]
+use std::cell::RefCell;
 #[cfg(not(feature = "mock_base"))]
 use std::thread;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc};
+use std::{cell::Cell, collections::BTreeMap};
 
 struct Detail {
     expiry: Instant,
@@ -19,52 +21,42 @@ struct Detail {
 }
 
 /// Simple timer.
-#[derive(Clone)]
 pub struct Timer {
-    inner: Rc<RefCell<Inner>>,
-}
-
-struct Inner {
-    next_token: u64,
-
-    #[cfg(not(feature = "mock_base"))]
-    tx: mpsc::SyncSender<Detail>,
+    next_token: Cell<u64>,
+    tx: mpmc::Sender<Detail>,
 
     #[cfg(feature = "mock_base")]
-    tx: mpsc::Sender<Detail>,
-    #[cfg(feature = "mock_base")]
-    worker: Box<dyn FnMut()>,
+    worker: Worker,
 }
 
 impl Timer {
-    /// Creates a new timer, passing a channel sender used to send `Timeout` events.
+    /// Creates a new timer, passing a channel sender used to send timeouted tokens.
+    #[cfg(not(feature = "mock_base"))]
     pub fn new(sender: mpmc::Sender<u64>) -> Self {
-        #[cfg(not(feature = "mock_base"))]
-        let inner = {
-            let (tx, rx) = mpsc::sync_channel(1);
-            let _ = thread::Builder::new()
-                .name("Timer".to_string())
-                .spawn(move || Self::run(sender, rx))
-                .expect("failed to spawn timer thread");
-            Inner { next_token: 0, tx }
-        };
+        let (tx, rx) = mpmc::bounded(1);
+        let _ = thread::Builder::new()
+            .name("Timer".to_string())
+            .spawn(move || Self::run(sender, rx))
+            .expect("failed to spawn timer thread");
+        Self {
+            next_token: Cell::new(0),
+            tx,
+        }
+    }
 
-        #[cfg(feature = "mock_base")]
-        let inner = {
-            let (tx, mut rx) = mpsc::channel();
-            let mut deadlines = BTreeMap::default();
-            let worker =
-                Box::new(move || Self::do_process_timers(&mut deadlines, &sender, &mut rx));
-
-            Inner {
-                next_token: 0,
-                tx,
-                worker,
-            }
+    #[cfg(feature = "mock_base")]
+    pub fn new(sender: mpmc::Sender<u64>) -> Self {
+        let (tx, rx) = mpmc::unbounded();
+        let worker = Worker {
+            deadlines: RefCell::new(BTreeMap::default()),
+            sender,
+            rx,
         };
 
         Self {
-            inner: Rc::new(RefCell::new(inner)),
+            next_token: Cell::new(0),
+            tx,
+            worker,
         }
     }
 
@@ -73,23 +65,21 @@ impl Timer {
     /// Schedules a timeout event after `duration`. Returns a token that can be used to identify
     /// the timeout event.
     pub fn schedule(&self, duration: Duration) -> u64 {
-        let mut inner = self.inner.borrow_mut();
-
-        let token = inner.next_token;
-        inner.next_token = token.wrapping_add(1);
+        let token = self.next_token.get();
+        self.next_token.set(token.wrapping_add(1));
 
         let detail = Detail {
             expiry: Instant::now() + duration,
             token,
         };
-        inner.tx.send(detail).map(|()| token).unwrap_or_else(|e| {
+        self.tx.send(detail).map(|()| token).unwrap_or_else(|e| {
             error!("Timer could not be scheduled: {:?}", e);
             0
         })
     }
 
     #[cfg(not(feature = "mock_base"))]
-    fn run(sender: mpmc::Sender<u64>, rx: mpsc::Receiver<Detail>) {
+    fn run(sender: mpmc::Sender<u64>, rx: mpmc::Receiver<Detail>) {
         let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
         loop {
@@ -99,8 +89,8 @@ impl Timer {
                     let duration = *t - now;
                     match rx.recv_timeout(duration) {
                         Ok(d) => Some(d),
-                        Err(mpsc::RecvTimeoutError::Timeout) => None,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpmc::RecvTimeoutError::Timeout) => None,
+                        Err(mpmc::RecvTimeoutError::Disconnected) => break,
                     }
                 } else {
                     None
@@ -108,7 +98,7 @@ impl Timer {
             } else {
                 match rx.recv() {
                     Ok(d) => Some(d),
-                    Err(mpsc::RecvError) => break,
+                    Err(mpmc::RecvError) => break,
                 }
             };
 
@@ -116,45 +106,50 @@ impl Timer {
                 deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
             }
 
-            Self::process_deadlines(&mut deadlines, &sender);
-        }
-    }
-
-    fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, sender: &mpmc::Sender<u64>) {
-        let now = Instant::now();
-        let expired_list = deadlines
-            .keys()
-            .take_while(|&&deadline| deadline < now)
-            .cloned()
-            .collect_vec();
-        for expired in expired_list {
-            // Safe to call `expect()` as we just got the key we're removing from
-            // `deadlines`.
-            let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
-            for token in tokens {
-                let _ = sender.send(token);
-            }
+            process_deadlines(&mut deadlines, &sender);
         }
     }
 
     #[cfg(feature = "mock_base")]
     pub fn process_timers(&self) {
-        let mut inner = self.inner.borrow_mut();
-        let process_timers = &mut *inner.worker;
-        process_timers();
+        self.worker.process()
     }
+}
 
-    #[cfg(feature = "mock_base")]
-    fn do_process_timers(
-        deadlines: &mut BTreeMap<Instant, Vec<u64>>,
-        sender: &mpmc::Sender<u64>,
-        rx: &mut mpsc::Receiver<Detail>,
-    ) {
-        while let Ok(Detail { expiry, token }) = rx.try_recv() {
+fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, sender: &mpmc::Sender<u64>) {
+    let now = Instant::now();
+    let expired_list = deadlines
+        .keys()
+        .take_while(|&&deadline| deadline < now)
+        .cloned()
+        .collect_vec();
+    for expired in expired_list {
+        // Safe to call `expect()` as we just got the key we're removing from
+        // `deadlines`.
+        let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
+        for token in tokens {
+            let _ = sender.send(token);
+        }
+    }
+}
+
+#[cfg(feature = "mock_base")]
+struct Worker {
+    deadlines: RefCell<BTreeMap<Instant, Vec<u64>>>,
+    sender: mpmc::Sender<u64>,
+    rx: mpmc::Receiver<Detail>,
+}
+
+#[cfg(feature = "mock_base")]
+impl Worker {
+    fn process(&self) {
+        let mut deadlines = self.deadlines.borrow_mut();
+
+        while let Ok(Detail { expiry, token }) = self.rx.try_recv() {
             deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
         }
 
-        Self::process_deadlines(deadlines, sender);
+        process_deadlines(&mut *deadlines, &self.sender);
     }
 }
 
