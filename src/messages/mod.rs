@@ -74,9 +74,7 @@ impl Message {
                 }
             }
             SrcAuthority::Section {
-                signature,
-                proof,
-                ..
+                signature, proof, ..
             } => {
                 // FIXME Assumes the nodes proof last key is the one signing this message
                 if proof.last_key().verify(&signature, &signed_bytes) {
