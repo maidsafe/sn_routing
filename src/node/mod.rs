@@ -28,6 +28,7 @@ use crate::{
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
+    section::SectionProofChain,
     section::SharedState,
     transport::PeerStatus,
     TransportConfig, TransportEvent,
@@ -42,10 +43,7 @@ use xor_name::{Prefix, XorName, Xorable};
 #[cfg(all(test, feature = "mock"))]
 use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
-use {
-    crate::section::{EldersInfo, SectionProofChain},
-    std::collections::BTreeSet,
-};
+use {crate::section::EldersInfo, std::collections::BTreeSet};
 
 /// Node configuration.
 pub struct NodeConfig {
@@ -411,6 +409,13 @@ impl Node {
             .and_then(|stage| stage.section_key_share())
             .map(|share| &share.secret_key_share)
             .ok_or(RoutingError::InvalidState)
+    }
+
+    /// Returns our section proof chain, or `None` if we are not joined yet.
+    pub fn our_history(&self) -> Option<&SectionProofChain> {
+        self.stage
+            .approved()
+            .map(|stage| &stage.shared_state.our_history)
     }
 
     /// Returns our index in the current BLS group or `RoutingError::InvalidState` if section key was
@@ -1015,13 +1020,6 @@ impl Node {
         self.stage
             .approved()
             .map(|stage| stage.shared_state.our_history.last_key())
-    }
-
-    /// Returns our section proof chain, or `None` if we are not joined yet.
-    pub fn our_history(&self) -> Option<&SectionProofChain> {
-        self.stage
-            .approved()
-            .map(|stage| &stage.shared_state.our_history)
     }
 
     pub(crate) fn shared_state(&self) -> Option<&SharedState> {
