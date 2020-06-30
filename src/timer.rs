@@ -10,7 +10,7 @@ use crate::time::{Duration, Instant};
 use crossbeam_channel as mpmc;
 use itertools::Itertools;
 #[cfg(not(feature = "mock_base"))]
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc};
 
 struct Detail {
@@ -29,8 +29,6 @@ struct Inner {
 
     #[cfg(not(feature = "mock_base"))]
     tx: mpsc::SyncSender<Detail>,
-    #[cfg(not(feature = "mock_base"))]
-    worker: Option<JoinHandle<()>>,
 
     #[cfg(feature = "mock_base")]
     tx: mpsc::Sender<Detail>,
@@ -42,30 +40,31 @@ impl Timer {
     /// Creates a new timer, passing a channel sender used to send `Timeout` events.
     pub fn new(sender: mpmc::Sender<u64>) -> Self {
         #[cfg(not(feature = "mock_base"))]
-        let (tx, worker) = {
+        let inner = {
             let (tx, rx) = mpsc::sync_channel(1);
-            let worker = thread::Builder::new()
+            let _ = thread::Builder::new()
                 .name("Timer".to_string())
                 .spawn(move || Self::run(sender, rx))
                 .expect("failed to spawn timer thread");
-            (tx, Some(worker))
+            Inner { next_token: 0, tx }
         };
 
         #[cfg(feature = "mock_base")]
-        let (tx, worker) = {
+        let inner = {
             let (tx, mut rx) = mpsc::channel();
             let mut deadlines = BTreeMap::default();
             let worker =
                 Box::new(move || Self::do_process_timers(&mut deadlines, &sender, &mut rx));
-            (tx, worker)
-        };
 
-        Self {
-            inner: Rc::new(RefCell::new(Inner {
+            Inner {
                 next_token: 0,
                 tx,
                 worker,
-            })),
+            }
+        };
+
+        Self {
+            inner: Rc::new(RefCell::new(inner)),
         }
     }
 
@@ -159,15 +158,6 @@ impl Timer {
     }
 }
 
-#[cfg(not(feature = "mock_base"))]
-impl Drop for Timer {
-    fn drop(&mut self) {
-        if let Some(handle) = self.inner.borrow_mut().worker.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
 #[cfg(all(test, not(feature = "mock_base")))]
 mod tests {
     use super::*;
@@ -230,10 +220,14 @@ mod tests {
 
     #[test]
     fn heavy_duty_time_out() {
-        let (action_tx, _) = mpmc::unbounded();
-        let timer = Timer::new(action_tx);
-        for _ in 0..1000 {
+        let (tx, rx) = mpmc::unbounded();
+        let timer = Timer::new(tx);
+        let count = 1000;
+
+        for _ in 0..count {
             let _ = timer.schedule(Duration::new(0, 3000));
         }
+
+        assert_eq!(rx.iter().take(count).count(), count);
     }
 }
