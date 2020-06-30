@@ -784,7 +784,12 @@ impl OtherNode {
 
     fn bootstrap_request(&self) -> Result<Message> {
         let variant = Variant::BootstrapRequest(*self.public_id().name());
-        Message::single_src(&self.full_id, DstLocation::Direct, None, variant)
+        Ok(Message::single_src(
+            &self.full_id,
+            DstLocation::Direct,
+            None,
+            variant,
+        )?)
     }
 
     fn received_messages(&self) -> impl Iterator<Item = Message> + '_ {

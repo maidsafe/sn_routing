@@ -242,7 +242,12 @@ fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<Accu
 
 fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
     let variant = Variant::MessageSignature(Box::new(msg));
-    Message::single_src(sender_id, DstLocation::Direct, None, variant)
+    Ok(Message::single_src(
+        sender_id,
+        DstLocation::Direct,
+        None,
+        variant,
+    )?)
 }
 
 #[test]
