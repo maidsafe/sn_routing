@@ -59,6 +59,4 @@ mock_base = [
 ]
 mock = ["mock_base"]
 
-[patch.crates-io]
-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", features = ["upnp"] }
 
