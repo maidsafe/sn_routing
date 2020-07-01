@@ -102,7 +102,6 @@ where
         }
     }
 
-    #[allow(unused)]
     pub fn our_pub_id(&self) -> &S::PublicId {
         self.our_id.public_id()
     }
@@ -145,6 +144,16 @@ where
                 state.get_or_generate_keys(&mut self.rng, vote_id.public_id(), participants.clone())
             },
         )
+    }
+
+    /// Add a gossip peer by force
+    pub fn add_force_gossip_peer(&mut self, peer_id: &S::PublicId) {
+        debug!(
+            "{:?}: adding a new gossip_peer {:?} by force.",
+            self.our_pub_id(),
+            peer_id
+        );
+        let _ = self.peer_list.insert(peer_id.clone());
     }
 
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {

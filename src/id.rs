@@ -123,6 +123,14 @@ impl parsec::SecretId for FullId {
     }
 }
 
+impl bls_dkg::id::SecretId for FullId {
+    type PublicId = PublicId;
+
+    fn public_id(&self) -> &Self::PublicId {
+        self.public_id()
+    }
+}
+
 struct SecretKeys {
     signing: signing::SecretKey,
     encryption: encryption::SecretKey,
@@ -165,6 +173,14 @@ impl<'de> Deserialize<'de> for PublicId {
 }
 
 impl parsec::PublicId for PublicId {
+    type Signature = signing::Signature;
+
+    fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {
+        self.verify(data, signature)
+    }
+}
+
+impl bls_dkg::id::PublicId for PublicId {
     type Signature = signing::Signature;
 
     fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {

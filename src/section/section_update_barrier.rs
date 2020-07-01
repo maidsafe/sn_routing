@@ -55,12 +55,12 @@ impl SectionUpdateBarrier {
         self.try_get_details(our_prefix)
     }
 
-    fn try_get_details(&mut self, our_prefix: &Prefix) -> Option<SectionUpdateDetails> {
+    fn try_get_details(&self, our_prefix: &Prefix) -> Option<SectionUpdateDetails> {
         match (
-            self.our_key.take(),
-            self.our_info.take(),
-            self.sibling_key.take(),
-            self.sibling_info.take(),
+            self.our_key.clone(),
+            self.our_info.clone(),
+            self.sibling_key.clone(),
+            self.sibling_info.clone(),
         ) {
             (Some(our_key), Some(our_info), None, None) if our_info.value.prefix == *our_prefix => {
                 Some(SectionUpdateDetails {
@@ -83,13 +83,7 @@ impl SectionUpdateBarrier {
                     }),
                 })
             }
-            (our_key, our_info, sibling_key, sibling_info) => {
-                self.our_key = our_key;
-                self.our_info = our_info;
-                self.sibling_key = sibling_key;
-                self.sibling_info = sibling_info;
-                None
-            }
+            _ => None,
         }
     }
 }

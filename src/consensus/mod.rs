@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod dkg;
 mod event_accumulator;
 mod genesis_prefix_info;
 mod network_event;
@@ -16,12 +17,12 @@ mod signature_accumulator;
 pub mod test_utils;
 
 pub use self::{
+    dkg::{generate_secret_key_set, threshold_count, DkgResult, DkgVoter},
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
-        generate_secret_key_set, Block, CreateGossipError, DkgResult, DkgResultWrapper,
-        Observation, ParsecNetworkEvent, Request as ParsecRequest, Response as ParsecResponse,
-        GOSSIP_PERIOD,
+        Block, CreateGossipError, Observation, ParsecNetworkEvent, Request as ParsecRequest,
+        Response as ParsecResponse, GOSSIP_PERIOD,
     },
     proof::{Proof, ProofShare, Proven},
     signature_accumulator::{AccumulationError, SignatureAccumulator},
@@ -154,22 +155,12 @@ impl ConsensusEngine {
                     }
                 }
             }
-            Observation::DkgResult {
-                participants,
-                dkg_result,
-            } => {
-                trace!(
-                    "Parsec DkgResult v{}: {:?}",
-                    self.parsec_map.last_version(),
-                    participants
+            Observation::DkgResult { .. } => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "DKG shall not be processed by parsec anymore"
                 );
-                Some((
-                    AccumulatingEvent::DkgResult {
-                        participants: participants.clone(),
-                        dkg_result: dkg_result.clone(),
-                    },
-                    None,
-                ))
+                None
             }
             Observation::Add { .. }
             | Observation::Remove { .. }
@@ -236,6 +227,10 @@ impl ConsensusEngine {
 
     pub fn vote_for(&mut self, event: NetworkEvent) {
         self.parsec_map.vote_for(event)
+    }
+
+    pub fn add_force_gossip_peer(&mut self, peer_id: &PublicId) {
+        self.parsec_map.add_force_gossip_peer(peer_id)
     }
 
     pub fn create_gossip(

@@ -9,7 +9,8 @@
 use super::utils::*;
 use rand::Rng;
 use routing::{
-    event::Event, mock::Environment, DstLocation, NetworkParams, Prefix, SrcLocation, XorName,
+    event::Event, mock::Environment, threshold_count, DstLocation, NetworkParams, Prefix,
+    SrcLocation, XorName,
 };
 
 #[test]
@@ -43,10 +44,11 @@ fn messages_accumulate_with_quorum() {
     let dst = DstLocation::Node(*nodes[closest_elder_index].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
-    // The BLS scheme will require more than `participants / 3`
+    // The BLS scheme will require more than `participants * 2 / 3`
     // shares in order to construct a full key or signature.
     // The smallest number such that `quorum > threshold`:
-    let threshold = elder_size.saturating_sub(1) / 3;
+    // TODO: make this configurable.
+    let threshold = threshold_count(elder_size);
     let quorum = 1 + threshold;
 
     // Send a message from the section `src` to the node `dst`.

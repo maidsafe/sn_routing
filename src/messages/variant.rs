@@ -9,6 +9,7 @@
 use super::{AccumulatingMessage, Message, MessageHash};
 use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
+    id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
 };
@@ -16,6 +17,7 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::{
+    collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
@@ -75,6 +77,26 @@ pub enum Variant {
         /// The latest parsec version of the recipient of `message`.
         parsec_version: u64,
     },
+    /// Message exchanged for DKG process.
+    DKGMessage {
+        /// The identifier of the key_gen instance this message is about.
+        /// Currently just using the participants.
+        /// TODO: may need to consider using other unique identifying approach.
+        participants: BTreeSet<PublicId>,
+        /// The parsec version this DKG message related to.
+        parsec_version: u64,
+        /// The serialized DKG message.
+        message: Bytes,
+    },
+    /// Message of notify sibling that DKG completed during split
+    DKGSibling {
+        /// Participants of the DKG
+        participants: BTreeSet<PublicId>,
+        /// Parsec version of the DKG
+        parsec_version: u64,
+        /// Public key set that got consensused
+        public_key_set: bls::PublicKeySet,
+    },
 }
 
 impl Debug for Variant {
@@ -108,6 +130,26 @@ impl Debug for Variant {
                 .debug_struct("BouncedUnknownMessage")
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .field("parsec_version", parsec_version)
+                .finish(),
+            Self::DKGMessage {
+                participants,
+                parsec_version,
+                message,
+            } => f
+                .debug_struct("DKGMessage")
+                .field("participants", participants)
+                .field("parsec_version", parsec_version)
+                .field("message_hash", &MessageHash::from_bytes(message))
+                .finish(),
+            Self::DKGSibling {
+                participants,
+                parsec_version,
+                public_key_set,
+            } => f
+                .debug_struct("DKGMessage")
+                .field("participants", participants)
+                .field("parsec_version", parsec_version)
+                .field("public_key_set", public_key_set)
                 .finish(),
         }
     }

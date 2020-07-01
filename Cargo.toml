@@ -13,6 +13,7 @@ edition = "2018"
 [dependencies]
 bincode = "1.2.1"
 bls = { package = "threshold_crypto", version = "~0.3.2" }
+bls_dkg = { git = "https://github.com/maidsafe/BLS-DKG" }
 bytes = "~0.5.4"
 crossbeam-channel = "~0.4.2"
 ctrlc = { version = "3", optional = true, features = ["termination"] }
@@ -29,7 +30,7 @@ log = "~0.4.8"
 lru_time_cache = "~0.10.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
 num-bigint = "~0.2.6"
-parsec = "~0.7.1"
+parsec = { git = "https://github.com/maidsafe/parsec" }
 quic-p2p = { version = "~0.7.0", features = ["upnp"] }
 rand = "~0.7.3"
 # rand in the versions used by the threshold-crypto crate

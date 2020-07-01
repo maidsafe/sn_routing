@@ -733,6 +733,32 @@ impl Node {
                     message.clone(),
                     *parsec_version,
                 ),
+                Variant::DKGMessage {
+                    participants,
+                    parsec_version,
+                    message,
+                } => {
+                    stage.handle_dkg_message(
+                        &mut self.core,
+                        participants.clone(),
+                        *parsec_version,
+                        message.clone(),
+                        *msg.src().as_node()?,
+                    )?;
+                }
+                Variant::DKGSibling {
+                    participants,
+                    parsec_version,
+                    public_key_set,
+                } => {
+                    stage.handle_dkg_sibling(
+                        &self.core,
+                        participants.clone(),
+                        *parsec_version,
+                        public_key_set.clone(),
+                        *msg.src().as_node()?,
+                    )?;
+                }
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
                 }
@@ -869,7 +895,10 @@ impl Node {
 impl Node {
     /// Returns whether the node is approved member of a section.
     pub fn is_approved(&self) -> bool {
-        self.stage.approved().is_some()
+        self.stage
+            .approved()
+            .map(|stage| stage.is_ready(&self.core))
+            .unwrap_or(false)
     }
 
     /// Indicates if there are any pending observations in the parsec object

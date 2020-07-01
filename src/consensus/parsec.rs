@@ -10,7 +10,7 @@ use crate::{
     consensus::{AccumulatingEvent, NetworkEvent},
     id::{FullId, PublicId},
     messages::Variant,
-    rng::{self, MainRng, RngCompat},
+    rng::{self, MainRng},
     section::EldersInfo,
     time::Duration,
 };
@@ -41,7 +41,6 @@ pub type Block = inner::Block<NetworkEvent, PublicId>;
 pub type Parsec = inner::Parsec<NetworkEvent, FullId>;
 pub type Request = inner::Request<NetworkEvent, PublicId>;
 pub type Response = inner::Response<NetworkEvent, PublicId>;
-pub use inner::{DkgResult, DkgResultWrapper};
 
 // The maximum number of parsec instances to store.
 const MAX_PARSECS: usize = 10;
@@ -237,7 +236,7 @@ impl ParsecMap {
         &mut self,
         participants: BTreeSet<PublicId>,
         vote_id: &FullId,
-    ) -> Option<DkgResult> {
+    ) -> Option<parsec::DkgResult> {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
             return Some(parsec.get_dkg_result_as(participants, vote_id));
         }
@@ -250,6 +249,12 @@ impl ParsecMap {
         } else {
             log_or_panic!(log::Level::Error, "ParsecMap is empty.");
             0
+        }
+    }
+
+    pub fn add_force_gossip_peer(&mut self, peer_id: &PublicId) {
+        if let Some(ref mut parsec) = self.map.values_mut().last() {
+            parsec.add_force_gossip_peer(peer_id)
         }
     }
 
@@ -360,16 +365,6 @@ impl ParsecMap {
             .rev()
             .collect();
     }
-}
-
-/// Generate a BLS SecretKeySet for the given number of participants.
-/// Used for generating first node, or for test.
-pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
-    // The BLS scheme will require more than `participants / 3`
-    // shares in order to construct a full key or signature.
-    let threshold = participants.saturating_sub(1) / 3;
-
-    bls::SecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
 /// Create Parsec instance.

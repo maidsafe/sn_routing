@@ -8,8 +8,8 @@
 
 use crate::{
     consensus::{
-        self, AccumulatingEvent, ConsensusEngine, DkgResultWrapper, GenesisPrefixInfo,
-        NetworkEvent, ParsecRequest, ParsecResponse, Proof, Proven,
+        self, threshold_count, AccumulatingEvent, ConsensusEngine, DkgResult, DkgVoter,
+        GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven,
     },
     core::Core,
     delivery_group,
@@ -30,21 +30,20 @@ use crate::{
     },
     time::Duration,
 };
+use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
 use serde::Serialize;
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-    iter,
-    net::SocketAddr,
-};
+use std::{cmp::Ordering, collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
 // Send our knowledge in a similar speed as GOSSIP_TIMEOUT
 const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
+
+// Interval to progress DKG timed phase
+const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
@@ -53,15 +52,15 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
-    timer_token: u64,
-    // DKG cache
-    dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    gossip_timer_token: u64,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
     // Flag indicating that our section members changed (a node joined or left) and we might need
     // to change our elders.
     members_changed: bool,
+    // Voter for DKG
+    dkg_voter: DkgVoter,
 }
 
 impl Approved {
@@ -106,18 +105,18 @@ impl Approved {
         );
 
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
-        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
+        let gossip_timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         Ok(Self {
             consensus_engine,
             shared_state,
             section_keys_provider,
             message_accumulator: Default::default(),
-            timer_token,
-            dkg_cache: Default::default(),
+            gossip_timer_token,
             section_update_barrier: Default::default(),
             churn_in_progress: false,
             members_changed: false,
+            dkg_voter: Default::default(),
         })
     }
 
@@ -159,7 +158,7 @@ impl Approved {
             .our()
             .elders
             .contains_key(core.name());
-        let timer_token = if is_self_elder {
+        let gossip_timer_token = if is_self_elder {
             core.timer.schedule(state.consensus_engine.gossip_period())
         } else {
             core.timer.schedule(KNOWLEDGE_TIMEOUT)
@@ -170,12 +169,12 @@ impl Approved {
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             message_accumulator: state.msg_accumulator,
-            timer_token,
+            gossip_timer_token,
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
-            dkg_cache: Default::default(),
             churn_in_progress: false,
             members_changed: false,
+            dkg_voter: Default::default(),
         };
 
         (stage, core)
@@ -185,13 +184,14 @@ impl Approved {
         match self
             .section_keys_provider
             .key_share()
-            .and_then(|share| event.into_signed_network_event(share))
+            .and_then(|share| event.clone().into_signed_network_event(share))
         {
             Ok(event) => self.consensus_engine.vote_for(event),
             Err(error) => log_or_panic!(
                 log::Level::Error,
-                "Failed to create NetworkEvent: {}",
-                error
+                "Failed to create NetworkEvent: {} {:?}",
+                error,
+                event
             ),
         }
     }
@@ -230,16 +230,55 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        if self.timer_token == token {
+        if self.gossip_timer_token == token {
             if self.is_our_elder(core.id()) {
-                self.timer_token = core.timer.schedule(self.consensus_engine.gossip_period());
+                self.gossip_timer_token =
+                    core.timer.schedule(self.consensus_engine.gossip_period());
                 self.consensus_engine.reset_gossip_period();
             } else {
                 // TODO: send this only when the knowledge changes, not periodically.
                 self.send_parsec_poke(core);
-                self.timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
+                self.gossip_timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
+            }
+        } else if self.dkg_voter.timer_token() == token {
+            self.dkg_voter
+                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+            self.progress_dkg(core);
+        }
+    }
+
+    fn check_dkg(&mut self, core: &mut Core) {
+        let (completed, mut backlog_events) = self.dkg_voter.check_dkg();
+
+        for (dkg_key, dkg_result) in completed {
+            debug!("Completed DKG {:?}", dkg_key);
+            self.notify_sibling(
+                core,
+                &dkg_key.0,
+                dkg_key.1,
+                dkg_result.public_key_set.clone(),
+            );
+            if let Err(err) = self.handle_dkg_result_event(core, &dkg_key.0, &dkg_result) {
+                debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
+            } else {
+                self.dkg_voter.remove_voter(&dkg_key);
             }
         }
+
+        // To avoid the case that DKG was completed after received certain accumulated events.
+        while let Some((event, proof)) = backlog_events.pop_back() {
+            trace!("handle cached accumulated event {:?}", event);
+            // In case of error, event got cached inside `handle_accumulated_event`.
+            let _ = self.handle_accumulated_event(core, event.clone(), Some(proof.clone()));
+        }
+    }
+
+    fn progress_dkg(&mut self, core: &mut Core) {
+        for (dkg_key, message) in self.dkg_voter.progress_dkg(&mut core.rng) {
+            let _ = self.broadcast_dkg_message(core, dkg_key.0, dkg_key.1, message);
+        }
+
+        self.check_dkg(core);
     }
 
     pub fn finish_handle_input(&mut self, core: &mut Core) {
@@ -250,7 +289,10 @@ impl Approved {
             }
         }
 
-        if self.is_our_elder(core.id()) && self.consensus_engine.needs_pruning() {
+        if self.section_keys_provider.key_share().is_ok()
+            && self.is_our_elder(core.id())
+            && self.consensus_engine.needs_pruning()
+        {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
         }
 
@@ -305,6 +347,13 @@ impl Approved {
                     // This is OK because in the worst case the join request just timeouts and the
                     // joining node sends it again.
                     return Ok(MessageStatus::Useless);
+                }
+            }
+            Variant::DKGMessage { participants, .. } | Variant::DKGSibling { participants, .. } => {
+                if self.is_our_elder(our_id) || participants.contains(our_id) {
+                    return Ok(MessageStatus::Useful);
+                } else {
+                    return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
@@ -742,11 +791,16 @@ impl Approved {
         match msg_version.cmp(&self.consensus_engine.parsec_version()) {
             Ordering::Equal => self.poll_all(core),
             Ordering::Greater => {
-                // We are lagging behind. Send a request whose response might help us catch up.
-                self.send_parsec_gossip(
-                    core,
-                    Some((self.consensus_engine.parsec_version(), p2p_node)),
-                );
+                if self.is_our_elder(core.id()) {
+                    // We are lagging behind. Send a request whose response might help us catch up.
+                    self.send_parsec_gossip(
+                        core,
+                        Some((self.consensus_engine.parsec_version(), p2p_node)),
+                    );
+                } else {
+                    // Poking when we are not elder yet.
+                    self.send_parsec_poke(core);
+                }
                 Ok(())
             }
             Ordering::Less => Ok(()),
@@ -770,6 +824,66 @@ impl Approved {
         } else {
             Ok(())
         }
+    }
+
+    // TODO: carry out accumulation
+    pub fn handle_dkg_sibling(
+        &mut self,
+        core: &Core,
+        participants: BTreeSet<PublicId>,
+        parsec_version: u64,
+        public_key_set: bls::PublicKeySet,
+        _src_id: PublicId,
+    ) -> Result<()> {
+        debug!(
+            "notified by sibling to vote for SectionInfo of {:?}",
+            participants
+        );
+
+        let dkg_result = DkgResult::new(public_key_set, None);
+        if self
+            .dkg_voter
+            .has_info(&(participants.clone(), parsec_version), &dkg_result)
+        {
+            self.handle_dkg_result_event(core, &participants, &dkg_result)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn handle_dkg_message(
+        &mut self,
+        core: &mut Core,
+        participants: BTreeSet<PublicId>,
+        parsec_version: u64,
+        message_bytes: Bytes,
+        pub_id: PublicId,
+    ) -> Result<()> {
+        trace!(
+            "handle dkg message of p{:?}-{:?} from {}",
+            participants,
+            parsec_version,
+            pub_id
+        );
+        self.dkg_voter
+            .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+
+        if participants.contains(core.id()) {
+            self.init_dkg_gen(core, participants.clone(), parsec_version);
+        }
+
+        let msg_parsed = bincode::deserialize(&message_bytes[..])?;
+
+        for response in self.dkg_voter.process_dkg_message(
+            &mut core.rng,
+            &(participants.clone(), parsec_version),
+            msg_parsed,
+        ) {
+            let _ =
+                self.broadcast_dkg_message(core, participants.clone(), parsec_version, response);
+        }
+        self.check_dkg(core);
+        Ok(())
     }
 
     fn try_relay_message(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
@@ -869,7 +983,7 @@ impl Approved {
 
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
-    fn promote_and_demote_elders(&mut self, core: &Core) -> bool {
+    fn promote_and_demote_elders(&mut self, core: &mut Core) -> bool {
         if !self.members_changed || !self.is_ready_to_churn() {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return false;
@@ -892,16 +1006,93 @@ impl Approved {
             return true;
         }
 
+        if new_infos.len() > 1 {
+            debug!("splitting with new_infos {:?}", new_infos);
+        }
+
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.consensus_engine.vote_for(NetworkEvent {
-                payload: AccumulatingEvent::StartDkg(participants),
-                proof_share: None,
-            });
+            let parsec_version = self.consensus_engine.parsec_version();
+            let dkg_key = (participants.clone(), parsec_version);
+
+            if let Some(dkg_result) = self.dkg_voter.push_info(&dkg_key, info) {
+                // Got notified of the sibling DKG result, happens during split.
+                if let Err(err) = self.handle_dkg_result_event(core, &participants, &dkg_result) {
+                    debug!(
+                        "Failed handle sibling notified dkg_result {:?} - {:?}",
+                        dkg_key, err
+                    );
+                    self.dkg_voter.insert_dkg_result(dkg_key, dkg_result);
+                }
+                continue;
+            }
+
+            // In case all the current elders split into one side of the sub-section, triggering the
+            // sibling section's DKG process by send them an Initial DKG message.
+            let elder_ids: Vec<PublicId> =
+                self.shared_state.our_info().elder_ids().copied().collect();
+            if participants
+                .iter()
+                .all(|participant| !elder_ids.contains(participant))
+            {
+                trace!(
+                    "Triggering DKG process for sibling section during splitting {:?}",
+                    participants
+                );
+
+                let threshold = threshold_count(participants.len());
+                let message = DkgMessage::Initialization {
+                    // FIXME: will be counted as an extra vote
+                    key_gen_id: 0,
+                    m: threshold,
+                    n: participants.len(),
+                    member_list: participants.clone(),
+                };
+                let _ = self.broadcast_dkg_message(core, participants, parsec_version, message);
+            } else {
+                self.init_dkg_gen(core, participants, parsec_version);
+            }
         }
 
         true
+    }
+
+    fn init_dkg_gen(
+        &mut self,
+        core: &mut Core,
+        participants: BTreeSet<PublicId>,
+        parsec_version: u64,
+    ) {
+        for message in self
+            .dkg_voter
+            .init_dkg_gen(&core.full_id, &(participants.clone(), parsec_version))
+        {
+            let _ = self.broadcast_dkg_message(core, participants.clone(), parsec_version, message);
+            self.dkg_voter
+                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+        }
+    }
+
+    fn broadcast_dkg_message(
+        &mut self,
+        core: &mut Core,
+        participants: BTreeSet<PublicId>,
+        parsec_version: u64,
+        dkg_message: DkgMessage<PublicId>,
+    ) -> Result<()> {
+        let src = SrcLocation::Node(*core.id().name());
+        let message = bincode::serialize(&dkg_message)?.into();
+        let variant = Variant::DKGMessage {
+            participants: participants.clone(),
+            parsec_version,
+            message,
+        };
+
+        for pub_id in participants.iter() {
+            let dst = DstLocation::Node(*pub_id.name());
+            let _ = self.send_routing_message(core, src, dst, variant.clone(), None);
+        }
+        Ok(())
     }
 
     /// Polls and handles the next scheduled relocation, if any.
@@ -935,17 +1126,6 @@ impl Approved {
                 group,
                 related_info,
             } => self.handle_genesis_event(&group, &related_info)?,
-            AccumulatingEvent::StartDkg(_) => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "unexpected accumulated event: {:?}",
-                    event
-                );
-            }
-            AccumulatingEvent::DkgResult {
-                participants,
-                dkg_result,
-            } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
             AccumulatingEvent::Online {
                 p2p_node,
                 age,
@@ -960,26 +1140,64 @@ impl Approved {
             AccumulatingEvent::Offline(name) => {
                 self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
             }
-            AccumulatingEvent::SectionInfo(elders_info) => self.handle_section_info_event(
-                core,
-                elders_info,
-                proof.expect("missing proof for SectionInfo"),
-            )?,
+            AccumulatingEvent::SectionInfo(elders_info) => {
+                // Could receive the accumulated SectionInfo before complete the DKG process.
+                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_section_info_event(
+                    core,
+                    elders_info.clone(),
+                    proof.clone().expect("missing proof for SectionInfo"),
+                ) {
+                    trace!(
+                        "caching SectionInfo({:?}) as invalid DKG result",
+                        elders_info
+                    );
+                    self.dkg_voter.push_event(
+                        AccumulatingEvent::SectionInfo(elders_info),
+                        proof.expect("missing proof for SectionInfo"),
+                    );
+                }
+            }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::OurKey { prefix, key } => self.handle_our_key_event(
-                core,
-                prefix,
-                key,
-                proof.expect("missing proof for OurKey"),
-            )?,
-            AccumulatingEvent::TheirKey { prefix, key } => self.handle_their_key_event(
-                core,
-                prefix,
-                key,
-                proof.expect("missing proof for TheirKey"),
-            )?,
+            AccumulatingEvent::OurKey { prefix, key } => {
+                // Could receive the accumulated OurKey before complete the DKG process.
+                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_our_key_event(
+                    core,
+                    prefix,
+                    key,
+                    proof.clone().expect("missing proof for OurKey"),
+                ) {
+                    trace!(
+                        "caching OurKey( {:?}, {:?} ) as invalid DKG result",
+                        prefix,
+                        key
+                    );
+                    self.dkg_voter.push_event(
+                        AccumulatingEvent::OurKey { prefix, key },
+                        proof.expect("missing proof for OurKey"),
+                    );
+                }
+            }
+            AccumulatingEvent::TheirKey { prefix, key } => {
+                // Could receive the accumulated TheirKey before complete the DKG process.
+                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_their_key_event(
+                    core,
+                    prefix,
+                    key,
+                    proof.clone().expect("missing proof for TheirKey"),
+                ) {
+                    trace!(
+                        "caching ThereKey( {:?}, {:?} ) as invalid DKG result",
+                        prefix,
+                        key
+                    );
+                    self.dkg_voter.push_event(
+                        AccumulatingEvent::TheirKey { prefix, key },
+                        proof.expect("missing proof for ThereKey"),
+                    );
+                }
+            }
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => self
                 .handle_their_knowledge_event(
                     prefix,
@@ -1126,23 +1344,52 @@ impl Approved {
         self.send_routing_message(core, src, dst, content, Some(knowledge_index))
     }
 
+    fn notify_sibling(
+        &mut self,
+        core: &mut Core,
+        participants: &BTreeSet<PublicId>,
+        parsec_version: u64,
+        public_key_set: bls::PublicKeySet,
+    ) {
+        let src = SrcLocation::Node(*core.id().name());
+        let variant = Variant::DKGSibling {
+            participants: participants.clone(),
+            parsec_version,
+            public_key_set,
+        };
+        let elder_ids: Vec<PublicId> = self.shared_state.our_info().elder_ids().copied().collect();
+
+        for elder_id in elder_ids {
+            if !participants.contains(&elder_id) {
+                trace!(
+                    "notify {:?} for the completion of sibling {:?}",
+                    elder_id,
+                    participants
+                );
+                let dst = DstLocation::Node(*elder_id.name());
+                let _ = self.send_routing_message(core, src, dst, variant.clone(), None);
+            }
+        }
+    }
+
     fn handle_dkg_result_event(
         &mut self,
         core: &Core,
         participants: &BTreeSet<PublicId>,
-        dkg_result: &DkgResultWrapper,
+        dkg_result: &DkgResult,
     ) -> Result<(), RoutingError> {
-        self.section_keys_provider
-            .handle_dkg_result_event(participants, dkg_result)?;
-
         if !self.is_our_elder(core.id()) {
-            return Ok(());
+            return self
+                .section_keys_provider
+                .handle_dkg_result_event(participants, dkg_result);
         }
 
-        if let Some(info) = self.dkg_cache.remove(participants) {
-            info!("handle DkgResult: {:?}", participants);
+        let dkg_key = (participants.clone(), self.consensus_engine.parsec_version());
 
-            let key = dkg_result.0.public_key_set.public_key();
+        if let Some(info) = self.dkg_voter.take_info(&dkg_key) {
+            info!("handle DkgResult: {:?}", dkg_key);
+
+            let key = dkg_result.public_key_set.public_key();
 
             self.vote_for_event(AccumulatingEvent::OurKey {
                 prefix: info.prefix,
@@ -1158,14 +1405,18 @@ impl Approved {
 
             self.vote_for_event(AccumulatingEvent::SectionInfo(info));
         } else {
-            log_or_panic!(
-                log::Level::Error,
+            // The latest participant was just following vote, which doesn't have the info to
+            // vote for a section_info. Or the DKG process completed before receiving the
+            // correspondent AccumulatedEvent.
+            debug!(
                 "DKG for an unexpected info {:?} (expected: {{{:?}}})",
-                participants,
-                self.dkg_cache.keys().format(", ")
+                dkg_key,
+                self.dkg_voter.info_keys().format(", ")
             );
+            return Err(RoutingError::InvalidState);
         }
-        Ok(())
+        self.section_keys_provider
+            .handle_dkg_result_event(&dkg_key.0, dkg_result)
     }
 
     fn handle_section_info_event(
@@ -1300,14 +1551,33 @@ impl Approved {
         Ok(())
     }
 
+    fn add_force_gossip_peer(
+        &mut self,
+        elders_info: &EldersInfo,
+        old_prefix: Prefix<XorName>,
+        was_elder: bool,
+    ) {
+        if was_elder
+            && (elders_info.prefix == old_prefix || elders_info.prefix.is_extension_of(&old_prefix))
+        {
+            for id in elders_info.elders.values() {
+                self.consensus_engine.add_force_gossip_peer(id.public_id());
+            }
+        }
+    }
+
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
+        trace!("Update our Section with {:?}", details);
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
 
+        self.add_force_gossip_peer(&details.our.info.value, old_prefix, was_elder);
+
         self.update_our_key_and_info(core, details.our.key, details.our.info)?;
 
         if let Some(sibling) = details.sibling {
+            self.add_force_gossip_peer(&sibling.info.value, old_prefix, was_elder);
             self.shared_state.sections.update_keys(sibling.key);
             self.update_neighbour_info(core, sibling.info);
         }
@@ -1324,6 +1594,8 @@ impl Approved {
             trace!("unhandled SectionInfo");
             return Ok(());
         }
+
+        self.section_update_barrier = Default::default();
 
         if new_prefix.is_extension_of(&old_prefix) {
             info!("Split");
@@ -1450,8 +1722,6 @@ impl Approved {
             AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::DkgResult { .. }
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::OurKey { .. } => false,
 
@@ -1568,6 +1838,7 @@ impl Approved {
             Some((v, p)) => (v, p),
             None => {
                 if !self.consensus_engine.should_send_gossip() {
+                    trace!("shall not carry out a gossip");
                     return;
                 }
 
@@ -1575,6 +1846,7 @@ impl Approved {
                     let version = self.consensus_engine.parsec_version();
                     (version, recipient)
                 } else {
+                    trace!("can't pick a recipient for gossip");
                     return;
                 }
             }
@@ -1800,6 +2072,21 @@ impl Approved {
 
         for event in events {
             self.vote_for_event(event)
+        }
+    }
+
+    #[cfg(feature = "mock_base")]
+    // Returns whether node has completed the full joining process
+    pub fn is_ready(&self, core: &Core) -> bool {
+        if self
+            .shared_state
+            .our_members
+            .elder_candidates(core.network_params.elder_size, self.shared_state.our_info())
+            .contains_key(core.id().name())
+        {
+            self.is_our_elder(core.id())
+        } else {
+            true
         }
     }
 
