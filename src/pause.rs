@@ -10,10 +10,9 @@ use crate::{
     consensus::ConsensusEngine,
     id::FullId,
     message_filter::MessageFilter,
-    messages::QueuedMessage,
+    messages::{MessageAccumulator, QueuedMessage},
     network_params::NetworkParams,
     section::{SectionKeysProvider, SectionUpdateBarrier, SharedState},
-    signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
 };
@@ -39,6 +38,6 @@ pub struct PausedState {
     // TODO: instead of storing both transport and network_rx, store only the network config.
     pub(super) transport: Transport,
     pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
-    pub(super) sig_accumulator: SignatureAccumulator,
+    pub(super) msg_accumulator: MessageAccumulator,
     pub(super) section_update_barrier: SectionUpdateBarrier,
 }

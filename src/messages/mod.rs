@@ -8,12 +8,14 @@
 
 mod accumulating_message;
 mod hash;
+mod message_accumulator;
 mod src_authority;
 mod variant;
 
 pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     hash::MessageHash,
+    message_accumulator::MessageAccumulator,
     src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
@@ -59,7 +61,13 @@ impl Message {
     /// Deserialize the message. Only called on message receipt.
     pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
         let mut msg: Message = bincode::deserialize(&bytes[..])?;
-        let signed_bytes = serialize_for_signing(&msg.dst, msg.dst_key.as_ref(), &msg.variant)?;
+
+        let signed_bytes = bincode::serialize(&SignableView {
+            dst: &msg.dst,
+            dst_key: msg.dst_key.as_ref(),
+            variant: &msg.variant,
+        })?;
+
         match msg.src.clone() {
             SrcAuthority::Node {
                 public_id,
@@ -74,10 +82,12 @@ impl Message {
                 }
             }
             SrcAuthority::Section {
-                signature, proof, ..
+                signature,
+                proof_chain,
+                ..
             } => {
                 // FIXME Assumes the nodes proof last key is the one signing this message
-                if proof.last_key().verify(&signature, &signed_bytes) {
+                if proof_chain.last_key().verify(&signature, &signed_bytes) {
                     msg.serialized = bytes.clone();
                     msg.hash = MessageHash::from_bytes(bytes);
                     Ok(msg)
@@ -121,13 +131,28 @@ impl Message {
         dst_key: Option<bls::PublicKey>,
         variant: Variant,
     ) -> Result<Self> {
-        let serialized = serialize_for_signing(&dst, dst_key.as_ref(), &variant)?;
+        let serialized = bincode::serialize(&SignableView {
+            dst: &dst,
+            dst_key: dst_key.as_ref(),
+            variant: &variant,
+        })?;
         let signature = src.sign(&serialized);
         let src = SrcAuthority::Node {
             public_id: *src.public_id(),
             signature,
         };
 
+        Self::new_signed(src, dst, dst_key, variant)
+    }
+
+    /// Creates a message but does not enforce that it is valid. Use only for testing.
+    #[cfg(all(test, feature = "mock"))]
+    pub(crate) fn unverified(
+        src: SrcAuthority,
+        dst: DstLocation,
+        dst_key: Option<bls::PublicKey>,
+        variant: Variant,
+    ) -> Result<Self> {
         Self::new_signed(src, dst, dst_key, variant)
     }
 
@@ -234,10 +259,11 @@ pub enum MessageStatus {
     Unknown,
 }
 
-fn serialize_for_signing(
-    dst: &DstLocation,
-    dst_key: Option<&bls::PublicKey>,
-    variant: &Variant,
-) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(&(dst, dst_key, variant))?)
+// View of a message that can be serialized for the purpose of signing.
+#[derive(Serialize)]
+pub(crate) struct SignableView<'a> {
+    // TODO: why don't we include also `src`?
+    dst: &'a DstLocation,
+    dst_key: Option<&'a bls::PublicKey>,
+    variant: &'a Variant,
 }
