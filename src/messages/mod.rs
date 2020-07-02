@@ -31,7 +31,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -159,7 +159,7 @@ impl Message {
     /// Verify this message is properly signed and trusted.
     pub(crate) fn verify<'a, I>(&'a self, their_keys: I) -> Result<VerifyStatus>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
+        I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
     {
         self.src
             .verify(&self.dst, self.dst_key.as_ref(), &self.variant, their_keys)
@@ -235,7 +235,7 @@ pub struct QueuedMessage {
 pub fn log_verify_failure<'a, T, I>(msg: &T, error: &RoutingError, their_keys: I)
 where
     T: Debug,
-    I: IntoIterator<Item = (&'a Prefix<XorName>, &'a bls::PublicKey)>,
+    I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
 {
     log_or_panic!(
         log::Level::Error,

@@ -31,11 +31,11 @@ use xor_name::{Prefix, XorName};
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PrefixMap<T>(BTreeSet<Entry<T>>)
 where
-    T: Borrow<Prefix<XorName>>;
+    T: Borrow<Prefix>;
 
 impl<T> PrefixMap<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     /// Create empty `PrefixMap`.
     pub fn new() -> Self {
@@ -61,18 +61,18 @@ where
     }
 
     /// Removes the entry at `prefix` and returns it, if any.
-    pub fn remove(&mut self, prefix: &Prefix<XorName>) -> Option<T> {
+    pub fn remove(&mut self, prefix: &Prefix) -> Option<T> {
         self.0.take(prefix).map(|entry| entry.0)
     }
 
     /// Get the entry at `prefix`, if any.
-    pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&T> {
+    pub fn get(&self, prefix: &Prefix) -> Option<&T> {
         self.0.get(prefix).map(|entry| &entry.0)
     }
 
     /// Get the entry at `prefix` or any of its ancestors. In case of multiple matches, returns the
     /// one with the longest prefix.
-    pub fn get_equal_or_ancestor(&self, prefix: &Prefix<XorName>) -> Option<&T> {
+    pub fn get_equal_or_ancestor(&self, prefix: &Prefix) -> Option<&T> {
         let mut prefix = *prefix;
         loop {
             if let Some(entry) = self.get(&prefix) {
@@ -108,7 +108,7 @@ where
     }
 
     /// Returns an iterator over the prefixes
-    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> + Clone {
+    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix> + Clone {
         self.0.iter().map(|entry| entry.prefix())
     }
 
@@ -116,7 +116,7 @@ where
     /// `prefix`.
     pub fn descendants<'a>(
         &'a self,
-        prefix: &'a Prefix<XorName>,
+        prefix: &'a Prefix,
     ) -> impl Iterator<Item = &'a T> + Clone + 'a {
         // TODO: there might be a way to do this in O(logn) using BTreeSet::range
         self.0
@@ -127,7 +127,7 @@ where
 
     // Remove `prefix` and any of its ancestors if they are covered by their descendants.
     // For example, if `(00)` and `(01)` are both in the map, we can remove `(0)` and `()`.
-    fn prune(&mut self, mut prefix: Prefix<XorName>) {
+    fn prune(&mut self, mut prefix: Prefix) {
         // TODO: can this be optimized?
 
         loop {
@@ -146,7 +146,7 @@ where
 
 impl<T> Default for PrefixMap<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     fn default() -> Self {
         Self(Default::default())
@@ -155,7 +155,7 @@ where
 
 impl<T> Debug for PrefixMap<T>
 where
-    T: Borrow<Prefix<XorName>> + Debug,
+    T: Borrow<Prefix> + Debug,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.0.fmt(f)
@@ -164,7 +164,7 @@ where
 
 impl<T> FromIterator<T> for PrefixMap<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         iter.into_iter().fold(Self::new(), |mut map, entry| {
@@ -176,7 +176,7 @@ where
 
 impl<T> From<PrefixMap<T>> for BTreeSet<T>
 where
-    T: Borrow<Prefix<XorName>> + Ord,
+    T: Borrow<Prefix> + Ord,
 {
     fn from(map: PrefixMap<T>) -> Self {
         map.0.into_iter().map(|entry| entry.0).collect()
@@ -189,36 +189,36 @@ struct Entry<T>(T);
 
 impl<T> Entry<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
-    fn prefix(&self) -> &Prefix<XorName> {
+    fn prefix(&self) -> &Prefix {
         self.0.borrow()
     }
 }
 
-impl<T> Borrow<Prefix<XorName>> for Entry<T>
+impl<T> Borrow<Prefix> for Entry<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
-    fn borrow(&self) -> &Prefix<XorName> {
+    fn borrow(&self) -> &Prefix {
         self.0.borrow()
     }
 }
 
 impl<T> PartialEq for Entry<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     fn eq(&self, other: &Self) -> bool {
         self.0.borrow().eq(other.0.borrow())
     }
 }
 
-impl<T> Eq for Entry<T> where T: Borrow<Prefix<XorName>> {}
+impl<T> Eq for Entry<T> where T: Borrow<Prefix> {}
 
 impl<T> Ord for Entry<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.borrow().cmp(other.0.borrow())
@@ -227,7 +227,7 @@ where
 
 impl<T> PartialOrd for Entry<T>
 where
-    T: Borrow<Prefix<XorName>>,
+    T: Borrow<Prefix>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -367,7 +367,7 @@ mod tests {
         );
     }
 
-    fn prefix(s: &str) -> Prefix<XorName> {
+    fn prefix(s: &str) -> Prefix {
         s.parse().unwrap()
     }
 }

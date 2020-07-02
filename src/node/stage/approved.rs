@@ -1232,7 +1232,7 @@ impl Approved {
     fn handle_our_key_event(
         &mut self,
         core: &mut Core,
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
@@ -1255,7 +1255,7 @@ impl Approved {
     fn handle_their_key_event(
         &mut self,
         core: &mut Core,
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
@@ -1279,12 +1279,7 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_their_knowledge_event(
-        &mut self,
-        prefix: Prefix<XorName>,
-        knowledge: u64,
-        proof: Proof,
-    ) {
+    fn handle_their_knowledge_event(&mut self, prefix: Prefix, knowledge: u64, proof: Proof) {
         let knowledge = Proven::new((prefix, knowledge), proof);
         self.shared_state.sections.update_knowledge(knowledge)
     }

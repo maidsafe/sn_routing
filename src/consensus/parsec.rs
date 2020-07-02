@@ -441,7 +441,7 @@ mod tests {
 
     use serde::Serialize;
     use std::net::SocketAddr;
-    use xor_name::{Prefix, XorName};
+    use xor_name::Prefix;
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 
@@ -477,7 +477,7 @@ mod tests {
                 )
             })
             .collect();
-        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default());
+        let elders_info = EldersInfo::new(members, Prefix::default());
         parsec_map.init(rng, full_ids[0].clone(), &elders_info, vec![], version);
     }
 

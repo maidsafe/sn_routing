@@ -38,7 +38,7 @@ use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
 use itertools::Itertools;
 use std::net::SocketAddr;
-use xor_name::{Prefix, XorName, Xorable};
+use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
@@ -250,7 +250,7 @@ impl Node {
     }
 
     /// Our `Prefix` once we are a part of the section.
-    pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
+    pub fn our_prefix(&self) -> Option<&Prefix> {
         if let Stage::Approved(stage) = &self.stage {
             Some(stage.shared_state.our_prefix())
         } else {
@@ -924,7 +924,7 @@ impl Node {
     }
 
     /// Returns the prefixes of all sections known to us
-    pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+    pub fn prefixes(&self) -> BTreeSet<Prefix> {
         self.shared_state()
             .map(|state| state.sections.prefixes().copied().collect())
             .unwrap_or_default()
@@ -966,7 +966,7 @@ impl Node {
     }
 
     /// Returns their knowledge
-    pub fn get_their_knowledge(&self, prefix: &Prefix<XorName>) -> u64 {
+    pub fn get_their_knowledge(&self, prefix: &Prefix) -> u64 {
         self.shared_state()
             .map(|state| state.sections.knowledge_by_section(prefix))
             .unwrap_or(0)

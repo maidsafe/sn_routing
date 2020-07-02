@@ -91,7 +91,7 @@ pub use self::{
     section::SectionProofChain,
 };
 
-pub use xor_name::{Prefix, XorName, Xorable, XOR_NAME_LEN}; // TODO remove pub on API update
+pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// Routing events.
 pub mod event;
 

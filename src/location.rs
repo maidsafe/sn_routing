@@ -16,7 +16,7 @@ pub enum SrcLocation {
     /// A single node with the given name.
     Node(XorName),
     /// A section with the given prefix.
-    Section(Prefix<XorName>),
+    Section(Prefix),
 }
 
 impl SrcLocation {
@@ -86,7 +86,7 @@ impl DstLocation {
     /// # Panics
     ///
     /// Panics if `prefix` does not match `name`.
-    pub(crate) fn contains(&self, name: &XorName, prefix: &Prefix<XorName>) -> bool {
+    pub(crate) fn contains(&self, name: &XorName, prefix: &Prefix) -> bool {
         assert!(prefix.matches(name));
 
         match self {

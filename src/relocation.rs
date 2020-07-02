@@ -130,7 +130,7 @@ impl RelocatePayload {
 
 #[cfg(not(feature = "mock_base"))]
 pub fn compute_destination(
-    _src_prefix: &Prefix<XorName>,
+    _src_prefix: &Prefix,
     relocated_name: &XorName,
     trigger_name: &XorName,
 ) -> XorName {
@@ -139,7 +139,7 @@ pub fn compute_destination(
 
 #[cfg(feature = "mock_base")]
 pub fn compute_destination(
-    src_prefix: &Prefix<XorName>,
+    src_prefix: &Prefix,
     relocated_name: &XorName,
     trigger_name: &XorName,
 ) -> XorName {
@@ -170,7 +170,7 @@ mod overrides {
 
     /// Mechanism for overriding relocation destinations. Useful for tests.
     pub struct Overrides {
-        prefixes: HashSet<Prefix<XorName>>,
+        prefixes: HashSet<Prefix>,
     }
 
     impl Overrides {
@@ -186,7 +186,7 @@ mod overrides {
         /// Override relocation destination for the given source prefix - that is, any node to be
         /// relocated from that prefix will be relocated to the given destination.
         /// The override applies only to the exact prefix, not to its parents / children.
-        pub fn set(&mut self, src_prefix: Prefix<XorName>, dst: XorName) {
+        pub fn set(&mut self, src_prefix: Prefix, dst: XorName) {
             let _ = self.prefixes.insert(src_prefix);
 
             OVERRIDES.with(|map| {
@@ -195,12 +195,12 @@ mod overrides {
         }
 
         /// Suppress relocations from the given source prefix.
-        pub fn suppress(&mut self, src_prefix: Prefix<XorName>) {
+        pub fn suppress(&mut self, src_prefix: Prefix) {
             self.set(src_prefix, src_prefix.name())
         }
 
         /// Suppress relocations from the given source prefix and its parent prefixes.
-        pub fn suppress_self_and_parents(&mut self, mut src_prefix: Prefix<XorName>) {
+        pub fn suppress_self_and_parents(&mut self, mut src_prefix: Prefix) {
             self.suppress(src_prefix);
 
             while !src_prefix.is_empty() {
@@ -261,7 +261,7 @@ mod overrides {
         }
     }
 
-    pub(super) fn get(src_prefix: &Prefix<XorName>, original_dst: XorName) -> XorName {
+    pub(super) fn get(src_prefix: &Prefix, original_dst: XorName) -> XorName {
         OVERRIDES.with(|map| {
             if let Some(info) = map.borrow_mut().get_mut(src_prefix) {
                 info.get(original_dst)
@@ -272,7 +272,7 @@ mod overrides {
     }
 
     thread_local! {
-        static OVERRIDES: RefCell<HashMap<Prefix<XorName>, OverrideInfo>> = RefCell::new(HashMap::new());
+        static OVERRIDES: RefCell<HashMap<Prefix, OverrideInfo>> = RefCell::new(HashMap::new());
     }
 
     #[cfg(test)]

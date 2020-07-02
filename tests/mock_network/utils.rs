@@ -23,7 +23,7 @@ use routing::{
 use std::{
     cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, time::Duration,
 };
-use xor_name::{XorName, Xorable};
+use xor_name::XorName;
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
 pub const MIN_ELDER_SIZE: usize = 4;
@@ -99,7 +99,7 @@ impl TestNode {
         self.inner.close_names(&self.name()).unwrap()
     }
 
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
+    pub fn our_prefix(&self) -> &Prefix {
         self.inner.our_prefix().unwrap()
     }
 
@@ -131,7 +131,7 @@ pub fn count_sections(nodes: &[TestNode]) -> usize {
     current_sections(nodes).count()
 }
 
-pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefix<XorName>> + 'a {
+pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefix> + 'a {
     nodes
         .iter()
         .filter_map(|n| n.inner.our_prefix())
@@ -278,7 +278,7 @@ pub fn node_left(nodes: &[TestNode], name: &XorName) -> bool {
 }
 
 // Returns whether the section with the given prefix did split.
-pub fn section_split(nodes: &[TestNode], prefix: &Prefix<XorName>) -> bool {
+pub fn section_split(nodes: &[TestNode], prefix: &Prefix) -> bool {
     let sub_prefix0 = prefix.pushed(false);
     let sub_prefix1 = prefix.pushed(true);
 
@@ -330,8 +330,8 @@ pub fn consensus_reached(
 // section `b`.
 pub fn section_knowledge_is_up_to_date(
     nodes: &[TestNode],
-    a: &Prefix<XorName>,
-    b: &Prefix<XorName>,
+    a: &Prefix,
+    b: &Prefix,
     threshold: usize,
 ) -> bool {
     let names_b: Vec<_> = nodes_with_prefix(nodes, b)
@@ -448,8 +448,8 @@ pub fn create_connected_nodes_until_split(
 pub fn add_connected_nodes_until_one_away_from_split(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix_to_nearly_split: &Prefix<XorName>,
-) -> Prefix<XorName> {
+    prefix_to_nearly_split: &Prefix,
+) -> Prefix {
     let sub_prefix_last_bit = env.new_rng().gen();
     let sub_prefix = prefix_to_nearly_split.pushed(sub_prefix_last_bit);
     let (count0, count1) = if sub_prefix_last_bit {
@@ -470,7 +470,7 @@ pub fn add_connected_nodes_until_one_away_from_split(
 }
 
 /// Split the section by adding and/or removing nodes to/from it.
-pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix) {
     info!("trigger_split start: {:?}", prefix);
 
     // To trigger split, we need the section to contain at least `recommended_section_size` *mature* nodes
@@ -495,7 +495,7 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
 pub fn add_mature_nodes(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     count0: usize,
     count1: usize,
 ) {
@@ -572,7 +572,7 @@ pub fn add_mature_nodes(
 fn add_nodes_to_section_and_poll(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     count: usize,
 ) {
     let mut first_index = nodes.len();
@@ -595,7 +595,7 @@ fn add_nodes_to_section_and_poll(
 fn add_nodes_to_subsections_and_poll(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     count0: usize,
     count1: usize,
 ) {
@@ -639,7 +639,7 @@ fn add_nodes_to_subsections_and_poll(
 fn remove_elders_from_section_and_poll(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     count: usize,
 ) {
     for _ in 0..count {
@@ -657,11 +657,7 @@ fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first
 
 // Poll until the section with `prefix` has at least 4 elders which is the miminum so that if one
 // elder is removed, the consensus on it can still be reached.
-fn poll_until_minimal_elder_count(
-    env: &Environment,
-    nodes: &mut [TestNode],
-    prefix: &Prefix<XorName>,
-) {
+fn poll_until_minimal_elder_count(env: &Environment, nodes: &mut [TestNode], prefix: &Prefix) {
     assert!(
         env.elder_size() >= MIN_ELDER_SIZE,
         "elder size must be at least {}, but is only {}",
@@ -675,11 +671,7 @@ fn poll_until_minimal_elder_count(
 }
 
 // Returns whether the section at `prefix` has at least `expected_count` elders.
-fn elder_count_reached(
-    nodes: &[TestNode],
-    prefix: &Prefix<XorName>,
-    expected_count: usize,
-) -> bool {
+fn elder_count_reached(nodes: &[TestNode], prefix: &Prefix, expected_count: usize) -> bool {
     let actual_count = elders_with_prefix(nodes, prefix).count();
 
     if actual_count >= expected_count {
@@ -705,7 +697,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 /// Iterator over all nodes that belong to the given prefix.
 pub fn nodes_with_prefix<'a>(
     nodes: &'a [TestNode],
-    prefix: &'a Prefix<XorName>,
+    prefix: &'a Prefix,
 ) -> impl Iterator<Item = &'a TestNode> {
     nodes.iter().filter(move |node| prefix.matches(node.name()))
 }
@@ -713,7 +705,7 @@ pub fn nodes_with_prefix<'a>(
 /// Mutable iterator over all nodes that belong to the given prefix.
 pub fn nodes_with_prefix_mut<'a>(
     nodes: &'a mut [TestNode],
-    prefix: &'a Prefix<XorName>,
+    prefix: &'a Prefix,
 ) -> impl Iterator<Item = &'a mut TestNode> {
     nodes
         .iter_mut()
@@ -723,7 +715,7 @@ pub fn nodes_with_prefix_mut<'a>(
 /// Iterator over all nodes that belong to the given prefix + their indices
 pub fn indexed_nodes_with_prefix<'a>(
     nodes: &'a [TestNode],
-    prefix: &'a Prefix<XorName>,
+    prefix: &'a Prefix,
 ) -> impl Iterator<Item = (usize, &'a TestNode)> {
     nodes
         .iter()
@@ -734,7 +726,7 @@ pub fn indexed_nodes_with_prefix<'a>(
 /// Iterator over all elder nodes that belong to the given prefix.
 pub fn elders_with_prefix<'a>(
     nodes: &'a [TestNode],
-    prefix: &'a Prefix<XorName>,
+    prefix: &'a Prefix,
 ) -> impl Iterator<Item = &'a TestNode> {
     nodes_with_prefix(nodes, prefix).filter(|node| node.inner.is_elder())
 }
@@ -742,7 +734,7 @@ pub fn elders_with_prefix<'a>(
 /// Mutable iterator over all elder nodes that belong to the given prefix.
 pub fn elders_with_prefix_mut<'a>(
     nodes: &'a mut [TestNode],
-    prefix: &'a Prefix<XorName>,
+    prefix: &'a Prefix,
 ) -> impl Iterator<Item = &'a mut TestNode> {
     nodes_with_prefix_mut(nodes, prefix).filter(|node| node.inner.is_elder())
 }
@@ -846,7 +838,7 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     let all_neighbours_covered = {
         (0..our_prefix.bit_count()).all(|i| {
             our_prefix
-                .with_flipped_bit(i)
+                .with_flipped_bit(i as u8)
                 .is_covered_by(neighbour_sections.iter().map(|info| &info.prefix))
         })
     };
@@ -869,12 +861,7 @@ pub fn verify_invariants_for_nodes(env: &Environment, nodes: &[TestNode]) {
 }
 
 // Send an `UserMessage` with `content` from `src` to `dst`.
-pub fn send_user_message(
-    nodes: &mut [TestNode],
-    src: Prefix<XorName>,
-    dst: Prefix<XorName>,
-    content: Vec<u8>,
-) {
+pub fn send_user_message(nodes: &mut [TestNode], src: Prefix, dst: Prefix, content: Vec<u8>) {
     trace!(
         "send_user_message: {:?} -> {:?}: {:10}",
         src,
@@ -938,7 +925,7 @@ pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], thr
 fn neighbours_with_outdated_knowledge<'a>(
     nodes: &'a [TestNode],
     threshold: usize,
-) -> impl Iterator<Item = (Prefix<XorName>, Prefix<XorName>)> + 'a {
+) -> impl Iterator<Item = (Prefix, Prefix)> + 'a {
     let prefixes: Vec<_> = current_sections(nodes).collect();
     prefixes
         .into_iter()
@@ -964,7 +951,7 @@ pub fn gen_bytes(rng: &mut MainRng, size: usize) -> Vec<u8> {
 }
 
 // Create new node in the given section.
-pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix) {
     add_node_to_section_using_bootstrap_node(env, nodes, prefix, 0)
 }
 
@@ -972,7 +959,7 @@ pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix:
 pub fn add_node_to_section_using_bootstrap_node(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     bootstrap_node_index: usize,
 ) {
     let mut rng = env.new_rng();
@@ -994,7 +981,7 @@ pub fn add_node_to_section_using_bootstrap_node(
 }
 
 // Removes one elder node from the given prefix. Returns the name of the removed node.
-pub fn remove_elder_from_section(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) -> XorName {
+pub fn remove_elder_from_section(nodes: &mut Vec<TestNode>, prefix: &Prefix) -> XorName {
     let index = indexed_nodes_with_prefix(&nodes, prefix)
         .find(|(_, node)| node.inner.is_elder())
         .map(|(index, _)| index)
@@ -1010,7 +997,7 @@ pub fn remove_elder_from_section(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorN
 }
 
 // Generate random prefixes with the given lengths.
-fn gen_prefixes(rng: &mut MainRng, prefix_lengths: &[usize]) -> Vec<Prefix<XorName>> {
+fn gen_prefixes(rng: &mut MainRng, prefix_lengths: &[usize]) -> Vec<Prefix> {
     validate_prefix_lenghts(&prefix_lengths);
 
     let _ = prefix_lengths.iter().fold(0, |previous, &current| {

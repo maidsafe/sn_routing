@@ -19,7 +19,7 @@ use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
     event::Event, mock::Environment, test_consts, NetworkParams, PausedState, Prefix,
-    RelocationOverrides, TransportConfig, XorName,
+    RelocationOverrides, TransportConfig,
 };
 use std::collections::BTreeMap;
 
@@ -167,11 +167,11 @@ fn multi_split() {
 
 struct SimultaneousJoiningNode {
     // Destination section prefix: Use as relocation_dst for nodes in src_section_prefix.
-    dst_section_prefix: Prefix<XorName>,
+    dst_section_prefix: Prefix,
     // Section prefix that will match the initial id of the node to add.
-    src_section_prefix: Prefix<XorName>,
+    src_section_prefix: Prefix,
     // The prefix to find the proxy within.
-    proxy_prefix: Prefix<XorName>,
+    proxy_prefix: Prefix,
 }
 
 // Proceed with testing joining nodes at the same time with the given configuration.

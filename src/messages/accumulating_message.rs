@@ -8,7 +8,7 @@
 
 use super::{DstLocation, SignableView, Variant};
 use crate::{consensus::ProofShare, error::Result, section::SectionProofChain};
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 /// Section-source message that is in the process of signature accumulation.
 /// When enough signatures are collected, it can be converted into full `Message` by calling
@@ -40,7 +40,7 @@ impl AccumulatingMessage {
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct PlainMessage {
     /// Prefix of the source section.
-    pub src: Prefix<XorName>,
+    pub src: Prefix,
     /// Destination location.
     pub dst: DstLocation,
     /// The latest key of the destination section according to the sender's knowledge.

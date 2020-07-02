@@ -209,9 +209,9 @@ fn check_root_section_age_counters_after_only_adds(env: &Environment, nodes: &[T
 
 fn choose_other_prefix<'a, R: Rng>(
     rng: &mut R,
-    prefixes: &'a [Prefix<XorName>],
-    except: &Prefix<XorName>,
-) -> &'a Prefix<XorName> {
+    prefixes: &'a [Prefix],
+    except: &Prefix,
+) -> &'a Prefix {
     assert!(prefixes.iter().any(|prefix| prefix != except));
 
     iter::repeat(())
@@ -225,7 +225,7 @@ fn choose_other_prefix<'a, R: Rng>(
 fn remove_random_node_from_section_except(
     rng: &mut MainRng,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     index_to_not_remove: usize,
 ) -> (usize, XorName) {
     if let Some(index) = indexed_nodes_with_prefix(nodes, prefix)
@@ -254,7 +254,7 @@ fn remove_random_node_from_section_except(
 fn churn_until_age_counter(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     mut node_index: usize,
     target_age_counter: u32,
 ) -> usize {
@@ -334,8 +334,8 @@ fn churn_until_age_counter(
 fn node_relocated(
     nodes: &[TestNode],
     node_index: usize,
-    source_prefix: &Prefix<XorName>,
-    target_prefix: &Prefix<XorName>,
+    source_prefix: &Prefix,
+    target_prefix: &Prefix,
 ) -> bool {
     let relocated_name = nodes[node_index].name();
 
