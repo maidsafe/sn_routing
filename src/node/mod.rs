@@ -746,12 +746,12 @@ impl Node {
                         *msg.src().as_node()?,
                     )?;
                 }
-                Variant::DKGSibling {
+                Variant::DKGOldElders {
                     participants,
                     parsec_version,
                     public_key_set,
                 } => {
-                    stage.handle_dkg_sibling(
+                    stage.handle_dkg_old_elders(
                         &self.core,
                         participants.clone(),
                         *parsec_version,

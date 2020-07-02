@@ -252,7 +252,7 @@ impl Approved {
 
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
-            self.notify_sibling(
+            self.notify_old_elders(
                 core,
                 &dkg_key.0,
                 dkg_key.1,
@@ -269,7 +269,11 @@ impl Approved {
         while let Some((event, proof)) = backlog_events.pop_back() {
             trace!("handle cached accumulated event {:?}", event);
             // In case of error, event got cached inside `handle_accumulated_event`.
-            let _ = self.handle_accumulated_event(core, event.clone(), Some(proof.clone()));
+            if let Err(err) =
+                self.handle_accumulated_event(core, event.clone(), Some(proof.clone()))
+            {
+                debug!("Failed ({:?}) handle cached event {:?}", err, event);
+            }
         }
     }
 
@@ -349,7 +353,8 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DKGMessage { participants, .. } | Variant::DKGSibling { participants, .. } => {
+            Variant::DKGMessage { participants, .. }
+            | Variant::DKGOldElders { participants, .. } => {
                 if self.is_our_elder(our_id) || participants.contains(our_id) {
                     return Ok(MessageStatus::Useful);
                 } else {
@@ -826,8 +831,9 @@ impl Approved {
         }
     }
 
-    // TODO: carry out accumulation
-    pub fn handle_dkg_sibling(
+    // TODO: accumulate at least quorum of these messages
+    //       and only then proceed to handle the DKG result.
+    pub fn handle_dkg_old_elders(
         &mut self,
         core: &Core,
         participants: BTreeSet<PublicId>,
@@ -836,7 +842,7 @@ impl Approved {
         _src_id: PublicId,
     ) -> Result<()> {
         debug!(
-            "notified by sibling to vote for SectionInfo of {:?}",
+            "notified by DKG participants {:?} to vote for SectionInfo",
             participants
         );
 
@@ -1013,28 +1019,26 @@ impl Approved {
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let parsec_version = self.consensus_engine.parsec_version();
+            // FIXME: consider using section_key index instead of the parsec_version
             let dkg_key = (participants.clone(), parsec_version);
 
             if let Some(dkg_result) = self.dkg_voter.push_info(&dkg_key, info) {
-                // Got notified of the sibling DKG result, happens during split.
+                // Got notified of the DKG result, happen during split or demote.
                 if let Err(err) = self.handle_dkg_result_event(core, &participants, &dkg_result) {
                     debug!(
-                        "Failed handle sibling notified dkg_result {:?} - {:?}",
+                        "Failed handle notified dkg_result {:?} - {:?}",
                         dkg_key, err
                     );
-                    self.dkg_voter.insert_dkg_result(dkg_key, dkg_result);
+                    self.dkg_voter
+                        .insert_old_elders_dkg_result(dkg_key, dkg_result);
                 }
                 continue;
             }
 
-            // In case all the current elders split into one side of the sub-section, triggering the
-            // sibling section's DKG process by send them an Initial DKG message.
-            let elder_ids: Vec<PublicId> =
-                self.shared_state.our_info().elder_ids().copied().collect();
-            if participants
-                .iter()
-                .all(|participant| !elder_ids.contains(participant))
-            {
+            // In case all the current elders split into one side of the sub-section, and to avoid
+            // malicious elders within one side don't carry out vote, triggering the sibling
+            // section's DKG process by send them an Initial DKG message.
+            if !participants.contains(core.id()) {
                 trace!(
                     "Triggering DKG process for sibling section during splitting {:?}",
                     participants
@@ -1344,7 +1348,7 @@ impl Approved {
         self.send_routing_message(core, src, dst, content, Some(knowledge_index))
     }
 
-    fn notify_sibling(
+    fn notify_old_elders(
         &mut self,
         core: &mut Core,
         participants: &BTreeSet<PublicId>,
@@ -1352,7 +1356,7 @@ impl Approved {
         public_key_set: bls::PublicKeySet,
     ) {
         let src = SrcLocation::Node(*core.id().name());
-        let variant = Variant::DKGSibling {
+        let variant = Variant::DKGOldElders {
             participants: participants.clone(),
             parsec_version,
             public_key_set,
@@ -1362,7 +1366,7 @@ impl Approved {
         for elder_id in elder_ids {
             if !participants.contains(&elder_id) {
                 trace!(
-                    "notify {:?} for the completion of sibling {:?}",
+                    "notify {:?} for the completion of DKG {:?}",
                     elder_id,
                     participants
                 );
@@ -1554,7 +1558,7 @@ impl Approved {
     fn add_force_gossip_peer(
         &mut self,
         elders_info: &EldersInfo,
-        old_prefix: Prefix<XorName>,
+        old_prefix: Prefix,
         was_elder: bool,
     ) {
         if was_elder
@@ -2078,6 +2082,11 @@ impl Approved {
     #[cfg(feature = "mock_base")]
     // Returns whether node has completed the full joining process
     pub fn is_ready(&self, core: &Core) -> bool {
+        // TODO: This is mainly to prevent bootstrapping a new node too quickly when the previous
+        //       node is expected to become an elder, which will carry out DKG voting process.
+        //       However, this may hide issue for the tests such as `simultaneous_joining_nodes`.
+        //       Consider using `poll_until_minimal_elder_count` in the testing code to avoid carry
+        //       out internal check here.
         if self
             .shared_state
             .our_members

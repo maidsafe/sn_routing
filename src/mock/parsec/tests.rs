@@ -628,16 +628,6 @@ where
     }
 }
 
-// fn extract_dkg_result(node: &mut Parsec<Payload, PeerId>) -> (BTreeSet<PeerId>, DkgResult) {
-//     match node.poll().unwrap().payload() {
-//         Observation::DkgResult {
-//             participants,
-//             dkg_result,
-//         } => (participants.clone(), dkg_result.0.clone()),
-//         x => panic!("Unexpected block {:?}", x),
-//     }
-// }
-
 enum MessageContent {
     Request(Request<Payload, PeerId>),
     Response(Response<Payload, PeerId>),

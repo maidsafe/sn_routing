@@ -15,19 +15,29 @@ use crate::{
 };
 use bls::{PublicKeySet, SecretKeyShare};
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
+use lru_time_cache::LruCache;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     mem,
+    time::Duration,
 };
+
+const COMPLETED_DKG_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
+
+/// Returns the number of minumn responsive participants expected for the DKG process
+#[inline]
+pub const fn threshold_count(elder_size: usize) -> usize {
+    // TODO: allow threshold to be configurable.
+    elder_size * QUORUM_NUMERATOR / QUORUM_DENOMINATOR
+}
+
+pub type DkgKey = (BTreeSet<PublicId>, u64);
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
 pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
-    // The BLS scheme will require more than `participants / 3`
-    // shares in order to construct a full key or signature.
-    let threshold = participants.saturating_sub(1) / 3;
-
+    let threshold = threshold_count(participants);
     bls::SecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
@@ -62,26 +72,40 @@ impl Debug for DkgResult {
     }
 }
 
-/// Returns the number of minumn responsive participants expected for the DKG process
-#[inline]
-pub const fn threshold_count(elder_size: usize) -> usize {
-    // TODO: allow threshold to be configurable.
-    elder_size * QUORUM_NUMERATOR / QUORUM_DENOMINATOR
-}
-
-pub type DkgKey = (BTreeSet<PublicId>, u64);
-
-#[derive(Default)]
+/// DKG voter carries out the work of voting for a DKG. Also contains the facility caches that
+/// allows routing utilize the result properly within its churning process.
 pub struct DkgVoter {
+    // Holds the info of the expected new elders.
     dkg_cache: BTreeMap<DkgKey, EldersInfo>,
+    // Holds the key generator that carries out the DKG voting procedure.
     key_gen_map: BTreeMap<DkgKey, KeyGen<FullId>>,
+    // Holds the accumulated events that sent to us BEFORE the completion of the DKG process.
     pending_accumulated_events: VecDeque<(AccumulatingEvent, Proof)>,
-    completed_dkg: BTreeSet<DkgKey>,
-    sibling_dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
+    // TODO: if using section_key index as part of the DkgKey and check agaisnt the section chain,
+    //       then this can be removed.
+    completed_dkg: LruCache<DkgKey, ()>,
+    // Cache of notified dkg_result. During split or demote,
+    // old elders will be notified by the new elders.
+    dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
     timer_token: u64,
 }
 
+impl Default for DkgVoter {
+    fn default() -> Self {
+        Self {
+            dkg_cache: Default::default(),
+            key_gen_map: Default::default(),
+            pending_accumulated_events: Default::default(),
+            completed_dkg: LruCache::with_expiry_duration(COMPLETED_DKG_EXPIRY_DURATION),
+            dkg_result_cache: Default::default(),
+            timer_token: 0,
+        }
+    }
+}
+
 impl DkgVoter {
+    // Check whether a key generator is finalized to give a DKG. Once a DKG is generated, the cached
+    // accumulated events shall be taken for routing (updated with new DKG) to process.
     pub fn check_dkg(
         &mut self,
     ) -> (
@@ -99,7 +123,7 @@ impl DkgVoter {
                     );
                     let _ = completed.insert(dkg_key.clone(), dkg_result);
                 }
-                let _ = self.completed_dkg.insert(dkg_key);
+                let _ = self.completed_dkg.insert(dkg_key, ());
             }
         }
 
@@ -113,10 +137,12 @@ impl DkgVoter {
         (completed, backlog_events)
     }
 
+    // Free a completed key generator.
     pub fn remove_voter(&mut self, dkg_key: &DkgKey) {
         let _ = self.key_gen_map.remove(dkg_key);
     }
 
+    // Make key generator progress with timed phase. Returns with DkgMessages to broadcast if any.
     pub fn progress_dkg(&mut self, rng: &mut MainRng) -> Vec<(DkgKey, DkgMessage<PublicId>)> {
         let mut broadcast = Vec::new();
         for (key, key_gen) in self.key_gen_map.iter_mut() {
@@ -131,30 +157,28 @@ impl DkgVoter {
         broadcast
     }
 
+    // Handle a received DkgMessage. Returns with DkgMessages to broadcast if any.
     pub fn process_dkg_message(
         &mut self,
         rng: &mut MainRng,
         dkg_key: &DkgKey,
         message: DkgMessage<PublicId>,
     ) -> Vec<DkgMessage<PublicId>> {
-        let mut messages = Vec::new();
-
-        if let Some(mut key_gen) = self.key_gen_map.remove(dkg_key) {
+        if let Some(key_gen) = self.key_gen_map.get_mut(dkg_key) {
             if let Ok(responses) = key_gen.handle_message(rng, message) {
-                messages = responses;
+                return responses;
             }
-
-            let _ = self.key_gen_map.insert(dkg_key.clone(), key_gen);
         }
-        messages
+        vec![]
     }
 
+    // Startup a key generator.
     pub fn init_dkg_gen(
         &mut self,
         full_id: &FullId,
         dkg_key: &DkgKey,
     ) -> Vec<DkgMessage<PublicId>> {
-        if self.key_gen_map.contains_key(dkg_key) || self.completed_dkg.contains(dkg_key) {
+        if self.key_gen_map.contains_key(dkg_key) || self.completed_dkg.contains_key(dkg_key) {
             trace!("already have key_gen of {:?}", dkg_key);
             return vec![];
         }
@@ -171,42 +195,51 @@ impl DkgVoter {
         }
     }
 
+    // Check whether we have the EldersInfo for the DkgResult that sent to us.
+    // In case we don't have, indicates we don't notice the churn yet,
+    // the dkg_result shall be cached.
     pub fn has_info(&mut self, dkg_key: &DkgKey, dkg_result: &DkgResult) -> bool {
         if self.dkg_cache.contains_key(dkg_key) {
             true
         } else {
-            // During split, sibling DKG got completed before this elder notice the churn.
-            // In this case, as this elder is responsible for voting SectionInfo and Key for the
-            // sibling DKG, the notified result has to be cached.
-            if !self.completed_dkg.contains(dkg_key) {
+            // During split or demote, DKG got completed before this elder notice the churn.
+            // In this case, as this elder is responsible for voting SectionInfo and Key,
+            // the notified result has to be cached.
+            if !self.completed_dkg.contains_key(dkg_key) {
                 let _ = self
-                    .sibling_dkg_result_cache
+                    .dkg_result_cache
                     .insert(dkg_key.clone(), dkg_result.clone());
             }
             false
         }
     }
 
+    // When a churn is noticed, the new EdlersInfo that calculated shall be recorded.
+    // In case we already have the correspondent DkgResult, the dkg_result shall be returned for
+    // routing to carry out further process.
     pub fn push_info(&mut self, dkg_key: &DkgKey, info: EldersInfo) -> Option<DkgResult> {
         let _ = self.dkg_cache.insert(dkg_key.clone(), info);
 
-        if let Some(dkg_result) = self.sibling_dkg_result_cache.remove(dkg_key) {
+        if let Some(dkg_result) = self.dkg_result_cache.remove(dkg_key) {
             Some(dkg_result)
         } else {
             None
         }
     }
 
+    // Give the cached new EldersInfo to routing for its further process.
     pub fn take_info(&mut self, dkg_key: &DkgKey) -> Option<EldersInfo> {
         self.dkg_cache.remove(dkg_key)
     }
 
+    // Give the keys of cached new EldersInfo.
     pub fn info_keys(&self) -> impl Iterator<Item = &DkgKey> {
         self.dkg_cache.keys()
     }
 
-    pub fn insert_dkg_result(&mut self, dkg_key: DkgKey, dkg_result: DkgResult) {
-        let _ = self.sibling_dkg_result_cache.insert(dkg_key, dkg_result);
+    // Cache the dkg result that we got notified, indicates we are an old elder.
+    pub fn insert_old_elders_dkg_result(&mut self, dkg_key: DkgKey, dkg_result: DkgResult) {
+        let _ = self.dkg_result_cache.insert(dkg_key, dkg_result);
     }
 
     pub fn timer_token(&self) -> u64 {
@@ -217,6 +250,8 @@ impl DkgVoter {
         self.timer_token = token;
     }
 
+    // Cache the accumulated event that currently cannot be handled properly, mainly due to the DKG
+    // process is not completed yet.
     pub fn push_event(&mut self, event: AccumulatingEvent, proof: Proof) {
         self.pending_accumulated_events.push_front((event, proof));
     }

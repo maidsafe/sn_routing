@@ -74,7 +74,7 @@ impl Bootstrapping {
             | Variant::UserMessage(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::DKGMessage { .. }
-            | Variant::DKGSibling { .. } => Ok(MessageStatus::Unknown),
+            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)

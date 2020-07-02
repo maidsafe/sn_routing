@@ -231,6 +231,7 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members signing and getting the right pk_set
+    // TODO: remove this function as we no longer use parsec for DKG
     #[cfg(all(test, feature = "mock"))]
     pub fn get_dkg_result_as(
         &mut self,

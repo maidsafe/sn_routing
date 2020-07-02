@@ -102,7 +102,7 @@ impl Joining {
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGMessage { .. }
-            | Variant::DKGSibling { .. } => Ok(MessageStatus::Unknown),
+            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)

@@ -88,8 +88,8 @@ pub enum Variant {
         /// The serialized DKG message.
         message: Bytes,
     },
-    /// Message of notify sibling that DKG completed during split
-    DKGSibling {
+    /// Message of notify old elders that DKG completed. Mainly used during split or demote.
+    DKGOldElders {
         /// Participants of the DKG
         participants: BTreeSet<PublicId>,
         /// Parsec version of the DKG
@@ -141,7 +141,7 @@ impl Debug for Variant {
                 .field("parsec_version", parsec_version)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGSibling {
+            Self::DKGOldElders {
                 participants,
                 parsec_version,
                 public_key_set,
