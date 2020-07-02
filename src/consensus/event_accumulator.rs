@@ -9,6 +9,7 @@
 use super::{
     network_event::AccumulatingEvent,
     proof::{Proof, ProofShare},
+    signature_accumulator::AccumulationError,
 };
 use crate::{error::Result, id::PublicId, section::EldersInfo};
 use serde::Serialize;
@@ -117,7 +118,7 @@ impl EventAccumulator {
         voter_name: XorName,
         proof_share: ProofShare,
         elders_info: &EldersInfo,
-    ) -> Result<(AccumulatingEvent, Proof), AccumulatingError> {
+    ) -> Result<(AccumulatingEvent, Proof), AccumulationError> {
         match &event {
             AccumulatingEvent::Genesis { .. }
             | AccumulatingEvent::StartDkg(_)
@@ -130,11 +131,11 @@ impl EventAccumulator {
 
         if self.accumulated_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &voter_name);
-            return Err(AccumulatingError::AlreadyAccumulated);
+            return Err(AccumulationError::AlreadyAccumulated);
         }
 
         if !event.verify(&proof_share) {
-            return Err(AccumulatingError::InvalidSignatureShare);
+            return Err(AccumulationError::InvalidShare);
         }
 
         // Use the public key to differentiate identical events that are signed with different key
@@ -149,7 +150,7 @@ impl EventAccumulator {
                     (entry.into_key(), state)
                 } else {
                     let _ = entry.insert(state);
-                    return Err(AccumulatingError::NotEnoughVotes);
+                    return Err(AccumulationError::NotEnoughShares);
                 }
             }
             Entry::Occupied(mut entry) => {
@@ -162,7 +163,7 @@ impl EventAccumulator {
                 {
                     entry.remove_entry()
                 } else {
-                    return Err(AccumulatingError::NotEnoughVotes);
+                    return Err(AccumulationError::NotEnoughShares);
                 }
             }
         };
@@ -171,7 +172,7 @@ impl EventAccumulator {
         let signature = proof_share
             .public_key_set
             .combine_signatures(shares)
-            .map_err(AccumulatingError::CombineSignaturesFailed)?;
+            .map_err(AccumulationError::Combine)?;
         let proof = Proof {
             public_key,
             signature,
@@ -238,14 +239,6 @@ impl State {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
-pub enum AccumulatingError {
-    NotEnoughVotes,
-    AlreadyAccumulated,
-    InvalidSignatureShare,
-    CombineSignaturesFailed(bls::error::Error),
-}
-
 /// The outcome of a prefix change.
 #[derive(Default, PartialEq, Eq, Debug)]
 pub(crate) struct RemainingEvents {
@@ -279,10 +272,10 @@ mod test {
         for (index, name) in elders_info.elders.keys().enumerate().take(4) {
             let proof_share = create_proof_share(&sk_set, index, &event);
 
-            assert_eq!(
-                accumulator.insert(event.clone(), *name, proof_share, &elders_info),
-                Err(AccumulatingError::NotEnoughVotes)
-            );
+            match accumulator.insert(event.clone(), *name, proof_share, &elders_info) {
+                Err(AccumulationError::NotEnoughShares) => (),
+                result => panic!("unexpected result {:?}", result),
+            }
         }
 
         // With the 5th vote we reach the quorum
@@ -300,15 +293,15 @@ mod test {
 
         // Any additional votes are redundant
         let proof_share = create_proof_share(&sk_set, 5, &event);
-        assert_eq!(
-            accumulator.insert(
-                event,
-                *elders_info.elders.keys().nth(5).unwrap(),
-                proof_share,
-                &elders_info
-            ),
-            Err(AccumulatingError::AlreadyAccumulated)
-        );
+        match accumulator.insert(
+            event,
+            *elders_info.elders.keys().nth(5).unwrap(),
+            proof_share,
+            &elders_info,
+        ) {
+            Err(AccumulationError::AlreadyAccumulated) => (),
+            result => panic!("unexpected result {:?}", result),
+        }
     }
 
     #[test]

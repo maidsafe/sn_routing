@@ -16,7 +16,6 @@ mod signature_accumulator;
 pub mod test_utils;
 
 pub use self::{
-    event_accumulator::AccumulatingError,
     genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
@@ -129,9 +128,9 @@ impl ConsensusEngine {
                     .insert(event, voter_name, proof_share, our_elders)
                 {
                     Ok((event, proof)) => Some((event, Some(proof))),
-                    Err(AccumulatingError::NotEnoughVotes)
-                    | Err(AccumulatingError::AlreadyAccumulated) => None,
-                    Err(AccumulatingError::InvalidSignatureShare) => {
+                    Err(AccumulationError::NotEnoughShares)
+                    | Err(AccumulationError::AlreadyAccumulated) => None,
+                    Err(AccumulationError::InvalidShare) => {
                         // TODO: penalise
                         log_or_panic!(
                             log::Level::Warn,
@@ -139,7 +138,16 @@ impl ConsensusEngine {
                         );
                         None
                     }
-                    Err(AccumulatingError::CombineSignaturesFailed(error)) => {
+                    Err(AccumulationError::Serialise(error)) => {
+                        // This should never happen
+                        log_or_panic!(
+                            log::Level::Error,
+                            "Failed to serialise accumulating event: {}",
+                            error
+                        );
+                        None
+                    }
+                    Err(AccumulationError::Combine(error)) => {
                         // This should never happen
                         log_or_panic!(log::Level::Error, "Failed to combine signatures: {}", error);
                         None
