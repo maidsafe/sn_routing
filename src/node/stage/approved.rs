@@ -871,8 +871,6 @@ impl Approved {
             parsec_version,
             pub_id
         );
-        self.dkg_voter
-            .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
 
         if participants.contains(core.id()) {
             self.init_dkg_gen(core, participants.clone(), parsec_version);
@@ -880,11 +878,19 @@ impl Approved {
 
         let msg_parsed = bincode::deserialize(&message_bytes[..])?;
 
-        for response in self.dkg_voter.process_dkg_message(
+        let responses = self.dkg_voter.process_dkg_message(
             &mut core.rng,
             &(participants.clone(), parsec_version),
             msg_parsed,
-        ) {
+        );
+
+        // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
+        if !responses.is_empty() {
+            self.dkg_voter
+                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+        }
+
+        for response in responses {
             let _ =
                 self.broadcast_dkg_message(core, participants.clone(), parsec_version, response);
         }
