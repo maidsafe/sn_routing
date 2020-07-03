@@ -14,7 +14,7 @@ use xor_name::XorName;
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
 
 /// Internal error.
-#[derive(Debug, Error, derive_more::From)]
+#[derive(Debug, Error)]
 #[allow(missing_docs)]
 pub enum RoutingError {
     #[error(display = "Invalid requester or handler locations.")]
@@ -23,13 +23,13 @@ pub enum RoutingError {
     FailedSignature,
     #[error(display = "Cannot route.")]
     CannotRoute,
-    #[error(display = "Network layer error.")]
-    Network(QuicP2pError),
+    #[error(display = "Network layer error: {}", _0)]
+    Network(#[error(source)] QuicP2pError),
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
-    #[error(display = "Bincode error.")]
-    Bincode(bincode::Error),
-    #[error(display = "Peer not found.")]
+    #[error(display = "Bincode error: {}", _0)]
+    Bincode(#[error(source)] bincode::Error),
+    #[error(display = "Peer not found: {}", _0)]
     PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
     InvalidSource,
@@ -45,6 +45,4 @@ pub enum RoutingError {
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
-    #[error(display = "Error while trying to receive a message from a channel.")]
-    ChannelRecvError(crossbeam_channel::RecvError),
 }
