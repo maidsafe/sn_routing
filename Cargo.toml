@@ -16,7 +16,6 @@ bls = { package = "threshold_crypto", version = "~0.3.2" }
 bytes = "~0.5.4"
 crossbeam-channel = "~0.4.2"
 ctrlc = { version = "3", optional = true, features = ["termination"] }
-derive_more = "~0.99.7"
 ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.4"
@@ -59,3 +58,5 @@ mock_base = [
 ]
 mock = ["mock_base"]
 
+[patch.'https://github.com/maidsafe/quic-p2p']
+mock-quic-p2p = { git = "https://github.com/madadam/quic-p2p", branch = "impl-std-error", optional = true }
