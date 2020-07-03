@@ -1,6 +1,7 @@
 # PR workflow.
 #
 # Runs full suite of checks, with warnings treated as errors.
+# Gather code coverage stats and publish them on coveralls.io
 
 name: PR
 
@@ -15,7 +16,7 @@ env:
 
 jobs:
   clippy:
-    name: Rustfmt-Clippy
+    name: Clippy, fmt & code coverage checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
@@ -51,6 +52,23 @@ jobs:
       # Run Clippy.
       - shell: bash
         run: ./scripts/clippy
+
+      # Run cargo tarpaulin & push result to coveralls.io
+      - name: rust-tarpaulin code coverage check
+        uses: actions-rs/tarpaulin@master
+        with:
+          args: '-v -t 600 --out Lcov'
+      - name: Push code coverage results to coveralls.io
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel: true
+          path-to-lcov: ./lcov.info
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
 
   test:
     name: Test
