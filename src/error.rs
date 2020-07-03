@@ -8,7 +8,6 @@
 
 use crate::quic_p2p::QuicP2pError;
 use err_derive::Error;
-use xor_name::XorName;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
@@ -29,20 +28,14 @@ pub enum RoutingError {
     InvalidState,
     #[error(display = "Bincode error: {}", _0)]
     Bincode(#[error(source)] bincode::Error),
-    #[error(display = "Peer not found: {}", _0)]
-    PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
     InvalidSource,
     #[error(display = "Content of a received message is inconsistent.")]
     InvalidMessage,
-    #[error(display = "A signed message's chain of proving sections is invalid.")]
-    InvalidProvingSection,
     #[error(display = "A signed message could not be trusted.")]
     UntrustedMessage,
     #[error(display = "Some or all signature shares are invalid.")]
     InvalidSignatureShares,
-    #[error(display = "A Relocation is invalid.")]
-    InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
 }
