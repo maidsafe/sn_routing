@@ -150,10 +150,7 @@ mod timer;
 mod transport;
 
 // Cryptography
-#[cfg(not(feature = "mock_base"))]
 mod crypto;
-#[cfg(feature = "mock_base")]
-use self::mock::crypto;
 
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with

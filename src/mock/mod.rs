@@ -10,8 +10,5 @@
 #[cfg(feature = "mock")]
 pub(crate) mod parsec;
 
-/// Mock cryptography
-pub(crate) mod crypto;
-
 mod env;
 pub use self::env::Environment;
