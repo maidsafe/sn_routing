@@ -119,3 +119,44 @@ pub mod signing {
 pub mod encryption {
     pub use bls::{Ciphertext, PublicKey, SecretKey};
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ed25519_dalek::Keypair;
+    use rand::rngs::OsRng;
+
+    #[test]
+    fn check_sig_validate() {
+        let mut csprng = OsRng;
+        let keypair = Keypair::generate(&mut csprng);
+        let pub_key = (&keypair.secret).into();
+        let msg: &[u8] = b"test message";
+        let sig = signing::sign(&msg, &pub_key, &keypair.secret);
+        let sig2 = signing::sign(&msg, &pub_key, &keypair.secret);
+        assert_eq!(sig, sig2);
+        assert!(pub_key.verify(&msg, &sig).is_ok());
+        assert!(!(sig < sig2));
+        assert!(!(sig > sig2));
+    }
+    #[test]
+    fn check_pub_key_is_32_bytes() {
+        let mut csprng = OsRng;
+        let keypair = Keypair::generate(&mut csprng);
+        let pub_key: signing::PublicKey = (&keypair.secret).into();
+        assert!(pub_key.to_bytes().len() == 32)
+    }
+
+    #[test]
+    fn ensure_same_data_hashes_same() {
+        let data: &[u8] = b"Some data";
+        assert!(sha3_256(data) == sha3_256(data));
+    }
+
+    #[test]
+    fn ensure_different_data_hashes_different() {
+        let data: &[u8] = b"Some data";
+        let not_data: &[u8] = b"Some data.";
+        assert!(sha3_256(data) != sha3_256(not_data));
+    }
+}
