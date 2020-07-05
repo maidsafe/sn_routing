@@ -132,8 +132,8 @@ mod test {
         let keypair = Keypair::generate(&mut csprng);
         let pub_key = (&keypair.secret).into();
         let msg: &[u8] = b"test message";
-        let sig = signing::sign(&msg, &pub_key, &keypair.secret);
-        let sig2 = signing::sign(&msg, &pub_key, &keypair.secret);
+        let sig = signing::sign(msg, &pub_key, &keypair.secret);
+        let sig2 = signing::sign(msg, &pub_key, &keypair.secret);
         assert_eq!(sig, sig2);
         assert!(pub_key.verify(msg, &sig).is_ok());
         assert!(!(sig < sig2));
