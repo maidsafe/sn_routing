@@ -135,7 +135,7 @@ mod test {
         let sig = signing::sign(&msg, &pub_key, &keypair.secret);
         let sig2 = signing::sign(&msg, &pub_key, &keypair.secret);
         assert_eq!(sig, sig2);
-        assert!(pub_key.verify(&msg, &sig).is_ok());
+        assert!(pub_key.verify(msg, &sig).is_ok());
         assert!(!(sig < sig2));
         assert!(!(sig > sig2));
     }
