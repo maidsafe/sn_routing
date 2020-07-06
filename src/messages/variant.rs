@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{ParsecRequest, ParsecResponse, Proven},
+    consensus::{ParsecRequest, ParsecResponse, ProofShare, Proven, Vote},
     error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
@@ -27,7 +27,7 @@ use xor_name::XorName;
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 /// Message variant
-pub enum Variant {
+pub(crate) enum Variant {
     /// Inform neighbours about our new section.
     NeighbourInfo {
         /// `EldersInfo` of the neighbour section.
@@ -99,6 +99,11 @@ pub enum Variant {
         section_key_index: u64,
         /// Public key set that got consensused
         public_key_set: bls::PublicKeySet,
+    },
+    /// Message containing a single `Vote` to be accumulated in the vote accumulator.
+    Vote {
+        content: Vote,
+        proof_share: ProofShare,
     },
 }
 
@@ -181,6 +186,14 @@ impl Debug for Variant {
                 .field("section_key_index", section_key_index)
                 .field("public_key_set", public_key_set)
                 .finish(),
+            Self::Vote {
+                content,
+                proof_share,
+            } => f
+                .debug_struct("Vote")
+                .field("content", content)
+                .field("proof_share", proof_share)
+                .finish(),
         }
     }
 }
@@ -201,7 +214,7 @@ pub enum BootstrapResponse {
 
 /// Request to join a section
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct JoinRequest {
+pub(crate) struct JoinRequest {
     /// The public key of the section to join
     pub section_key: bls::PublicKey,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.

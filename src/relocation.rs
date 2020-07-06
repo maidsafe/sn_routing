@@ -39,7 +39,7 @@ pub struct RelocateDetails {
 
 /// SignedRoutingMessage with Relocate message content.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct SignedRelocateDetails {
+pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
     signed_msg: Message,
 }
@@ -89,7 +89,7 @@ impl<'de> Deserialize<'de> for SignedRelocateDetails {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct RelocatePayload {
+pub(crate) struct RelocatePayload {
     /// The Relocate Signed message.
     pub details: SignedRelocateDetails,
     /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.

@@ -8,8 +8,8 @@
 
 use crate::{
     consensus::{
-        self, threshold_count, AccumulatingEvent, ConsensusEngine, DkgResult, DkgVoter,
-        ParsecRequest, ParsecResponse, Proof, Proven,
+        self, threshold_count, AccumulatingEvent, AccumulationError, ConsensusEngine, DkgResult,
+        DkgVoter, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven, Vote, VoteAccumulator,
     },
     core::Core,
     delivery_group,
@@ -44,11 +44,12 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
-pub struct Approved {
+pub(crate) struct Approved {
     pub consensus_engine: ConsensusEngine,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
+    vote_accumulator: VoteAccumulator,
     gossip_timer_token: Option<u64>,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
@@ -114,6 +115,7 @@ impl Approved {
             shared_state,
             section_keys_provider,
             message_accumulator: Default::default(),
+            vote_accumulator: Default::default(),
             gossip_timer_token,
             section_update_barrier: Default::default(),
             churn_in_progress: false,
@@ -134,6 +136,7 @@ impl Approved {
             transport: core.transport,
             transport_rx: None,
             msg_accumulator: self.message_accumulator,
+            vote_accumulator: self.vote_accumulator,
             section_update_barrier: self.section_update_barrier,
         }
     }
@@ -172,6 +175,7 @@ impl Approved {
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             message_accumulator: state.msg_accumulator,
+            vote_accumulator: state.vote_accumulator,
             gossip_timer_token,
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
@@ -183,7 +187,8 @@ impl Approved {
         (stage, core)
     }
 
-    pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
+    // Cast a vote for totally ordered event via parsec.
+    pub fn cast_ordered_vote(&mut self, event: AccumulatingEvent) {
         match self
             .section_keys_provider
             .key_share()
@@ -196,6 +201,54 @@ impl Approved {
                 event,
                 error,
             ),
+        }
+    }
+
+    // Cast a vote that doesn't need total order, only section consensus.
+    #[allow(unused)]
+    pub fn cast_unordered_vote(&mut self, core: &mut Core, vote: Vote) -> Result<()> {
+        trace!("Vote for {:?}", vote);
+
+        let key_share = self.section_keys_provider.key_share()?;
+        let proof_share = vote.prove(
+            key_share.public_key_set.clone(),
+            key_share.index,
+            &key_share.secret_key_share,
+        )?;
+
+        // Broadcast the vote to the rest of the section elders.
+        let variant = Variant::Vote {
+            content: vote.clone(),
+            proof_share: proof_share.clone(),
+        };
+        let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
+        let message = Message::single_src(
+            &core.full_id,
+            DstLocation::Section(*core.name()),
+            variant,
+            Some(proof_chain),
+            Some(*self.shared_state.our_history.last_key()),
+        )?;
+        self.relay_message(core, &message)?;
+
+        self.handle_unordered_vote(core, vote, proof_share)
+    }
+
+    // Insert the vote into the vote accumulator and handle it if accumulated.
+    pub fn handle_unordered_vote(
+        &mut self,
+        core: &mut Core,
+        vote: Vote,
+        proof_share: ProofShare,
+    ) -> Result<()> {
+        match self.vote_accumulator.add(vote, proof_share) {
+            Ok((vote, proof)) => self.handle_unordered_consensus(core, vote, proof),
+            Err(AccumulationError::NotEnoughShares)
+            | Err(AccumulationError::AlreadyAccumulated) => Ok(()),
+            Err(error) => {
+                error!("Failed to add vote: {}", error);
+                Err(RoutingError::InvalidSignatureShare)
+            }
         }
     }
 
@@ -228,7 +281,7 @@ impl Approved {
         };
 
         if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&name) {
-            self.vote_for_event(AccumulatingEvent::Offline(name))
+            self.cast_ordered_vote(AccumulatingEvent::Offline(name))
         }
     }
 
@@ -247,7 +300,7 @@ impl Approved {
     }
 
     fn check_dkg(&mut self, core: &mut Core) {
-        let (completed, mut backlog_events) = self.dkg_voter.check_dkg();
+        let (completed, mut backlog_votes) = self.dkg_voter.check_dkg();
 
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
@@ -265,14 +318,12 @@ impl Approved {
             }
         }
 
-        // To avoid the case that DKG was completed after received certain accumulated events.
-        while let Some((event, proof)) = backlog_events.pop_back() {
-            trace!("handle cached accumulated event {:?}", event);
-            // In case of error, event got cached inside `handle_accumulated_event`.
-            if let Err(err) =
-                self.handle_accumulated_event(core, event.clone(), Some(proof.clone()))
-            {
-                debug!("Failed ({:?}) handle cached event {:?}", err, event);
+        // To avoid the case that DKG was completed after received certain accumulated votes.
+        while let Some((vote, proof)) = backlog_votes.pop_back() {
+            trace!("handle cached accumulated vote {:?}", vote);
+            // In case of error, vote got cached inside `handle_unordered_consensus`.
+            if let Err(err) = self.handle_unordered_consensus(core, vote.clone(), proof) {
+                debug!("Failed ({:?}) handle cached event {:?}", err, vote);
             }
         }
     }
@@ -297,7 +348,7 @@ impl Approved {
             && self.is_our_elder(core.id())
             && self.consensus_engine.needs_pruning()
         {
-            self.vote_for_event(AccumulatingEvent::ParsecPrune);
+            self.cast_ordered_vote(AccumulatingEvent::ParsecPrune);
         }
 
         self.send_parsec_gossip(core, None);
@@ -305,7 +356,7 @@ impl Approved {
 
     /// Vote for a user-defined event.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
-        self.vote_for_event(AccumulatingEvent::User(event));
+        self.cast_ordered_vote(AccumulatingEvent::User(event));
     }
 
     /// Is the node with the given id an elder in our section?
@@ -376,11 +427,16 @@ impl Approved {
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                 return Ok(MessageStatus::Useless)
             }
+            Variant::Vote { proof_share, .. } => {
+                if !self.should_handle_vote(proof_share) {
+                    return Ok(MessageStatus::Unknown);
+                }
+            }
             Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => {}
+            | Variant::BouncedUnknownMessage { .. } => (),
         }
 
         if self.verify_message(msg)? {
@@ -400,6 +456,13 @@ impl Approved {
     // as a node.
     fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
         self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
+    }
+
+    // Handle `Vote` message only if signed with known key, otherwise bounce.
+    fn should_handle_vote(&self, proof_share: &ProofShare) -> bool {
+        self.shared_state
+            .our_history
+            .has_key(&proof_share.public_key_set.public_key())
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
@@ -547,27 +610,37 @@ impl Approved {
         core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
-    pub fn handle_neighbour_info(&mut self, elders_info: EldersInfo, src_key: bls::PublicKey) {
+    pub fn handle_neighbour_info(
+        &mut self,
+        core: &mut Core,
+        elders_info: EldersInfo,
+        src_key: bls::PublicKey,
+    ) -> Result<()> {
         if !self.shared_state.sections.has_key(&src_key) {
-            self.vote_for_event(AccumulatingEvent::TheirKey {
-                prefix: elders_info.prefix,
-                key: src_key,
-            });
+            self.cast_unordered_vote(
+                core,
+                Vote::TheirKey {
+                    prefix: elders_info.prefix,
+                    key: src_key,
+                },
+            )?;
         } else {
             trace!(
                 "Ignore not new section key of {:?}: {:?}",
                 elders_info,
                 src_key
             );
-            return;
+            return Ok(());
         }
 
         if elders_info
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info));
+            self.cast_unordered_vote(core, Vote::SectionInfo(elders_info))?;
         }
+
+        Ok(())
     }
 
     pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
@@ -617,7 +690,7 @@ impl Approved {
 
         self.send_elders_update(core)?;
         self.send_send_neighbour_info()?;
-        self.send_their_knowledge();
+        self.send_their_knowledge(core)?;
 
         core.send_event(Event::Promoted);
         self.send_elders_changed_event(core);
@@ -804,7 +877,7 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
-        self.vote_for_event(AccumulatingEvent::Online {
+        self.cast_ordered_vote(AccumulatingEvent::Online {
             p2p_node,
             previous_name,
             age,
@@ -874,7 +947,7 @@ impl Approved {
     //       and only then proceed to handle the DKG result.
     pub fn handle_dkg_old_elders(
         &mut self,
-        core: &Core,
+        core: &mut Core,
         participants: BTreeSet<PublicId>,
         section_key_index: u64,
         public_key_set: bls::PublicKeySet,
@@ -1023,7 +1096,7 @@ impl Approved {
             Some((event, proof)) => (event, proof),
         };
 
-        self.handle_accumulated_event(core, event, proof)?;
+        self.handle_ordered_consensus(core, event, proof)?;
 
         Ok(true)
     }
@@ -1165,7 +1238,7 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_event(AccumulatingEvent::Relocate(details));
+                self.cast_ordered_vote(AccumulatingEvent::Relocate(details));
             }
 
             return true;
@@ -1174,13 +1247,13 @@ impl Approved {
         false
     }
 
-    fn handle_accumulated_event(
+    fn handle_ordered_consensus(
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
         proof: Option<Proof>,
     ) -> Result<()> {
-        trace!("Handle accumulated event: {:?}", event);
+        debug!("Handle consensus on {:?}", event);
 
         match event {
             AccumulatingEvent::Genesis {
@@ -1203,70 +1276,9 @@ impl Approved {
             AccumulatingEvent::Offline(name) => {
                 self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
             }
-            AccumulatingEvent::SectionInfo(elders_info) => {
-                // Could receive the accumulated SectionInfo before complete the DKG process.
-                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_section_info_event(
-                    core,
-                    elders_info.clone(),
-                    proof.clone().expect("missing proof for SectionInfo"),
-                ) {
-                    trace!(
-                        "caching SectionInfo({:?}) as invalid DKG result",
-                        elders_info
-                    );
-                    self.dkg_voter.push_event(
-                        AccumulatingEvent::SectionInfo(elders_info),
-                        proof.expect("missing proof for SectionInfo"),
-                    );
-                }
-            }
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::OurKey { prefix, key } => {
-                // Could receive the accumulated OurKey before complete the DKG process.
-                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_our_key_event(
-                    core,
-                    prefix,
-                    key,
-                    proof.clone().expect("missing proof for OurKey"),
-                ) {
-                    trace!(
-                        "caching OurKey( {:?}, {:?} ) as invalid DKG result",
-                        prefix,
-                        key
-                    );
-                    self.dkg_voter.push_event(
-                        AccumulatingEvent::OurKey { prefix, key },
-                        proof.expect("missing proof for OurKey"),
-                    );
-                }
-            }
-            AccumulatingEvent::TheirKey { prefix, key } => {
-                // Could receive the accumulated TheirKey before complete the DKG process.
-                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_their_key_event(
-                    core,
-                    prefix,
-                    key,
-                    proof.clone().expect("missing proof for TheirKey"),
-                ) {
-                    trace!(
-                        "caching ThereKey( {:?}, {:?} ) as invalid DKG result",
-                        prefix,
-                        key
-                    );
-                    self.dkg_voter.push_event(
-                        AccumulatingEvent::TheirKey { prefix, key },
-                        proof.expect("missing proof for ThereKey"),
-                    );
-                }
-            }
-            AccumulatingEvent::TheirKnowledge { prefix, knowledge } => self
-                .handle_their_knowledge_event(
-                    prefix,
-                    knowledge,
-                    proof.expect("missing proof for TheirKnowledge"),
-                ),
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(
                 core,
@@ -1277,6 +1289,70 @@ impl Approved {
         }
 
         Ok(())
+    }
+
+    fn handle_unordered_consensus(
+        &mut self,
+        core: &mut Core,
+        vote: Vote,
+        proof: Proof,
+    ) -> Result<()> {
+        debug!("Handle consensus on {:?}", vote);
+
+        match vote {
+            Vote::SectionInfo(elders_info) => {
+                match self.handle_section_info_event(core, elders_info.clone(), proof.clone()) {
+                    Ok(()) => Ok(()),
+                    // Could receive the accumulated SectionInfo before complete the DKG process.
+                    Err(RoutingError::InvalidElderDkgResult) => {
+                        trace!(
+                            "caching SectionInfo({:?}) as invalid DKG result",
+                            elders_info
+                        );
+                        self.dkg_voter
+                            .push_vote(Vote::SectionInfo(elders_info), proof);
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            Vote::OurKey { prefix, key } => {
+                match self.handle_our_key_event(core, prefix, key, proof.clone()) {
+                    Ok(()) => Ok(()),
+                    Err(RoutingError::InvalidElderDkgResult) => {
+                        trace!(
+                            "caching OurKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
+                            prefix,
+                            key
+                        );
+                        self.dkg_voter
+                            .push_vote(Vote::OurKey { prefix, key }, proof);
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            Vote::TheirKey { prefix, key } => {
+                match self.handle_their_key_event(core, prefix, key, proof.clone()) {
+                    Ok(()) => Ok(()),
+                    Err(RoutingError::InvalidElderDkgResult) => {
+                        trace!(
+                            "caching TheirKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
+                            prefix,
+                            key
+                        );
+                        self.dkg_voter
+                            .push_vote(Vote::TheirKey { prefix, key }, proof);
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            Vote::TheirKnowledge { prefix, key_index } => {
+                self.handle_their_knowledge_event(prefix, key_index, proof);
+                Ok(())
+            }
+        }
     }
 
     // Handles an accumulated parsec Observation for genesis.
@@ -1435,9 +1511,9 @@ impl Approved {
         }
     }
 
-    fn handle_dkg_result_event(
+    pub fn handle_dkg_result_event(
         &mut self,
-        core: &Core,
+        core: &mut Core,
         participants: &BTreeSet<PublicId>,
         section_key_index: u64,
         dkg_result: &DkgResult,
@@ -1465,20 +1541,25 @@ impl Approved {
 
             let key = dkg_result.public_key_set.public_key();
 
-            self.vote_for_event(AccumulatingEvent::OurKey {
-                prefix: info.prefix,
-                key,
-            });
-
-            if info.prefix.is_extension_of(self.shared_state.our_prefix()) {
-                self.vote_for_event(AccumulatingEvent::TheirKey {
+            self.cast_unordered_vote(
+                core,
+                Vote::OurKey {
                     prefix: info.prefix,
                     key,
-                });
+                },
+            )?;
+
+            if info.prefix.is_extension_of(self.shared_state.our_prefix()) {
+                self.cast_unordered_vote(
+                    core,
+                    Vote::TheirKey {
+                        prefix: info.prefix,
+                        key,
+                    },
+                )?;
             }
 
-            self.vote_for_event(AccumulatingEvent::SectionInfo(info));
-
+            self.cast_unordered_vote(core, Vote::SectionInfo(info))?;
             self.section_keys_provider
                 .handle_dkg_result_event(&dkg_key.0, dkg_result)
         } else {
@@ -1717,10 +1798,13 @@ impl Approved {
         if let Some(prefix) = sibling_prefix {
             self.send_send_neighbour_info()?;
 
-            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
-                prefix,
-                knowledge: self.shared_state.our_history.last_key_index(),
-            })
+            self.cast_unordered_vote(
+                core,
+                Vote::TheirKnowledge {
+                    prefix,
+                    key_index: self.shared_state.our_history.last_key_index(),
+                },
+            )?;
         }
 
         self.send_elders_changed_event(core);
@@ -1798,7 +1882,7 @@ impl Approved {
             self.shared_state.handled_genesis_event = false;
 
             for event in events {
-                self.vote_for_event(event);
+                self.cast_ordered_vote(event);
             }
         }
 
@@ -1817,14 +1901,7 @@ impl Approved {
             AccumulatingEvent::Offline(name) => our_prefix.matches(name),
             AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::OurKey { .. } => false,
-
-            // Keep: Additional signatures for neighbours for sec-msg-relay.
-            AccumulatingEvent::SectionInfo(elders_info) => {
-                our_prefix.is_neighbour(&elders_info.prefix)
-            }
+            AccumulatingEvent::Genesis { .. } | AccumulatingEvent::ParsecPrune => false,
 
             // Only revote if the recipient is still our neighbour
             AccumulatingEvent::SendNeighbourInfo { dst, .. } => {
@@ -1832,9 +1909,7 @@ impl Approved {
             }
 
             // Keep: Still relevant after prefix change.
-            AccumulatingEvent::TheirKey { .. }
-            | AccumulatingEvent::TheirKnowledge { .. }
-            | AccumulatingEvent::User(_) => true,
+            AccumulatingEvent::User(_) => true,
         });
         events
     }
@@ -1846,7 +1921,7 @@ impl Approved {
             .detect_unresponsive(self.shared_state.our_info());
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
-            self.vote_for_event(AccumulatingEvent::Offline(*pub_id.name()));
+            self.cast_ordered_vote(AccumulatingEvent::Offline(*pub_id.name()));
         }
     }
 
@@ -1900,14 +1975,14 @@ impl Approved {
             .map(|neighbour| neighbour.prefix.name())
             .collect();
         for dst in destinations {
-            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
+            self.cast_ordered_vote(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
         }
 
         Ok(())
     }
 
-    fn send_their_knowledge(&mut self) {
-        let knowledge = self.shared_state.our_history.last_key_index();
+    fn send_their_knowledge(&mut self, core: &mut Core) -> Result<()> {
+        let key_index = self.shared_state.our_history.last_key_index();
         let destinations: Vec<_> = self
             .shared_state
             .sections
@@ -1915,8 +1990,9 @@ impl Approved {
             .map(|neighbour| neighbour.prefix)
             .collect();
         for prefix in destinations {
-            self.vote_for_event(AccumulatingEvent::TheirKnowledge { prefix, knowledge })
+            self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?;
         }
+        Ok(())
     }
 
     fn send_elders_update(&mut self, core: &mut Core) -> Result<()> {
@@ -2184,31 +2260,45 @@ impl Approved {
     }
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub fn update_section_knowledge(&mut self, our_name: &XorName, msg: &Message) {
+    pub fn update_section_knowledge(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
+        use crate::section::UpdateSectionKnowledgeAction::*;
+
         let src_prefix = if let Ok(prefix) = msg.src().as_section_prefix() {
             prefix
         } else {
-            return;
+            return Ok(());
         };
 
         let src_key = if let Ok(key) = msg.proof_chain_last_key() {
             key
         } else {
-            return;
+            return Ok(());
         };
 
         let hash = msg.hash();
-        let events = self.shared_state.update_section_knowledge(
-            our_name,
+        let actions = self.shared_state.update_section_knowledge(
+            core.name(),
             src_prefix,
             src_key,
             msg.dst_key().as_ref(),
             hash,
         );
 
-        for event in events {
-            self.vote_for_event(event)
+        for action in actions {
+            match action {
+                VoteTheirKey { prefix, key } => {
+                    self.cast_unordered_vote(core, Vote::TheirKey { prefix, key })?
+                }
+                VoteTheirKnowledge { prefix, key_index } => {
+                    self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?
+                }
+                VoteSendNeighbourInfo { dst, nonce } => {
+                    self.cast_ordered_vote(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
+                }
+            }
         }
+
+        Ok(())
     }
 
     #[cfg(feature = "mock_base")]
@@ -2236,7 +2326,7 @@ impl Approved {
     }
 }
 
-pub struct RelocateParams {
+pub(crate) struct RelocateParams {
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,
 }
@@ -2284,7 +2374,7 @@ fn create_first_proof<T: Serialize>(
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
-        .map_err(|_| RoutingError::InvalidSignatureShares)?;
+        .map_err(|_| RoutingError::InvalidSignatureShare)?;
 
     Ok(Proof {
         public_key: pk_set.public_key(),

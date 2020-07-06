@@ -13,6 +13,7 @@ mod parsec;
 mod proven;
 #[cfg(test)]
 pub mod test_utils;
+mod vote;
 
 pub use self::{
     dkg::{generate_secret_key_set, threshold_count, DkgResult, DkgVoter},
@@ -22,6 +23,7 @@ pub use self::{
         Response as ParsecResponse, GOSSIP_PERIOD,
     },
     proven::Proven,
+    vote::{Vote, VoteAccumulator},
 };
 pub use safe_network_signature_aggregator::{
     AccumulationError, Proof, ProofShare, SignatureAggregator,
@@ -45,7 +47,7 @@ use std::collections::BTreeSet;
 use xor_name::XorName;
 
 // Distributed consensus mechanism backed by the Parsec algorithm.
-pub struct ConsensusEngine {
+pub(crate) struct ConsensusEngine {
     parsec_map: ParsecMap,
     accumulator: EventAccumulator,
 }

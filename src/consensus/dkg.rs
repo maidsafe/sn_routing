@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{network_event::AccumulatingEvent, Proof};
+use super::{vote::Vote, Proof};
 use crate::{
     id::{FullId, PublicId},
     rng::{MainRng, RngCompat},
@@ -75,8 +75,8 @@ pub struct DkgVoter {
     dkg_cache: BTreeMap<DkgKey, EldersInfo>,
     // Holds the key generator that carries out the DKG voting procedure.
     key_gen_map: BTreeMap<DkgKey, KeyGen<FullId>>,
-    // Holds the accumulated events that sent to us BEFORE the completion of the DKG process.
-    pending_accumulated_events: VecDeque<(AccumulatingEvent, Proof)>,
+    // Holds the accumulated votes that sent to us BEFORE the completion of the DKG process.
+    pending_accumulated_votes: VecDeque<(Vote, Proof)>,
     // Cache of notified dkg_result. During split or demote,
     // old elders will be notified by the new elders.
     dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
@@ -88,7 +88,7 @@ impl Default for DkgVoter {
         Self {
             dkg_cache: Default::default(),
             key_gen_map: Default::default(),
-            pending_accumulated_events: Default::default(),
+            pending_accumulated_votes: Default::default(),
             dkg_result_cache: Default::default(),
             timer_token: 0,
         }
@@ -98,12 +98,7 @@ impl Default for DkgVoter {
 impl DkgVoter {
     // Check whether a key generator is finalized to give a DKG. Once a DKG is generated, the cached
     // accumulated events shall be taken for routing (updated with new DKG) to process.
-    pub fn check_dkg(
-        &mut self,
-    ) -> (
-        BTreeMap<DkgKey, DkgResult>,
-        VecDeque<(AccumulatingEvent, Proof)>,
-    ) {
+    pub fn check_dkg(&mut self) -> (BTreeMap<DkgKey, DkgResult>, VecDeque<(Vote, Proof)>) {
         let mut completed = BTreeMap::new();
         for (key, key_gen) in self.key_gen_map.iter_mut() {
             if key_gen.is_finalized() {
@@ -118,14 +113,14 @@ impl DkgVoter {
             }
         }
 
-        // Only handle cached accumulated events after DKG completion, if has.
-        let backlog_events = if !completed.is_empty() {
-            mem::replace(&mut self.pending_accumulated_events, VecDeque::new())
+        // Only handle cached accumulated votes after DKG completion, if has.
+        let backlog_votes = if !completed.is_empty() {
+            mem::replace(&mut self.pending_accumulated_votes, VecDeque::new())
         } else {
             VecDeque::new()
         };
 
-        (completed, backlog_events)
+        (completed, backlog_votes)
     }
 
     // Free a completed key generator.
@@ -246,9 +241,9 @@ impl DkgVoter {
         self.timer_token = token;
     }
 
-    // Cache the accumulated event that currently cannot be handled properly, mainly due to the DKG
+    // Cache the accumulated vote that currently cannot be handled properly, mainly due to the DKG
     // process is not completed yet.
-    pub fn push_event(&mut self, event: AccumulatingEvent, proof: Proof) {
-        self.pending_accumulated_events.push_front((event, proof));
+    pub fn push_vote(&mut self, vote: Vote, proof: Proof) {
+        self.pending_accumulated_votes.push_front((vote, proof));
     }
 }

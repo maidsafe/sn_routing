@@ -12,8 +12,8 @@ use crate::{
     id::{P2pNode, PublicId},
     messages::MessageHash,
     relocation::RelocateDetails,
-    section::{member_info, EldersInfo, MemberState, SectionKeyShare},
-    Prefix, XorName,
+    section::{member_info, MemberState, SectionKeyShare},
+    XorName,
 };
 use hex_fmt::HexFmt;
 use serde::Serialize;
@@ -47,35 +47,12 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(XorName),
 
-    // Vote to update the elders info of a section.
-    SectionInfo(EldersInfo),
-
     // Voted to send info about our section to a neighbour section.
     SendNeighbourInfo {
         dst: XorName,
         // Hash of the incoming message that triggered this vote. It's purpose is to make the votes
         // triggered by different message unique.
         nonce: MessageHash,
-    },
-
-    // Voted to update our section key.
-    OurKey {
-        // In case of split, this prefix is used to differentiate the subsections. Not part of
-        // the proof.
-        prefix: Prefix,
-        key: bls::PublicKey,
-    },
-
-    // Voted to update their section key.
-    TheirKey {
-        prefix: Prefix,
-        key: bls::PublicKey,
-    },
-
-    // Voted to update their knowledge of our section.
-    TheirKnowledge {
-        prefix: Prefix,
-        knowledge: u64,
     },
 
     // Prune the gossip graph.
@@ -155,14 +132,6 @@ impl AccumulatingEvent {
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
         match self {
-            Self::OurKey { prefix: _, key } => {
-                // Note: the prefix is only needed to differentiate between the two subsections in
-                // case of split but it isn't part of the proven data.
-                bincode::serialize(key)
-            }
-            Self::TheirKey { prefix, key } => bincode::serialize(&(prefix, key)),
-            Self::TheirKnowledge { prefix, knowledge } => bincode::serialize(&(prefix, knowledge)),
-            Self::SectionInfo(info) => bincode::serialize(info),
             Self::Online {
                 p2p_node,
                 previous_name: _,
@@ -215,26 +184,10 @@ impl Debug for AccumulatingEvent {
                 .finish(),
 
             Self::Offline(id) => write!(formatter, "Offline({})", id),
-            Self::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
             Self::SendNeighbourInfo { dst, nonce } => write!(
                 formatter,
                 "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
                 dst, nonce
-            ),
-            Self::OurKey { prefix, key } => formatter
-                .debug_struct("OurKey")
-                .field("prefix", prefix)
-                .field("key", key)
-                .finish(),
-            Self::TheirKey { prefix, key } => formatter
-                .debug_struct("TheirKey")
-                .field("prefix", prefix)
-                .field("key", key)
-                .finish(),
-            Self::TheirKnowledge { prefix, knowledge } => write!(
-                formatter,
-                "TheirKnowledge {{ prefix: {:?}, knowledge: {} }}",
-                prefix, knowledge
             ),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
             Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),

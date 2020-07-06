@@ -46,13 +46,13 @@ pub fn create_proven<T: Serialize>(sk_set: &bls::SecretKeySet, payload: T) -> Pr
     Proven::new(payload, proof)
 }
 
-pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {
+pub(crate) fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {
     node.try_handle_message(sender, msg)?;
     node.handle_messages();
     Ok(())
 }
 
-pub fn accumulate_messages<I>(accumulating_msgs: I) -> Message
+pub(crate) fn accumulate_messages<I>(accumulating_msgs: I) -> Message
 where
     I: IntoIterator<Item = AccumulatingMessage>,
 {
@@ -63,7 +63,7 @@ where
         .expect("failed to accumulate messages")
 }
 
-pub struct MockTransport {
+pub(crate) struct MockTransport {
     _inner: QuicP2p,
     rx: Receiver<TransportEvent>,
     addr: SocketAddr,
