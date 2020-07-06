@@ -40,7 +40,10 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, section::SectionKeyShare};
+use crate::{
+    consensus::{ConsensusEngine, DkgResult},
+    section::SectionKeyShare,
+};
 #[cfg(feature = "mock_base")]
 use {crate::section::EldersInfo, std::collections::BTreeSet};
 
@@ -597,7 +600,7 @@ impl Node {
 
     fn handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(self.core.name(), &msg);
+            stage.update_section_knowledge(&mut self.core, &msg)?;
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
@@ -653,7 +656,7 @@ impl Node {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst().check_is_section()?;
                     let src_key = *msg.proof_chain_last_key()?;
-                    stage.handle_neighbour_info(elders_info.clone(), src_key);
+                    stage.handle_neighbour_info(&mut self.core, elders_info.clone(), src_key)?;
                 }
                 Variant::EldersUpdate(payload) => {
                     stage.handle_elders_update(&mut self.core, payload.clone())?
@@ -744,13 +747,21 @@ impl Node {
                     public_key_set,
                 } => {
                     stage.handle_dkg_old_elders(
-                        &self.core,
+                        &mut self.core,
                         participants.clone(),
                         *section_key_index,
                         public_key_set.clone(),
                         *msg.src().as_node()?,
                     )?;
                 }
+                Variant::Vote {
+                    content,
+                    proof_share,
+                } => stage.handle_unordered_vote(
+                    &mut self.core,
+                    content.clone(),
+                    proof_share.clone(),
+                )?,
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
                 }
@@ -902,19 +913,6 @@ impl Node {
                     .has_unpolled_observations()
             })
             .unwrap_or(false)
-    }
-
-    /// Send a message to the given targets using the given delivery group size.
-    pub fn send_message_to_targets(
-        &mut self,
-        dst_targets: &[SocketAddr],
-        delivery_group_size: usize,
-        message: Message,
-    ) -> Result<(), RoutingError> {
-        let message = message.to_bytes();
-        self.core
-            .send_message_to_targets(dst_targets, delivery_group_size, message);
-        Ok(())
     }
 
     /// Returns the version of the latest Parsec instance of this node.
@@ -1088,6 +1086,25 @@ impl Node {
     pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {
         if let Some(stage) = self.stage.approved_mut() {
             Ok(&mut stage.consensus_engine)
+        } else {
+            Err(RoutingError::InvalidState)
+        }
+    }
+
+    // Simulate DKG completion
+    pub(crate) fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        section_key_index: u64,
+        dkg_result: &DkgResult,
+    ) -> Result<()> {
+        if let Some(stage) = self.stage.approved_mut() {
+            stage.handle_dkg_result_event(
+                &mut self.core,
+                participants,
+                section_key_index,
+                dkg_result,
+            )
         } else {
             Err(RoutingError::InvalidState)
         }

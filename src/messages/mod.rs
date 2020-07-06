@@ -13,13 +13,12 @@ mod src_authority;
 mod variant;
 
 pub(crate) use self::variant::EldersUpdate;
-pub use self::{
+pub(crate) use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
-    hash::MessageHash,
     message_accumulator::MessageAccumulator,
-    src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
     error::{Result, RoutingError},
     id::FullId,
@@ -38,7 +37,7 @@ use xor_name::Prefix;
 
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Message {
+pub(crate) struct Message {
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
     /// agains the public key and we know the pub key then we are good. If the proof is not recognised we
@@ -314,7 +313,7 @@ impl VerifyStatus {
     }
 }
 
-pub struct QueuedMessage {
+pub(crate) struct QueuedMessage {
     pub message: Message,
     pub sender: Option<SocketAddr>,
 }

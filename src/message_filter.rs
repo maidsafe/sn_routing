@@ -36,7 +36,7 @@ impl FilteringResult {
 }
 
 // Structure to filter (throttle) incoming and outgoing messages.
-pub struct MessageFilter {
+pub(crate) struct MessageFilter {
     incoming: LruCache<MessageHash, ()>,
     outgoing: LruCache<(MessageHash, PublicId), ()>,
 }

@@ -24,7 +24,7 @@ use xor_name::Prefix;
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
-pub struct Bootstrapping {
+pub(crate) struct Bootstrapping {
     // Using `FxHashSet` for deterministic iteration order.
     pending_requests: FxHashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
@@ -86,7 +86,8 @@ impl Bootstrapping {
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping
-            | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Useless),
+            | Variant::BouncedUnknownMessage { .. }
+            | Variant::Vote { .. } => Ok(MessageStatus::Useless),
         }
     }
 
@@ -202,7 +203,7 @@ impl Bootstrapping {
     }
 }
 
-pub struct JoinParams {
+pub(crate) struct JoinParams {
     pub elders_info: EldersInfo,
     pub section_key: bls::PublicKey,
     pub relocate_payload: Option<RelocatePayload>,

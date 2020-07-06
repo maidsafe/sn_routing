@@ -34,8 +34,8 @@ pub enum RoutingError {
     InvalidMessage,
     #[error(display = "A signed message could not be trusted.")]
     UntrustedMessage,
-    #[error(display = "Some or all signature shares are invalid.")]
-    InvalidSignatureShares,
+    #[error(display = "A signature share is invalid.")]
+    InvalidSignatureShare,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
 }

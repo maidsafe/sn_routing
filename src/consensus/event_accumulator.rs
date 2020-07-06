@@ -246,7 +246,8 @@ mod test {
     use super::*;
     use crate::{
         rng::{self, MainRng},
-        section, ELDER_SIZE,
+        section::gen_elders_info,
+        ELDER_SIZE,
     };
     use rand::{distributions::Standard, seq::IteratorRandom, Rng};
     use std::iter;
@@ -254,7 +255,7 @@ mod test {
     #[test]
     fn insert() {
         let mut rng = rng::new();
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
+        let (elders_info, _) = gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
@@ -299,7 +300,7 @@ mod test {
     #[test]
     fn reset() {
         let mut rng = rng::new();
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
+        let (elders_info, _) = gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
@@ -344,7 +345,7 @@ mod test {
     fn tracking_responsiveness() {
         let mut rng = rng::new();
 
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
+        let (elders_info, _) = gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let unresponsive_node = elders_info.elders.keys().choose(&mut rng).unwrap();
