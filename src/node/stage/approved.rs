@@ -180,7 +180,8 @@ impl Approved {
         (stage, core)
     }
 
-    pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
+    // Cast a vote for totally ordered event via parsec.
+    pub fn cast_ordered_vote(&mut self, event: AccumulatingEvent) {
         match self
             .section_keys_provider
             .key_share()
@@ -225,7 +226,7 @@ impl Approved {
         };
 
         if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&name) {
-            self.vote_for_event(AccumulatingEvent::Offline(name))
+            self.cast_ordered_vote(AccumulatingEvent::Offline(name))
         }
     }
 
@@ -270,7 +271,7 @@ impl Approved {
             trace!("handle cached accumulated event {:?}", event);
             // In case of error, event got cached inside `handle_accumulated_event`.
             if let Err(err) =
-                self.handle_accumulated_event(core, event.clone(), Some(proof.clone()))
+                self.handle_ordered_consensus(core, event.clone(), Some(proof.clone()))
             {
                 debug!("Failed ({:?}) handle cached event {:?}", err, event);
             }
@@ -297,7 +298,7 @@ impl Approved {
             && self.is_our_elder(core.id())
             && self.consensus_engine.needs_pruning()
         {
-            self.vote_for_event(AccumulatingEvent::ParsecPrune);
+            self.cast_ordered_vote(AccumulatingEvent::ParsecPrune);
         }
 
         self.send_parsec_gossip(core, None);
@@ -305,7 +306,7 @@ impl Approved {
 
     /// Vote for a user-defined event.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
-        self.vote_for_event(AccumulatingEvent::User(event));
+        self.cast_ordered_vote(AccumulatingEvent::User(event));
     }
 
     /// Is the node with the given id an elder in our section?
@@ -546,7 +547,7 @@ impl Approved {
 
     pub fn handle_neighbour_info(&mut self, elders_info: EldersInfo, src_key: bls::PublicKey) {
         if !self.shared_state.sections.has_key(&src_key) {
-            self.vote_for_event(AccumulatingEvent::TheirKey {
+            self.cast_ordered_vote(AccumulatingEvent::TheirKey {
                 prefix: elders_info.prefix,
                 key: src_key,
             });
@@ -563,7 +564,7 @@ impl Approved {
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info));
+            self.cast_ordered_vote(AccumulatingEvent::SectionInfo(elders_info));
         }
     }
 
@@ -754,7 +755,7 @@ impl Approved {
             (MIN_AGE, None)
         };
 
-        self.vote_for_event(AccumulatingEvent::Online {
+        self.cast_ordered_vote(AccumulatingEvent::Online {
             p2p_node,
             age,
             their_knowledge,
@@ -983,7 +984,7 @@ impl Approved {
             Some((event, proof)) => (event, proof),
         };
 
-        self.handle_accumulated_event(core, event, proof)?;
+        self.handle_ordered_consensus(core, event, proof)?;
 
         Ok(true)
     }
@@ -1114,7 +1115,7 @@ impl Approved {
 
         if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
-                self.vote_for_event(AccumulatingEvent::Relocate(details));
+                self.cast_ordered_vote(AccumulatingEvent::Relocate(details));
             }
 
             return true;
@@ -1123,7 +1124,7 @@ impl Approved {
         false
     }
 
-    fn handle_accumulated_event(
+    fn handle_ordered_consensus(
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
@@ -1170,44 +1171,18 @@ impl Approved {
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
-            AccumulatingEvent::OurKey { prefix, key } => {
-                // Could receive the accumulated OurKey before complete the DKG process.
-                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_our_key_event(
-                    core,
-                    prefix,
-                    key,
-                    proof.clone().expect("missing proof for OurKey"),
-                ) {
-                    trace!(
-                        "caching OurKey( {:?}, {:?} ) as invalid DKG result",
-                        prefix,
-                        key
-                    );
-                    self.dkg_voter.push_event(
-                        AccumulatingEvent::OurKey { prefix, key },
-                        proof.expect("missing proof for OurKey"),
-                    );
-                }
-            }
-            AccumulatingEvent::TheirKey { prefix, key } => {
-                // Could receive the accumulated TheirKey before complete the DKG process.
-                if let Err(RoutingError::InvalidElderDkgResult) = self.handle_their_key_event(
-                    core,
-                    prefix,
-                    key,
-                    proof.clone().expect("missing proof for TheirKey"),
-                ) {
-                    trace!(
-                        "caching ThereKey( {:?}, {:?} ) as invalid DKG result",
-                        prefix,
-                        key
-                    );
-                    self.dkg_voter.push_event(
-                        AccumulatingEvent::TheirKey { prefix, key },
-                        proof.expect("missing proof for ThereKey"),
-                    );
-                }
-            }
+            AccumulatingEvent::OurKey { prefix, key } => self.handle_our_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for OurKey"),
+            )?,
+            AccumulatingEvent::TheirKey { prefix, key } => self.handle_their_key_event(
+                core,
+                prefix,
+                key,
+                proof.expect("missing proof for TheirKey"),
+            )?,
             AccumulatingEvent::TheirKnowledge { prefix, knowledge } => self
                 .handle_their_knowledge_event(
                     prefix,
@@ -1401,19 +1376,19 @@ impl Approved {
 
             let key = dkg_result.public_key_set.public_key();
 
-            self.vote_for_event(AccumulatingEvent::OurKey {
+            self.cast_ordered_vote(AccumulatingEvent::OurKey {
                 prefix: info.prefix,
                 key,
             });
 
             if info.prefix.is_extension_of(self.shared_state.our_prefix()) {
-                self.vote_for_event(AccumulatingEvent::TheirKey {
+                self.cast_ordered_vote(AccumulatingEvent::TheirKey {
                     prefix: info.prefix,
                     key,
                 });
             }
 
-            self.vote_for_event(AccumulatingEvent::SectionInfo(info));
+            self.cast_ordered_vote(AccumulatingEvent::SectionInfo(info));
         } else {
             // The latest participant was just following vote, which doesn't have the info to
             // vote for a section_info. Or the DKG process completed before receiving the
@@ -1626,7 +1601,7 @@ impl Approved {
         // on our `OurKey` so they know our latest key. Need to vote for it first though, to
         // accumulate the signatures.
         if let Some(prefix) = sibling_prefix {
-            self.vote_for_event(AccumulatingEvent::TheirKnowledge {
+            self.cast_ordered_vote(AccumulatingEvent::TheirKnowledge {
                 prefix,
                 knowledge: self.shared_state.our_history.last_key_index(),
             })
@@ -1712,7 +1687,7 @@ impl Approved {
             self.shared_state.handled_genesis_event = false;
 
             for event in events {
-                self.vote_for_event(event);
+                self.cast_ordered_vote(event);
             }
         }
 
@@ -1767,7 +1742,7 @@ impl Approved {
             .detect_unresponsive(self.shared_state.our_info());
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
-            self.vote_for_event(AccumulatingEvent::Offline(*pub_id.name()));
+            self.cast_ordered_vote(AccumulatingEvent::Offline(*pub_id.name()));
         }
     }
 
@@ -2081,7 +2056,7 @@ impl Approved {
         );
 
         for event in events {
-            self.vote_for_event(event)
+            self.cast_ordered_vote(event)
         }
     }
 
