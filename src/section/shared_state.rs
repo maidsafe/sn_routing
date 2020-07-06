@@ -8,7 +8,7 @@
 
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::{AccumulatingEvent, Proof, Proven},
+    consensus::{Proof, Proven},
     id::P2pNode,
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
@@ -27,7 +27,7 @@ use xor_name::{Prefix, XorName};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SharedState {
+pub(crate) struct SharedState {
     /// Indicate whether nodes are shared state because genesis event was seen
     #[serde(skip)]
     pub handled_genesis_event: bool,
@@ -316,15 +316,17 @@ impl SharedState {
         self.our_history.slice(index..)
     }
 
-    /// Update our knowledge of their section and their knowledge of ours. Returns the events to
-    /// vote for (if any).
+    /// Update our knowledge of their section and their knowledge of ours. Returns the actions to
+    /// perform (if any).
     pub fn update_section_knowledge(
         &mut self,
         our_name: &XorName,
         src: &SrcAuthority,
         dst_key: Option<&bls::PublicKey>,
         hash: &MessageHash,
-    ) -> Vec<AccumulatingEvent> {
+    ) -> Vec<UpdateSectionKnowledgeAction> {
+        use UpdateSectionKnowledgeAction::*;
+
         let (&prefix, new_key) = if let Ok(pair) = src.as_section_prefix_and_key() {
             pair
         } else {
@@ -333,14 +335,14 @@ impl SharedState {
 
         let is_neighbour = self.our_prefix().is_neighbour(&prefix);
 
-        // There will be at most two events returned because the only possible event combinations
+        // There will be at most two actions returned because the only possible action combinations
         // are these:
         // - `[]`
-        // - `[TheirKey]`
-        // - `[TheirKey, TheirKnowledge]`
-        // - `[SendNeighbourInfo]`
-        // - `[SendNeighbourInfo, TheirKnowledge]`
-        let mut events = Vec::with_capacity(2);
+        // - `[VoteTheirKey]`
+        // - `[VoteTheirKey, VoteTheirKnowledge]`
+        // - `[VoteSendNeighbourInfo]`
+        // - `[VoteSendNeighbourInfo, VoteTheirKnowledge]`
+        let mut actions = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 
         if !prefix.matches(our_name) && !self.sections.has_key(new_key) {
@@ -349,7 +351,7 @@ impl SharedState {
             if is_neighbour {
                 vote_send_neighbour_info = true;
             } else {
-                events.push(AccumulatingEvent::TheirKey {
+                actions.push(VoteTheirKey {
                     prefix,
                     key: *new_key,
                 });
@@ -361,9 +363,9 @@ impl SharedState {
             let new = self.our_history.index_of(dst_key).unwrap_or(0);
 
             if new > old {
-                events.push(AccumulatingEvent::TheirKnowledge {
+                actions.push(VoteTheirKnowledge {
                     prefix,
-                    knowledge: new,
+                    key_index: new,
                 })
             }
 
@@ -376,13 +378,13 @@ impl SharedState {
             // TODO: if src has split, consider sending to all child prefixes that are still our
             // neighbours.
 
-            events.push(AccumulatingEvent::SendNeighbourInfo {
+            actions.push(VoteSendNeighbourInfo {
                 dst: prefix.name(),
                 nonce: *hash,
             })
         }
 
-        events
+        actions
     }
 
     // Tries to split our section.
@@ -543,6 +545,13 @@ impl SharedState {
 
         trace!("increment_age_counters: {:?}", self.our_members);
     }
+}
+
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum UpdateSectionKnowledgeAction {
+    VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
+    VoteTheirKnowledge { prefix: Prefix, key_index: u64 },
+    VoteSendNeighbourInfo { dst: XorName, nonce: MessageHash },
 }
 
 #[cfg(test)]

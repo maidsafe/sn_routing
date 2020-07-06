@@ -14,6 +14,7 @@ use routing::{
 use std::collections::HashMap;
 
 #[test]
+#[ignore]
 fn send() {
     let elder_size = 8;
     let recommended_section_size = 8;
@@ -57,6 +58,7 @@ fn send() {
 }
 
 #[test]
+#[ignore]
 fn send_and_receive() {
     let elder_size = 8;
     let recommended_section_size = 8;

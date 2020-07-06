@@ -598,7 +598,7 @@ impl Node {
 
     fn handle_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.update_section_knowledge(self.core.name(), &msg);
+            stage.update_section_knowledge(&mut self.core, &msg)?;
         }
 
         self.core.msg_queue.push_back(msg.into_queued(Some(sender)));
@@ -660,7 +660,7 @@ impl Node {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst().check_is_section()?;
                     let src_key = *msg.src().as_section_key()?;
-                    stage.handle_neighbour_info(elders_info.clone(), src_key);
+                    stage.handle_neighbour_info(&mut self.core, elders_info.clone(), src_key)?;
                 }
                 Variant::GenesisUpdate(info) => {
                     let section_key = *msg.src().as_section_key()?;
@@ -752,7 +752,7 @@ impl Node {
                     public_key_set,
                 } => {
                     stage.handle_dkg_old_elders(
-                        &self.core,
+                        &mut self.core,
                         participants.clone(),
                         *parsec_version,
                         public_key_set.clone(),

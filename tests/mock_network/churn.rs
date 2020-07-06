@@ -29,6 +29,7 @@ use std::{
 use xor_name::XorName;
 
 #[test]
+#[ignore]
 fn aggressive_churn() {
     churn(Params {
         message_schedule: MessageSchedule::AfterChurn,
@@ -38,6 +39,7 @@ fn aggressive_churn() {
 }
 
 #[test]
+#[ignore]
 fn messages_during_churn() {
     churn(Params {
         initial_prefix_lens: vec![2, 2, 2, 3, 3],

@@ -14,6 +14,7 @@ use routing::{
 };
 
 #[test]
+#[ignore]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
     let elder_size = 8;

@@ -29,6 +29,12 @@ pub enum Vote {
         prefix: Prefix,
         key: bls::PublicKey,
     },
+
+    // Voted to update their knowledge of our section.
+    TheirKnowledge {
+        prefix: Prefix,
+        key_index: u64,
+    },
 }
 
 impl Vote {
@@ -82,6 +88,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::SectionInfo(info) => info.serialize(serializer),
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
+            Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
         }
     }
 }

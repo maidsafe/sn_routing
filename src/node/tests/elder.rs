@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, ParsecRequest},
+    consensus::{self, AccumulatingEvent, ParsecRequest, Vote},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -18,8 +18,8 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{
-        member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain, SharedState,
-        MIN_AGE,
+        member_info, quorum_count, EldersInfo, MemberState, SectionKeyShare, SectionProofChain,
+        SharedState, MIN_AGE,
     },
     utils, ELDER_SIZE,
 };
@@ -28,11 +28,6 @@ use mock_quic_p2p::Network;
 use rand::Rng;
 use std::{collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
-
-// Minimal number of votes to reach accumulation.
-const ACCUMULATE_VOTE_COUNT: usize = 5;
-// Only one vote missing to reach accumulation.
-const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 4;
 
 struct DkgToSectionInfo {
     new_pk_set: bls::PublicKeySet,
@@ -112,7 +107,7 @@ impl Env {
         };
 
         // Process initial unpolled event including genesis
-        env.n_vote_for_unconsensused_events(env.other_ids.len());
+        env.cast_unconsensused_ordered_votes(env.other_ids.len());
         env.create_gossip().unwrap();
         env
     }
@@ -121,7 +116,15 @@ impl Env {
         self.network.poll(&mut self.rng)
     }
 
-    fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
+    fn quorum_count(&self) -> usize {
+        quorum_count(self.elders_info.elders.len())
+    }
+
+    fn cast_ordered_votes(
+        &mut self,
+        count: usize,
+        events: impl IntoIterator<Item = AccumulatingEvent>,
+    ) {
         assert!(count <= self.other_ids.len());
 
         let parsec = self
@@ -155,7 +158,7 @@ impl Env {
         }
     }
 
-    fn n_vote_for_unconsensused_events(&mut self, count: usize) {
+    fn cast_unconsensused_ordered_votes(&mut self, count: usize) {
         let parsec = self
             .subject
             .consensus_engine_mut()
@@ -190,18 +193,50 @@ impl Env {
         self.subject.dispatch_message(Some(addr), message)
     }
 
-    fn n_vote_for_gossipped(
+    fn cast_ordered_votes_and_gossip(
         &mut self,
         count: usize,
         events: impl IntoIterator<Item = AccumulatingEvent>,
     ) -> Result<()> {
-        self.n_vote_for(count, events);
+        self.cast_ordered_votes(count, events);
         self.create_gossip()
     }
 
+    fn cast_unordered_votes(
+        &mut self,
+        count: usize,
+        votes: impl IntoIterator<Item = Vote>,
+    ) -> Result<()> {
+        for vote in votes {
+            for (full_id, secret_key_share) in self.other_ids.iter().take(count) {
+                let index = self
+                    .elders_info
+                    .position(full_id.public_id().name())
+                    .unwrap();
+                let proof_share =
+                    vote.prove(self.public_key_set.clone(), index, secret_key_share)?;
+                let variant = Variant::Vote {
+                    content: vote.clone(),
+                    proof_share,
+                };
+                let message = Message::single_src(
+                    full_id,
+                    DstLocation::Section(*full_id.public_id().name()),
+                    Some(self.public_key_set.public_key()),
+                    variant,
+                )?;
+
+                let addr = ([127, 0, 0, 1], 9000 + index as u16).into();
+                test_utils::handle_message(&mut self.subject, addr, message)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn accumulate_online(&mut self, p2p_node: P2pNode) {
-        let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
+        let _ = self.cast_ordered_votes_and_gossip(
+            self.quorum_count(),
             iter::once(AccumulatingEvent::Online {
                 p2p_node,
                 age: MIN_AGE,
@@ -248,49 +283,52 @@ impl Env {
         }
     }
 
-    fn accumulate_our_key_and_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let _ = self.n_vote_for_gossipped(
-            NOT_ACCUMULATE_ALONE_VOTE_COUNT,
+    fn accumulate_our_key_and_section_info_if_vote(
+        &mut self,
+        new_info: &DkgToSectionInfo,
+    ) -> Result<()> {
+        self.cast_unordered_votes(
+            self.quorum_count() - 1,
             vec![
-                AccumulatingEvent::OurKey {
+                Vote::OurKey {
                     prefix: new_info.new_elders_info.prefix,
                     key: new_info.new_pk_set.public_key(),
                 },
-                AccumulatingEvent::SectionInfo(new_info.new_elders_info.clone()),
+                Vote::SectionInfo(new_info.new_elders_info.clone()),
             ],
-        );
+        )
     }
 
-    fn accumulate_voted_unconsensused_events(&mut self) {
-        self.n_vote_for_unconsensused_events(ACCUMULATE_VOTE_COUNT);
+    fn accumulate_unconsensused_ordered_votes(&mut self) {
+        self.cast_unconsensused_ordered_votes(self.quorum_count());
         let _ = self.create_gossip();
     }
 
     fn accumulate_offline(&mut self, offline_payload: XorName) {
-        let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
+        let _ = self.cast_ordered_votes_and_gossip(
+            self.quorum_count(),
             iter::once(AccumulatingEvent::Offline(offline_payload)),
         );
     }
 
     // Accumulate `TheirKnowledge` for the latest version of our own section.
-    fn accumulate_self_their_knowledge(&mut self) {
-        let event = AccumulatingEvent::TheirKnowledge {
+    fn accumulate_self_their_knowledge(&mut self) -> Result<()> {
+        let vote = Vote::TheirKnowledge {
             prefix: self.elders_info.prefix,
-            knowledge: self
+            key_index: self
                 .subject
                 .our_history()
                 .expect("subject is not approved")
                 .last_key_index(),
         };
 
-        let _ = self.n_vote_for_gossipped(ACCUMULATE_VOTE_COUNT, iter::once(event));
+        self.cast_unordered_votes(self.quorum_count(), iter::once(vote))
     }
 
     // Accumulate `ParsecPrune` which should result in the parsec version increase.
     fn accumulate_parsec_prune(&mut self) {
-        let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
+        let _ = self.cast_ordered_votes_and_gossip(
+            self.quorum_count(),
             iter::once(AccumulatingEvent::ParsecPrune),
         );
     }
@@ -371,19 +409,19 @@ impl Env {
         &mut self,
         dropped_elder_name: XorName,
         promoted_adult_node: P2pNode,
-    ) {
+    ) -> Result<()> {
         let new_info = self
             .new_elders_info_after_offline_and_promote(&dropped_elder_name, promoted_adult_node);
 
         self.accumulate_offline(dropped_elder_name);
-        self.accumulate_our_key_and_section_info_if_vote(&new_info);
-        self.accumulate_voted_unconsensused_events();
+        self.accumulate_our_key_and_section_info_if_vote(&new_info)?;
+        self.accumulate_unconsensused_ordered_votes();
 
         self.elders_info = new_info.new_elders_info;
         self.other_ids = new_info.new_other_ids;
         self.public_key_set = new_info.new_pk_set;
 
-        self.accumulate_self_their_knowledge();
+        self.accumulate_self_their_knowledge()
     }
 
     fn accumulate_message(&self, dst: DstLocation, variant: Variant) -> Message {
@@ -481,7 +519,7 @@ fn construct() {
 }
 
 #[test]
-fn when_accumulate_online_then_node_is_added_to_our_members() {
+fn add_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     env.accumulate_online(env.candidate.clone());
 
@@ -492,13 +530,14 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 
 #[test]
 #[ignore] //FIXME DKG is no longer carried out by parsec
-fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_our_elders() {
+fn add_member_and_promote() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let new_info = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
 
-    env.accumulate_our_key_and_section_info_if_vote(&new_info);
-    env.accumulate_voted_unconsensused_events();
+    env.accumulate_our_key_and_section_info_if_vote(&new_info)
+        .unwrap();
+    env.accumulate_unconsensused_ordered_votes();
 
     assert!(!env.has_unpolled_observations());
     assert!(env.is_candidate_member());
@@ -507,12 +546,13 @@ fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_o
 
 #[test]
 #[ignore] //FIXME DKG is no longer carried out by parsec
-fn when_accumulate_offline_then_node_is_removed_from_our_members() {
+fn remove_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_our_key_and_section_info_if_vote(&info1);
-    env.accumulate_voted_unconsensused_events();
+    env.accumulate_our_key_and_section_info_if_vote(&info1)
+        .unwrap();
+    env.accumulate_unconsensused_ordered_votes();
 
     env.other_ids = info1.new_other_ids;
     env.elders_info = info1.new_elders_info;
@@ -527,12 +567,13 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 
 #[test]
 #[ignore] //FIXME DKG is no longer carried out by parsec
-fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
+fn remove_elder() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_our_key_and_section_info_if_vote(&info1);
-    env.accumulate_voted_unconsensused_events();
+    env.accumulate_our_key_and_section_info_if_vote(&info1)
+        .unwrap();
+    env.accumulate_unconsensused_ordered_votes();
 
     let info2 = env.new_elders_info_without_candidate();
 
@@ -541,8 +582,9 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
     env.public_key_set = info1.new_pk_set;
 
     env.accumulate_offline(*env.candidate.name());
-    env.accumulate_our_key_and_section_info_if_vote(&info2);
-    env.accumulate_voted_unconsensused_events();
+    env.accumulate_our_key_and_section_info_if_vote(&info2)
+        .unwrap();
+    env.accumulate_unconsensused_ordered_votes();
 
     assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
@@ -583,7 +625,8 @@ fn send_genesis_update() {
     // Remove one existing elder and promote an adult to take its place. This created new section
     // key.
     let dropped_name = *env.other_ids[0].0.public_id().name();
-    env.perform_offline_and_promote(dropped_name, adult0.to_p2p_node());
+    env.perform_offline_and_promote(dropped_name, adult0.to_p2p_node())
+        .unwrap();
     let new_section_key = *env.subject.section_key().expect("subject is not approved");
 
     // Create `GenesisUpdate` message and check its proof contains the previous key as well as the
@@ -648,7 +691,7 @@ fn handle_bounced_untrusted_message() {
     let new = env.gen_peer().to_p2p_node();
     let old = *env.other_ids[0].0.public_id().name();
     env.accumulate_online(new.clone());
-    env.perform_offline_and_promote(old, new);
+    env.perform_offline_and_promote(old, new).unwrap();
 
     let new_section_key = *env.subject.section_key().expect("subject is not approved");
 

@@ -25,6 +25,7 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 };
 
 #[test]
+#[ignore]
 fn relocate_without_split() {
     let env = Environment::new(NETWORK_PARAMS);
     let mut overrides = RelocationOverrides::new();
@@ -54,6 +55,7 @@ fn relocate_without_split() {
 }
 
 #[test]
+#[ignore]
 fn relocate_causing_split() {
     // Note: this test doesn't always trigger split in the target section. This is because when the
     // target section receives the bootstrap request from the relocating node, it still has its

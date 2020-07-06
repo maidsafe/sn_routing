@@ -63,6 +63,7 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
+#[ignore]
 fn single_section() {
     let sec_size = 10;
     let env = Environment::new(NetworkParams {
@@ -74,21 +75,25 @@ fn single_section() {
 }
 
 #[test]
+#[ignore]
 fn less_than_section_size_nodes() {
     test_nodes(80);
 }
 
 #[test]
+#[ignore]
 fn equal_section_size_nodes() {
     test_nodes(100);
 }
 
 #[test]
+#[ignore]
 fn more_than_section_size_nodes() {
     test_nodes(600);
 }
 
 #[test]
+#[ignore]
 fn node_joins_in_front() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -108,6 +113,7 @@ fn node_joins_in_front() {
 }
 
 #[test]
+#[ignore]
 fn multiple_joining_nodes() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -143,6 +149,7 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+#[ignore]
 fn single_split() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -156,6 +163,7 @@ fn single_split() {
 }
 
 #[test]
+#[ignore]
 fn multi_split() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -255,6 +263,7 @@ fn all_sections_have_enough_elders(env: &Environment, nodes: &[TestNode]) -> boo
 }
 
 #[test]
+#[ignore]
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
     let env = Environment::new(NetworkParams {
@@ -283,6 +292,7 @@ fn simultaneous_joining_nodes_two_sections() {
 }
 
 #[test]
+#[ignore]
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
     let env = Environment::new(NetworkParams {
@@ -311,6 +321,7 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
 }
 
 #[test]
+#[ignore]
 fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     // TODO: Use same section size once we have a reliable message relay that handle split.
     // Allow for more routes otherwise NodeApproval get losts during soak test.
@@ -363,6 +374,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 }
 
 #[test]
+#[ignore]
 fn check_close_names_for_elder_size_nodes() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -378,6 +390,7 @@ fn check_close_names_for_elder_size_nodes() {
 }
 
 #[test]
+#[ignore]
 fn sibling_knowledge_update_after_split() {
     let elder_size = 8;
     let recommended_section_size = 8;
@@ -406,6 +419,7 @@ fn sibling_knowledge_update_after_split() {
 }
 
 #[test]
+#[ignore]
 fn carry_out_parsec_pruning() {
     let init_network_size = 7;
     let elder_size = 8;
@@ -467,6 +481,7 @@ fn carry_out_parsec_pruning() {
 }
 
 #[test]
+#[ignore]
 fn node_pause_and_resume_simple() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -499,6 +514,7 @@ fn node_pause_and_resume_simple() {
 }
 
 #[test]
+#[ignore]
 fn node_pause_and_resume_during_split() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
@@ -547,6 +563,7 @@ fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedSt
 }
 
 #[test]
+#[ignore]
 fn neighbour_update() {
     // 1. Create two sections, A and B.
     // 2. Change the set of elders of B.

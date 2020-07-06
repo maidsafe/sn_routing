@@ -11,6 +11,7 @@ use rand::Rng;
 use routing::{mock::Environment, NetworkParams};
 
 #[test]
+#[ignore]
 fn node_drops() {
     let env = Environment::new(NetworkParams {
         elder_size: MIN_ELDER_SIZE,
