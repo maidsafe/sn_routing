@@ -100,7 +100,9 @@ impl Joining {
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Unknown),
+            | Variant::BouncedUnknownMessage { .. }
+            | Variant::DKGMessage { .. }
+            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)

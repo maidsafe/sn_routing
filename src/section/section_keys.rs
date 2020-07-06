@@ -8,7 +8,7 @@
 
 use super::elders_info::EldersInfo;
 use crate::{
-    consensus::{DkgResult, DkgResultWrapper},
+    consensus::DkgResult,
     error::{Result, RoutingError},
     id::PublicId,
 };
@@ -55,14 +55,10 @@ impl SectionKeysProvider {
     pub fn handle_dkg_result_event(
         &mut self,
         participants: &BTreeSet<PublicId>,
-        dkg_result: &DkgResultWrapper,
+        dkg_result: &DkgResult,
     ) -> Result<()> {
         if let Some(first) = participants.iter().next() {
-            if self
-                .new
-                .insert(*first.name(), dkg_result.0.clone())
-                .is_some()
-            {
+            if self.new.insert(*first.name(), dkg_result.clone()).is_some() {
                 log_or_panic!(log::Level::Error, "Ejected previous DKG result");
             }
         }

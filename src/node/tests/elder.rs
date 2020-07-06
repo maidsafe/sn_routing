@@ -35,7 +35,6 @@ const ACCUMULATE_VOTE_COUNT: usize = 5;
 const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 4;
 
 struct DkgToSectionInfo {
-    participants: BTreeSet<PublicId>,
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elders_info: EldersInfo,
@@ -243,7 +242,6 @@ impl Env {
             .filter_map(|(full_id, result)| (result.secret_key_share.map(|share| (full_id, share))))
             .collect_vec();
         DkgToSectionInfo {
-            participants,
             new_pk_set,
             new_other_ids,
             new_elders_info,
@@ -272,13 +270,6 @@ impl Env {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
             iter::once(AccumulatingEvent::Offline(offline_payload)),
-        );
-    }
-
-    fn accumulate_start_dkg(&mut self, info: &DkgToSectionInfo) {
-        let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::StartDkg(info.participants.clone())),
         );
     }
 
@@ -385,7 +376,6 @@ impl Env {
             .new_elders_info_after_offline_and_promote(&dropped_elder_name, promoted_adult_node);
 
         self.accumulate_offline(dropped_elder_name);
-        self.accumulate_start_dkg(&new_info);
         self.accumulate_our_key_and_section_info_if_vote(&new_info);
         self.accumulate_voted_unconsensused_events();
 
@@ -493,9 +483,7 @@ fn construct() {
 #[test]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
     let mut env = Env::new(ELDER_SIZE - 1);
-    let new_info = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&new_info);
 
     assert!(!env.has_unpolled_observations());
     assert!(env.is_candidate_member());
@@ -503,11 +491,11 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 }
 
 #[test]
+#[ignore] //FIXME DKG is no longer carried out by parsec
 fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_our_elders() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let new_info = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&new_info);
 
     env.accumulate_our_key_and_section_info_if_vote(&new_info);
     env.accumulate_voted_unconsensused_events();
@@ -518,22 +506,19 @@ fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_o
 }
 
 #[test]
+#[ignore] //FIXME DKG is no longer carried out by parsec
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&info1);
     env.accumulate_our_key_and_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
-
-    let info2 = env.new_elders_info_without_candidate();
 
     env.other_ids = info1.new_other_ids;
     env.elders_info = info1.new_elders_info;
     env.public_key_set = info1.new_pk_set;
 
     env.accumulate_offline(*env.candidate.name());
-    env.accumulate_start_dkg(&info2);
 
     assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
@@ -541,11 +526,11 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 }
 
 #[test]
+#[ignore] //FIXME DKG is no longer carried out by parsec
 fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
-    env.accumulate_start_dkg(&info1);
     env.accumulate_our_key_and_section_info_if_vote(&info1);
     env.accumulate_voted_unconsensused_events();
 
@@ -556,7 +541,6 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
     env.public_key_set = info1.new_pk_set;
 
     env.accumulate_offline(*env.candidate.name());
-    env.accumulate_start_dkg(&info2);
     env.accumulate_our_key_and_section_info_if_vote(&info2);
     env.accumulate_voted_unconsensused_events();
 
@@ -584,6 +568,7 @@ fn handle_bootstrap() {
 }
 
 #[test]
+#[ignore] //FIXME DKG is no longer carried out by parsec
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 

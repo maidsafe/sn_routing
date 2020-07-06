@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DkgResultWrapper, Observation, ParsecNetworkEvent, ProofShare};
+use super::{Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
     error::Result,
     id::{P2pNode, PublicId},
@@ -31,15 +31,6 @@ pub enum AccumulatingEvent {
     Genesis {
         group: BTreeSet<PublicId>,
         related_info: Vec<u8>,
-    },
-
-    /// Vote to start a DKG instance. This is input-only unsigned event.
-    StartDkg(BTreeSet<PublicId>),
-
-    /// Result of a DKG. This is output-only unsigned event.
-    DkgResult {
-        participants: BTreeSet<PublicId>,
-        dkg_result: DkgResultWrapper,
     },
 
     /// Voted for node that is about to join our section
@@ -98,7 +89,7 @@ pub enum AccumulatingEvent {
 impl AccumulatingEvent {
     pub fn needs_signature(&self) -> bool {
         match self {
-            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => false,
+            Self::Genesis { .. } => false,
             _ => true,
         }
     }
@@ -190,7 +181,7 @@ impl AccumulatingEvent {
 
             // TODO: serialise these variants properly
             Self::SendNeighbourInfo { .. } | Self::ParsecPrune | Self::User(_) => Ok(vec![]),
-            Self::Genesis { .. } | Self::StartDkg(_) | Self::DkgResult { .. } => unreachable!(),
+            Self::Genesis { .. } => unreachable!(),
         }
     }
 }
@@ -206,12 +197,6 @@ impl Debug for AccumulatingEvent {
                 "Genesis {{ group: {:?}, related_info: {:10} }}",
                 group,
                 HexFmt(related_info)
-            ),
-            Self::StartDkg(participants) => write!(formatter, "StartDkg({:?})", participants),
-            Self::DkgResult { participants, .. } => write!(
-                formatter,
-                "DkgResult {{ participants: {:?}, .. }}",
-                participants
             ),
             Self::Online {
                 p2p_node,
@@ -262,13 +247,7 @@ pub struct NetworkEvent {
 impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
     pub fn into_obs(self) -> Observation<Self, PublicId> {
-        match self {
-            Self {
-                payload: AccumulatingEvent::StartDkg(participants),
-                ..
-            } => parsec::Observation::StartDkg(participants),
-            event => parsec::Observation::OpaquePayload(event),
-        }
+        parsec::Observation::OpaquePayload(self)
     }
 }
 

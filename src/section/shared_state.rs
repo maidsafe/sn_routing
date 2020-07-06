@@ -227,7 +227,7 @@ impl SharedState {
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
     pub fn promote_and_demote_elders(
-        &mut self,
+        &self,
         network_params: &NetworkParams,
         our_name: &XorName,
     ) -> Option<Vec<EldersInfo>> {
