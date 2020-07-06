@@ -10,7 +10,7 @@ mod approved;
 mod bootstrapping;
 mod joining;
 
-pub use self::{
+pub(crate) use self::{
     approved::{Approved, RelocateParams},
     bootstrapping::{Bootstrapping, JoinParams},
     joining::Joining,
@@ -21,7 +21,7 @@ pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
 // Type to represent the various stages a node goes through during its lifetime.
 #[allow(clippy::large_enum_variant)]
-pub enum Stage {
+pub(crate) enum Stage {
     Bootstrapping(Bootstrapping),
     Joining(Joining),
     Approved(Approved),

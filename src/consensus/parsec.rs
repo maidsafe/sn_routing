@@ -89,7 +89,7 @@ impl Display for ParsecSizeCounter {
     }
 }
 
-pub struct ParsecMap {
+pub(crate) struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
     send_gossip: bool,

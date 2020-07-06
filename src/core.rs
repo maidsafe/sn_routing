@@ -26,7 +26,7 @@ use std::{collections::VecDeque, net::SocketAddr, slice};
 use xor_name::XorName;
 
 // Core components of the node.
-pub struct Core {
+pub(crate) struct Core {
     pub network_params: NetworkParams,
     pub full_id: FullId,
     pub transport: Transport,

@@ -15,7 +15,7 @@ use xor_name::Prefix;
 /// `combine_signatures`.
 #[allow(missing_docs)]
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
-pub struct AccumulatingMessage {
+pub(crate) struct AccumulatingMessage {
     pub content: PlainMessage,
     pub proof_chain: SectionProofChain,
     pub proof_share: ProofShare,
@@ -38,7 +38,7 @@ impl AccumulatingMessage {
 
 /// Section-source message without signature and proof.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
-pub struct PlainMessage {
+pub(crate) struct PlainMessage {
     /// Prefix of the source section.
     pub src: Prefix,
     /// Destination location.
@@ -65,7 +65,7 @@ impl PlainMessage {
         ))
     }
 
-    pub(crate) fn as_signable(&self) -> SignableView {
+    pub fn as_signable(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
             dst_key: Some(&self.dst_key),

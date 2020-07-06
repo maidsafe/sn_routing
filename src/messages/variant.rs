@@ -26,7 +26,7 @@ use xor_name::XorName;
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 /// Message variant
-pub enum Variant {
+pub(crate) enum Variant {
     /// Inform neighbours about our new section.
     NeighbourInfo {
         /// `EldersInfo` of the neighbour section.
@@ -184,7 +184,7 @@ pub enum BootstrapResponse {
 
 /// Request to join a section
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct JoinRequest {
+pub(crate) struct JoinRequest {
     /// The public key of the section to join
     pub section_key: bls::PublicKey,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.

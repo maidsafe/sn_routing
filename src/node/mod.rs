@@ -922,19 +922,6 @@ impl Node {
             .unwrap_or(false)
     }
 
-    /// Send a message to the given targets using the given delivery group size.
-    pub fn send_message_to_targets(
-        &mut self,
-        dst_targets: &[SocketAddr],
-        delivery_group_size: usize,
-        message: Message,
-    ) -> Result<(), RoutingError> {
-        let message = message.to_bytes();
-        self.core
-            .send_message_to_targets(dst_targets, delivery_group_size, message);
-        Ok(())
-    }
-
     /// Returns the version of the latest Parsec instance of this node.
     pub fn parsec_last_version(&self) -> u64 {
         self.stage

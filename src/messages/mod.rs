@@ -12,13 +12,12 @@ mod message_accumulator;
 mod src_authority;
 mod variant;
 
-pub use self::{
+pub(crate) use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
-    hash::MessageHash,
     message_accumulator::MessageAccumulator,
-    src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
     error::{Result, RoutingError},
     id::FullId,
@@ -37,7 +36,7 @@ use xor_name::Prefix;
 
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct Message {
+pub(crate) struct Message {
     /// Destination location.
     dst: DstLocation,
     /// Source authority.
@@ -269,7 +268,7 @@ impl VerifyStatus {
     }
 }
 
-pub struct QueuedMessage {
+pub(crate) struct QueuedMessage {
     pub message: Message,
     pub sender: Option<SocketAddr>,
 }

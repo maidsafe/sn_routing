@@ -15,7 +15,7 @@ use serde::{Serialize, Serializer};
 
 /// Accumulator for section-source messages.
 #[derive(Default)]
-pub struct MessageAccumulator(SignatureAccumulator<Payload>);
+pub(crate) struct MessageAccumulator(SignatureAccumulator<Payload>);
 
 impl MessageAccumulator {
     /// Add `AccumulatingMessage` to the accumulator. Returns the full `Message` if we have enough

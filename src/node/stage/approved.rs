@@ -48,7 +48,7 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
-pub struct Approved {
+pub(crate) struct Approved {
     pub consensus_engine: ConsensusEngine,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
@@ -2155,7 +2155,7 @@ impl Approved {
     }
 }
 
-pub struct RelocateParams {
+pub(crate) struct RelocateParams {
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,
 }

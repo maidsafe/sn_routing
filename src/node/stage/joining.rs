@@ -26,7 +26,7 @@ use xor_name::Prefix;
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
-pub struct Joining {
+pub(crate) struct Joining {
     // EldersInfo of the section we are joining.
     elders_info: EldersInfo,
     // PublicKey of the section we are joining.
