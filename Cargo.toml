@@ -58,6 +58,3 @@ mock_base = [
     "env_logger",
 ]
 mock = ["mock_base"]
-
-[patch.'https://github.com/maidsafe/quic-p2p']
-mock-quic-p2p = { git = "https://github.com/madadam/quic-p2p", branch = "impl-std-error", optional = true }
