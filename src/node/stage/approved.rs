@@ -10,7 +10,7 @@ use crate::{
     consensus::{
         self, threshold_count, AccumulatingEvent, AccumulationError, ConsensusEngine, DkgResult,
         DkgVoter, GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven,
-        SignatureAccumulator, Vote,
+        Vote, VoteAccumulator,
     },
     core::Core,
     delivery_group,
@@ -53,7 +53,7 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
-    vote_accumulator: SignatureAccumulator<Vote>,
+    vote_accumulator: VoteAccumulator,
     gossip_timer_token: u64,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event

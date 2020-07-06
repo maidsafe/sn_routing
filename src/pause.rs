@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{ConsensusEngine, SignatureAccumulator, Vote},
+    consensus::{ConsensusEngine, VoteAccumulator},
     id::FullId,
     message_filter::MessageFilter,
     messages::{MessageAccumulator, QueuedMessage},
@@ -39,6 +39,6 @@ pub struct PausedState {
     pub(super) transport: Transport,
     pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
     pub(super) msg_accumulator: MessageAccumulator,
-    pub(super) vote_accumulator: SignatureAccumulator<Vote>,
+    pub(super) vote_accumulator: VoteAccumulator,
     pub(super) section_update_barrier: SectionUpdateBarrier,
 }

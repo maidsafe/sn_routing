@@ -27,7 +27,7 @@ pub use self::{
     },
     proof::{Proof, ProofShare, Proven},
     signature_accumulator::{AccumulationError, SignatureAccumulator},
-    vote::Vote,
+    vote::{Vote, VoteAccumulator},
 };
 
 #[cfg(feature = "mock_base")]
