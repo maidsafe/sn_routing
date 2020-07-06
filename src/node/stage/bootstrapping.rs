@@ -86,7 +86,8 @@ impl Bootstrapping {
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping
-            | Variant::BouncedUnknownMessage { .. } => Ok(MessageStatus::Useless),
+            | Variant::BouncedUnknownMessage { .. }
+            | Variant::Vote { .. } => Ok(MessageStatus::Useless),
         }
     }
 

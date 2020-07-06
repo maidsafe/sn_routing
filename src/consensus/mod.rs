@@ -15,6 +15,7 @@ mod proof;
 mod signature_accumulator;
 #[cfg(test)]
 pub mod test_utils;
+mod vote;
 
 pub use self::{
     dkg::{generate_secret_key_set, threshold_count, DkgResult, DkgVoter},
@@ -26,6 +27,7 @@ pub use self::{
     },
     proof::{Proof, ProofShare, Proven},
     signature_accumulator::{AccumulationError, SignatureAccumulator},
+    vote::Vote,
 };
 
 #[cfg(feature = "mock_base")]

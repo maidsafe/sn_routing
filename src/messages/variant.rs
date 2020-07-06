@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, Message, MessageHash};
 use crate::{
-    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
+    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, ProofShare, Vote},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
@@ -97,6 +97,11 @@ pub enum Variant {
         /// Public key set that got consensused
         public_key_set: bls::PublicKeySet,
     },
+    /// Message containing a single `Vote` to be accumulated in the vote accumulator.
+    Vote {
+        content: Vote,
+        proof_share: ProofShare,
+    },
 }
 
 impl Debug for Variant {
@@ -150,6 +155,14 @@ impl Debug for Variant {
                 .field("participants", participants)
                 .field("parsec_version", parsec_version)
                 .field("public_key_set", public_key_set)
+                .finish(),
+            Self::Vote {
+                content,
+                proof_share,
+            } => f
+                .debug_struct("Vote")
+                .field("content", content)
+                .field("proof_share", proof_share)
                 .finish(),
         }
     }

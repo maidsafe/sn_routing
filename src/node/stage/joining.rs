@@ -102,7 +102,8 @@ impl Joining {
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGMessage { .. }
-            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
+            | Variant::DKGOldElders { .. } 
+            | Variant::Vote { .. } => Ok(MessageStatus::Unknown),
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)

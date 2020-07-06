@@ -8,8 +8,9 @@
 
 use crate::{
     consensus::{
-        self, threshold_count, AccumulatingEvent, ConsensusEngine, DkgResult, DkgVoter,
-        GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven,
+        self, threshold_count, AccumulatingEvent, AccumulationError, ConsensusEngine, DkgResult,
+        DkgVoter, GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven,
+        SignatureAccumulator, Vote,
     },
     core::Core,
     delivery_group,
@@ -52,6 +53,7 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
+    vote_accumulator: SignatureAccumulator<Vote>,
     gossip_timer_token: u64,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
@@ -112,6 +114,7 @@ impl Approved {
             shared_state,
             section_keys_provider,
             message_accumulator: Default::default(),
+            vote_accumulator: Default::default(),
             gossip_timer_token,
             section_update_barrier: Default::default(),
             churn_in_progress: false,
@@ -132,6 +135,7 @@ impl Approved {
             transport: core.transport,
             transport_rx: None,
             msg_accumulator: self.message_accumulator,
+            vote_accumulator: self.vote_accumulator,
             section_update_barrier: self.section_update_barrier,
         }
     }
@@ -169,6 +173,7 @@ impl Approved {
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             message_accumulator: state.msg_accumulator,
+            vote_accumulator: state.vote_accumulator,
             gossip_timer_token,
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
@@ -194,6 +199,50 @@ impl Approved {
                 error,
                 event
             ),
+        }
+    }
+
+    // Cast a vote that doesn't need total order, only section consensus.
+    #[allow(unused)]
+    pub fn cast_unordered_vote(&mut self, core: &mut Core, vote: Vote) -> Result<()> {
+        let key_share = self.section_keys_provider.key_share()?;
+        let proof_share = vote.prove(
+            key_share.public_key_set.clone(),
+            key_share.index,
+            &key_share.secret_key_share,
+        )?;
+
+        // Broadcast the vote to the rest of the section elders.
+        let variant = Variant::Vote {
+            content: vote.clone(),
+            proof_share: proof_share.clone(),
+        };
+        let message = Message::single_src(
+            &core.full_id,
+            DstLocation::Section(*core.name()),
+            Some(*self.shared_state.our_history.last_key()),
+            variant,
+        )?;
+        self.relay_message(core, &message)?;
+
+        self.handle_unordered_vote(core, vote, proof_share)
+    }
+
+    // Insert the vote into the vote accumulator and handle it if accumulated.
+    pub fn handle_unordered_vote(
+        &mut self,
+        core: &mut Core,
+        vote: Vote,
+        proof_share: ProofShare,
+    ) -> Result<()> {
+        match self.vote_accumulator.add(vote, proof_share) {
+            Ok((vote, proof)) => self.handle_unordered_consensus(core, vote, proof),
+            Err(AccumulationError::NotEnoughShares)
+            | Err(AccumulationError::AlreadyAccumulated) => Ok(()),
+            Err(error) => {
+                error!("Failed to add vote: {}", error);
+                Err(RoutingError::InvalidSignatureShare)
+            }
         }
     }
 
@@ -365,6 +414,11 @@ impl Approved {
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                 return Ok(MessageStatus::Useless)
             }
+            Variant::Vote { proof_share, .. } => {
+                if !self.should_handle_vote(proof_share) {
+                    return Ok(MessageStatus::Unknown);
+                }
+            }
             Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
@@ -372,7 +426,7 @@ impl Approved {
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => {}
+            | Variant::BouncedUnknownMessage { .. } => (),
         }
 
         if self.verify_message(msg)? {
@@ -404,6 +458,13 @@ impl Approved {
     // as a node.
     fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
         self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
+    }
+
+    // Handle `Vote` message only if signed with known key, otherwise bounce.
+    fn should_handle_vote(&self, proof_share: &ProofShare) -> bool {
+        self.shared_state
+            .our_history
+            .has_key(&proof_share.public_key_set.public_key())
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
@@ -1199,6 +1260,15 @@ impl Approved {
         }
 
         Ok(())
+    }
+
+    fn handle_unordered_consensus(
+        &mut self,
+        _core: &mut Core,
+        _vote: Vote,
+        _proof: Proof,
+    ) -> Result<()> {
+        todo!()
     }
 
     // Handles an accumulated parsec Observation for genesis.
@@ -2133,7 +2203,7 @@ fn create_first_proof<T: Serialize>(
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
-        .map_err(|_| RoutingError::InvalidSignatureShares)?;
+        .map_err(|_| RoutingError::InvalidSignatureShare)?;
 
     Ok(Proof {
         public_key: pk_set.public_key(),

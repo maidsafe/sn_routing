@@ -759,6 +759,14 @@ impl Node {
                         *msg.src().as_node()?,
                     )?;
                 }
+                Variant::Vote {
+                    content,
+                    proof_share,
+                } => stage.handle_unordered_vote(
+                    &mut self.core,
+                    content.clone(),
+                    proof_share.clone(),
+                )?,
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
                 }
