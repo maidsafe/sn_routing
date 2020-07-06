@@ -83,8 +83,8 @@ pub enum Variant {
         /// Currently just using the participants.
         /// TODO: may need to consider using other unique identifying approach.
         participants: BTreeSet<PublicId>,
-        /// The parsec version this DKG message related to.
-        parsec_version: u64,
+        /// The section key index this DKG message related to.
+        section_key_index: u64,
         /// The serialized DKG message.
         message: Bytes,
     },
@@ -92,8 +92,8 @@ pub enum Variant {
     DKGOldElders {
         /// Participants of the DKG
         participants: BTreeSet<PublicId>,
-        /// Parsec version of the DKG
-        parsec_version: u64,
+        /// Section key index of the DKG
+        section_key_index: u64,
         /// Public key set that got consensused
         public_key_set: bls::PublicKeySet,
     },
@@ -133,22 +133,22 @@ impl Debug for Variant {
                 .finish(),
             Self::DKGMessage {
                 participants,
-                parsec_version,
+                section_key_index,
                 message,
             } => f
                 .debug_struct("DKGMessage")
                 .field("participants", participants)
-                .field("parsec_version", parsec_version)
+                .field("section_key_index", section_key_index)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
             Self::DKGOldElders {
                 participants,
-                parsec_version,
+                section_key_index,
                 public_key_set,
             } => f
                 .debug_struct("DKGMessage")
                 .field("participants", participants)
-                .field("parsec_version", parsec_version)
+                .field("section_key_index", section_key_index)
                 .field("public_key_set", public_key_set)
                 .finish(),
         }

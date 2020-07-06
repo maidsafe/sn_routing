@@ -258,7 +258,8 @@ impl Approved {
                 dkg_key.1,
                 dkg_result.public_key_set.clone(),
             );
-            if let Err(err) = self.handle_dkg_result_event(core, &dkg_key.0, &dkg_result) {
+            if let Err(err) = self.handle_dkg_result_event(core, &dkg_key.0, dkg_key.1, &dkg_result)
+            {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
             } else {
                 self.dkg_voter.remove_voter(&dkg_key);
@@ -837,7 +838,7 @@ impl Approved {
         &mut self,
         core: &Core,
         participants: BTreeSet<PublicId>,
-        parsec_version: u64,
+        section_key_index: u64,
         public_key_set: bls::PublicKeySet,
         _src_id: PublicId,
     ) -> Result<()> {
@@ -847,11 +848,12 @@ impl Approved {
         );
 
         let dkg_result = DkgResult::new(public_key_set, None);
-        if self
-            .dkg_voter
-            .has_info(&(participants.clone(), parsec_version), &dkg_result)
-        {
-            self.handle_dkg_result_event(core, &participants, &dkg_result)
+        if self.dkg_voter.has_info(
+            &(participants.clone(), section_key_index),
+            &dkg_result,
+            self.shared_state.our_history.last_key_index(),
+        ) {
+            self.handle_dkg_result_event(core, &participants, section_key_index, &dkg_result)
         } else {
             Ok(())
         }
@@ -861,26 +863,26 @@ impl Approved {
         &mut self,
         core: &mut Core,
         participants: BTreeSet<PublicId>,
-        parsec_version: u64,
+        section_key_index: u64,
         message_bytes: Bytes,
         pub_id: PublicId,
     ) -> Result<()> {
         trace!(
             "handle dkg message of p{:?}-{:?} from {}",
             participants,
-            parsec_version,
+            section_key_index,
             pub_id
         );
 
         if participants.contains(core.id()) {
-            self.init_dkg_gen(core, participants.clone(), parsec_version);
+            self.init_dkg_gen(core, participants.clone(), section_key_index);
         }
 
         let msg_parsed = bincode::deserialize(&message_bytes[..])?;
 
         let responses = self.dkg_voter.process_dkg_message(
             &mut core.rng,
-            &(participants.clone(), parsec_version),
+            &(participants.clone(), section_key_index),
             msg_parsed,
         );
 
@@ -892,7 +894,7 @@ impl Approved {
 
         for response in responses {
             let _ =
-                self.broadcast_dkg_message(core, participants.clone(), parsec_version, response);
+                self.broadcast_dkg_message(core, participants.clone(), section_key_index, response);
         }
         self.check_dkg(core);
         Ok(())
@@ -1024,13 +1026,17 @@ impl Approved {
 
         for info in new_infos {
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
-            let parsec_version = self.consensus_engine.parsec_version();
-            // FIXME: consider using section_key index instead of the parsec_version
-            let dkg_key = (participants.clone(), parsec_version);
+            let section_key_index = self.shared_state.our_history.last_key_index();
+            let dkg_key = (participants.clone(), section_key_index);
 
             if let Some(dkg_result) = self.dkg_voter.push_info(&dkg_key, info) {
                 // Got notified of the DKG result, happen during split or demote.
-                if let Err(err) = self.handle_dkg_result_event(core, &participants, &dkg_result) {
+                if let Err(err) = self.handle_dkg_result_event(
+                    core,
+                    &participants,
+                    section_key_index,
+                    &dkg_result,
+                ) {
                     debug!(
                         "Failed handle notified dkg_result {:?} - {:?}",
                         dkg_key, err
@@ -1058,9 +1064,9 @@ impl Approved {
                     n: participants.len(),
                     member_list: participants.clone(),
                 };
-                let _ = self.broadcast_dkg_message(core, participants, parsec_version, message);
+                let _ = self.broadcast_dkg_message(core, participants, section_key_index, message);
             } else {
-                self.init_dkg_gen(core, participants, parsec_version);
+                self.init_dkg_gen(core, participants, section_key_index);
             }
         }
 
@@ -1071,13 +1077,22 @@ impl Approved {
         &mut self,
         core: &mut Core,
         participants: BTreeSet<PublicId>,
-        parsec_version: u64,
+        section_key_index: u64,
     ) {
+        if section_key_index < self.shared_state.our_history.last_key_index() {
+            trace!(
+                "Already has DKG of {:?} - {:?}",
+                participants,
+                section_key_index
+            );
+            return;
+        }
         for message in self
             .dkg_voter
-            .init_dkg_gen(&core.full_id, &(participants.clone(), parsec_version))
+            .init_dkg_gen(&core.full_id, &(participants.clone(), section_key_index))
         {
-            let _ = self.broadcast_dkg_message(core, participants.clone(), parsec_version, message);
+            let _ =
+                self.broadcast_dkg_message(core, participants.clone(), section_key_index, message);
             self.dkg_voter
                 .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
         }
@@ -1087,14 +1102,14 @@ impl Approved {
         &mut self,
         core: &mut Core,
         participants: BTreeSet<PublicId>,
-        parsec_version: u64,
+        section_key_index: u64,
         dkg_message: DkgMessage<PublicId>,
     ) -> Result<()> {
         let src = SrcLocation::Node(*core.id().name());
         let message = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             participants: participants.clone(),
-            parsec_version,
+            section_key_index,
             message,
         };
 
@@ -1358,13 +1373,13 @@ impl Approved {
         &mut self,
         core: &mut Core,
         participants: &BTreeSet<PublicId>,
-        parsec_version: u64,
+        section_key_index: u64,
         public_key_set: bls::PublicKeySet,
     ) {
         let src = SrcLocation::Node(*core.id().name());
         let variant = Variant::DKGOldElders {
             participants: participants.clone(),
-            parsec_version,
+            section_key_index,
             public_key_set,
         };
         let elder_ids: Vec<PublicId> = self.shared_state.our_info().elder_ids().copied().collect();
@@ -1386,6 +1401,7 @@ impl Approved {
         &mut self,
         core: &Core,
         participants: &BTreeSet<PublicId>,
+        section_key_index: u64,
         dkg_result: &DkgResult,
     ) -> Result<(), RoutingError> {
         if !self.is_our_elder(core.id()) {
@@ -1394,7 +1410,7 @@ impl Approved {
                 .handle_dkg_result_event(participants, dkg_result);
         }
 
-        let dkg_key = (participants.clone(), self.consensus_engine.parsec_version());
+        let dkg_key = (participants.clone(), section_key_index);
 
         if let Some(info) = self.dkg_voter.take_info(&dkg_key) {
             info!("handle DkgResult: {:?}", dkg_key);
