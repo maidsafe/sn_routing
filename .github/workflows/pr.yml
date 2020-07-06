@@ -50,7 +50,7 @@ jobs:
       - name: rust-tarpaulin code coverage check
         uses: actions-rs/tarpaulin@master
         with:
-          args: '-v -t 600 --out Lcov'
+          args: '-v --release --out Lcov'
       - name: Push code coverage results to coveralls.io
         uses: coverallsapp/github-action@master
         with:
