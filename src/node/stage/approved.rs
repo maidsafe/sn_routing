@@ -344,9 +344,16 @@ impl Approved {
                 }
             }
             Variant::EldersUpdate {
-                elders_info: _,
-                parsec_version: _,
-            } => todo!(),
+                elders_info,
+                parsec_version,
+            } => {
+                if self.is_our_elder(our_id)
+                    || elders_info.proof.public_key == *self.shared_state.our_history.last_key()
+                    || *parsec_version <= self.consensus_engine.parsec_version()
+                {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::JoinRequest(req) => {
                 if !self.should_handle_join_request(our_id, req) {
                     // Note: We don't bounce this message because the current bounce-resend
@@ -587,21 +594,20 @@ impl Approved {
 
     pub fn handle_elders_update(
         &mut self,
-        _core: &mut Core,
-        _elders_info: Proven<EldersInfo>,
-        _parsec_version: u64,
+        core: &mut Core,
+        elders_info: Proven<EldersInfo>,
+        parsec_version: u64,
     ) -> Result<()> {
-        todo!()
-        // info!(
-        //     "Received EldersUpdate {{ elders_info: {:?}, parsec_version: {} }}",
-        //     elders_info, parsec_version
-        // );
+        info!(
+            "Received EldersUpdate {{ elders_info: {:?}, parsec_version: {} }}",
+            elders_info, parsec_version
+        );
 
-        // core.msg_filter.reset();
+        core.msg_filter.reset();
 
-        // self.shared_state = SharedState::new(elders_info);
-        // self.section_keys_provider = SectionKeysProvider::new(None);
-        // self.reset_parsec(core, genesis_prefix_info.parsec_version)
+        self.shared_state = SharedState::new(elders_info);
+        self.section_keys_provider = SectionKeysProvider::new(None);
+        self.reset_parsec(core, parsec_version)
     }
 
     pub fn handle_relocate(
@@ -1636,6 +1642,7 @@ impl Approved {
         }
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
+        self.send_elders_update(core);
 
         if !is_elder {
             info!("Demoted");
@@ -1863,6 +1870,18 @@ impl Approved {
                 }
             })
             .collect()
+    }
+
+    fn send_elders_update(&self, core: &mut Core) {
+        let variant = Variant::EldersUpdate {
+            elders_info: self.shared_state.sections.proven_our().clone(),
+            parsec_version: self.consensus_engine.parsec_version(),
+        };
+
+        for p2p_node in self.shared_state.adults_and_infants_p2p_nodes() {
+            trace!("Send {:?} to {:?}", variant, p2p_node);
+            core.send_direct_message(p2p_node.peer_addr(), variant.clone());
+        }
     }
 
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {
