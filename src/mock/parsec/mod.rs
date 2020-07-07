@@ -132,20 +132,6 @@ where
         });
     }
 
-    #[cfg(test)]
-    pub fn get_dkg_result_as(
-        &mut self,
-        participants: BTreeSet<S::PublicId>,
-        vote_id: &S,
-    ) -> DkgResult {
-        state::with(
-            self.section_hash,
-            |state: &mut SectionState<T, S::PublicId>| {
-                state.get_or_generate_keys(&mut self.rng, vote_id.public_id(), participants.clone())
-            },
-        )
-    }
-
     /// Add a gossip peer by force
     pub fn add_force_gossip_peer(&mut self, peer_id: &S::PublicId) {
         debug!(

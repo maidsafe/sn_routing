@@ -41,7 +41,11 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
+use crate::{
+    consensus::{ConsensusEngine, DkgResult},
+    messages::AccumulatingMessage,
+    section::SectionKeyShare,
+};
 #[cfg(feature = "mock_base")]
 use {crate::section::EldersInfo, std::collections::BTreeSet};
 
@@ -1103,6 +1107,19 @@ impl Node {
             stage.create_genesis_updates()
         } else {
             Vec::new()
+        }
+    }
+
+    // Simulate DKG completion
+    pub(crate) fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        dkg_result: &DkgResult,
+    ) -> Result<()> {
+        if let Some(stage) = self.stage.approved_mut() {
+            stage.handle_dkg_result_event(&mut self.core, participants, dkg_result)
+        } else {
+            Err(RoutingError::InvalidState)
         }
     }
 }

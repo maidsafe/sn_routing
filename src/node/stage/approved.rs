@@ -1199,7 +1199,7 @@ impl Approved {
         event: AccumulatingEvent,
         proof: Option<Proof>,
     ) -> Result<()> {
-        trace!("Handle accumulated event: {:?}", event);
+        debug!("Handle consensus on {:?}", event);
 
         match event {
             AccumulatingEvent::Genesis {
@@ -1241,6 +1241,8 @@ impl Approved {
         vote: Vote,
         proof: Proof,
     ) -> Result<()> {
+        debug!("Handle consensus on {:?}", vote);
+
         match vote {
             Vote::SectionInfo(elders_info) => {
                 match self.handle_section_info_event(core, elders_info.clone(), proof.clone()) {
@@ -1453,7 +1455,7 @@ impl Approved {
         }
     }
 
-    fn handle_dkg_result_event(
+    pub fn handle_dkg_result_event(
         &mut self,
         core: &mut Core,
         participants: &BTreeSet<PublicId>,

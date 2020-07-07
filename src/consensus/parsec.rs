@@ -18,8 +18,6 @@ use crate::{
 use crate::{crypto, mock::parsec as inner};
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
-#[cfg(all(test, feature = "mock"))]
-use std::collections::BTreeSet;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     env,
@@ -228,20 +226,6 @@ impl ParsecMap {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
             parsec.vote_for_as(obs, vote_id)
         }
-    }
-
-    // Enable test to simulate other members signing and getting the right pk_set
-    // TODO: remove this function as we no longer use parsec for DKG
-    #[cfg(all(test, feature = "mock"))]
-    pub fn get_dkg_result_as(
-        &mut self,
-        participants: BTreeSet<PublicId>,
-        vote_id: &FullId,
-    ) -> Option<parsec::DkgResult> {
-        if let Some(ref mut parsec) = self.map.values_mut().last() {
-            return Some(parsec.get_dkg_result_as(participants, vote_id));
-        }
-        None
     }
 
     pub fn last_version(&self) -> u64 {

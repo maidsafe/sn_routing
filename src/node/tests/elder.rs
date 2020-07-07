@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, ParsecRequest, Vote},
+    consensus::{self, AccumulatingEvent, DkgResult, ParsecRequest, Vote},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -26,13 +26,14 @@ use crate::{
 use itertools::Itertools;
 use mock_quic_p2p::Network;
 use rand::Rng;
-use std::{collections::BTreeSet, iter, net::SocketAddr};
+use std::{iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
 struct DkgToSectionInfo {
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elders_info: EldersInfo,
+    dkg_result: DkgResult,
 }
 
 struct Env {
@@ -213,6 +214,15 @@ impl Env {
                     .elders_info
                     .position(full_id.public_id().name())
                     .unwrap();
+                let pk = self.public_key_set.public_key();
+
+                info!(
+                    "Vote as {:?} for {:?} ({:?})",
+                    full_id.public_id(),
+                    vote,
+                    pk
+                );
+
                 let proof_share =
                     vote.prove(self.public_key_set.clone(), index, secret_key_share)?;
                 let variant = Variant::Vote {
@@ -222,7 +232,7 @@ impl Env {
                 let message = Message::single_src(
                     full_id,
                     DstLocation::Section(*full_id.public_id().name()),
-                    Some(self.public_key_set.public_key()),
+                    Some(pk),
                     variant,
                 )?;
 
@@ -246,41 +256,45 @@ impl Env {
     }
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
-        let participants: BTreeSet<_> = new_elders_info.elder_ids().copied().collect();
-        let parsec = self
-            .subject
-            .consensus_engine_mut()
-            .unwrap()
-            .parsec_map_mut();
+        let new_sk_set =
+            consensus::generate_secret_key_set(&mut self.rng, new_elders_info.elders.len());
+        let new_pk_set = new_sk_set.public_keys();
 
-        let dkg_results = self
+        let new_other_ids = self
             .other_ids
             .iter()
-            .map(|(full_id, _)| {
-                (
-                    full_id.clone(),
-                    parsec
-                        .get_dkg_result_as(participants.clone(), full_id)
-                        .expect("failed to get DKG result"),
-                )
+            .filter(|(full_id, _)| full_id.public_id().name() != self.subject.name())
+            .filter_map(|(full_id, _)| {
+                let index = new_elders_info.position(full_id.public_id().name())?;
+                Some((full_id, index))
             })
-            .collect_vec();
+            .map(|(full_id, index)| {
+                let sk_share = new_sk_set.secret_key_share(index);
+                (full_id.clone(), sk_share)
+            })
+            .collect();
 
-        let new_pk_set = dkg_results
-            .first()
-            .expect("no DKG results")
-            .1
-            .public_key_set
-            .clone();
-        let new_other_ids = dkg_results
-            .into_iter()
-            .filter_map(|(full_id, result)| (result.secret_key_share.map(|share| (full_id, share))))
-            .collect_vec();
+        let dkg_result = DkgResult {
+            public_key_set: new_pk_set.clone(),
+            secret_key_share: new_elders_info
+                .position(self.subject.name())
+                .map(|index| new_sk_set.secret_key_share(index)),
+        };
+
         DkgToSectionInfo {
             new_pk_set,
             new_other_ids,
             new_elders_info,
+            dkg_result,
         }
+    }
+
+    fn simulate_dkg(&mut self, new_info: &DkgToSectionInfo) -> Result<()> {
+        // TODO: verify that `subject` actually participated in the DKG
+        self.subject.handle_dkg_result_event(
+            &new_info.new_elders_info.elder_ids().copied().collect(),
+            &new_info.dkg_result,
+        )
     }
 
     fn accumulate_our_key_and_section_info_if_vote(
@@ -529,12 +543,13 @@ fn add_member() {
 }
 
 #[test]
-#[ignore] //FIXME DKG is no longer carried out by parsec
-fn add_member_and_promote() {
+#[ignore]
+fn add_and_promote_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let new_info = env.new_elders_info_with_candidate();
-    env.accumulate_online(env.candidate.clone());
 
+    env.accumulate_online(env.candidate.clone());
+    env.simulate_dkg(&new_info).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&new_info)
         .unwrap();
     env.accumulate_unconsensused_ordered_votes();

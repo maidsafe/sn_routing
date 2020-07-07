@@ -41,7 +41,8 @@ impl SectionProofChain {
         } else {
             log_or_panic!(
                 log::Level::Error,
-                "invalid SectionProofChain block signature"
+                "invalid SectionProofChain block signature (last key: {:?})",
+                self.last_key()
             )
         }
     }
