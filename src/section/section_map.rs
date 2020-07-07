@@ -347,9 +347,9 @@ mod tests {
     use super::*;
     use crate::{
         consensus,
-        id::FullId,
         location::DstLocation,
         rng::{self, MainRng},
+        section,
     };
     use rand::Rng;
 
@@ -613,23 +613,8 @@ mod tests {
         sk: &bls::SecretKey,
         prefix: Prefix,
     ) -> Proven<EldersInfo> {
-        let elders_info = gen_elders_info(rng, prefix);
+        let (elders_info, _) = section::gen_elders_info(rng, prefix, 5);
         consensus::test_utils::proven(sk, elders_info)
-    }
-
-    fn gen_elders_info(rng: &mut MainRng, prefix: Prefix) -> EldersInfo {
-        let sec_size = 5;
-        let members = (0..sec_size)
-            .map(|index| {
-                let pub_id = *FullId::within_range(rng, &prefix.range_inclusive()).public_id();
-                (
-                    *pub_id.name(),
-                    P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
-                )
-            })
-            .collect();
-
-        EldersInfo::new(members, prefix)
     }
 
     fn gen_key(rng: &mut MainRng) -> bls::PublicKey {

@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+#[cfg(test)]
+use crate::{id::FullId, rng::MainRng};
 use crate::{
     id::{P2pNode, PublicId},
     Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
@@ -81,4 +83,33 @@ impl Debug for EldersInfo {
 #[inline]
 pub const fn quorum_count(elder_size: usize) -> usize {
     1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
+}
+
+// Generate random `EldersInfo` for testing purposes.
+#[cfg(test)]
+pub(crate) fn gen_elders_info(
+    rng: &mut MainRng,
+    prefix: Prefix,
+    count: usize,
+) -> (EldersInfo, Vec<FullId>) {
+    use rand::Rng;
+    use std::net::SocketAddr;
+
+    fn gen_socket_addr(rng: &mut MainRng) -> SocketAddr {
+        let ip: [u8; 4] = rng.gen();
+        let port: u16 = rng.gen();
+        SocketAddr::from((ip, port))
+    }
+
+    let full_ids: Vec<_> = (0..count).map(|_| FullId::gen(rng)).collect();
+    let elders = full_ids
+        .iter()
+        .map(|full_id| {
+            let addr = gen_socket_addr(rng);
+            let p2p_node = P2pNode::new(*full_id.public_id(), addr);
+            (*p2p_node.public_id().name(), p2p_node)
+        })
+        .collect();
+
+    (EldersInfo::new(elders, prefix), full_ids)
 }
