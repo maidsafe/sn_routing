@@ -72,7 +72,9 @@ impl Bootstrapping {
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
-            | Variant::BouncedUntrustedMessage(_) => Ok(MessageStatus::Unknown),
+            | Variant::BouncedUntrustedMessage(_)
+            | Variant::DKGMessage { .. }
+            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
             | Variant::GenesisUpdate(_)

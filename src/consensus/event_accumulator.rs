@@ -119,14 +119,11 @@ impl EventAccumulator {
         proof_share: ProofShare,
         elders_info: &EldersInfo,
     ) -> Result<(AccumulatingEvent, Proof), AccumulationError> {
-        match &event {
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::DkgResult { .. } => panic!(
+        if let AccumulatingEvent::Genesis { .. } = event {
+            panic!(
                 "invalid event inserted into the event accumulator: {:?}",
                 event
-            ),
-            _ => (),
+            );
         }
 
         if self.accumulated_events.contains(&event) {
