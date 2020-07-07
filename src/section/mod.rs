@@ -18,6 +18,8 @@ mod section_proof_chain;
 mod section_update_barrier;
 mod shared_state;
 
+#[cfg(test)]
+pub(crate) use self::elders_info::gen_elders_info;
 pub(crate) use self::shared_state::{SharedState, UpdateSectionKnowledgeAction};
 pub use self::{
     elders_info::{quorum_count, EldersInfo},

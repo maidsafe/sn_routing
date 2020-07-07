@@ -92,3 +92,69 @@ impl<'a> Serialize for SignableView<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        consensus,
+        rng::{self, MainRng},
+        section,
+    };
+    use rand::Rng;
+    use std::fmt::Debug;
+
+    #[test]
+    fn serialize_for_signing() {
+        let mut rng = rng::new();
+
+        // Vote::SectionInfo
+        let elders_info = section::gen_elders_info(&mut rng, Default::default(), 4);
+        let vote = Vote::SectionInfo(elders_info.clone());
+        verify_serialize_for_signing(&vote, &elders_info);
+
+        // Vote::OurKey
+        let prefix = gen_prefix(&mut rng);
+        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let vote = Vote::OurKey { prefix, key };
+        verify_serialize_for_signing(&vote, &key);
+
+        // Vote::TheirKey
+        let prefix = gen_prefix(&mut rng);
+        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let vote = Vote::TheirKey { prefix, key };
+        verify_serialize_for_signing(&vote, &(prefix, key));
+
+        // Vote::TheirKnowledge
+        let prefix = gen_prefix(&mut rng);
+        let key_index = rng.gen();
+        let vote = Vote::TheirKnowledge { prefix, key_index };
+        verify_serialize_for_signing(&vote, &(prefix, key_index));
+    }
+
+    // Verify that `SignableView(vote)` serializes the same as `should_serialize_as`.
+    fn verify_serialize_for_signing<T>(vote: &Vote, should_serialize_as: &T)
+    where
+        T: Serialize + Debug,
+    {
+        let actual = bincode::serialize(&SignableView(vote)).unwrap();
+        let expected = bincode::serialize(should_serialize_as).unwrap();
+
+        assert_eq!(
+            actual, expected,
+            "expected SignableView({:?}) to serialize same as {:?}, but didn't",
+            vote, should_serialize_as
+        )
+    }
+
+    fn gen_prefix(rng: &mut MainRng) -> Prefix {
+        let mut prefix = Prefix::default();
+        let len = rng.gen_range(0, 5);
+
+        for _ in 0..len {
+            prefix = prefix.pushed(rng.gen());
+        }
+
+        prefix
+    }
+}
