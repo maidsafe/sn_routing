@@ -8,21 +8,20 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, GenesisPrefixInfo},
+    consensus,
     error::Result,
     id::FullId,
     location::DstLocation,
-    messages::{AccumulatingMessage, Message, PlainMessage, Variant},
+    messages::{AccumulatingMessage, EldersUpdate, Message, PlainMessage, Variant},
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
+    section::{self, EldersInfo, SectionProofChain, SharedState},
 };
 
 use mock_quic_p2p::Network;
 use rand::Rng;
-use std::{collections::BTreeMap, net::SocketAddr};
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 const ELDER_SIZE: usize = 3;
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
@@ -34,7 +33,9 @@ struct Env {
     rng: MainRng,
     network: Network,
     subject: Node,
-    elders: Vec<Elder>,
+    sk_set: bls::SecretKeySet,
+    elders_info: EldersInfo,
+    elder_full_ids: Vec<FullId>,
 }
 
 impl Env {
@@ -42,19 +43,12 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (elders_info, full_ids) =
-            test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
-        let elders = create_elders(&mut rng, elders_info.value.clone(), full_ids);
+        let (elders_info, elder_full_ids) =
+            section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
+        let sk_set = consensus::generate_secret_key_set(&mut rng, ELDER_SIZE);
 
-        let public_key_set = elders[0]
-            .section_keys_provider
-            .key_share()
-            .unwrap()
-            .public_key_set
-            .clone();
-        let public_key = public_key_set.public_key();
-
-        let shared_state = SharedState::new(elders_info, public_key);
+        let proven_elders_info = test_utils::create_proven(&sk_set, elders_info.clone());
+        let shared_state = SharedState::new(proven_elders_info);
 
         let (subject, ..) = Node::approved(
             NodeConfig {
@@ -70,7 +64,9 @@ impl Env {
             rng,
             network,
             subject,
-            elders,
+            sk_set,
+            elders_info,
+            elder_full_ids,
         }
     }
 
@@ -78,241 +74,163 @@ impl Env {
         self.network.poll(&mut self.rng)
     }
 
-    fn genesis_prefix_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
-        GenesisPrefixInfo {
-            elders_info: self.elders[0].state.sections.proven_our().clone(),
-            parsec_version,
-        }
-    }
-
-    fn perform_elders_change(&mut self) {
-        let elders_info = self.elders[0].state.our_info().clone();
-        let full_ids = self
+    // Create `MockTransport` for the `index`-th elder.
+    fn create_elder_transport(&self, index: usize) -> MockTransport {
+        let addr = self
+            .elders_info
             .elders
-            .drain(..)
-            .map(|elder| (*elder.full_id.public_id().name(), elder.full_id))
-            .collect();
-
-        self.elders = create_elders(&mut self.rng, elders_info, full_ids);
+            .get(self.elder_full_ids[index].public_id().name())
+            .map(|p2p_node| p2p_node.peer_addr());
+        MockTransport::new(addr)
     }
 
-    fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
-        for elder in &mut self.elders {
-            let msg = create_genesis_update_message_signature(
-                elder,
-                *self.subject.name(),
-                genesis_prefix_info.clone(),
-            )?;
+    fn send_elders_update(
+        &mut self,
+        parsec_version: u64,
+        proof_chain: SectionProofChain,
+    ) -> Result<()> {
+        let sender_full_id = &self.elder_full_ids[0];
+        let sender_addr = *self
+            .elders_info
+            .elders
+            .get(sender_full_id.public_id().name())
+            .unwrap()
+            .peer_addr();
 
-            test_utils::handle_message(&mut self.subject, *elder.addr(), msg)?;
-        }
+        let elders_info = test_utils::create_proven(&self.sk_set, self.elders_info.clone());
+        let elders_update = EldersUpdate {
+            elders_info,
+            parsec_version,
+        };
+        let variant = Variant::EldersUpdate(elders_update);
+        let message = Message::single_src(
+            sender_full_id,
+            DstLocation::Direct,
+            variant,
+            Some(proof_chain),
+            Some(self.public_key()),
+        )?;
 
-        Ok(())
+        test_utils::handle_message(&mut self.subject, sender_addr, message)
     }
 
     fn create_user_message(&self, dst: DstLocation, content: Vec<u8>) -> Message {
-        let msg = PlainMessage {
+        let pk_set = self.sk_set.public_keys();
+        let pk = pk_set.public_key();
+
+        let plain_msg = PlainMessage {
             src: Prefix::default(),
             dst,
-            dst_key: self.elders[0]
-                .section_keys_provider
-                .key_share()
-                .unwrap()
-                .public_key_set
-                .public_key(),
+            dst_key: pk,
             variant: Variant::UserMessage(content),
         };
-        self.accumulate_message(msg)
+
+        let proof_chain = SectionProofChain::new(pk);
+
+        test_utils::accumulate_messages((0..ELDER_SIZE).map(|index| {
+            let sk_share = self.sk_set.secret_key_share(index);
+            let proof_share = plain_msg.prove(pk_set.clone(), index, &sk_share).unwrap();
+            AccumulatingMessage::new(plain_msg.clone(), proof_chain.clone(), proof_share)
+        }))
     }
 
-    fn accumulate_message(&self, content: PlainMessage) -> Message {
-        test_utils::accumulate_messages(
-            self.elders
-                .iter()
-                .map(|elder| to_accumulating_message(elder, content.clone()).unwrap()),
-        )
+    fn public_key(&self) -> bls::PublicKey {
+        self.sk_set.public_keys().public_key()
     }
-}
-
-// Simplified representation of the section elder.
-struct Elder {
-    full_id: FullId,
-    state: SharedState,
-    section_keys_provider: SectionKeysProvider,
-    transport: MockTransport,
-}
-
-impl Elder {
-    fn addr(&self) -> &SocketAddr {
-        self.transport.addr()
-    }
-
-    fn received_messages(&self) -> impl Iterator<Item = (SocketAddr, Message)> + '_ {
-        self.transport.received_messages()
-    }
-}
-
-fn create_elders(
-    rng: &mut MainRng,
-    elders_info: EldersInfo,
-    full_ids: BTreeMap<XorName, FullId>,
-) -> Vec<Elder> {
-    let secret_key_set = consensus::generate_secret_key_set(rng, ELDER_SIZE);
-    let public_key_set = secret_key_set.public_keys();
-    let public_key = public_key_set.public_key();
-
-    let fake_prev_secret_key = consensus::test_utils::gen_secret_key(rng);
-    let elders_info = consensus::test_utils::proven(&fake_prev_secret_key, elders_info);
-
-    let genesis_prefix_info = GenesisPrefixInfo {
-        elders_info,
-        parsec_version: 0,
-    };
-
-    full_ids
-        .into_iter()
-        .enumerate()
-        .map(|(index, (_, full_id))| {
-            let state = SharedState::new(genesis_prefix_info.elders_info.clone(), public_key);
-
-            let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare {
-                public_key_set: public_key_set.clone(),
-                index,
-                secret_key_share: secret_key_set.secret_key_share(index),
-            }));
-
-            let addr = genesis_prefix_info
-                .elders_info
-                .value
-                .elders
-                .get(full_id.public_id().name())
-                .map(|p2p_node| p2p_node.peer_addr());
-            let transport = MockTransport::new(addr);
-
-            Elder {
-                full_id,
-                state,
-                section_keys_provider,
-                transport,
-            }
-        })
-        .collect()
-}
-
-fn create_genesis_update_message_signature(
-    sender: &Elder,
-    dst: XorName,
-    genesis_prefix_info: GenesisPrefixInfo,
-) -> Result<Message> {
-    let msg = create_genesis_update_accumulating_message(sender, dst, genesis_prefix_info)?;
-    to_message_signature(&sender.full_id, msg)
-}
-
-fn create_genesis_update_accumulating_message(
-    sender: &Elder,
-    dst: XorName,
-    genesis_prefix_info: GenesisPrefixInfo,
-) -> Result<AccumulatingMessage> {
-    let content = PlainMessage {
-        src: Prefix::default(),
-        dst: DstLocation::Node(dst),
-        dst_key: sender
-            .section_keys_provider
-            .key_share()
-            .unwrap()
-            .public_key_set
-            .public_key(),
-        variant: Variant::GenesisUpdate(genesis_prefix_info),
-    };
-
-    to_accumulating_message(sender, content)
-}
-
-fn to_accumulating_message(sender: &Elder, content: PlainMessage) -> Result<AccumulatingMessage> {
-    let key_share = sender.section_keys_provider.key_share().unwrap();
-    let proof_chain = sender.state.prove(&content.dst, None);
-    let proof_share = content.prove(
-        key_share.public_key_set.clone(),
-        key_share.index,
-        &key_share.secret_key_share,
-    )?;
-
-    Ok(AccumulatingMessage::new(content, proof_chain, proof_share))
-}
-
-fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<Message> {
-    let variant = Variant::MessageSignature(Box::new(msg));
-    Ok(Message::single_src(
-        sender_id,
-        DstLocation::Direct,
-        None,
-        variant,
-    )?)
 }
 
 #[test]
-#[ignore] //FIXME Need to carry out DKG votes to make parsec updated
-fn handle_genesis_update_on_parsec_prune() {
+fn handle_elders_update_on_parsec_prune() {
     let mut env = Env::new();
+
     assert_eq!(env.subject.parsec_last_version(), 0);
 
-    let genesis_prefix_info = env.genesis_prefix_info(1);
-    env.handle_genesis_update(genesis_prefix_info).unwrap();
+    env.send_elders_update(1, SectionProofChain::new(env.public_key()))
+        .unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
 
 #[test]
-#[ignore] //FIXME Need to carry out DKG votes to make parsec updated
-fn handle_genesis_update_ignore_old_vesions() {
+fn handle_elders_update_on_elders_change() {
     let mut env = Env::new();
 
-    let genesis_prefix_info_1 = env.genesis_prefix_info(1);
-    let genesis_prefix_info_2 = env.genesis_prefix_info(2);
+    let old_pk = env.subject.section_key().copied();
 
-    env.handle_genesis_update(genesis_prefix_info_1.clone())
+    let mut proof_chain = SectionProofChain::new(env.public_key());
+
+    let new_sk_set = consensus::generate_secret_key_set(&mut env.rng, ELDER_SIZE);
+    let new_pk = new_sk_set.public_keys().public_key();
+
+    let new_pk_proof = test_utils::create_proof(&env.sk_set, &new_pk);
+    proof_chain.push(new_pk, new_pk_proof.signature);
+
+    env.sk_set = new_sk_set;
+    env.send_elders_update(1, proof_chain).unwrap();
+
+    assert_eq!(env.subject.parsec_last_version(), 1);
+    assert_ne!(env.subject.section_key(), old_pk.as_ref());
+    assert_eq!(env.subject.section_key(), Some(&new_pk));
+}
+
+#[test]
+fn handle_elders_update_ignore_old_parsec_vesions() {
+    let mut env = Env::new();
+
+    let proof_chain = SectionProofChain::new(env.public_key());
+
+    env.send_elders_update(1, proof_chain.clone()).unwrap();
+    assert_eq!(env.subject.parsec_last_version(), 1);
+
+    env.send_elders_update(2, proof_chain.clone()).unwrap();
+    assert_eq!(env.subject.parsec_last_version(), 2);
+
+    env.send_elders_update(1, proof_chain).unwrap();
+    assert_eq!(env.subject.parsec_last_version(), 2);
+}
+
+#[test]
+fn handle_elders_update_allow_skipped_parsec_versions() {
+    let mut env = Env::new();
+
+    assert_eq!(env.subject.parsec_last_version(), 0);
+
+    env.send_elders_update(2, SectionProofChain::new(env.public_key()))
         .unwrap();
-    env.handle_genesis_update(genesis_prefix_info_2).unwrap();
-    assert_eq!(env.subject.parsec_last_version(), 2);
-
-    env.handle_genesis_update(genesis_prefix_info_1).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 2);
 }
 
 #[test]
-#[ignore] //FIXME Need to carry out DKG votes to make parsec updated
-fn handle_genesis_update_allow_skipped_versions() {
+fn untrusted_elders_update() {
     let mut env = Env::new();
-    assert_eq!(env.subject.parsec_last_version(), 0);
 
-    let genesis_prefix_info = env.genesis_prefix_info(2);
-    env.handle_genesis_update(genesis_prefix_info).unwrap();
-    assert_eq!(env.subject.parsec_last_version(), 2);
+    assert_eq!(env.subject.parsec_last_version(), 0);
+    let old_pk = env.subject.section_key().copied();
+
+    let new_sk_set = consensus::generate_secret_key_set(&mut env.rng, ELDER_SIZE);
+    let new_pk = new_sk_set.public_keys().public_key();
+
+    env.sk_set = new_sk_set;
+    env.send_elders_update(1, SectionProofChain::new(new_pk))
+        .unwrap();
+
+    assert_eq!(env.subject.parsec_last_version(), 0);
+    assert_eq!(env.subject.section_key(), old_pk.as_ref());
 }
 
 #[test]
-fn genesis_update_message_proof_too_new() {
-    let mut env = Env::new();
-    env.perform_elders_change();
-
-    let genesis_prefix_info = env.genesis_prefix_info(1);
-    env.handle_genesis_update(genesis_prefix_info).unwrap();
-
-    // The GenesisUpdate message is bounced so nothing is updated yet.
-    assert_eq!(env.subject.parsec_last_version(), 0);
-}
-
-#[test]
-#[ignore] //FIXME No more StartDkg message, hence no BouncedUnknownMessage
 fn handle_unknown_message() {
     let mut env = Env::new();
 
+    // adults can't handle messages addressed to sections.
     let dst = DstLocation::Section(env.rng.gen());
     let msg = env.create_user_message(dst, b"hello section".to_vec());
-    test_utils::handle_message(&mut env.subject, *env.elders[0].addr(), msg).unwrap();
+    let transport = env.create_elder_transport(0);
+
+    test_utils::handle_message(&mut env.subject, *transport.addr(), msg).unwrap();
 
     env.poll();
 
-    for (sender, msg) in env.elders[0].received_messages() {
+    for (sender, msg) in transport.received_messages() {
         if sender == env.subject.our_connection_info().unwrap()
             && matches!(msg.variant(), Variant::BouncedUnknownMessage { .. })
         {
@@ -328,40 +246,18 @@ fn handle_untrusted_accumulated_message() {
     let mut env = Env::new();
 
     // Generate new section key which the adult is not yet aware of.
-    env.perform_elders_change();
+    env.sk_set = consensus::generate_secret_key_set(&mut env.rng, ELDER_SIZE);
 
     // This message is signed with the new key so won't be trusted by the adult yet.
     let dst = DstLocation::Node(*env.subject.name());
     let msg = env.create_user_message(dst, b"hello node".to_vec());
-    test_utils::handle_message(&mut env.subject, *env.elders[0].addr(), msg).unwrap();
+    let transport = env.create_elder_transport(0);
+
+    test_utils::handle_message(&mut env.subject, *transport.addr(), msg).unwrap();
 
     env.poll();
 
-    for (sender, msg) in env.elders[0].received_messages() {
-        if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
-        {
-            return;
-        }
-    }
-
-    panic!("BouncedUntrustedMessage not received")
-}
-
-#[test]
-#[ignore] //FIXME No more StartDkg message, hence no BouncedUntrustedMessage
-fn handle_untrusted_accumulating_message() {
-    let mut env = Env::new();
-    env.perform_elders_change();
-
-    // The GenesisUpdate message is accumulated at destination and so is received as a series of
-    // `MessageSignature`s.
-    let genesis_prefix_info = env.genesis_prefix_info(1);
-    env.handle_genesis_update(genesis_prefix_info).unwrap();
-
-    env.poll();
-
-    for (sender, msg) in env.elders[0].received_messages() {
+    for (sender, msg) in transport.received_messages() {
         if sender == env.subject.our_connection_info().unwrap()
             && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
         {

@@ -18,6 +18,8 @@ mod section_proof_chain;
 mod section_update_barrier;
 mod shared_state;
 
+#[cfg(test)]
+pub(crate) use self::elders_info::gen_elders_info;
 pub use self::{
     elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
@@ -25,7 +27,7 @@ pub use self::{
     section_keys::{SectionKeyShare, SectionKeysProvider},
     section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
-    section_proof_chain::{SectionProofChain, TrustStatus},
+    section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
     section_update_barrier::{SectionUpdateBarrier, SectionUpdateDetails},
     shared_state::SharedState,
 };

@@ -11,6 +11,7 @@ use std::{
     cmp::Ordering,
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
+    hash::{Hash, Hasher},
     iter::FromIterator,
 };
 use xor_name::{Prefix, XorName};
@@ -28,7 +29,7 @@ use xor_name::{Prefix, XorName};
 /// 3. It provides some additional lookup API for convenience (`get_equal_or_ancestor`,
 ///    `get_matching`, ...)
 ///
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct PrefixMap<T>(BTreeSet<Entry<T>>)
 where
     T: Borrow<Prefix>;
@@ -173,6 +174,35 @@ where
         })
     }
 }
+
+// Need to impl this manually, because the derived one would use `PartialEq` of `Entry` which
+// compares only the prefixes.
+impl<T> PartialEq for PrefixMap<T>
+where
+    T: Borrow<Prefix> + PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self
+                .0
+                .iter()
+                .zip(other.0.iter())
+                .all(|(lhs, rhs)| lhs.0 == rhs.0)
+    }
+}
+
+impl<T> Hash for PrefixMap<T>
+where
+    T: Borrow<Prefix> + Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for entry in &self.0 {
+            entry.0.hash(state)
+        }
+    }
+}
+
+impl<T> Eq for PrefixMap<T> where T: Borrow<Prefix> + Eq {}
 
 impl<T> From<PrefixMap<T>> for BTreeSet<T>
 where

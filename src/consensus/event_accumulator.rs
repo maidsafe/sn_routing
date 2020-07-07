@@ -245,17 +245,16 @@ pub(crate) struct RemainingEvents {
 mod test {
     use super::*;
     use crate::{
-        id::{FullId, P2pNode},
         rng::{self, MainRng},
-        ELDER_SIZE,
+        section, ELDER_SIZE,
     };
     use rand::{distributions::Standard, seq::IteratorRandom, Rng};
-    use std::{iter, net::SocketAddr};
+    use std::iter;
 
     #[test]
     fn insert() {
         let mut rng = rng::new();
-        let elders_info = gen_elders_info(&mut rng);
+        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
@@ -300,7 +299,7 @@ mod test {
     #[test]
     fn reset() {
         let mut rng = rng::new();
-        let elders_info = gen_elders_info(&mut rng);
+        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let mut accumulator = EventAccumulator::default();
@@ -345,7 +344,7 @@ mod test {
     fn tracking_responsiveness() {
         let mut rng = rng::new();
 
-        let elders_info = gen_elders_info(&mut rng);
+        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
         let sk_set = bls::SecretKeySet::random(3, &mut rng);
 
         let unresponsive_node = elders_info.elders.keys().choose(&mut rng).unwrap();
@@ -374,25 +373,6 @@ mod test {
             .map(|id| *id.name())
             .collect();
         assert_eq!(detected, expected);
-    }
-
-    fn gen_elders_info(rng: &mut MainRng) -> EldersInfo {
-        let elders = (0..ELDER_SIZE)
-            .map(|_| {
-                let full_id = FullId::gen(rng);
-                let addr = gen_socket_addr(rng);
-                let p2p_node = P2pNode::new(*full_id.public_id(), addr);
-                (*p2p_node.public_id().name(), p2p_node)
-            })
-            .collect();
-
-        EldersInfo::new(elders, Default::default())
-    }
-
-    fn gen_socket_addr(rng: &mut MainRng) -> SocketAddr {
-        let ip: [u8; 4] = rng.gen();
-        let port: u16 = rng.gen();
-        SocketAddr::from((ip, port))
     }
 
     fn gen_event(rng: &mut MainRng) -> AccumulatingEvent {

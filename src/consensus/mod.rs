@@ -8,7 +8,6 @@
 
 mod dkg;
 mod event_accumulator;
-mod genesis_prefix_info;
 mod network_event;
 mod parsec;
 mod proven;
@@ -17,7 +16,6 @@ pub mod test_utils;
 
 pub use self::{
     dkg::{generate_secret_key_set, threshold_count, DkgResult, DkgVoter},
-    genesis_prefix_info::GenesisPrefixInfo,
     network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
         Block, CreateGossipError, Observation, ParsecNetworkEvent, Request as ParsecRequest,

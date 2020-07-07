@@ -30,6 +30,12 @@ impl<T: Serialize> Proven<T> {
             false
         }
     }
+
+    pub fn self_verify(&self) -> bool {
+        bincode::serialize(&self.value)
+            .map(|bytes| self.proof.verify(&bytes))
+            .unwrap_or(false)
+    }
 }
 
 impl<T> Borrow<Prefix> for Proven<T>
