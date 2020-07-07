@@ -205,6 +205,8 @@ impl Approved {
     // Cast a vote that doesn't need total order, only section consensus.
     #[allow(unused)]
     pub fn cast_unordered_vote(&mut self, core: &mut Core, vote: Vote) -> Result<()> {
+        trace!("Vote for {:?}", vote);
+
         let key_share = self.section_keys_provider.key_share()?;
         let proof_share = vote.prove(
             key_share.public_key_set.clone(),

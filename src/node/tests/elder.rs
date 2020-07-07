@@ -428,6 +428,7 @@ impl Env {
             .new_elders_info_after_offline_and_promote(&dropped_elder_name, promoted_adult_node);
 
         self.accumulate_offline(dropped_elder_name);
+        self.simulate_dkg(&new_info)?;
         self.accumulate_our_key_and_section_info_if_vote(&new_info)?;
         self.accumulate_unconsensused_ordered_votes();
 
@@ -543,7 +544,6 @@ fn add_member() {
 }
 
 #[test]
-#[ignore]
 fn add_and_promote_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let new_info = env.new_elders_info_with_candidate();
@@ -560,11 +560,11 @@ fn add_and_promote_member() {
 }
 
 #[test]
-#[ignore] //FIXME DKG is no longer carried out by parsec
 fn remove_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
+    env.simulate_dkg(&info1).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info1)
         .unwrap();
     env.accumulate_unconsensused_ordered_votes();
@@ -581,11 +581,11 @@ fn remove_member() {
 }
 
 #[test]
-#[ignore] //FIXME DKG is no longer carried out by parsec
 fn remove_elder() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let info1 = env.new_elders_info_with_candidate();
     env.accumulate_online(env.candidate.clone());
+    env.simulate_dkg(&info1).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info1)
         .unwrap();
     env.accumulate_unconsensused_ordered_votes();
@@ -597,6 +597,7 @@ fn remove_elder() {
     env.public_key_set = info1.new_pk_set;
 
     env.accumulate_offline(*env.candidate.name());
+    env.simulate_dkg(&info2).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info2)
         .unwrap();
     env.accumulate_unconsensused_ordered_votes();
@@ -625,7 +626,6 @@ fn handle_bootstrap() {
 }
 
 #[test]
-#[ignore] //FIXME DKG is no longer carried out by parsec
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 
@@ -697,7 +697,6 @@ fn handle_bounced_unknown_message() {
 }
 
 #[test]
-#[ignore] //FIXME Any message invalidly signed will not deserialise / be created
 fn handle_bounced_untrusted_message() {
     let mut env = Env::new(ELDER_SIZE);
     let old_section_key = *env.subject.section_key().expect("subject is not approved");
@@ -737,7 +736,7 @@ fn handle_bounced_untrusted_message() {
         })
         .expect("message was not resent");
 
-    assert!(proof_chain.has_key(&old_section_key)); // FIXME Why does this fail!
+    assert!(proof_chain.has_key(&old_section_key));
     assert!(proof_chain.has_key(&new_section_key));
 }
 
