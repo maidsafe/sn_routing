@@ -735,26 +735,26 @@ impl Node {
                 ),
                 Variant::DKGMessage {
                     participants,
-                    parsec_version,
+                    section_key_index,
                     message,
                 } => {
                     stage.handle_dkg_message(
                         &mut self.core,
                         participants.clone(),
-                        *parsec_version,
+                        *section_key_index,
                         message.clone(),
                         *msg.src().as_node()?,
                     )?;
                 }
                 Variant::DKGOldElders {
                     participants,
-                    parsec_version,
+                    section_key_index,
                     public_key_set,
                 } => {
                     stage.handle_dkg_old_elders(
                         &self.core,
                         participants.clone(),
-                        *parsec_version,
+                        *section_key_index,
                         public_key_set.clone(),
                         *msg.src().as_node()?,
                     )?;

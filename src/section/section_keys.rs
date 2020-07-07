@@ -94,4 +94,12 @@ impl SectionKeysProvider {
 
         Ok(())
     }
+
+    pub fn has_dkg(&self, participants: &BTreeSet<PublicId>) -> bool {
+        if let Some(first) = participants.iter().next() {
+            self.new.contains_key(first.name())
+        } else {
+            false
+        }
+    }
 }
