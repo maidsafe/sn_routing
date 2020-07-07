@@ -21,7 +21,7 @@ use crate::{
         member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain, SharedState,
         MIN_AGE,
     },
-    utils, ELDER_SIZE,
+    ELDER_SIZE,
 };
 use itertools::Itertools;
 use mock_quic_p2p::Network;
@@ -566,6 +566,7 @@ fn handle_bootstrap() {
     }
 }
 
+/*
 #[test]
 #[ignore] //FIXME DKG is no longer carried out by parsec
 fn send_genesis_update() {
@@ -594,6 +595,7 @@ fn send_genesis_update() {
     assert!(proof_chain.has_key(&old_section_key));
     assert!(proof_chain.has_key(&new_section_key));
 }
+*/
 
 #[test]
 fn handle_bounced_unknown_message() {

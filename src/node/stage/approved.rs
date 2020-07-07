@@ -338,17 +338,8 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::GenesisUpdate(info) => {
-                if !self.should_handle_genesis_update(our_id, info) {
-                    return Ok(MessageStatus::Useless);
-                }
-            }
-            Variant::EldersUpdate {
-                elders_info,
-                parsec_version,
-            } => {
+            Variant::EldersUpdate { parsec_version, .. } => {
                 if self.is_our_elder(our_id)
-                    || elders_info.proof.public_key == *self.shared_state.our_history.last_key()
                     || *parsec_version <= self.consensus_engine.parsec_version()
                 {
                     return Ok(MessageStatus::Useless);
@@ -392,16 +383,6 @@ impl Approved {
         } else {
             Ok(MessageStatus::Useless)
         }
-    }
-
-    // Ignore stale GenesisUpdates
-    fn should_handle_genesis_update(
-        &self,
-        our_id: &PublicId,
-        genesis_prefix_info: &GenesisPrefixInfo,
-    ) -> bool {
-        !self.is_our_elder(our_id)
-            && genesis_prefix_info.parsec_version > self.consensus_engine.parsec_version()
     }
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
@@ -576,20 +557,6 @@ impl Approved {
         {
             self.vote_for_event(AccumulatingEvent::SectionInfo(elders_info));
         }
-    }
-
-    pub fn handle_genesis_update(
-        &mut self,
-        core: &mut Core,
-        genesis_prefix_info: GenesisPrefixInfo,
-    ) -> Result<()> {
-        info!("Received GenesisUpdate: {:?}", genesis_prefix_info);
-
-        core.msg_filter.reset();
-
-        self.shared_state = SharedState::new(genesis_prefix_info.elders_info);
-        self.section_keys_provider = SectionKeysProvider::new(None);
-        self.reset_parsec(core, genesis_prefix_info.parsec_version)
     }
 
     pub fn handle_elders_update(
@@ -1578,7 +1545,7 @@ impl Approved {
         info!("handle ParsecPrune");
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-        self.send_genesis_updates(core);
+        self.send_elders_update(core);
         self.send_parsec_poke(core);
         Ok(())
     }
@@ -1661,9 +1628,7 @@ impl Approved {
             })
         }
 
-        self.send_genesis_updates(core);
         self.send_parsec_poke(core);
-
         self.print_network_stats();
 
         if !was_elder {
@@ -1831,45 +1796,6 @@ impl Approved {
         if let Err(error) = self.send_routing_message(core, src, dst, variant, their_knowledge) {
             debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
         }
-    }
-
-    // Send `GenesisUpdate` message to all non-elders.
-    fn send_genesis_updates(&mut self, core: &mut Core) {
-        for (recipient, msg) in self.create_genesis_updates() {
-            trace!("Send {:?} to {}", msg.content, recipient);
-
-            core.send_direct_message(
-                recipient.peer_addr(),
-                Variant::MessageSignature(Box::new(msg)),
-            );
-        }
-    }
-
-    // TODO: make non-pub
-    pub fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let genesis_prefix_info = self.create_genesis_prefix_info();
-
-        self.shared_state
-            .adults_and_infants_p2p_nodes()
-            .cloned()
-            .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(genesis_prefix_info.clone());
-                let dst = DstLocation::Node(*recipient.name());
-                let proof_start_index = self
-                    .shared_state
-                    .our_history
-                    .last_key_index()
-                    .saturating_sub(1);
-
-                match self.to_accumulating_message(dst, variant, Some(proof_start_index)) {
-                    Ok(msg) => Some((recipient, msg)),
-                    Err(error) => {
-                        error!("Failed to create signed message: {:?}", error);
-                        None
-                    }
-                }
-            })
-            .collect()
     }
 
     fn send_elders_update(&self, core: &mut Core) {

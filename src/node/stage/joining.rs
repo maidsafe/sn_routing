@@ -96,7 +96,6 @@ impl Joining {
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
-            | Variant::GenesisUpdate(_)
             | Variant::EldersUpdate { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)

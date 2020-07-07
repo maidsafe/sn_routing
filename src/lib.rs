@@ -149,7 +149,6 @@ mod section;
 mod time;
 mod timer;
 mod transport;
-mod utils;
 
 // Cryptography
 #[cfg(not(feature = "mock_base"))]

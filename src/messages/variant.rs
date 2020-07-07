@@ -41,8 +41,6 @@ pub enum Variant {
     /// Approves the joining node as a routing node.
     /// Section X -> Node joining X
     NodeApproval(GenesisPrefixInfo),
-    /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(GenesisPrefixInfo),
     /// Message sent to non-elders to update them about the current section elders.
     EldersUpdate {
         elders_info: Proven<EldersInfo>,
@@ -115,7 +113,6 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
             Self::EldersUpdate {
                 elders_info,
                 parsec_version,

@@ -41,7 +41,7 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
+use crate::{consensus::ConsensusEngine, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
 use {crate::section::EldersInfo, std::collections::BTreeSet};
 
@@ -656,9 +656,6 @@ impl Node {
                     let src_key = *msg.src().as_section_key()?;
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
-                Variant::GenesisUpdate(info) => {
-                    stage.handle_genesis_update(&mut self.core, info.clone())?;
-                }
                 Variant::EldersUpdate {
                     elders_info,
                     parsec_version,
@@ -1102,14 +1099,6 @@ impl Node {
             Ok(&mut stage.consensus_engine)
         } else {
             Err(RoutingError::InvalidState)
-        }
-    }
-
-    pub(crate) fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        if let Some(stage) = self.stage.approved() {
-            stage.create_genesis_updates()
-        } else {
-            Vec::new()
         }
     }
 }

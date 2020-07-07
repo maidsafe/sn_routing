@@ -77,7 +77,6 @@ impl Bootstrapping {
             | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
-            | Variant::GenesisUpdate(_)
             | Variant::EldersUpdate { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
