@@ -656,15 +656,8 @@ impl Node {
                     let src_key = *msg.src().as_section_key()?;
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
-                Variant::EldersUpdate {
-                    elders_info,
-                    parsec_version,
-                } => {
-                    stage.handle_elders_update(
-                        &mut self.core,
-                        elders_info.clone(),
-                        *parsec_version,
-                    )?;
+                Variant::EldersUpdate(payload) => {
+                    stage.handle_elders_update(&mut self.core, payload.clone())?;
                 }
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;

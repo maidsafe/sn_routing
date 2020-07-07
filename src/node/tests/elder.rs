@@ -18,8 +18,8 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{
-        member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain, SharedState,
-        MIN_AGE,
+        self, member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain,
+        SharedState, MIN_AGE,
     },
     ELDER_SIZE,
 };
@@ -55,7 +55,8 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
+        let (elders_info, full_ids) =
+            section::gen_elders_info(&mut rng, Default::default(), sec_size);
 
         let sk_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
         let pk_set = sk_set.public_keys();
@@ -65,7 +66,7 @@ impl Env {
         let mut full_and_bls_ids = full_ids
             .into_iter()
             .enumerate()
-            .map(|(idx, (_, full_id))| (full_id, sk_set.secret_key_share(idx)))
+            .map(|(idx, full_id)| (full_id, sk_set.secret_key_share(idx)))
             .collect_vec();
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);

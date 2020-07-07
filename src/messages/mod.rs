@@ -12,6 +12,7 @@ mod message_accumulator;
 mod src_authority;
 mod variant;
 
+pub(crate) use self::variant::EldersUpdate;
 pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     hash::MessageHash,

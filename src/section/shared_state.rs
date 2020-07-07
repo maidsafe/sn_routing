@@ -80,9 +80,21 @@ impl SharedState {
         *self = Self::new(elders_info);
     }
 
-    /// Returns our own current section info.
+    /// Returns our own current elders info.
     pub fn our_info(&self) -> &EldersInfo {
         self.sections.our()
+    }
+
+    /// Returns the index of the key used to sign our current elders info.
+    pub fn our_info_key_index(&self) -> u64 {
+        if let Some(index) = self
+            .our_history
+            .index_of(&self.sections.proven_our().proof.public_key)
+        {
+            index
+        } else {
+            unreachable!("our current EldersInfo signed with unknown key")
+        }
     }
 
     /// Returns our own current section's prefix.

@@ -8,10 +8,10 @@
 
 use super::{AccumulatingMessage, Message, MessageHash};
 use crate::{
-    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proven},
+    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::EldersInfo,
+    section::{EldersInfo, SectionProofChain},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -42,11 +42,7 @@ pub enum Variant {
     /// Section X -> Node joining X
     NodeApproval(GenesisPrefixInfo),
     /// Message sent to non-elders to update them about the current section elders.
-    EldersUpdate {
-        elders_info: Proven<EldersInfo>,
-        // TODO: this should be `Proven` too.
-        parsec_version: u64,
-    },
+    EldersUpdate(EldersUpdate),
     /// Send from a section to the node being relocated.
     Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
@@ -113,14 +109,7 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::EldersUpdate {
-                elders_info,
-                parsec_version,
-            } => f
-                .debug_struct("EldersUpdate")
-                .field("elders_info", elders_info)
-                .field("parsec_version", parsec_version)
-                .finish(),
+            Self::EldersUpdate(payload) => write!(f, "EldersUpdate({:?})", payload),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
@@ -201,6 +190,69 @@ impl Debug for JoinRequest {
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
             )
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct EldersUpdate {
+    elders_info: EldersInfo,
+    elders_info_signature: bls::Signature,
+    proof_chain: SectionProofChain,
+
+    // TODO: this should have signature too.
+    parsec_version: u64,
+}
+
+impl EldersUpdate {
+    // Creates new `EldersUpdate`.
+    //
+    // # Panics
+    //
+    // Panics if `elders_info` is not signed with the last key of `proof_chain`.
+    pub fn new(
+        elders_info: Proven<EldersInfo>,
+        parsec_version: u64,
+        proof_chain: SectionProofChain,
+    ) -> Self {
+        assert_eq!(
+            elders_info.proof.public_key,
+            *proof_chain.last_key(),
+            "the key that elders_info is signed with ({:?}) is different from the last key of \
+             proof_chain ({:?})",
+            elders_info.proof.public_key,
+            proof_chain.last_key(),
+        );
+
+        Self {
+            elders_info: elders_info.value,
+            elders_info_signature: elders_info.proof.signature,
+            proof_chain,
+            parsec_version,
+        }
+    }
+
+    pub fn parsec_version(&self) -> u64 {
+        self.parsec_version
+    }
+
+    pub fn into_proven_elders_info(self) -> Proven<EldersInfo> {
+        let proof = Proof {
+            public_key: *self.proof_chain.last_key(),
+            signature: self.elders_info_signature,
+        };
+
+        Proven::new(self.elders_info, proof)
+    }
+}
+
+impl Debug for EldersUpdate {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("EldersUpdate")
+            .field("elders_info", &self.elders_info)
+            .field("public_key", self.proof_chain.last_key())
+            .field("parsec_version", &self.parsec_version)
             .finish()
     }
 }

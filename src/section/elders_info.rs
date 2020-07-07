@@ -101,7 +101,9 @@ pub(crate) fn gen_elders_info(
         SocketAddr::from((ip, port))
     }
 
-    let full_ids: Vec<_> = (0..count).map(|_| FullId::gen(rng)).collect();
+    let mut full_ids: Vec<_> = (0..count).map(|_| FullId::gen(rng)).collect();
+    full_ids.sort_by(|lhs, rhs| lhs.public_id().name().cmp(rhs.public_id().name()));
+
     let elders = full_ids
         .iter()
         .map(|full_id| {

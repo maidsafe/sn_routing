@@ -18,8 +18,8 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{
-        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageAccumulator,
-        MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
+        self, AccumulatingMessage, BootstrapResponse, EldersUpdate, JoinRequest, Message,
+        MessageAccumulator, MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -338,9 +338,9 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::EldersUpdate { parsec_version, .. } => {
+            Variant::EldersUpdate(payload) => {
                 if self.is_our_elder(our_id)
-                    || *parsec_version <= self.consensus_engine.parsec_version()
+                    || payload.parsec_version() <= self.consensus_engine.parsec_version()
                 {
                     return Ok(MessageStatus::Useless);
                 }
@@ -559,18 +559,13 @@ impl Approved {
         }
     }
 
-    pub fn handle_elders_update(
-        &mut self,
-        core: &mut Core,
-        elders_info: Proven<EldersInfo>,
-        parsec_version: u64,
-    ) -> Result<()> {
-        info!(
-            "Received EldersUpdate {{ elders_info: {:?}, parsec_version: {} }}",
-            elders_info, parsec_version
-        );
+    pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
+        info!("Received {:?}", payload);
 
         core.msg_filter.reset();
+
+        let parsec_version = payload.parsec_version();
+        let elders_info = payload.into_proven_elders_info();
 
         self.shared_state = SharedState::new(elders_info);
         self.section_keys_provider = SectionKeysProvider::new(None);
@@ -1799,10 +1794,17 @@ impl Approved {
     }
 
     fn send_elders_update(&self, core: &mut Core) {
-        let variant = Variant::EldersUpdate {
-            elders_info: self.shared_state.sections.proven_our().clone(),
-            parsec_version: self.consensus_engine.parsec_version(),
-        };
+        let last_key_index = self.shared_state.our_info_key_index();
+        let first_key_index = last_key_index.saturating_sub(1);
+
+        let elders_update = EldersUpdate::new(
+            self.shared_state.sections.proven_our().clone(),
+            self.consensus_engine.parsec_version(),
+            self.shared_state
+                .our_history
+                .slice(first_key_index..=last_key_index),
+        );
+        let variant = Variant::EldersUpdate(elders_update);
 
         for p2p_node in self.shared_state.adults_and_infants_p2p_nodes() {
             trace!("Send {:?} to {:?}", variant, p2p_node);
