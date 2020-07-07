@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, Message, MessageHash};
 use crate::{
-    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
+    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proven},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
@@ -43,6 +43,12 @@ pub enum Variant {
     NodeApproval(GenesisPrefixInfo),
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(GenesisPrefixInfo),
+    /// Message sent to non-elders to update them about the current section elders.
+    EldersUpdate {
+        elders_info: Proven<EldersInfo>,
+        // TODO: this should be `Proven` too.
+        parsec_version: u64,
+    },
     /// Send from a section to the node being relocated.
     Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
@@ -110,6 +116,14 @@ impl Debug for Variant {
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
+            Self::EldersUpdate {
+                elders_info,
+                parsec_version,
+            } => f
+                .debug_struct("EldersUpdate")
+                .field("elders_info", elders_info)
+                .field("parsec_version", parsec_version)
+                .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),

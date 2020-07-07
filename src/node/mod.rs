@@ -666,6 +666,16 @@ impl Node {
                     let section_key = *msg.src().as_section_key()?;
                     stage.handle_genesis_update(&mut self.core, info.clone(), section_key)?;
                 }
+                Variant::EldersUpdate {
+                    elders_info,
+                    parsec_version,
+                } => {
+                    stage.handle_elders_update(
+                        &mut self.core,
+                        elders_info.clone(),
+                        *parsec_version,
+                    )?;
+                }
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;

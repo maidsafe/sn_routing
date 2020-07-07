@@ -343,6 +343,10 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
+            Variant::EldersUpdate {
+                elders_info: _,
+                parsec_version: _,
+            } => todo!(),
             Variant::JoinRequest(req) => {
                 if !self.should_handle_join_request(our_id, req) {
                     // Note: We don't bounce this message because the current bounce-resend
@@ -580,6 +584,25 @@ impl Approved {
         self.shared_state = SharedState::new(genesis_prefix_info.elders_info, section_key);
         self.section_keys_provider = SectionKeysProvider::new(None);
         self.reset_parsec(core, genesis_prefix_info.parsec_version)
+    }
+
+    pub fn handle_elders_update(
+        &mut self,
+        _core: &mut Core,
+        _elders_info: Proven<EldersInfo>,
+        _parsec_version: u64,
+    ) -> Result<()> {
+        todo!()
+        // info!(
+        //     "Received EldersUpdate {{ elders_info: {:?}, parsec_version: {} }}",
+        //     elders_info, parsec_version
+        // );
+
+        // core.msg_filter.reset();
+
+        // self.shared_state = SharedState::new(elders_info);
+        // self.section_keys_provider = SectionKeysProvider::new(None);
+        // self.reset_parsec(core, genesis_prefix_info.parsec_version)
     }
 
     pub fn handle_relocate(
