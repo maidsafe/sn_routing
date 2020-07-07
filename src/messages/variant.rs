@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingMessage, Message, MessageHash};
+use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
+    consensus::{ParsecRequest, ParsecResponse, Proven},
+    error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::EldersInfo,
+    section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -38,11 +39,16 @@ pub enum Variant {
     },
     /// User-facing message
     UserMessage(Vec<u8>),
-    /// Approves the joining node as a routing node.
-    /// Section X -> Node joining X
-    NodeApproval(GenesisPrefixInfo),
-    /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(GenesisPrefixInfo),
+    /// Message sent to newly joined node containing the necessary info to become a member of our
+    /// section.
+    NodeApproval(EldersUpdate),
+    /// Message sent to non-elders to update them about the current section elders.
+    EldersUpdate(EldersUpdate),
+    /// Message sent to newly promoted elders to notify them about the promotion.
+    Promote {
+        shared_state: SharedState,
+        parsec_version: u64,
+    },
     /// Send from a section to the node being relocated.
     Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
@@ -57,9 +63,6 @@ pub enum Variant {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Sent from Adults and Infants to Elders. Used to "poke" the elders to trigger them to send
-    /// ParsecRequest back.
-    ParsecPoke(u64),
     /// Parsec request message
     ParsecRequest(u64, ParsecRequest),
     /// Parsec response message
@@ -99,6 +102,25 @@ pub enum Variant {
     },
 }
 
+impl Variant {
+    pub(crate) fn verify<'a, I>(
+        &self,
+        proof_chain: Option<&SectionProofChain>,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        match self {
+            Self::NodeApproval(payload) | Self::EldersUpdate(payload) => {
+                let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+                payload.verify(proof_chain, trusted_keys)
+            }
+            _ => Ok(VerifyStatus::Full),
+        }
+    }
+}
+
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -109,13 +131,21 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
+            Self::EldersUpdate(payload) => write!(f, "EldersUpdate({:?})", payload),
+            Self::Promote {
+                shared_state,
+                parsec_version,
+            } => f
+                .debug_struct("Promote")
+                .field("elders_info", shared_state.sections.our())
+                .field("section_key", shared_state.our_history.last_key())
+                .field("parsec_version", parsec_version)
+                .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
-            Self::ParsecPoke(version) => write!(f, "ParsecPoke({})", version),
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),
@@ -190,6 +220,48 @@ impl Debug for JoinRequest {
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
             )
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct EldersUpdate {
+    pub elders_info: Proven<EldersInfo>,
+    // TODO: this should have signature too.
+    pub parsec_version: u64,
+}
+
+impl EldersUpdate {
+    pub fn verify<'a, I>(
+        &self,
+        proof_chain: &SectionProofChain,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        if !self.elders_info.self_verify() {
+            return Err(RoutingError::FailedSignature);
+        }
+
+        if !proof_chain.has_key(&self.elders_info.proof.public_key) {
+            return Err(RoutingError::UntrustedMessage);
+        }
+
+        match proof_chain.check_trust(trusted_keys) {
+            TrustStatus::Trusted => Ok(VerifyStatus::Full),
+            TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+            TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+        }
+    }
+}
+
+impl Debug for EldersUpdate {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("EldersUpdate")
+            .field("elders_info", &self.elders_info)
+            .field("parsec_version", &self.parsec_version)
             .finish()
     }
 }

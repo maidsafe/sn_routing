@@ -18,10 +18,10 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{
-        member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain, SharedState,
-        MIN_AGE,
+        self, member_info, EldersInfo, MemberState, SectionKeyShare, SectionProofChain,
+        SharedState, MIN_AGE,
     },
-    utils, ELDER_SIZE,
+    ELDER_SIZE,
 };
 use itertools::Itertools;
 use mock_quic_p2p::Network;
@@ -55,27 +55,27 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (proven_elders_info, full_ids) =
-            test_utils::create_elders_info(&mut rng, &network, sec_size);
-        let elders_info = proven_elders_info.value.clone();
+        let (elders_info, full_ids) =
+            section::gen_elders_info(&mut rng, Default::default(), sec_size);
 
-        let secret_key_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
-        let public_key_set = secret_key_set.public_keys();
-        let public_key = public_key_set.public_key();
+        let sk_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
+        let pk_set = sk_set.public_keys();
+
+        let proven_elders_info = test_utils::create_proven(&sk_set, elders_info.clone());
 
         let mut full_and_bls_ids = full_ids
             .into_iter()
             .enumerate()
-            .map(|(idx, (_, full_id))| (full_id, secret_key_set.secret_key_share(idx)))
+            .map(|(idx, full_id)| (full_id, sk_set.secret_key_share(idx)))
             .collect_vec();
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
-        let mut shared_state = SharedState::new(proven_elders_info, public_key);
+        let mut shared_state = SharedState::new(proven_elders_info);
         for p2p_node in elders_info.elders.values() {
             let proof = test_utils::create_proof(
-                &secret_key_set,
+                &sk_set,
                 &member_info::to_sign(p2p_node.name(), MemberState::Joined),
             );
             shared_state
@@ -84,7 +84,7 @@ impl Env {
         }
 
         let section_key_share = SectionKeyShare {
-            public_key_set,
+            public_key_set: pk_set,
             index: elders_info.position(full_id.public_id().name()).unwrap(),
             secret_key_share,
         };
@@ -107,7 +107,7 @@ impl Env {
             subject,
             other_ids,
             elders_info,
-            public_key_set: secret_key_set.public_keys(),
+            public_key_set: sk_set.public_keys(),
             candidate,
         };
 
@@ -182,8 +182,9 @@ impl Env {
         let message = Message::single_src(
             other_full_id,
             DstLocation::Direct,
-            None,
             Variant::ParsecRequest(parsec_version, request),
+            None,
+            None,
         )
         .unwrap();
 
@@ -568,6 +569,7 @@ fn handle_bootstrap() {
     }
 }
 
+/*
 #[test]
 #[ignore] //FIXME DKG is no longer carried out by parsec
 fn send_genesis_update() {
@@ -596,6 +598,7 @@ fn send_genesis_update() {
     assert!(proof_chain.has_key(&old_section_key));
     assert!(proof_chain.has_key(&new_section_key));
 }
+*/
 
 #[test]
 fn handle_bounced_unknown_message() {
@@ -613,11 +616,12 @@ fn handle_bounced_unknown_message() {
     let bounce_msg = Message::single_src(
         &env.other_ids[0].0,
         DstLocation::Direct,
-        None,
         Variant::BouncedUnknownMessage {
             message: msg.to_bytes(),
             parsec_version: 0,
         },
+        None,
+        None,
     )
     .unwrap();
 
@@ -662,8 +666,9 @@ fn handle_bounced_untrusted_message() {
     let bounce_msg = Message::single_src(
         &env.other_ids[0].0,
         msg.src().src_location().to_dst(),
-        Some(old_section_key),
         Variant::BouncedUntrustedMessage(Box::new(msg)),
+        None,
+        Some(old_section_key),
     )
     .unwrap();
 
@@ -672,10 +677,8 @@ fn handle_bounced_untrusted_message() {
 
     let proof_chain = other_node
         .received_messages()
-        .find_map(|(_, msg)| match (msg.variant(), msg.src()) {
-            (Variant::UserMessage(_), SrcAuthority::Section { proof_chain, .. }) => {
-                Some(proof_chain.clone())
-            }
+        .find_map(|(_, msg)| match (msg.variant(), msg.proof_chain()) {
+            (Variant::UserMessage(_), Some(proof_chain)) => Some(proof_chain.clone()),
             _ => None,
         })
         .expect("message was not resent");
@@ -699,13 +702,13 @@ fn receive_message_with_invalid_signature() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature: sk1.sign(b"bad data"),
-        proof_chain,
     };
     let msg = Message::unverified(
         src,
         DstLocation::Section(*env.subject.name()),
-        Some(pk0),
         Variant::UserMessage(b"hello".to_vec()),
+        Some(proof_chain),
+        Some(pk0),
     )
     .unwrap();
 
@@ -739,9 +742,15 @@ fn receive_message_with_invalid_proof_chain() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature,
-        proof_chain,
     };
-    let msg = Message::unverified(src, msg.dst, Some(msg.dst_key), msg.variant).unwrap();
+    let msg = Message::unverified(
+        src,
+        msg.dst,
+        msg.variant,
+        Some(proof_chain),
+        Some(msg.dst_key),
+    )
+    .unwrap();
 
     let sender = env.network.gen_addr();
     test_utils::handle_message(&mut env.subject, sender, msg).unwrap();
@@ -773,8 +782,9 @@ impl OtherNode {
         Ok(Message::single_src(
             &self.full_id,
             DstLocation::Direct,
-            None,
             variant,
+            None,
+            None,
         )?)
     }
 

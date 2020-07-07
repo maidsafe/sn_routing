@@ -77,12 +77,12 @@ impl Bootstrapping {
             | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
-            | Variant::GenesisUpdate(_)
+            | Variant::EldersUpdate { .. }
+            | Variant::Promote { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
-            | Variant::ParsecPoke(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping

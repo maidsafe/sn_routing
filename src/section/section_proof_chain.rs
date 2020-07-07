@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use err_derive::Error;
 use std::{
     collections::HashSet,
     iter,
@@ -165,6 +166,33 @@ impl SectionProofChain {
         }
     }
 
+    // Extend `self` so it starts at `new_first_key` while keeping the last key intact.
+    pub(crate) fn extend(
+        &mut self,
+        new_first_key: &bls::PublicKey,
+        full_proof_chain: &Self,
+    ) -> Result<(), ExtendError> {
+        if self.has_key(new_first_key) {
+            return Err(ExtendError::AlreadySufficient);
+        }
+
+        let index_from = if let Some(index) = full_proof_chain.index_of(new_first_key) {
+            index
+        } else {
+            return Err(ExtendError::InvalidFirstKey);
+        };
+
+        let index_to = if let Some(index) = full_proof_chain.index_of(self.last_key()) {
+            index
+        } else {
+            return Err(ExtendError::InvalidLastKey);
+        };
+
+        *self = full_proof_chain.slice(index_from..=index_to);
+
+        Ok(())
+    }
+
     // Returns the latest key in this chain that is among the trusted keys, together with its index.
     fn latest_trusted_key<'a, 'b, I>(
         &'a self,
@@ -194,6 +222,17 @@ pub enum TrustStatus {
     // Proof chain is self-validated but its trust cannot be determined because none of the keys
     // in the chain is among the trusted keys.
     Unknown,
+}
+
+/// Error returned from `SectionProofChain::extend`
+#[derive(Debug, Error)]
+pub enum ExtendError {
+    #[error(display = "invalid first key")]
+    InvalidFirstKey,
+    #[error(display = "invalid last key")]
+    InvalidLastKey,
+    #[error(display = "proof chain already sufficient")]
+    AlreadySufficient,
 }
 
 // Block of the section proof chain. Contains the section BLS public key and is signed by the

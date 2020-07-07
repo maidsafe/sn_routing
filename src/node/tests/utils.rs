@@ -14,49 +14,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{self, Proof, Proven},
+    consensus::{Proof, Proven},
     error::Result,
-    id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageAccumulator},
     node::Node,
     quic_p2p::{EventSenders, Peer, QuicP2p},
-    rng::MainRng,
-    section::EldersInfo,
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;
-use mock_quic_p2p::Network;
 use serde::Serialize;
-use std::{collections::BTreeMap, net::SocketAddr};
-use xor_name::{Prefix, XorName};
-
-pub fn create_elders_info(
-    rng: &mut MainRng,
-    network: &Network,
-    elder_size: usize,
-) -> (Proven<EldersInfo>, BTreeMap<XorName, FullId>) {
-    let full_ids: BTreeMap<_, _> = (0..elder_size)
-        .map(|_| {
-            let id = FullId::gen(rng);
-            (*id.public_id().name(), id)
-        })
-        .collect();
-
-    let members_map: BTreeMap<_, _> = full_ids
-        .iter()
-        .map(|(name, full_id)| {
-            let node = P2pNode::new(*full_id.public_id(), network.gen_addr());
-            (*name, node)
-        })
-        .collect();
-
-    let elders_info = EldersInfo::new(members_map, Prefix::default());
-
-    let sk = consensus::test_utils::gen_secret_key(rng);
-    let elders_info = consensus::test_utils::proven(&sk, elders_info);
-
-    (elders_info, full_ids)
-}
+use std::net::SocketAddr;
 
 pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Proof {
     let pk_set = sk_set.public_keys();
@@ -72,6 +39,11 @@ pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Pr
         public_key: pk_set.public_key(),
         signature,
     }
+}
+
+pub fn create_proven<T: Serialize>(sk_set: &bls::SecretKeySet, payload: T) -> Proven<T> {
+    let proof = create_proof(sk_set, &payload);
+    Proven::new(payload, proof)
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {

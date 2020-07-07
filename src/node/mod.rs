@@ -15,14 +15,13 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    consensus::GenesisPrefixInfo,
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant},
+    messages::{BootstrapResponse, EldersUpdate, Message, MessageStatus, QueuedMessage, Variant},
     network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
@@ -41,7 +40,7 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{consensus::ConsensusEngine, messages::AccumulatingMessage, section::SectionKeyShare};
+use crate::{consensus::ConsensusEngine, section::SectionKeyShare};
 #[cfg(feature = "mock_base")]
 use {crate::section::EldersInfo, std::collections::BTreeSet};
 
@@ -557,11 +556,11 @@ impl Node {
                 self.handle_message(sender, msg)
             }
             MessageStatus::Untrusted => {
-                debug!("Untrusted message from {}: {:?} ", sender, msg,);
+                debug!("Untrusted message from {}: {:?} ", sender, msg);
                 self.handle_untrusted_message(sender, msg)
             }
             MessageStatus::Unknown => {
-                debug!("Unknown message from {}: {:?} ", sender, msg,);
+                debug!("Unknown message from {}: {:?} ", sender, msg);
                 self.handle_unknown_message(sender, msg)
             }
             MessageStatus::Useless => {
@@ -643,29 +642,26 @@ impl Node {
                     elders_info.clone(),
                     *section_key,
                 )?,
-                Variant::NodeApproval(genesis_prefix_info) => {
-                    let section_key = *msg.src().as_section_key()?;
+                Variant::NodeApproval(payload) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(
-                        connect_type,
-                        genesis_prefix_info.clone(),
-                        section_key,
-                        msg_backlog,
-                    )?
+                    self.approve(connect_type, payload.clone(), msg_backlog)?
                 }
                 _ => unreachable!(),
             },
             Stage::Approved(stage) => match msg.variant() {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst().check_is_section()?;
-                    let src_key = *msg.src().as_section_key()?;
+                    let src_key = *msg.proof_chain_last_key()?;
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
-                Variant::GenesisUpdate(info) => {
-                    let section_key = *msg.src().as_section_key()?;
-                    stage.handle_genesis_update(&mut self.core, info.clone(), section_key)?;
+                Variant::EldersUpdate(payload) => {
+                    stage.handle_elders_update(&mut self.core, payload.clone())?
                 }
+                Variant::Promote {
+                    shared_state,
+                    parsec_version,
+                } => stage.handle_promote(&mut self.core, shared_state.clone(), *parsec_version)?,
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
@@ -689,11 +685,6 @@ impl Node {
                     &mut self.core,
                     msg.src().to_sender_node(sender)?,
                     *join_request.clone(),
-                ),
-                Variant::ParsecPoke(version) => stage.handle_parsec_poke(
-                    &mut self.core,
-                    msg.src().to_sender_node(sender)?,
-                    *version,
                 ),
                 Variant::ParsecRequest(version, request) => {
                     stage.handle_parsec_request(
@@ -721,9 +712,10 @@ impl Node {
                 Variant::BouncedUntrustedMessage(message) => stage
                     .handle_bounced_untrusted_message(
                         &mut self.core,
+                        msg.src().to_sender_node(sender)?,
                         *msg.dst_key(),
                         *message.clone(),
-                    )?,
+                    ),
                 Variant::BouncedUnknownMessage {
                     message,
                     parsec_version,
@@ -817,21 +809,19 @@ impl Node {
     fn approve(
         &mut self,
         connect_type: Connected,
-        genesis_prefix_info: GenesisPrefixInfo,
-        section_key: bls::PublicKey,
+        elders_update: EldersUpdate,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
-            genesis_prefix_info.elders_info.value.prefix,
+            elders_update.elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(genesis_prefix_info.elders_info.clone(), section_key);
-
+        let shared_state = SharedState::new(elders_update.elders_info);
         let stage = Approved::new(
             &mut self.core,
             shared_state,
-            genesis_prefix_info.parsec_version,
+            elders_update.parsec_version,
             None,
         )?;
         self.stage = Stage::Approved(stage);
@@ -1100,14 +1090,6 @@ impl Node {
             Ok(&mut stage.consensus_engine)
         } else {
             Err(RoutingError::InvalidState)
-        }
-    }
-
-    pub(crate) fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        if let Some(stage) = self.stage.approved() {
-            stage.create_genesis_updates()
-        } else {
-            Vec::new()
         }
     }
 }

@@ -17,12 +17,13 @@ use itertools::Itertools;
 use std::{
     cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap},
+    hash::{Hash, Hasher},
     mem,
 };
 use xor_name::{Prefix, XorName};
 
 /// Container for storing information about members of our section.
-#[derive(Default, Debug, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Eq, Serialize, Deserialize)]
 pub struct SectionMembers {
     members: BTreeMap<XorName, MemberInfo>,
     // Members of our sibling section immediately after the last split.
@@ -199,6 +200,12 @@ impl SectionMembers {
 impl PartialEq for SectionMembers {
     fn eq(&self, other: &Self) -> bool {
         self.members == other.members
+    }
+}
+
+impl Hash for SectionMembers {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.members.hash(state)
     }
 }
 
