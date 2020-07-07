@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, GenesisPrefixInfo},
+    consensus::{self, GenesisPrefixInfo, Proven},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -44,17 +44,11 @@ impl Env {
 
         let (elders_info, full_ids) =
             test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
-        let elders = create_elders(&mut rng, elders_info.value.clone(), full_ids);
+        let sk_set = consensus::generate_secret_key_set(&mut rng, ELDER_SIZE);
+        let elders_info = test_utils::create_proven(&sk_set, elders_info);
+        let elders = create_elders(&sk_set, elders_info.clone(), full_ids);
 
-        let public_key_set = elders[0]
-            .section_keys_provider
-            .key_share()
-            .unwrap()
-            .public_key_set
-            .clone();
-        let public_key = public_key_set.public_key();
-
-        let shared_state = SharedState::new(elders_info, public_key);
+        let shared_state = SharedState::new(elders_info);
 
         let (subject, ..) = Node::approved(
             NodeConfig {
@@ -93,7 +87,10 @@ impl Env {
             .map(|elder| (*elder.full_id.public_id().name(), elder.full_id))
             .collect();
 
-        self.elders = create_elders(&mut self.rng, elders_info, full_ids);
+        let new_sk_set = consensus::generate_secret_key_set(&mut self.rng, ELDER_SIZE);
+        let elders_info = test_utils::create_proven(&new_sk_set, elders_info);
+
+        self.elders = create_elders(&new_sk_set, elders_info, full_ids);
     }
 
     fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
@@ -153,36 +150,25 @@ impl Elder {
 }
 
 fn create_elders(
-    rng: &mut MainRng,
-    elders_info: EldersInfo,
+    sk_set: &bls::SecretKeySet,
+    elders_info: Proven<EldersInfo>,
     full_ids: BTreeMap<XorName, FullId>,
 ) -> Vec<Elder> {
-    let secret_key_set = consensus::generate_secret_key_set(rng, ELDER_SIZE);
-    let public_key_set = secret_key_set.public_keys();
-    let public_key = public_key_set.public_key();
-
-    let fake_prev_secret_key = consensus::test_utils::gen_secret_key(rng);
-    let elders_info = consensus::test_utils::proven(&fake_prev_secret_key, elders_info);
-
-    let genesis_prefix_info = GenesisPrefixInfo {
-        elders_info,
-        parsec_version: 0,
-    };
+    let pk_set = sk_set.public_keys();
 
     full_ids
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let state = SharedState::new(genesis_prefix_info.elders_info.clone(), public_key);
+            let state = SharedState::new(elders_info.clone());
 
             let section_keys_provider = SectionKeysProvider::new(Some(SectionKeyShare {
-                public_key_set: public_key_set.clone(),
+                public_key_set: pk_set.clone(),
                 index,
-                secret_key_share: secret_key_set.secret_key_share(index),
+                secret_key_share: sk_set.secret_key_share(index),
             }));
 
-            let addr = genesis_prefix_info
-                .elders_info
+            let addr = elders_info
                 .value
                 .elders
                 .get(full_id.public_id().name())

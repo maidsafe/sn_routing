@@ -644,15 +644,9 @@ impl Node {
                     *section_key,
                 )?,
                 Variant::NodeApproval(genesis_prefix_info) => {
-                    let section_key = *msg.src().as_section_key()?;
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(
-                        connect_type,
-                        genesis_prefix_info.clone(),
-                        section_key,
-                        msg_backlog,
-                    )?
+                    self.approve(connect_type, genesis_prefix_info.clone(), msg_backlog)?
                 }
                 _ => unreachable!(),
             },
@@ -663,8 +657,7 @@ impl Node {
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
                 Variant::GenesisUpdate(info) => {
-                    let section_key = *msg.src().as_section_key()?;
-                    stage.handle_genesis_update(&mut self.core, info.clone(), section_key)?;
+                    stage.handle_genesis_update(&mut self.core, info.clone())?;
                 }
                 Variant::EldersUpdate {
                     elders_info,
@@ -828,7 +821,6 @@ impl Node {
         &mut self,
         connect_type: Connected,
         genesis_prefix_info: GenesisPrefixInfo,
-        section_key: bls::PublicKey,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
         info!(
@@ -836,7 +828,7 @@ impl Node {
             genesis_prefix_info.elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(genesis_prefix_info.elders_info.clone(), section_key);
+        let shared_state = SharedState::new(genesis_prefix_info.elders_info);
 
         let stage = Approved::new(
             &mut self.core,

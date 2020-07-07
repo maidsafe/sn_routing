@@ -55,27 +55,26 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (proven_elders_info, full_ids) =
-            test_utils::create_elders_info(&mut rng, &network, sec_size);
-        let elders_info = proven_elders_info.value.clone();
+        let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
 
-        let secret_key_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
-        let public_key_set = secret_key_set.public_keys();
-        let public_key = public_key_set.public_key();
+        let sk_set = consensus::generate_secret_key_set(&mut rng, full_ids.len());
+        let pk_set = sk_set.public_keys();
+
+        let proven_elders_info = test_utils::create_proven(&sk_set, elders_info.clone());
 
         let mut full_and_bls_ids = full_ids
             .into_iter()
             .enumerate()
-            .map(|(idx, (_, full_id))| (full_id, secret_key_set.secret_key_share(idx)))
+            .map(|(idx, (_, full_id))| (full_id, sk_set.secret_key_share(idx)))
             .collect_vec();
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
-        let mut shared_state = SharedState::new(proven_elders_info, public_key);
+        let mut shared_state = SharedState::new(proven_elders_info);
         for p2p_node in elders_info.elders.values() {
             let proof = test_utils::create_proof(
-                &secret_key_set,
+                &sk_set,
                 &member_info::to_sign(p2p_node.name(), MemberState::Joined),
             );
             shared_state
@@ -84,7 +83,7 @@ impl Env {
         }
 
         let section_key_share = SectionKeyShare {
-            public_key_set,
+            public_key_set: pk_set,
             index: elders_info.position(full_id.public_id().name()).unwrap(),
             secret_key_share,
         };
@@ -107,7 +106,7 @@ impl Env {
             subject,
             other_ids,
             elders_info,
-            public_key_set: secret_key_set.public_keys(),
+            public_key_set: sk_set.public_keys(),
             candidate,
         };
 

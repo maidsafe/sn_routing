@@ -80,6 +80,7 @@ impl Message {
                     msg.hash = MessageHash::from_bytes(bytes);
                     Ok(msg)
                 } else {
+                    error!("Failed signature: {:?}", msg);
                     Err(CreateError::FailedSignature)
                 }
             }
@@ -94,6 +95,7 @@ impl Message {
                     msg.hash = MessageHash::from_bytes(bytes);
                     Ok(msg)
                 } else {
+                    error!("Failed signature: {:?}", msg);
                     Err(CreateError::FailedSignature)
                 }
             }

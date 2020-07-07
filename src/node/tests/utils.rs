@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{self, Proof, Proven},
+    consensus::{Proof, Proven},
     error::Result,
     id::{FullId, P2pNode},
     messages::{AccumulatingMessage, Message, MessageAccumulator},
@@ -34,7 +34,7 @@ pub fn create_elders_info(
     rng: &mut MainRng,
     network: &Network,
     elder_size: usize,
-) -> (Proven<EldersInfo>, BTreeMap<XorName, FullId>) {
+) -> (EldersInfo, BTreeMap<XorName, FullId>) {
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
             let id = FullId::gen(rng);
@@ -51,9 +51,6 @@ pub fn create_elders_info(
         .collect();
 
     let elders_info = EldersInfo::new(members_map, Prefix::default());
-
-    let sk = consensus::test_utils::gen_secret_key(rng);
-    let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
     (elders_info, full_ids)
 }
@@ -72,6 +69,11 @@ pub fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Pr
         public_key: pk_set.public_key(),
         signature,
     }
+}
+
+pub fn create_proven<T: Serialize>(sk_set: &bls::SecretKeySet, payload: T) -> Proven<T> {
+    let proof = create_proof(sk_set, &payload);
+    Proven::new(payload, proof)
 }
 
 pub fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {

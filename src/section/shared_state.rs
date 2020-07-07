@@ -42,10 +42,10 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: Proven<EldersInfo>, section_pk: bls::PublicKey) -> Self {
+    pub fn new(elders_info: Proven<EldersInfo>) -> Self {
         Self {
             handled_genesis_event: false,
-            our_history: SectionProofChain::new(section_pk),
+            our_history: SectionProofChain::new(elders_info.proof.public_key),
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
             relocate_queue: VecDeque::new(),
@@ -77,9 +77,7 @@ impl SharedState {
     pub fn demote(&mut self) {
         // TODO: avoid this clone.
         let elders_info = self.sections.proven_our().clone();
-        let section_key = *self.our_history.last_key();
-
-        *self = Self::new(elders_info, section_key);
+        *self = Self::new(elders_info);
     }
 
     /// Returns our own current section info.
@@ -636,12 +634,11 @@ mod test {
         let mut sections_iter = section_members.into_iter();
 
         let sk = consensus::test_utils::gen_secret_key(rng);
-        let pk = sk.public_key();
 
         let elders_info = sections_iter.next().expect("section members");
         let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
-        let mut state = SharedState::new(elders_info, pk);
+        let mut state = SharedState::new(elders_info);
 
         for info in sections_iter {
             let info = consensus::test_utils::proven(&sk, info);

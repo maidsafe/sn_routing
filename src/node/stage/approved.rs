@@ -575,13 +575,12 @@ impl Approved {
         &mut self,
         core: &mut Core,
         genesis_prefix_info: GenesisPrefixInfo,
-        section_key: bls::PublicKey,
     ) -> Result<()> {
         info!("Received GenesisUpdate: {:?}", genesis_prefix_info);
 
         core.msg_filter.reset();
 
-        self.shared_state = SharedState::new(genesis_prefix_info.elders_info, section_key);
+        self.shared_state = SharedState::new(genesis_prefix_info.elders_info);
         self.section_keys_provider = SectionKeysProvider::new(None);
         self.reset_parsec(core, genesis_prefix_info.parsec_version)
     }
@@ -2156,7 +2155,7 @@ fn create_first_shared_state(
     sk_share: &bls::SecretKeyShare,
     elders_info: Proven<EldersInfo>,
 ) -> Result<SharedState> {
-    let mut shared_state = SharedState::new(elders_info, pk_set.public_key());
+    let mut shared_state = SharedState::new(elders_info);
 
     for p2p_node in shared_state.sections.our().elders.values() {
         let proof = create_first_proof(
