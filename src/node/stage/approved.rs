@@ -1079,7 +1079,9 @@ impl Approved {
         participants: BTreeSet<PublicId>,
         section_key_index: u64,
     ) {
-        if section_key_index < self.shared_state.our_history.last_key_index() {
+        if section_key_index < self.shared_state.our_history.last_key_index()
+            || self.section_keys_provider.has_dkg(&participants)
+        {
             trace!(
                 "Already has DKG of {:?} - {:?}",
                 participants,
