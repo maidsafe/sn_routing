@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         self, threshold_count, AccumulatingEvent, ConsensusEngine, DkgResult, DkgVoter,
-        GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven,
+        ParsecRequest, ParsecResponse, Proof, Proven,
     },
     core::Core,
     delivery_group,
@@ -1742,13 +1742,6 @@ impl Approved {
         events
     }
 
-    fn create_genesis_prefix_info(&self) -> GenesisPrefixInfo {
-        GenesisPrefixInfo {
-            elders_info: self.shared_state.sections.proven_our().clone(),
-            parsec_version: self.consensus_engine.parsec_version(),
-        }
-    }
-
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self) {
         let unresponsive_nodes = self
@@ -1779,37 +1772,37 @@ impl Approved {
             p2p_node
         );
 
-        let genesis_prefix_info = self.create_genesis_prefix_info();
-
-        let src = SrcLocation::Section(genesis_prefix_info.elders_info.value.prefix);
-        let dst = DstLocation::Node(*p2p_node.name());
-
-        let variant = Variant::NodeApproval(genesis_prefix_info);
-        let their_knowledge =
+        let first_index =
             their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
+        let elders_update = self.create_elders_update(first_index);
+        let variant = Variant::NodeApproval(elders_update);
 
-        if let Err(error) = self.send_routing_message(core, src, dst, variant, their_knowledge) {
-            debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
-        }
+        trace!("Send {:?} to {:?}", variant, p2p_node);
+        core.send_direct_message(p2p_node.peer_addr(), variant);
     }
 
     fn send_elders_update(&self, core: &mut Core) {
-        let last_key_index = self.shared_state.our_info_key_index();
-        let first_key_index = last_key_index.saturating_sub(1);
-
-        let elders_update = EldersUpdate::new(
-            self.shared_state.sections.proven_our().clone(),
-            self.consensus_engine.parsec_version(),
-            self.shared_state
-                .our_history
-                .slice(first_key_index..=last_key_index),
-        );
+        let elders_update = self.create_elders_update(None);
         let variant = Variant::EldersUpdate(elders_update);
 
         for p2p_node in self.shared_state.adults_and_infants_p2p_nodes() {
             trace!("Send {:?} to {:?}", variant, p2p_node);
             core.send_direct_message(p2p_node.peer_addr(), variant.clone());
         }
+    }
+
+    fn create_elders_update(&self, proof_chain_first_index: Option<u64>) -> EldersUpdate {
+        let last_key_index = self.shared_state.our_info_key_index();
+        let first_key_index =
+            proof_chain_first_index.unwrap_or_else(|| last_key_index.saturating_sub(1));
+
+        EldersUpdate::new(
+            self.shared_state.sections.proven_our().clone(),
+            self.consensus_engine.parsec_version(),
+            self.shared_state
+                .our_history
+                .slice(first_key_index..=last_key_index),
+        )
     }
 
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {

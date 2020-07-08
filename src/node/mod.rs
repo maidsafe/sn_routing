@@ -15,14 +15,13 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    consensus::GenesisPrefixInfo,
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant},
+    messages::{BootstrapResponse, EldersUpdate, Message, MessageStatus, QueuedMessage, Variant},
     network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
@@ -643,10 +642,10 @@ impl Node {
                     elders_info.clone(),
                     *section_key,
                 )?,
-                Variant::NodeApproval(genesis_prefix_info) => {
+                Variant::NodeApproval(payload) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, genesis_prefix_info.clone(), msg_backlog)?
+                    self.approve(connect_type, payload.clone(), msg_backlog)?
                 }
                 _ => unreachable!(),
             },
@@ -810,22 +809,20 @@ impl Node {
     fn approve(
         &mut self,
         connect_type: Connected,
-        genesis_prefix_info: GenesisPrefixInfo,
+        elders_update: EldersUpdate,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
+        let parsec_version = elders_update.parsec_version();
+        let elders_info = elders_update.into_proven_elders_info();
+
         info!(
             "This node has been approved to join the network at {:?}!",
-            genesis_prefix_info.elders_info.value.prefix,
+            elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(genesis_prefix_info.elders_info);
+        let shared_state = SharedState::new(elders_info);
 
-        let stage = Approved::new(
-            &mut self.core,
-            shared_state,
-            genesis_prefix_info.parsec_version,
-            None,
-        )?;
+        let stage = Approved::new(&mut self.core, shared_state, parsec_version, None)?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);

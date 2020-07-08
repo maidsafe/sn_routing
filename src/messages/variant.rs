@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven},
+    consensus::{ParsecRequest, ParsecResponse, Proof, Proven},
     error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
@@ -39,9 +39,9 @@ pub enum Variant {
     },
     /// User-facing message
     UserMessage(Vec<u8>),
-    /// Approves the joining node as a routing node.
-    /// Section X -> Node joining X
-    NodeApproval(GenesisPrefixInfo),
+    /// Message sent to newly joined node containing the necessary info to become a member of our
+    /// section.
+    NodeApproval(EldersUpdate),
     /// Message sent to non-elders to update them about the current section elders.
     EldersUpdate(EldersUpdate),
     /// Send from a section to the node being relocated.
@@ -106,7 +106,9 @@ impl Variant {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         match self {
-            Self::EldersUpdate(payload) => payload.verify(trusted_keys),
+            Self::NodeApproval(payload) | Self::EldersUpdate(payload) => {
+                payload.verify(trusted_keys)
+            }
             _ => Ok(VerifyStatus::Full),
         }
     }

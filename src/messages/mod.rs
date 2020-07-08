@@ -214,7 +214,8 @@ impl Message {
             (SrcAuthority::Section { proof_chain, .. }, _) => {
                 proof_chain.extend(new_first_key, section_proof_chain)?
             }
-            (SrcAuthority::Node { .. }, Variant::EldersUpdate(payload)) => {
+            (SrcAuthority::Node { .. }, Variant::NodeApproval(payload))
+            | (SrcAuthority::Node { .. }, Variant::EldersUpdate(payload)) => {
                 payload.extend_proof_chain(new_first_key, section_proof_chain)?
             }
             _ => return Err(ExtendProofChainError::NoProofChain),
