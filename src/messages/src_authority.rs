@@ -101,7 +101,7 @@ impl SrcAuthority {
         dst: &DstLocation,
         dst_key: Option<&bls::PublicKey>,
         variant: &Variant,
-        trusted_key_infos: I,
+        trusted_keys: I,
     ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
@@ -120,35 +120,34 @@ impl SrcAuthority {
                 if !public_id.verify(&bytes, signature) {
                     return Err(RoutingError::FailedSignature);
                 }
+
+                // Variant-specific verification.
+                let trusted_keys = trusted_keys
+                    .into_iter()
+                    .filter(|(known_prefix, _)| known_prefix.matches(public_id.name()))
+                    .map(|(_, key)| key);
+                variant.verify(trusted_keys)
             }
             Self::Section {
                 prefix,
                 signature,
                 proof_chain,
             } => {
-                let trusted_key_infos = trusted_key_infos
-                    .into_iter()
-                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
-                    .map(|(_, key_info)| key_info);
-
-                match proof_chain.check_trust(trusted_key_infos) {
-                    TrustStatus::Trusted => (),
-                    TrustStatus::Unknown => return Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => return Err(RoutingError::UntrustedMessage),
-                };
-
-                let bytes = bincode::serialize(&SignableView {
-                    dst,
-                    dst_key,
-                    variant,
-                })?;
-
                 if !proof_chain.last_key().verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
+
+                let trusted_keys = trusted_keys
+                    .into_iter()
+                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
+                    .map(|(_, key)| key);
+
+                match proof_chain.check_trust(trusted_keys) {
+                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
+                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                }
             }
         }
-
-        Ok(VerifyStatus::Full)
     }
 }

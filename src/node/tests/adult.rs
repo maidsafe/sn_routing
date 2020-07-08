@@ -293,7 +293,6 @@ fn handle_elders_update_allow_skipped_parsec_versions() {
 }
 
 #[test]
-#[ignore]
 fn untrusted_elders_update() {
     let mut env = Env::new();
 

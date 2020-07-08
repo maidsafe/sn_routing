@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingMessage, Message, MessageHash};
+use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse, Proof, Proven},
+    error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::{EldersInfo, SectionProofChain},
+    section::{EldersInfo, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -97,6 +98,18 @@ pub enum Variant {
         /// Public key set that got consensused
         public_key_set: bls::PublicKeySet,
     },
+}
+
+impl Variant {
+    pub(crate) fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        match self {
+            Self::EldersUpdate(payload) => payload.verify(trusted_keys),
+            _ => Ok(VerifyStatus::Full),
+        }
+    }
 }
 
 impl Debug for Variant {
@@ -243,6 +256,27 @@ impl EldersUpdate {
         };
 
         Proven::new(self.elders_info, proof)
+    }
+
+    pub fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        let bytes = bincode::serialize(&self.elders_info)?;
+
+        if !self
+            .proof_chain
+            .last_key()
+            .verify(&self.elders_info_signature, &bytes)
+        {
+            return Err(RoutingError::FailedSignature);
+        }
+
+        match self.proof_chain.check_trust(trusted_keys) {
+            TrustStatus::Trusted => Ok(VerifyStatus::Full),
+            TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+            TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+        }
     }
 }
 
