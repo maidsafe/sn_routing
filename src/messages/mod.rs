@@ -24,7 +24,7 @@ use crate::{
     error::{Result, RoutingError},
     id::FullId,
     location::DstLocation,
-    section::SectionProofChain,
+    section::{ExtendError, SectionProofChain},
 };
 
 use bytes::Bytes;
@@ -202,36 +202,23 @@ impl Message {
         &self.hash
     }
 
-    // Extend the current message proof so it starts at `new_first_key` while keeping the last key
-    // (and therefore the signature) intact.
+    // Extend the current message proof chain so it starts at `new_first_key` while keeping the
+    // last key (and therefore the signature) intact.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
         section_proof_chain: &SectionProofChain,
     ) -> Result<Self, ExtendProofChainError> {
-        let proof_chain = match &mut self.src {
-            SrcAuthority::Section { proof_chain, .. } => proof_chain,
-            SrcAuthority::Node { .. } => return Err(ExtendProofChainError::MustBeSection),
-        };
-
-        if proof_chain.has_key(new_first_key) {
-            return Err(ExtendProofChainError::AlreadySufficient);
+        match (&mut self.src, &mut self.variant) {
+            (SrcAuthority::Section { proof_chain, .. }, _) => {
+                proof_chain.extend(new_first_key, section_proof_chain)?
+            }
+            (SrcAuthority::Node { .. }, Variant::EldersUpdate(payload)) => {
+                payload.extend_proof_chain(new_first_key, section_proof_chain)?
+            }
+            _ => return Err(ExtendProofChainError::NoProofChain),
         }
-
-        let index_from = if let Some(index) = section_proof_chain.index_of(new_first_key) {
-            index
-        } else {
-            return Err(ExtendProofChainError::InvalidFirstKey);
-        };
-
-        let index_to = if let Some(index) = section_proof_chain.index_of(proof_chain.last_key()) {
-            index
-        } else {
-            return Err(ExtendProofChainError::InvalidLastKey);
-        };
-
-        *proof_chain = section_proof_chain.slice(index_from..=index_to);
 
         Ok(Self::new_signed(
             self.src,
@@ -321,18 +308,14 @@ impl From<CreateError> for RoutingError {
     }
 }
 
-/// Error returned from `SrcAuthority::extend_proof`.
+/// Error returned from `Message::extend_proof_chain`.
 #[derive(Debug, Error)]
 pub enum ExtendProofChainError {
-    #[error(display = "extending proof chain not supported on messages with Node src")]
-    MustBeSection,
-    #[error(display = "invalid first key")]
-    InvalidFirstKey,
-    #[error(display = "invalid last key")]
-    InvalidLastKey,
-    #[error(display = "proof chain already sufficient")]
-    AlreadySufficient,
-    #[error(display = "failed to re-create the message: {}", _0)]
+    #[error(display = "message has no proof chain")]
+    NoProofChain,
+    #[error(display = "failed to extend proof chain: {}", _0)]
+    Extend(#[error(source)] ExtendError),
+    #[error(display = "failed to re-create message: {}", _0)]
     Create(#[error(source)] CreateError),
 }
 

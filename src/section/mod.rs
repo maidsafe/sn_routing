@@ -27,7 +27,7 @@ pub use self::{
     section_keys::{SectionKeyShare, SectionKeysProvider},
     section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
-    section_proof_chain::{SectionProofChain, TrustStatus},
+    section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
     section_update_barrier::{SectionUpdateBarrier, SectionUpdateDetails},
     shared_state::SharedState,
 };

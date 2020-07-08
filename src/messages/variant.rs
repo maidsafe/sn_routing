@@ -12,7 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::{EldersInfo, SectionProofChain, TrustStatus},
+    section::{EldersInfo, ExtendError, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -277,6 +277,14 @@ impl EldersUpdate {
             TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
             TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
         }
+    }
+
+    pub fn extend_proof_chain(
+        &mut self,
+        new_first_key: &bls::PublicKey,
+        section_proof_chain: &SectionProofChain,
+    ) -> Result<(), ExtendError> {
+        self.proof_chain.extend(new_first_key, section_proof_chain)
     }
 }
 
