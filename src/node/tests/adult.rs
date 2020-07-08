@@ -98,7 +98,11 @@ impl Env {
             .peer_addr();
 
         let elders_info = test_utils::create_proven(&self.sk_set, self.elders_info.clone());
-        let elders_update = EldersUpdate::new(elders_info, parsec_version, proof_chain);
+        let elders_update = EldersUpdate {
+            elders_info,
+            parsec_version,
+            proof_chain,
+        };
         let variant = Variant::EldersUpdate(elders_update);
         let message = Message::single_src(
             sender_full_id,

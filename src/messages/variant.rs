@@ -8,11 +8,11 @@
 
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{ParsecRequest, ParsecResponse, Proof, Proven},
+    consensus::{ParsecRequest, ParsecResponse, Proven},
     error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::{EldersInfo, ExtendError, SectionProofChain, TrustStatus},
+    section::{EldersInfo, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -211,67 +211,23 @@ impl Debug for JoinRequest {
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct EldersUpdate {
-    elders_info: EldersInfo,
-    elders_info_signature: bls::Signature,
-    proof_chain: SectionProofChain,
-
+    pub elders_info: Proven<EldersInfo>,
     // TODO: this should have signature too.
-    parsec_version: u64,
+    pub parsec_version: u64,
+    pub proof_chain: SectionProofChain,
 }
 
 impl EldersUpdate {
-    // Creates new `EldersUpdate`.
-    //
-    // # Panics
-    //
-    // Panics if `elders_info` is not signed with the last key of `proof_chain`.
-    pub fn new(
-        elders_info: Proven<EldersInfo>,
-        parsec_version: u64,
-        proof_chain: SectionProofChain,
-    ) -> Self {
-        assert_eq!(
-            elders_info.proof.public_key,
-            *proof_chain.last_key(),
-            "the key that elders_info is signed with ({:?}) is different from the last key of \
-             proof_chain ({:?})",
-            elders_info.proof.public_key,
-            proof_chain.last_key(),
-        );
-
-        Self {
-            elders_info: elders_info.value,
-            elders_info_signature: elders_info.proof.signature,
-            proof_chain,
-            parsec_version,
-        }
-    }
-
-    pub fn parsec_version(&self) -> u64 {
-        self.parsec_version
-    }
-
-    pub fn into_proven_elders_info(self) -> Proven<EldersInfo> {
-        let proof = Proof {
-            public_key: *self.proof_chain.last_key(),
-            signature: self.elders_info_signature,
-        };
-
-        Proven::new(self.elders_info, proof)
-    }
-
     pub fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        let bytes = bincode::serialize(&self.elders_info)?;
-
-        if !self
-            .proof_chain
-            .last_key()
-            .verify(&self.elders_info_signature, &bytes)
-        {
+        if !self.elders_info.verify() {
             return Err(RoutingError::FailedSignature);
+        }
+
+        if !self.proof_chain.has_key(&self.elders_info.proof.public_key) {
+            return Err(RoutingError::UntrustedMessage);
         }
 
         match self.proof_chain.check_trust(trusted_keys) {
@@ -280,14 +236,6 @@ impl EldersUpdate {
             TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
         }
     }
-
-    pub fn extend_proof_chain(
-        &mut self,
-        new_first_key: &bls::PublicKey,
-        section_proof_chain: &SectionProofChain,
-    ) -> Result<(), ExtendError> {
-        self.proof_chain.extend(new_first_key, section_proof_chain)
-    }
 }
 
 impl Debug for EldersUpdate {
@@ -295,7 +243,6 @@ impl Debug for EldersUpdate {
         formatter
             .debug_struct("EldersUpdate")
             .field("elders_info", &self.elders_info)
-            .field("public_key", self.proof_chain.last_key())
             .field("parsec_version", &self.parsec_version)
             .finish()
     }

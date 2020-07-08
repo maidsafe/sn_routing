@@ -210,16 +210,16 @@ impl Message {
         new_first_key: &bls::PublicKey,
         section_proof_chain: &SectionProofChain,
     ) -> Result<Self, ExtendProofChainError> {
-        match (&mut self.src, &mut self.variant) {
-            (SrcAuthority::Section { proof_chain, .. }, _) => {
-                proof_chain.extend(new_first_key, section_proof_chain)?
-            }
+        let proof_chain = match (&mut self.src, &mut self.variant) {
+            (SrcAuthority::Section { proof_chain, .. }, _) => proof_chain,
             (SrcAuthority::Node { .. }, Variant::NodeApproval(payload))
             | (SrcAuthority::Node { .. }, Variant::EldersUpdate(payload)) => {
-                payload.extend_proof_chain(new_first_key, section_proof_chain)?
+                &mut payload.proof_chain
             }
             _ => return Err(ExtendProofChainError::NoProofChain),
-        }
+        };
+
+        proof_chain.extend(new_first_key, section_proof_chain)?;
 
         Ok(Self::new_signed(
             self.src,

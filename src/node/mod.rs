@@ -812,17 +812,18 @@ impl Node {
         elders_update: EldersUpdate,
         msg_backlog: Vec<QueuedMessage>,
     ) -> Result<()> {
-        let parsec_version = elders_update.parsec_version();
-        let elders_info = elders_update.into_proven_elders_info();
-
         info!(
             "This node has been approved to join the network at {:?}!",
-            elders_info.value.prefix,
+            elders_update.elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(elders_info);
-
-        let stage = Approved::new(&mut self.core, shared_state, parsec_version, None)?;
+        let shared_state = SharedState::new(elders_update.elders_info);
+        let stage = Approved::new(
+            &mut self.core,
+            shared_state,
+            elders_update.parsec_version,
+            None,
+        )?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);

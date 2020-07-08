@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use serde::Serialize;
 use std::{
     borrow::Borrow,
     fmt::{self, Debug, Formatter},
@@ -22,7 +23,7 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// Verifies this proof against the payload.
+    /// Verifies `payload` against this proof.
     pub fn verify(&self, payload: &[u8]) -> bool {
         self.public_key.verify(&self.signature, payload)
     }
@@ -54,7 +55,7 @@ impl ProofShare {
         }
     }
 
-    /// Verifies this proof share against the payload.
+    /// Verifies `paylod` against this proof share.
     pub fn verify(&self, payload: &[u8]) -> bool {
         self.public_key_set
             .public_key_share(self.index)
@@ -83,6 +84,15 @@ pub struct Proven<T> {
 impl<T> Proven<T> {
     pub fn new(value: T, proof: Proof) -> Self {
         Self { value, proof }
+    }
+}
+
+impl<T: Serialize> Proven<T> {
+    // Verifies `value` against `proof`.
+    pub fn verify(&self) -> bool {
+        bincode::serialize(&self.value)
+            .map(|bytes| self.proof.verify(&bytes))
+            .unwrap_or(false)
     }
 }
 

@@ -340,7 +340,7 @@ impl Approved {
             }
             Variant::EldersUpdate(payload) => {
                 if self.is_our_elder(our_id)
-                    || payload.parsec_version() <= self.consensus_engine.parsec_version()
+                    || payload.parsec_version <= self.consensus_engine.parsec_version()
                 {
                     return Ok(MessageStatus::Useless);
                 }
@@ -564,12 +564,9 @@ impl Approved {
 
         core.msg_filter.reset();
 
-        let parsec_version = payload.parsec_version();
-        let elders_info = payload.into_proven_elders_info();
-
-        self.shared_state = SharedState::new(elders_info);
+        self.shared_state = SharedState::new(payload.elders_info);
         self.section_keys_provider = SectionKeysProvider::new(None);
-        self.reset_parsec(core, parsec_version)
+        self.reset_parsec(core, payload.parsec_version)
     }
 
     pub fn handle_relocate(
@@ -1791,18 +1788,29 @@ impl Approved {
         }
     }
 
-    fn create_elders_update(&self, proof_chain_first_index: Option<u64>) -> EldersUpdate {
-        let last_key_index = self.shared_state.our_info_key_index();
-        let first_key_index =
-            proof_chain_first_index.unwrap_or_else(|| last_key_index.saturating_sub(1));
+    fn create_elders_update(&self, their_knowledge: Option<u64>) -> EldersUpdate {
+        let elders_info = self.shared_state.sections.proven_our();
 
-        EldersUpdate::new(
-            self.shared_state.sections.proven_our().clone(),
-            self.consensus_engine.parsec_version(),
-            self.shared_state
-                .our_history
-                .slice(first_key_index..=last_key_index),
-        )
+        // Include the shortest proof chain that includes both the key at `their_knowledge`
+        // (if provided) and the key `elders_info` was signed with, to make sure `elders_info` can
+        // be verified by the recipient.
+        //
+        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
+        // present in our section proof chain. This is currently guaranteed, because we use the
+        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
+        // section key at the same time.
+        let first_index = self
+            .shared_state
+            .our_history
+            .index_of(&elders_info.proof.public_key)
+            .expect("our EldersInfo signed with unknown key");
+        let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
+
+        EldersUpdate {
+            elders_info: elders_info.clone(),
+            proof_chain: self.shared_state.our_history.slice(first_index..),
+            parsec_version: self.consensus_engine.parsec_version(),
+        }
     }
 
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {
