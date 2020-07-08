@@ -1256,9 +1256,7 @@ impl Approved {
 
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.shared_state.update(new_state);
-
-        Ok(())
+        self.shared_state.update(new_state)
     }
 
     fn handle_online_event(
