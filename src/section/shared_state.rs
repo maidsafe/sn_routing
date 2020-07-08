@@ -6,9 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
+use super::{
+    EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain, TrustStatus,
+};
 use crate::{
     consensus::{AccumulatingEvent, Proof, Proven},
+    error::RoutingError,
     id::P2pNode,
     location::DstLocation,
     messages::{MessageHash, SrcAuthority},
@@ -52,25 +55,28 @@ impl SharedState {
         }
     }
 
-    pub fn update(&mut self, new: Self) {
+    pub fn update(&mut self, new: Self) -> Result<(), RoutingError> {
         if self.handled_genesis_event {
-            log_or_panic!(
-                log::Level::Error,
-                "shared state update - genesis event already handled",
-            );
+            error!("shared state update - genesis event already handled",);
+            return Err(RoutingError::InvalidState);
         }
 
-        if self.our_history.len() > 1 && *self != new {
-            log_or_panic!(
-                log::Level::Error,
-                "shared state update - mismatch: old: {:?} --- new: {:?}",
-                self,
-                new
-            );
+        if self.our_history.len() > 1 {
+            if *self != new {
+                error!(
+                    "shared state update - mismatch: old: {:?} --- new: {:?}",
+                    self, new
+                );
+                return Err(RoutingError::InvalidState);
+            }
+        } else if !self.our_history.self_verify() {
+            error!("shared state update - invalid new history: {:?}", new);
+            return Err(RoutingError::InvalidState);
         }
 
         *self = new;
         self.handled_genesis_event = true;
+        Ok(())
     }
 
     // Clear all data except that which is needed for non-elders.
@@ -173,13 +179,30 @@ impl SharedState {
         // FIXME: we should perform these checks before voting, but once the vote accumulates we
         // must obey it:
         if !self.our_prefix().matches(p2p_node.name()) {
-            trace!("not adding node {} - not matching our prefix", p2p_node);
+            trace!(
+                "not adding node {} - not matching our prefix",
+                p2p_node.name()
+            );
             return false;
         }
 
         if self.our_members.contains(p2p_node.name()) {
-            trace!("not adding node {} - already a member", p2p_node);
+            trace!("not adding node {} - already a member", p2p_node.name());
             return false;
+        }
+
+        // The section public key of the proof shall be trusted by us.
+        match self.our_history.check_trust(iter::once(&proof.public_key)) {
+            TrustStatus::Trusted => {}
+            result => {
+                trace!(
+                    "not adding node {} / {:?} - Proof {:?} is not trusted.",
+                    p2p_node.name(),
+                    result,
+                    proof
+                );
+                return false;
+            }
         }
 
         let name = *p2p_node.name();
@@ -198,6 +221,20 @@ impl SharedState {
         proof: Proof,
         recommended_section_size: usize,
     ) -> Option<MemberInfo> {
+        // The section public key of the proof shall be trusted by us.
+        match self.our_history.check_trust(iter::once(&proof.public_key)) {
+            TrustStatus::Trusted => {}
+            result => {
+                trace!(
+                    "not removing member {} / {:?} - Proof {:?} is not trusted.",
+                    name,
+                    result,
+                    proof
+                );
+                return None;
+            }
+        }
+
         match self.our_members.get(name).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
                 // FIXME: perform this check before voting, but once the vote accumulates we must
@@ -264,6 +301,22 @@ impl SharedState {
         elders_info: Proven<EldersInfo>,
         section_key: Proven<bls::PublicKey>,
     ) {
+        // The section public key of the proof shall be trusted by us.
+        match self
+            .our_history
+            .check_trust(iter::once(&section_key.proof.public_key))
+        {
+            TrustStatus::Trusted => {}
+            result => {
+                trace!(
+                    "not updating our section {:?} - Old section key {:?} is not trusted.",
+                    result,
+                    section_key.proof.public_key
+                );
+                return;
+            }
+        }
+
         self.our_members
             .remove_not_matching_our_prefix(&elders_info.value.prefix);
         self.our_history
