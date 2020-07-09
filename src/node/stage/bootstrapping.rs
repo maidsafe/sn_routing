@@ -78,6 +78,7 @@ impl Bootstrapping {
 
             Variant::NodeApproval(_)
             | Variant::EldersUpdate { .. }
+            | Variant::Promote { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)

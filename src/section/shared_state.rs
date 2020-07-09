@@ -26,7 +26,7 @@ use std::{
 use xor_name::{Prefix, XorName};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SharedState {
     /// Indicate whether nodes are shared state because genesis event was seen
     #[serde(skip)]

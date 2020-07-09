@@ -12,7 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload},
-    section::{EldersInfo, SectionProofChain, TrustStatus},
+    section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -44,6 +44,11 @@ pub enum Variant {
     NodeApproval(EldersUpdate),
     /// Message sent to non-elders to update them about the current section elders.
     EldersUpdate(EldersUpdate),
+    /// Message sent to newly promoted elders to notify them about the promotion.
+    Promote {
+        shared_state: SharedState,
+        parsec_version: u64,
+    },
     /// Send from a section to the node being relocated.
     Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
@@ -130,6 +135,15 @@ impl Debug for Variant {
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::EldersUpdate(payload) => write!(f, "EldersUpdate({:?})", payload),
+            Self::Promote {
+                shared_state,
+                parsec_version,
+            } => f
+                .debug_struct("Promote")
+                .field("elders_info", shared_state.sections.our())
+                .field("section_key", shared_state.our_history.last_key())
+                .field("parsec_version", parsec_version)
+                .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),

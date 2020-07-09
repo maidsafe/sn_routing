@@ -16,7 +16,7 @@ use std::{
 use xor_name::{Prefix, XorName};
 
 /// Container for storing information about sections in the network.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SectionMap {
     // Our section.
     our: Proven<EldersInfo>,

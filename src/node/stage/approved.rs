@@ -189,9 +189,9 @@ impl Approved {
             Ok(event) => self.consensus_engine.vote_for(event),
             Err(error) => log_or_panic!(
                 log::Level::Error,
-                "Failed to create NetworkEvent: {} {:?}",
+                "Failed to create NetworkEvent {:?}: {}",
+                event,
                 error,
-                event
             ),
         }
     }
@@ -342,6 +342,11 @@ impl Approved {
                 if self.is_our_elder(our_id)
                     || payload.parsec_version <= self.consensus_engine.parsec_version()
                 {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
+            Variant::Promote { .. } => {
+                if self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Useless);
                 }
             }
@@ -571,6 +576,50 @@ impl Approved {
         self.shared_state = SharedState::new(payload.elders_info);
         self.section_keys_provider = SectionKeysProvider::new(None);
         self.reset_parsec(core, payload.parsec_version)
+    }
+
+    pub fn handle_promote(
+        &mut self,
+        core: &mut Core,
+        shared_state: SharedState,
+        parsec_version: u64,
+    ) -> Result<()> {
+        if !shared_state.our_info().elders.contains_key(core.name()) {
+            debug!("ignore Promote - not actually promoted");
+            return Ok(());
+        }
+
+        core.msg_filter.reset();
+
+        // TODO: verify `shared_state` !
+        self.shared_state.update(shared_state);
+        self.reset_parsec(core, parsec_version)?;
+
+        info!("Promoted");
+
+        match self
+            .section_keys_provider
+            .finalise_dkg(core.name(), self.shared_state.our_info())
+        {
+            Ok(()) => (),
+            Err(RoutingError::InvalidElderDkgResult) => {
+                // Ignore `InvalidElderDkgResult` because it just means the DKG hasn't completed
+                // for us yet.
+                // TODO: check that we have an ongoing DKG instance corresponding to the latest
+                // EldersInfo.
+            }
+            Err(error) => return Err(error),
+        }
+
+        self.send_elders_update(core)?;
+        self.send_parsec_poke(core);
+
+        core.send_event(Event::Promoted);
+        self.send_elders_changed_event(core);
+
+        self.print_network_stats();
+
+        Ok(())
     }
 
     pub fn handle_relocate(
@@ -1380,8 +1429,18 @@ impl Approved {
         core: &Core,
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResult,
-    ) -> Result<(), RoutingError> {
-        if !self.is_our_elder(core.id()) {
+    ) -> Result<()> {
+        if self.is_our_elder(core.id()) {
+            if self.section_keys_provider.key_share().is_err() {
+                // We've just been promoted and already received the `Promote` message.
+                self.section_keys_provider
+                    .handle_dkg_result_event(participants, dkg_result)?;
+                self.section_keys_provider
+                    .finalise_dkg(core.name(), self.shared_state.our_info())?;
+                return Ok(());
+            }
+        } else {
+            // We are about to get promoted, but have not received the `Promote` message yet.
             return self
                 .section_keys_provider
                 .handle_dkg_result_event(participants, dkg_result);
@@ -1407,6 +1466,9 @@ impl Approved {
             }
 
             self.vote_for_event(AccumulatingEvent::SectionInfo(info));
+
+            self.section_keys_provider
+                .handle_dkg_result_event(&dkg_key.0, dkg_result)
         } else {
             // The latest participant was just following vote, which doesn't have the info to
             // vote for a section_info. Or the DKG process completed before receiving the
@@ -1416,10 +1478,8 @@ impl Approved {
                 dkg_key,
                 self.dkg_voter.info_keys().format(", ")
             );
-            return Err(RoutingError::InvalidState);
+            Err(RoutingError::InvalidState)
         }
-        self.section_keys_provider
-            .handle_dkg_result_event(&dkg_key.0, dkg_result)
     }
 
     fn handle_section_info_event(
@@ -1570,14 +1630,26 @@ impl Approved {
         }
     }
 
+    // TODO: handle this only when elder
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         trace!("Update our Section with {:?}", details);
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
 
-        self.add_force_gossip_peer(&details.our.info.value, old_prefix, was_elder);
+        let promoted_nodes: Vec<_> = details
+            .all_elders()
+            .filter(|p2p_node| {
+                !self
+                    .shared_state
+                    .our_info()
+                    .elders
+                    .contains_key(p2p_node.name())
+            })
+            .cloned()
+            .collect();
 
+        self.add_force_gossip_peer(&details.our.info.value, old_prefix, was_elder);
         self.update_our_key_and_info(core, details.our.key, details.our.info)?;
 
         if let Some(sibling) = details.sibling {
@@ -1608,6 +1680,7 @@ impl Approved {
         }
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
+        self.send_promote(core, promoted_nodes)?;
         self.send_elders_update(core)?;
 
         if !is_elder {
@@ -1635,6 +1708,12 @@ impl Approved {
             core.send_event(Event::Promoted);
         }
 
+        self.send_elders_changed_event(core);
+
+        Ok(())
+    }
+
+    fn send_elders_changed_event(&self, core: &mut Core) {
         core.send_event(Event::EldersChanged {
             prefix: *self.shared_state.our_prefix(),
             key: *self.shared_state.our_history.last_key(),
@@ -1645,9 +1724,7 @@ impl Approved {
                 .keys()
                 .copied()
                 .collect(),
-        });
-
-        Ok(())
+        })
     }
 
     fn update_our_key_and_info(
@@ -1824,6 +1901,22 @@ impl Approved {
             elders_info: self.shared_state.sections.proven_our().clone(),
             parsec_version: self.consensus_engine.parsec_version(),
         }
+    }
+
+    fn send_promote(&self, core: &mut Core, new_elders: Vec<P2pNode>) -> Result<()> {
+        for p2p_node in new_elders {
+            let variant = Variant::Promote {
+                shared_state: self.shared_state.clone(),
+                parsec_version: self.consensus_engine.parsec_version(),
+            };
+
+            trace!("Send {:?} to {:?}", variant, p2p_node);
+            let message =
+                Message::single_src(&core.full_id, DstLocation::Direct, variant, None, None)?;
+            core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
+        }
+
+        Ok(())
     }
 
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {

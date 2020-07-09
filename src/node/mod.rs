@@ -656,8 +656,12 @@ impl Node {
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
                 Variant::EldersUpdate(payload) => {
-                    stage.handle_elders_update(&mut self.core, payload.clone())?;
+                    stage.handle_elders_update(&mut self.core, payload.clone())?
                 }
+                Variant::Promote {
+                    shared_state,
+                    parsec_version,
+                } => stage.handle_promote(&mut self.core, shared_state.clone(), *parsec_version)?,
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
