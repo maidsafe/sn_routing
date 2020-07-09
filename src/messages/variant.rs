@@ -63,9 +63,6 @@ pub enum Variant {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Sent from Adults and Infants to Elders. Used to "poke" the elders to trigger them to send
-    /// ParsecRequest back.
-    ParsecPoke(u64),
     /// Parsec request message
     ParsecRequest(u64, ParsecRequest),
     /// Parsec response message
@@ -149,7 +146,6 @@ impl Debug for Variant {
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
-            Self::ParsecPoke(version) => write!(f, "ParsecPoke({})", version),
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),

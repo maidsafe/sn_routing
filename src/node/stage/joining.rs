@@ -108,7 +108,6 @@ impl Joining {
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
             | Variant::JoinRequest(_)
-            | Variant::ParsecPoke(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Ping => Ok(MessageStatus::Useless),

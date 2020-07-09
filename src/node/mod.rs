@@ -686,11 +686,6 @@ impl Node {
                     msg.src().to_sender_node(sender)?,
                     *join_request.clone(),
                 ),
-                Variant::ParsecPoke(version) => stage.handle_parsec_poke(
-                    &mut self.core,
-                    msg.src().to_sender_node(sender)?,
-                    *version,
-                ),
                 Variant::ParsecRequest(version, request) => {
                     stage.handle_parsec_request(
                         &mut self.core,

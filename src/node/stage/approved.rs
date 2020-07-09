@@ -39,9 +39,6 @@ use serde::Serialize;
 use std::{cmp::Ordering, collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
-// Send our knowledge in a similar speed as GOSSIP_TIMEOUT
-const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
-
 // Interval to progress DKG timed phase
 const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -52,7 +49,7 @@ pub struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
-    gossip_timer_token: u64,
+    gossip_timer_token: Option<u64>,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
@@ -105,7 +102,12 @@ impl Approved {
         );
 
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
-        let gossip_timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
+
+        let gossip_timer_token = if shared_state.our_info().elders.contains_key(core.name()) {
+            Some(core.timer.schedule(consensus_engine.gossip_period()))
+        } else {
+            None
+        };
 
         Ok(Self {
             consensus_engine,
@@ -158,10 +160,11 @@ impl Approved {
             .our()
             .elders
             .contains_key(core.name());
+
         let gossip_timer_token = if is_self_elder {
-            core.timer.schedule(state.consensus_engine.gossip_period())
+            Some(core.timer.schedule(state.consensus_engine.gossip_period()))
         } else {
-            core.timer.schedule(KNOWLEDGE_TIMEOUT)
+            None
         };
 
         let stage = Self {
@@ -230,15 +233,11 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        if self.gossip_timer_token == token {
+        if self.gossip_timer_token == Some(token) {
             if self.is_our_elder(core.id()) {
                 self.gossip_timer_token =
-                    core.timer.schedule(self.consensus_engine.gossip_period());
+                    Some(core.timer.schedule(self.consensus_engine.gossip_period()));
                 self.consensus_engine.reset_gossip_period();
-            } else {
-                // TODO: send this only when the knowledge changes, not periodically.
-                self.send_parsec_poke(core);
-                self.gossip_timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
             }
         } else if self.dkg_voter.timer_token() == token {
             self.dkg_voter
@@ -368,7 +367,7 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::ParsecRequest(..) | Variant::ParsecResponse(..) | Variant::ParsecPoke(_) => {
+            Variant::ParsecRequest(..) | Variant::ParsecResponse(..) => {
                 if !self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Useless);
                 }
@@ -596,6 +595,7 @@ impl Approved {
         // TODO: verify `shared_state` !
         self.shared_state.update(shared_state);
         self.reset_parsec(core, parsec_version)?;
+        self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
 
         info!("Promoted");
 
@@ -614,7 +614,6 @@ impl Approved {
         }
 
         self.send_elders_update(core)?;
-        self.send_parsec_poke(core);
 
         core.send_event(Event::Promoted);
         self.send_elders_changed_event(core);
@@ -801,13 +800,6 @@ impl Approved {
             age,
             their_knowledge,
         })
-    }
-
-    pub fn handle_parsec_poke(&mut self, core: &mut Core, p2p_node: P2pNode, version: u64) {
-        trace!("Received parsec poke v{} from {}", version, p2p_node);
-
-        let version = version.min(self.consensus_engine.parsec_version());
-        self.send_parsec_gossip(core, Some((version, p2p_node)))
     }
 
     pub fn handle_parsec_request(
@@ -1579,7 +1571,6 @@ impl Approved {
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
         self.send_elders_update(core)?;
-        self.send_parsec_poke(core);
 
         Ok(())
     }
@@ -1643,8 +1634,8 @@ impl Approved {
 
         core.msg_filter.reset();
         self.section_update_barrier = Default::default();
-
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
+
         self.send_promote(core, promoted_nodes)?;
         self.send_elders_update(core)?;
 
@@ -1665,7 +1656,6 @@ impl Approved {
             })
         }
 
-        self.send_parsec_poke(core);
         self.send_elders_changed_event(core);
         self.print_network_stats();
 
@@ -1939,19 +1929,6 @@ impl Approved {
 
         let rand_index = rng.gen_range(0, p2p_recipients.len());
         Some(p2p_recipients.swap_remove(rand_index))
-    }
-
-    fn send_parsec_poke(&mut self, core: &mut Core) {
-        let version = self.consensus_engine.parsec_version();
-
-        for recipient in self.shared_state.sections.our_elders() {
-            if recipient.public_id() == core.id() {
-                continue;
-            }
-
-            trace!("send parsec poke v{} to {}", version, recipient);
-            core.send_direct_message(recipient.peer_addr(), Variant::ParsecPoke(version))
-        }
     }
 
     // Send message over the network.
