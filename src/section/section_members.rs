@@ -8,6 +8,7 @@
 
 use super::{
     member_info::{MemberInfo, MemberState},
+    section_proof_chain::SectionProofChain,
     EldersInfo,
 };
 use crate::{consensus::Proof, id::P2pNode};
@@ -181,6 +182,17 @@ impl SectionMembers {
             .partition(|(name, _)| prefix.matches(name));
         self.members = members;
         self.post_split_siblings = siblings;
+    }
+
+    /// Iterate through member infos to ensure they are section approved.
+    pub fn verify(&self, history: &SectionProofChain) -> bool {
+        self.members
+            .values()
+            .all(|member_info| member_info.verify(history))
+            && self
+                .post_split_siblings
+                .values()
+                .all(|member_info| member_info.verify(history))
     }
 }
 
