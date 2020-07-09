@@ -117,13 +117,14 @@ impl Core {
     }
 
     pub fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
-        let message = match Message::single_src(&self.full_id, DstLocation::Direct, None, variant) {
-            Ok(message) => message,
-            Err(error) => {
-                error!("Failed to create message: {:?}", error);
-                return;
-            }
-        };
+        let message =
+            match Message::single_src(&self.full_id, DstLocation::Direct, variant, None, None) {
+                Ok(message) => message,
+                Err(error) => {
+                    error!("Failed to create message: {:?}", error);
+                    return;
+                }
+            };
 
         self.send_message_to_target(recipient, message.to_bytes())
     }

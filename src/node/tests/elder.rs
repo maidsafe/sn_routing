@@ -182,8 +182,9 @@ impl Env {
         let message = Message::single_src(
             other_full_id,
             DstLocation::Direct,
-            None,
             Variant::ParsecRequest(parsec_version, request),
+            None,
+            None,
         )
         .unwrap();
 
@@ -614,11 +615,12 @@ fn handle_bounced_unknown_message() {
     let bounce_msg = Message::single_src(
         &env.other_ids[0].0,
         DstLocation::Direct,
-        None,
         Variant::BouncedUnknownMessage {
             message: msg.to_bytes(),
             parsec_version: 0,
         },
+        None,
+        None,
     )
     .unwrap();
 
@@ -663,8 +665,9 @@ fn handle_bounced_untrusted_message() {
     let bounce_msg = Message::single_src(
         &env.other_ids[0].0,
         msg.src().src_location().to_dst(),
-        Some(old_section_key),
         Variant::BouncedUntrustedMessage(Box::new(msg)),
+        None,
+        Some(old_section_key),
     )
     .unwrap();
 
@@ -673,10 +676,8 @@ fn handle_bounced_untrusted_message() {
 
     let proof_chain = other_node
         .received_messages()
-        .find_map(|(_, msg)| match (msg.variant(), msg.src()) {
-            (Variant::UserMessage(_), SrcAuthority::Section { proof_chain, .. }) => {
-                Some(proof_chain.clone())
-            }
+        .find_map(|(_, msg)| match (msg.variant(), msg.proof_chain()) {
+            (Variant::UserMessage(_), Some(proof_chain)) => Some(proof_chain.clone()),
             _ => None,
         })
         .expect("message was not resent");
@@ -700,13 +701,13 @@ fn receive_message_with_invalid_signature() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature: sk1.sign(b"bad data"),
-        proof_chain,
     };
     let msg = Message::unverified(
         src,
         DstLocation::Section(*env.subject.name()),
-        Some(pk0),
         Variant::UserMessage(b"hello".to_vec()),
+        Some(proof_chain),
+        Some(pk0),
     )
     .unwrap();
 
@@ -740,9 +741,15 @@ fn receive_message_with_invalid_proof_chain() {
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),
         signature,
-        proof_chain,
     };
-    let msg = Message::unverified(src, msg.dst, Some(msg.dst_key), msg.variant).unwrap();
+    let msg = Message::unverified(
+        src,
+        msg.dst,
+        msg.variant,
+        Some(proof_chain),
+        Some(msg.dst_key),
+    )
+    .unwrap();
 
     let sender = env.network.gen_addr();
     test_utils::handle_message(&mut env.subject, sender, msg).unwrap();
@@ -774,8 +781,9 @@ impl OtherNode {
         Ok(Message::single_src(
             &self.full_id,
             DstLocation::Direct,
-            None,
             variant,
+            None,
+            None,
         )?)
     }
 

@@ -24,7 +24,7 @@ use crate::{
     error::{Result, RoutingError},
     id::FullId,
     location::DstLocation,
-    section::{ExtendError, SectionProofChain},
+    section::{ExtendError, SectionProofChain, TrustStatus},
 };
 
 use bytes::Bytes;
@@ -39,20 +39,21 @@ use xor_name::Prefix;
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Message {
-    /// Destination location.
-    dst: DstLocation,
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
     /// agains the public key and we know the pub key then we are good. If the proof is not recognised we
     /// ask for a longer chain that can be recognised). Therefor we don't need to sign this field.
     src: SrcAuthority,
+    /// Destination location.
+    dst: DstLocation,
     /// The body of the message.
     variant: Variant,
+    /// Proof chain to verify the message trust. Does not need to be signed.
+    proof_chain: Option<SectionProofChain>,
     /// Source's knowledge of the destination section key. If present, the destination can use it
     /// to determine the length of the proof of messages sent to the source so the source would
     /// trust it (the proof needs to start at this key).
     dst_key: Option<bls::PublicKey>,
-
     /// Serialised message, this is a signed and fully serialised message ready to send.
     #[serde(skip)]
     serialized: Bytes,
@@ -76,31 +77,26 @@ impl Message {
                 public_id,
                 signature,
             } => {
-                if public_id.verify(&signed_bytes, &signature) {
-                    msg.serialized = bytes.clone();
-                    msg.hash = MessageHash::from_bytes(bytes);
-                    Ok(msg)
-                } else {
+                if !public_id.verify(&signed_bytes, &signature) {
                     error!("Failed signature: {:?}", msg);
-                    Err(CreateError::FailedSignature)
+                    return Err(CreateError::FailedSignature);
                 }
             }
-            SrcAuthority::Section {
-                signature,
-                proof_chain,
-                ..
-            } => {
-                // FIXME Assumes the nodes proof last key is the one signing this message
-                if proof_chain.last_key().verify(&signature, &signed_bytes) {
-                    msg.serialized = bytes.clone();
-                    msg.hash = MessageHash::from_bytes(bytes);
-                    Ok(msg)
-                } else {
-                    error!("Failed signature: {:?}", msg);
-                    Err(CreateError::FailedSignature)
+            SrcAuthority::Section { signature, .. } => {
+                if let Some(proof_chain) = msg.proof_chain.as_ref() {
+                    // FIXME Assumes the nodes proof last key is the one signing this message
+                    if !proof_chain.last_key().verify(&signature, &signed_bytes) {
+                        error!("Failed signature: {:?}", msg);
+                        return Err(CreateError::FailedSignature);
+                    }
                 }
             }
         }
+
+        msg.serialized = bytes.clone();
+        msg.hash = MessageHash::from_bytes(bytes);
+
+        Ok(msg)
     }
 
     /// send across wire
@@ -112,12 +108,14 @@ impl Message {
     fn new_signed(
         src: SrcAuthority,
         dst: DstLocation,
-        dst_key: Option<bls::PublicKey>,
         variant: Variant,
+        proof_chain: Option<SectionProofChain>,
+        dst_key: Option<bls::PublicKey>,
     ) -> Result<Message, CreateError> {
         let mut msg = Message {
             dst,
             src,
+            proof_chain,
             variant,
             dst_key,
             serialized: Default::default(),
@@ -134,8 +132,9 @@ impl Message {
     pub(crate) fn single_src(
         src: &FullId,
         dst: DstLocation,
-        dst_key: Option<bls::PublicKey>,
         variant: Variant,
+        proof_chain: Option<SectionProofChain>,
+        dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, CreateError> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -148,7 +147,7 @@ impl Message {
             signature,
         };
 
-        Self::new_signed(src, dst, dst_key, variant)
+        Self::new_signed(src, dst, variant, proof_chain, dst_key)
     }
 
     /// Creates a message but does not enforce that it is valid. Use only for testing.
@@ -156,19 +155,64 @@ impl Message {
     pub(crate) fn unverified(
         src: SrcAuthority,
         dst: DstLocation,
-        dst_key: Option<bls::PublicKey>,
         variant: Variant,
+        proof_chain: Option<SectionProofChain>,
+        dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, CreateError> {
-        Self::new_signed(src, dst, dst_key, variant)
+        Self::new_signed(src, dst, variant, proof_chain, dst_key)
     }
 
     /// Verify this message is properly signed and trusted.
-    pub(crate) fn verify<'a, I>(&'a self, their_keys: I) -> Result<VerifyStatus>
+    pub(crate) fn verify<'a, I>(&'a self, trusted_keys: I) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
     {
-        self.src
-            .verify(&self.dst, self.dst_key.as_ref(), &self.variant, their_keys)
+        let bytes = bincode::serialize(&SignableView {
+            dst: &self.dst,
+            dst_key: self.dst_key.as_ref(),
+            variant: &self.variant,
+        })?;
+
+        match &self.src {
+            SrcAuthority::Node {
+                public_id,
+                signature,
+            } => {
+                if !public_id.verify(&bytes, signature) {
+                    return Err(RoutingError::FailedSignature);
+                }
+
+                // Variant-specific verification.
+                let trusted_keys = trusted_keys
+                    .into_iter()
+                    .filter(|(known_prefix, _)| known_prefix.matches(public_id.name()))
+                    .map(|(_, key)| key);
+                self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
+            }
+            SrcAuthority::Section { prefix, signature } => {
+                // Proof chain is requires for section-src messages.
+                let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
+                    proof_chain
+                } else {
+                    return Err(RoutingError::InvalidMessage);
+                };
+
+                if !proof_chain.last_key().verify(signature, &bytes) {
+                    return Err(RoutingError::FailedSignature);
+                }
+
+                let trusted_keys = trusted_keys
+                    .into_iter()
+                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
+                    .map(|(_, key)| key);
+
+                match proof_chain.check_trust(trusted_keys) {
+                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
+                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                }
+            }
+        }
     }
 
     pub(crate) fn into_queued(self, sender: Option<SocketAddr>) -> QueuedMessage {
@@ -202,6 +246,20 @@ impl Message {
         &self.hash
     }
 
+    /// Returns the attached proof chain, if any.
+    #[cfg(all(test, feature = "mock"))]
+    pub(crate) fn proof_chain(&self) -> Option<&SectionProofChain> {
+        self.proof_chain.as_ref()
+    }
+
+    /// Returns the last key of the attached the proof chain, if any.
+    pub(crate) fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
+        self.proof_chain
+            .as_ref()
+            .map(|proof_chain| proof_chain.last_key())
+            .ok_or(RoutingError::InvalidMessage)
+    }
+
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
     // last key (and therefore the signature) intact.
     #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
@@ -210,22 +268,18 @@ impl Message {
         new_first_key: &bls::PublicKey,
         section_proof_chain: &SectionProofChain,
     ) -> Result<Self, ExtendProofChainError> {
-        let proof_chain = match (&mut self.src, &mut self.variant) {
-            (SrcAuthority::Section { proof_chain, .. }, _) => proof_chain,
-            (SrcAuthority::Node { .. }, Variant::NodeApproval(payload))
-            | (SrcAuthority::Node { .. }, Variant::EldersUpdate(payload)) => {
-                &mut payload.proof_chain
-            }
-            _ => return Err(ExtendProofChainError::NoProofChain),
-        };
-
-        proof_chain.extend(new_first_key, section_proof_chain)?;
+        if let Some(proof_chain) = self.proof_chain.as_mut() {
+            proof_chain.extend(new_first_key, section_proof_chain)?;
+        } else {
+            return Err(ExtendProofChainError::NoProofChain);
+        }
 
         Ok(Self::new_signed(
             self.src,
             self.dst,
-            self.dst_key,
             self.variant,
+            self.proof_chain,
+            self.dst_key,
         )?)
     }
 }

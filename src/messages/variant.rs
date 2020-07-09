@@ -101,13 +101,18 @@ pub enum Variant {
 }
 
 impl Variant {
-    pub(crate) fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
+    pub(crate) fn verify<'a, I>(
+        &self,
+        proof_chain: Option<&SectionProofChain>,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         match self {
             Self::NodeApproval(payload) | Self::EldersUpdate(payload) => {
-                payload.verify(trusted_keys)
+                let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+                payload.verify(proof_chain, trusted_keys)
             }
             _ => Ok(VerifyStatus::Full),
         }
@@ -214,11 +219,14 @@ pub struct EldersUpdate {
     pub elders_info: Proven<EldersInfo>,
     // TODO: this should have signature too.
     pub parsec_version: u64,
-    pub proof_chain: SectionProofChain,
 }
 
 impl EldersUpdate {
-    pub fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
+    pub fn verify<'a, I>(
+        &self,
+        proof_chain: &SectionProofChain,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
@@ -226,11 +234,11 @@ impl EldersUpdate {
             return Err(RoutingError::FailedSignature);
         }
 
-        if !self.proof_chain.has_key(&self.elders_info.proof.public_key) {
+        if !proof_chain.has_key(&self.elders_info.proof.public_key) {
             return Err(RoutingError::UntrustedMessage);
         }
 
-        match self.proof_chain.check_trust(trusted_keys) {
+        match proof_chain.check_trust(trusted_keys) {
             TrustStatus::Trusted => Ok(VerifyStatus::Full),
             TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
             TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),

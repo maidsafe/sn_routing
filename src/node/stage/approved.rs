@@ -423,8 +423,9 @@ impl Approved {
         let bounce_msg = Message::single_src(
             &core.full_id,
             bounce_dst,
-            Some(bounce_dst_key),
             Variant::BouncedUntrustedMessage(Box::new(msg)),
+            None,
+            Some(bounce_dst_key),
         )?;
         let bounce_msg = bounce_msg.to_bytes();
 
@@ -449,11 +450,12 @@ impl Approved {
         let bounce_msg = Message::single_src(
             &core.full_id,
             DstLocation::Direct,
-            None,
             Variant::BouncedUnknownMessage {
                 message: msg_bytes,
                 parsec_version: self.consensus_engine.parsec_version(),
             },
+            None,
+            None,
         )?;
         let bounce_msg = bounce_msg.to_bytes();
 
@@ -1133,7 +1135,7 @@ impl Approved {
                 age,
                 their_knowledge,
                 proof.expect("missing proof for Online"),
-            ),
+            )?,
             AccumulatingEvent::Offline(name) => {
                 self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
             }
@@ -1238,7 +1240,7 @@ impl Approved {
         age: u8,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
-    ) {
+    ) -> Result<()> {
         if self.shared_state.add_member(
             p2p_node.clone(),
             age,
@@ -1254,12 +1256,14 @@ impl Approved {
                     name: *p2p_node.name(),
                     age,
                 });
-                self.send_node_approval(core, p2p_node, their_knowledge);
+                self.send_node_approval(core, p2p_node, their_knowledge)?;
                 self.print_network_stats();
             }
         } else {
             info!("ignore Online: {}", p2p_node);
         }
+
+        Ok(())
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
@@ -1537,8 +1541,9 @@ impl Approved {
         info!("handle ParsecPrune");
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-        self.send_elders_update(core);
+        self.send_elders_update(core)?;
         self.send_parsec_poke(core);
+
         Ok(())
     }
 
@@ -1601,7 +1606,7 @@ impl Approved {
         }
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-        self.send_elders_update(core);
+        self.send_elders_update(core)?;
 
         if !is_elder {
             info!("Demoted");
@@ -1762,53 +1767,59 @@ impl Approved {
         core: &mut Core,
         p2p_node: P2pNode,
         their_knowledge: Option<bls::PublicKey>,
-    ) {
+    ) -> Result<()> {
         info!(
             "Our section with {:?} has approved candidate {}.",
             self.shared_state.our_prefix(),
             p2p_node
         );
 
-        let first_index =
+        let their_knowledge =
             their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
-        let elders_update = self.create_elders_update(first_index);
+        let proof_chain = self
+            .shared_state
+            .create_proof_chain_for_our_info(their_knowledge);
+
+        let elders_update = self.create_elders_update();
         let variant = Variant::NodeApproval(elders_update);
 
         trace!("Send {:?} to {:?}", variant, p2p_node);
-        core.send_direct_message(p2p_node.peer_addr(), variant);
+        let message = Message::single_src(
+            &core.full_id,
+            DstLocation::Direct,
+            variant,
+            Some(proof_chain),
+            None,
+        )?;
+        core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
+
+        Ok(())
     }
 
-    fn send_elders_update(&self, core: &mut Core) {
-        let elders_update = self.create_elders_update(None);
-        let variant = Variant::EldersUpdate(elders_update);
+    fn send_elders_update(&self, core: &mut Core) -> Result<()> {
+        let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
 
         for p2p_node in self.shared_state.adults_and_infants_p2p_nodes() {
+            let elders_update = self.create_elders_update();
+            let variant = Variant::EldersUpdate(elders_update);
+
             trace!("Send {:?} to {:?}", variant, p2p_node);
-            core.send_direct_message(p2p_node.peer_addr(), variant.clone());
+            let message = Message::single_src(
+                &core.full_id,
+                DstLocation::Direct,
+                variant,
+                Some(proof_chain.clone()),
+                None,
+            )?;
+            core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
         }
+
+        Ok(())
     }
 
-    fn create_elders_update(&self, their_knowledge: Option<u64>) -> EldersUpdate {
-        let elders_info = self.shared_state.sections.proven_our();
-
-        // Include the shortest proof chain that includes both the key at `their_knowledge`
-        // (if provided) and the key `elders_info` was signed with, to make sure `elders_info` can
-        // be verified by the recipient.
-        //
-        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
-        // present in our section proof chain. This is currently guaranteed, because we use the
-        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
-        // section key at the same time.
-        let first_index = self
-            .shared_state
-            .our_history
-            .index_of(&elders_info.proof.public_key)
-            .expect("our EldersInfo signed with unknown key");
-        let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
-
+    fn create_elders_update(&self) -> EldersUpdate {
         EldersUpdate {
-            elders_info: elders_info.clone(),
-            proof_chain: self.shared_state.our_history.slice(first_index..),
+            elders_info: self.shared_state.sections.proven_our().clone(),
             parsec_version: self.consensus_engine.parsec_version(),
         }
     }
@@ -1945,7 +1956,7 @@ impl Approved {
         // If the source is a single node, we don't even need to send signatures, so let's cut this
         // short
         if !src.is_section() {
-            let msg = Message::single_src(&core.full_id, dst, None, variant)?;
+            let msg = Message::single_src(&core.full_id, dst, variant, None, None)?;
             return self.handle_accumulated_message(core, msg);
         }
 
@@ -2042,10 +2053,23 @@ impl Approved {
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
     pub fn update_section_knowledge(&mut self, our_name: &XorName, msg: &Message) {
+        let src_prefix = if let Ok(prefix) = msg.src().as_section_prefix() {
+            prefix
+        } else {
+            return;
+        };
+
+        let src_key = if let Ok(key) = msg.proof_chain_last_key() {
+            key
+        } else {
+            return;
+        };
+
         let hash = msg.hash();
         let events = self.shared_state.update_section_knowledge(
             our_name,
-            msg.src(),
+            src_prefix,
+            src_key,
             msg.dst_key().as_ref(),
             hash,
         );

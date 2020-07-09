@@ -11,7 +11,7 @@ use crate::{
     consensus::{AccumulatingEvent, Proof, Proven},
     id::P2pNode,
     location::DstLocation,
-    messages::{MessageHash, SrcAuthority},
+    messages::MessageHash,
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
 };
@@ -83,6 +83,25 @@ impl SharedState {
     /// Returns our own current elders info.
     pub fn our_info(&self) -> &EldersInfo {
         self.sections.our()
+    }
+
+    // Creates the shortest proof chain that includes both the key at `their_knowledge`
+    // (if provided) and the key our current `elders_info` was signed with.
+    pub fn create_proof_chain_for_our_info(
+        &self,
+        their_knowledge: Option<u64>,
+    ) -> SectionProofChain {
+        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
+        // present in our section proof chain. This is currently guaranteed, because we use the
+        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
+        // section key at the same time.
+        let first_index = self
+            .our_history
+            .index_of(&self.sections.proven_our().proof.public_key)
+            .expect("our EldersInfo signed with unknown key");
+        let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
+
+        self.our_history.slice(first_index..)
     }
 
     /// Returns our own current section's prefix.
@@ -319,17 +338,12 @@ impl SharedState {
     pub fn update_section_knowledge(
         &mut self,
         our_name: &XorName,
-        src: &SrcAuthority,
+        src_prefix: &Prefix,
+        src_key: &bls::PublicKey,
         dst_key: Option<&bls::PublicKey>,
         hash: &MessageHash,
     ) -> Vec<AccumulatingEvent> {
-        let (&prefix, new_key) = if let Ok(pair) = src.as_section_prefix_and_key() {
-            pair
-        } else {
-            return vec![];
-        };
-
-        let is_neighbour = self.our_prefix().is_neighbour(&prefix);
+        let is_neighbour = self.our_prefix().is_neighbour(src_prefix);
 
         // There will be at most two events returned because the only possible event combinations
         // are these:
@@ -341,26 +355,26 @@ impl SharedState {
         let mut events = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 
-        if !prefix.matches(our_name) && !self.sections.has_key(new_key) {
+        if !src_prefix.matches(our_name) && !self.sections.has_key(src_key) {
             // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
             // via `NeighbourInfo`.
             if is_neighbour {
                 vote_send_neighbour_info = true;
             } else {
                 events.push(AccumulatingEvent::TheirKey {
-                    prefix,
-                    key: *new_key,
+                    prefix: *src_prefix,
+                    key: *src_key,
                 });
             }
         }
 
         if let Some(dst_key) = dst_key {
-            let old = self.sections.knowledge_by_section(&prefix);
+            let old = self.sections.knowledge_by_section(src_prefix);
             let new = self.our_history.index_of(dst_key).unwrap_or(0);
 
             if new > old {
                 events.push(AccumulatingEvent::TheirKnowledge {
-                    prefix,
+                    prefix: *src_prefix,
                     knowledge: new,
                 })
             }
@@ -375,7 +389,7 @@ impl SharedState {
             // neighbours.
 
             events.push(AccumulatingEvent::SendNeighbourInfo {
-                dst: prefix.name(),
+                dst: src_prefix.name(),
                 nonce: *hash,
             })
         }

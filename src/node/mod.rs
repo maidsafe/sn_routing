@@ -652,7 +652,7 @@ impl Node {
             Stage::Approved(stage) => match msg.variant() {
                 Variant::NeighbourInfo { elders_info, .. } => {
                     msg.dst().check_is_section()?;
-                    let src_key = *msg.src().as_section_key()?;
+                    let src_key = *msg.proof_chain_last_key()?;
                     stage.handle_neighbour_info(elders_info.clone(), src_key);
                 }
                 Variant::EldersUpdate(payload) => {

@@ -101,14 +101,14 @@ impl Env {
         let elders_update = EldersUpdate {
             elders_info,
             parsec_version,
-            proof_chain,
         };
         let variant = Variant::EldersUpdate(elders_update);
         let message = Message::single_src(
             sender_full_id,
             DstLocation::Direct,
-            Some(self.public_key()),
             variant,
+            Some(proof_chain),
+            Some(self.public_key()),
         )?;
 
         test_utils::handle_message(&mut self.subject, sender_addr, message)

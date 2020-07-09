@@ -6,13 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{SignableView, Variant, VerifyStatus};
 use crate::{
     crypto::signing::Signature as SimpleSignature,
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
-    location::{DstLocation, SrcLocation},
-    section::{SectionProofChain, TrustStatus},
+    location::SrcLocation,
 };
 
 use std::net::SocketAddr;
@@ -38,8 +36,6 @@ pub enum SrcAuthority {
         prefix: Prefix,
         /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
-        /// Proof chain whole last key is the section public key corresponding to the signature.
-        proof_chain: SectionProofChain,
     },
 }
 
@@ -70,22 +66,10 @@ impl SrcAuthority {
         }
     }
 
-    // If this is `Section`, return the last section key, otherwise error.
-    pub(crate) fn as_section_key(&self) -> Result<&bls::PublicKey> {
+    // If this is `Section`, returns the prefix.
+    pub(crate) fn as_section_prefix(&self) -> Result<&Prefix> {
         match self {
-            Self::Section { proof_chain, .. } => Ok(proof_chain.last_key()),
-            Self::Node { .. } => Err(RoutingError::BadLocation),
-        }
-    }
-
-    // If this is `Section`, returns the prefix and the latest key, otherwise error.
-    pub(crate) fn as_section_prefix_and_key(&self) -> Result<(&Prefix, &bls::PublicKey)> {
-        match self {
-            Self::Section {
-                prefix,
-                proof_chain,
-                ..
-            } => Ok((prefix, proof_chain.last_key())),
+            Self::Section { prefix, .. } => Ok(prefix),
             Self::Node { .. } => Err(RoutingError::BadLocation),
         }
     }
@@ -94,60 +78,5 @@ impl SrcAuthority {
         let pub_id = *self.as_node()?;
         let conn_info = sender.ok_or(RoutingError::InvalidSource)?;
         Ok(P2pNode::new(pub_id, conn_info))
-    }
-
-    pub(crate) fn verify<'a, I>(
-        &'a self,
-        dst: &DstLocation,
-        dst_key: Option<&bls::PublicKey>,
-        variant: &Variant,
-        trusted_keys: I,
-    ) -> Result<VerifyStatus>
-    where
-        I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
-    {
-        let bytes = bincode::serialize(&SignableView {
-            dst,
-            dst_key,
-            variant,
-        })?;
-
-        match self {
-            Self::Node {
-                public_id,
-                signature,
-            } => {
-                if !public_id.verify(&bytes, signature) {
-                    return Err(RoutingError::FailedSignature);
-                }
-
-                // Variant-specific verification.
-                let trusted_keys = trusted_keys
-                    .into_iter()
-                    .filter(|(known_prefix, _)| known_prefix.matches(public_id.name()))
-                    .map(|(_, key)| key);
-                variant.verify(trusted_keys)
-            }
-            Self::Section {
-                prefix,
-                signature,
-                proof_chain,
-            } => {
-                if !proof_chain.last_key().verify(signature, &bytes) {
-                    return Err(RoutingError::FailedSignature);
-                }
-
-                let trusted_keys = trusted_keys
-                    .into_iter()
-                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
-                    .map(|(_, key)| key);
-
-                match proof_chain.check_trust(trusted_keys) {
-                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
-                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
-                }
-            }
-        }
     }
 }

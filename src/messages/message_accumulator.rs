@@ -34,14 +34,14 @@ impl MessageAccumulator {
                 let src = SrcAuthority::Section {
                     prefix: payload.content.src,
                     signature: proof.signature,
-                    proof_chain: payload.proof_chain,
                 };
 
                 match Message::new_signed(
                     src,
                     payload.content.dst,
-                    Some(payload.content.dst_key),
                     payload.content.variant,
+                    Some(payload.proof_chain),
+                    Some(payload.content.dst_key),
                 ) {
                     Ok(msg) => Some(msg),
                     Err(error) => {
