@@ -368,15 +368,17 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
+            Variant::ParsecRequest(..) | Variant::ParsecResponse(..) | Variant::ParsecPoke(_) => {
+                if !self.is_our_elder(our_id) {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                 return Ok(MessageStatus::Useless)
             }
             Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
-            | Variant::ParsecPoke(_)
-            | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. } => {}
         }
@@ -836,16 +838,11 @@ impl Approved {
         match msg_version.cmp(&self.consensus_engine.parsec_version()) {
             Ordering::Equal => self.poll_all(core),
             Ordering::Greater => {
-                if self.is_our_elder(core.id()) {
-                    // We are lagging behind. Send a request whose response might help us catch up.
-                    self.send_parsec_gossip(
-                        core,
-                        Some((self.consensus_engine.parsec_version(), p2p_node)),
-                    );
-                } else {
-                    // Poking when we are not elder yet.
-                    self.send_parsec_poke(core);
-                }
+                // We are lagging behind. Send a request whose response might help us catch up.
+                self.send_parsec_gossip(
+                    core,
+                    Some((self.consensus_engine.parsec_version(), p2p_node)),
+                );
                 Ok(())
             }
             Ordering::Less => Ok(()),
@@ -1053,10 +1050,6 @@ impl Approved {
             self.churn_in_progress = false;
             return false;
         };
-
-        if !self.is_our_elder(core.id()) {
-            return true;
-        }
 
         if new_infos.len() > 1 {
             debug!("splitting with new_infos {:?}", new_infos);
@@ -1302,14 +1295,12 @@ impl Approved {
 
             self.members_changed = true;
 
-            if self.is_our_elder(core.id()) {
-                core.send_event(Event::MemberJoined {
-                    name: *p2p_node.name(),
-                    age,
-                });
-                self.send_node_approval(core, p2p_node, their_knowledge)?;
-                self.print_network_stats();
-            }
+            core.send_event(Event::MemberJoined {
+                name: *p2p_node.name(),
+                age,
+            });
+            self.send_node_approval(core, p2p_node, their_knowledge)?;
+            self.print_network_stats();
         } else {
             info!("ignore Online: {}", p2p_node);
         }
@@ -1328,13 +1319,10 @@ impl Approved {
             self.members_changed = true;
 
             core.transport.disconnect(*info.p2p_node.peer_addr());
-
-            if self.is_our_elder(core.id()) {
-                core.send_event(Event::MemberLeft {
-                    name,
-                    age: info.age(),
-                });
-            }
+            core.send_event(Event::MemberLeft {
+                name,
+                age: info.age(),
+            });
         } else {
             info!("ignore Offline: {}", name);
         }
@@ -1373,10 +1361,6 @@ impl Approved {
         };
 
         self.members_changed = true;
-
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
 
         if &details.pub_id == core.id() {
             // Do not send the message to ourselves.
@@ -1518,10 +1502,6 @@ impl Approved {
         dst: XorName,
         nonce: MessageHash,
     ) -> Result<()> {
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
-
         self.send_routing_message(
             core,
             SrcLocation::Section(*self.shared_state.our_prefix()),
@@ -1590,11 +1570,6 @@ impl Approved {
     }
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
-        if !self.is_our_elder(core.id()) {
-            debug!("ignore ParsecPrune event - not elder");
-            return Ok(());
-        }
-
         if self.churn_in_progress {
             debug!("ignore ParsecPrune event - churn in progress");
             return Ok(());
@@ -1630,9 +1605,10 @@ impl Approved {
         }
     }
 
-    // TODO: handle this only when elder
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
-        trace!("Update our Section with {:?}", details);
+        trace!("update our section with {:?}", details);
+        info!("handle SectionInfo: {:?}", details.our.info.value);
+
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
@@ -1658,32 +1634,21 @@ impl Approved {
             self.update_neighbour_info(core, sibling.info);
         }
 
-        let elders_info = self.shared_state.our_info();
-        let new_prefix = elders_info.prefix;
-        let is_elder = elders_info.elders.contains_key(core.name());
-
-        core.msg_filter.reset();
-
-        if was_elder || is_elder {
-            info!("handle SectionInfo: {:?}", elders_info);
-        } else {
-            trace!("unhandled SectionInfo");
-            return Ok(());
-        }
-
-        self.section_update_barrier = Default::default();
-
+        let new_prefix = &self.shared_state.our_info().prefix;
         if new_prefix.is_extension_of(&old_prefix) {
             info!("Split");
-        } else if old_prefix.is_extension_of(&new_prefix) {
+        } else if old_prefix.is_extension_of(new_prefix) {
             panic!("Merge not supported: {:?} -> {:?}", old_prefix, new_prefix);
         }
+
+        core.msg_filter.reset();
+        self.section_update_barrier = Default::default();
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
         self.send_promote(core, promoted_nodes)?;
         self.send_elders_update(core)?;
 
-        if !is_elder {
+        if !self.is_our_elder(core.id()) {
             info!("Demoted");
             self.shared_state.demote();
             core.send_event(Event::Demoted);
@@ -1701,14 +1666,8 @@ impl Approved {
         }
 
         self.send_parsec_poke(core);
-        self.print_network_stats();
-
-        if !was_elder {
-            info!("Promoted");
-            core.send_event(Event::Promoted);
-        }
-
         self.send_elders_changed_event(core);
+        self.print_network_stats();
 
         Ok(())
     }
