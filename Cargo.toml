@@ -22,14 +22,12 @@ env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.4"
 fake_clock = "~0.3.0"
 fxhash = "~0.2.1"
-hex = "~0.4.2"
 hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 lazy_static = { version = "1", optional = true }
 log = "~0.4.8"
 lru_time_cache = "~0.10.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
-num-bigint = "~0.2.6"
 parsec = { git = "https://github.com/maidsafe/parsec" }
 quic-p2p = { version = "~0.7.0", features = ["upnp"] }
 rand = "~0.7.3"
