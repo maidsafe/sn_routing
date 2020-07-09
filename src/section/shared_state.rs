@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain, TrustStatus,
-};
+use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::{AccumulatingEvent, Proof, Proven},
     error::RoutingError,
@@ -69,7 +67,12 @@ impl SharedState {
                 );
                 return Err(RoutingError::InvalidState);
             }
-        } else if !self.our_history.self_verify() {
+        } else if !new.self_verify()
+            && !self
+                .our_history
+                .keys()
+                .any(|key| new.our_history.has_key(key))
+        {
             error!("shared state update - invalid new history: {:?}", new);
             return Err(RoutingError::InvalidState);
         }
@@ -77,6 +80,12 @@ impl SharedState {
         *self = new;
         self.handled_genesis_event = true;
         Ok(())
+    }
+
+    fn self_verify(&self) -> bool {
+        self.our_history.self_verify()
+            && self.our_members.verify(&self.our_history)
+            && self.sections.verify(&self.our_history)
     }
 
     // Clear all data except that which is needed for non-elders.
@@ -191,18 +200,14 @@ impl SharedState {
             return false;
         }
 
-        // The section public key of the proof shall be trusted by us.
-        match self.our_history.check_trust(iter::once(&proof.public_key)) {
-            TrustStatus::Trusted => {}
-            result => {
-                trace!(
-                    "not adding node {} / {:?} - Proof {:?} is not trusted.",
-                    p2p_node.name(),
-                    result,
-                    proof
-                );
-                return false;
-            }
+        // The section public key of the proof shall be known to us.
+        if !self.our_history.has_key(&proof.public_key) {
+            trace!(
+                "not adding node {} - Proof {:?} section_key is not known to us.",
+                p2p_node.name(),
+                proof
+            );
+            return false;
         }
 
         let name = *p2p_node.name();
@@ -221,18 +226,14 @@ impl SharedState {
         proof: Proof,
         recommended_section_size: usize,
     ) -> Option<MemberInfo> {
-        // The section public key of the proof shall be trusted by us.
-        match self.our_history.check_trust(iter::once(&proof.public_key)) {
-            TrustStatus::Trusted => {}
-            result => {
-                trace!(
-                    "not removing member {} / {:?} - Proof {:?} is not trusted.",
-                    name,
-                    result,
-                    proof
-                );
-                return None;
-            }
+        // The section public key of the proof shall be known to us.
+        if !self.our_history.has_key(&proof.public_key) {
+            trace!(
+                "not removing member {} - Proof {:?} section_key is not known to us.",
+                name,
+                proof
+            );
+            return None;
         }
 
         match self.our_members.get(name).map(|info| &info.state) {
@@ -301,20 +302,13 @@ impl SharedState {
         elders_info: Proven<EldersInfo>,
         section_key: Proven<bls::PublicKey>,
     ) {
-        // The section public key of the proof shall be trusted by us.
-        match self
-            .our_history
-            .check_trust(iter::once(&section_key.proof.public_key))
-        {
-            TrustStatus::Trusted => {}
-            result => {
-                trace!(
-                    "not updating our section {:?} - Old section key {:?} is not trusted.",
-                    result,
-                    section_key.proof.public_key
-                );
-                return;
-            }
+        // The section public key of the proof shall be known to us.
+        if !self.our_history.has_key(&section_key.proof.public_key) {
+            trace!(
+                "not updating our section - Old section key {:?} is not known to us.",
+                section_key.proof.public_key
+            );
+            return;
         }
 
         self.our_members

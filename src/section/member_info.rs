@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::section_proof_chain::SectionProofChain;
 use crate::{consensus::Proof, id::P2pNode};
 use xor_name::XorName;
 
@@ -96,6 +97,15 @@ impl MemberInfo {
     #[cfg(feature = "mock_base")]
     pub fn age_counter_value(&self) -> u32 {
         self.age_counter.0
+    }
+
+    pub fn verify(&self, history: &SectionProofChain) -> bool {
+        let to_sign = to_sign(self.p2p_node.name(), self.state);
+        if let Ok(bytes) = bincode::serialize(&to_sign) {
+            history.has_key(&self.proof.public_key) && self.proof.verify(&bytes)
+        } else {
+            false
+        }
     }
 }
 

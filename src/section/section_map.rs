@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap};
+use super::{
+    elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap,
+    section_proof_chain::SectionProofChain,
+};
 use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
 
 use std::{
@@ -29,6 +32,13 @@ pub struct SectionMap {
 }
 
 impl SectionMap {
+    pub fn verify(&self, history: &SectionProofChain) -> bool {
+        self.our.verify(history)
+            && self.neighbours.iter().all(|proven| proven.verify(history))
+            && self.keys.iter().all(|proven| proven.verify(history))
+            && self.knowledge.iter().all(|proven| proven.verify(history))
+    }
+
     pub fn new(our_info: Proven<EldersInfo>) -> Self {
         Self {
             our: our_info,
