@@ -556,11 +556,11 @@ impl Node {
                 self.handle_message(sender, msg)
             }
             MessageStatus::Untrusted => {
-                debug!("Untrusted message from {}: {:?} ", sender, msg,);
+                debug!("Untrusted message from {}: {:?} ", sender, msg);
                 self.handle_untrusted_message(sender, msg)
             }
             MessageStatus::Unknown => {
-                debug!("Unknown message from {}: {:?} ", sender, msg,);
+                debug!("Unknown message from {}: {:?} ", sender, msg);
                 self.handle_unknown_message(sender, msg)
             }
             MessageStatus::Useless => {
@@ -713,9 +713,10 @@ impl Node {
                 Variant::BouncedUntrustedMessage(message) => stage
                     .handle_bounced_untrusted_message(
                         &mut self.core,
+                        msg.src().to_sender_node(sender)?,
                         *msg.dst_key(),
                         *message.clone(),
-                    )?,
+                    ),
                 Variant::BouncedUnknownMessage {
                     message,
                     parsec_version,

@@ -382,3 +382,66 @@ pub(crate) struct SignableView<'a> {
     dst_key: Option<&'a bls::PublicKey>,
     variant: &'a Variant,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{consensus, rng, section};
+    use std::iter;
+
+    #[test]
+    fn extend_proof_chain() {
+        let mut rng = rng::new();
+
+        let full_id = FullId::gen(&mut rng);
+
+        let sk0 = consensus::test_utils::gen_secret_key(&mut rng);
+        let pk0 = sk0.public_key();
+
+        let sk1 = consensus::test_utils::gen_secret_key(&mut rng);
+        let pk1 = sk1.public_key();
+
+        let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
+        let pk1_sig = sk0.sign(&bincode::serialize(&pk1).unwrap());
+        full_proof_chain.push(pk1, pk1_sig);
+
+        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
+        let elders_info = consensus::test_utils::proven(&sk1, elders_info);
+
+        let elders_update = EldersUpdate {
+            elders_info,
+            parsec_version: 1,
+        };
+        let variant = Variant::EldersUpdate(elders_update);
+        let message = Message::single_src(
+            &full_id,
+            DstLocation::Direct,
+            variant,
+            Some(full_proof_chain.slice(1..)),
+            Some(pk1),
+        )
+        .unwrap();
+
+        assert_eq!(
+            message
+                .verify(iter::once((&Prefix::default(), &pk1)))
+                .unwrap(),
+            VerifyStatus::Full
+        );
+        assert_eq!(
+            message
+                .verify(iter::once((&Prefix::default(), &pk0)))
+                .unwrap(),
+            VerifyStatus::Unknown
+        );
+
+        let message = message.extend_proof_chain(&pk0, &full_proof_chain).unwrap();
+
+        assert_eq!(
+            message
+                .verify(iter::once((&Prefix::default(), &pk0)))
+                .unwrap(),
+            VerifyStatus::Full
+        );
+    }
+}

@@ -378,10 +378,8 @@ impl Approved {
 
         if self.verify_message(msg)? {
             Ok(MessageStatus::Useful)
-        } else if msg.src().is_section() {
-            Ok(MessageStatus::Untrusted)
         } else {
-            Ok(MessageStatus::Useless)
+            Ok(MessageStatus::Untrusted)
         }
     }
 
@@ -479,16 +477,21 @@ impl Approved {
     pub fn handle_bounced_untrusted_message(
         &mut self,
         core: &mut Core,
+        sender: P2pNode,
         dst_key: Option<bls::PublicKey>,
         bounced_msg: Message,
-    ) -> Result<()> {
-        trace!("Received BouncedUntrustedMessage({:?})...", bounced_msg);
+    ) {
+        trace!(
+            "Received BouncedUntrustedMessage({:?}) from {}...",
+            bounced_msg,
+            sender
+        );
 
         let dst_key = if let Some(dst_key) = dst_key {
             dst_key
         } else {
             trace!("    ...missing dst key, discarding");
-            return Ok(());
+            return;
         };
 
         let resend_msg =
@@ -496,13 +499,12 @@ impl Approved {
                 Ok(msg) => msg,
                 Err(error) => {
                     trace!("    ...extending proof failed, discarding: {:?}", error);
-                    return Ok(());
+                    return;
                 }
             };
 
         trace!("    ...resending with extended proof");
-
-        self.relay_message(core, &resend_msg)
+        core.send_message_to_target(sender.peer_addr(), resend_msg.to_bytes())
     }
 
     pub fn handle_bounced_unknown_message(
