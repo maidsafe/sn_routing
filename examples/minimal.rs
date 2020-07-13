@@ -306,11 +306,16 @@ fn handle_event(
         Event::Demoted => {
             log::info!("Node #{} demoted", index);
         }
-        Event::MemberJoined { name, age } => {
+        Event::MemberJoined {
+            name,
+            previous_name,
+            age,
+        } => {
             log::info!(
-                "Node #{} member joined - name: {}, age: {}",
+                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}",
                 index,
                 name,
+                previous_name,
                 age
             );
         }

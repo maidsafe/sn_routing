@@ -204,6 +204,7 @@ impl Env {
             ACCUMULATE_VOTE_COUNT,
             iter::once(AccumulatingEvent::Online {
                 p2p_node,
+                previous_name: None,
                 age: MIN_AGE,
                 their_knowledge: None,
             }),

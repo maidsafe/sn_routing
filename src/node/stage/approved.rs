@@ -717,46 +717,52 @@ impl Approved {
         }
 
         // This joining node is being relocated to us.
-        let (age, their_knowledge) = if let Some(payload) = join_request.relocate_payload {
-            if !payload.verify_identity(&pub_id) {
-                debug!(
-                    "Ignoring relocation JoinRequest from {} - invalid signature.",
-                    pub_id
-                );
-                return;
-            }
+        let (age, previous_name, their_knowledge) =
+            if let Some(payload) = join_request.relocate_payload {
+                if !payload.verify_identity(&pub_id) {
+                    debug!(
+                        "Ignoring relocation JoinRequest from {} - invalid signature.",
+                        pub_id
+                    );
+                    return;
+                }
 
-            let details = payload.relocate_details();
+                let details = payload.relocate_details();
 
-            if !self.shared_state.our_prefix().matches(&details.destination) {
-                debug!(
-                    "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
+                if !self.shared_state.our_prefix().matches(&details.destination) {
+                    debug!(
+                        "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
-                    pub_id,
-                    details.destination,
-                    self.shared_state.our_prefix()
-                );
-                return;
-            }
+                        pub_id,
+                        details.destination,
+                        self.shared_state.our_prefix()
+                    );
+                    return;
+                }
 
-            if !self
-                .verify_message(payload.details.signed_msg())
-                .unwrap_or(false)
-            {
-                debug!(
-                    "Ignoring relocation JoinRequest from {} - untrusted.",
-                    pub_id
-                );
-                return;
-            }
+                if !self
+                    .verify_message(payload.details.signed_msg())
+                    .unwrap_or(false)
+                {
+                    debug!(
+                        "Ignoring relocation JoinRequest from {} - untrusted.",
+                        pub_id
+                    );
+                    return;
+                }
 
-            (details.age, Some(details.destination_key))
-        } else {
-            (MIN_AGE, None)
-        };
+                (
+                    details.age,
+                    Some(*details.pub_id.name()),
+                    Some(details.destination_key),
+                )
+            } else {
+                (MIN_AGE, None, None)
+            };
 
         self.vote_for_event(AccumulatingEvent::Online {
             p2p_node,
+            previous_name,
             age,
             their_knowledge,
         })
@@ -1155,11 +1161,13 @@ impl Approved {
             } => self.handle_genesis_event(&group, &related_info)?,
             AccumulatingEvent::Online {
                 p2p_node,
+                previous_name,
                 age,
                 their_knowledge,
             } => self.handle_online_event(
                 core,
                 p2p_node,
+                previous_name,
                 age,
                 their_knowledge,
                 proof.expect("missing proof for Online"),
@@ -1263,6 +1271,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         p2p_node: P2pNode,
+        previous_name: Option<XorName>,
         age: u8,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
@@ -1280,6 +1289,7 @@ impl Approved {
             if self.is_our_elder(core.id()) {
                 core.send_event(Event::MemberJoined {
                     name: *p2p_node.name(),
+                    previous_name,
                     age,
                 });
                 self.send_node_approval(core, p2p_node, their_knowledge);
