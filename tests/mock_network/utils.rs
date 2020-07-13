@@ -673,19 +673,8 @@ fn poll_until_minimal_elder_count(env: &Environment, nodes: &mut [TestNode], pre
 
 // Returns whether the section at `prefix` has at least `expected_count` elders.
 fn elder_count_reached(nodes: &[TestNode], prefix: &Prefix, expected_count: usize) -> bool {
-    let actual_count = elders_with_prefix(nodes, prefix).count();
-
-    if actual_count >= expected_count {
-        true
-    } else {
-        trace!(
-            "Section {:?} has only {}/{} elders",
-            prefix,
-            actual_count,
-            expected_count,
-        );
-        false
-    }
+    elders_with_prefix(nodes, prefix)
+        .all(|elder| elder.inner.our_elders().count() >= expected_count)
 }
 
 // -----  Small misc functions  -----

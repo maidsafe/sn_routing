@@ -19,9 +19,32 @@ pub struct SectionUpdateBarrier {
 
     sibling_key: Option<Proven<(Prefix, bls::PublicKey)>>,
     sibling_info: Option<Proven<EldersInfo>>,
+
+    // Sibling's own key
+    sibling_our_key: Option<Proven<bls::PublicKey>>,
+    // Our key for sibling
+    sibling_their_key: Option<Proven<(Prefix, bls::PublicKey)>>,
 }
 
 impl SectionUpdateBarrier {
+    pub fn handle_sibling_our_key(
+        &mut self,
+        our_prefix: &Prefix,
+        new_key: Proven<bls::PublicKey>,
+    ) -> Option<SectionUpdateDetails> {
+        self.sibling_our_key = Some(new_key);
+        self.try_get_details(our_prefix)
+    }
+
+    pub fn handle_sibling_their_key(
+        &mut self,
+        our_prefix: &Prefix,
+        new_key: Proven<(Prefix, bls::PublicKey)>,
+    ) -> Option<SectionUpdateDetails> {
+        self.sibling_their_key = Some(new_key);
+        self.try_get_details(our_prefix)
+    }
+
     pub fn handle_our_key(
         &mut self,
         our_prefix: &Prefix,
@@ -61,8 +84,12 @@ impl SectionUpdateBarrier {
             self.our_info.clone(),
             self.sibling_key.clone(),
             self.sibling_info.clone(),
+            self.sibling_our_key.clone(),
+            self.sibling_their_key.clone(),
         ) {
-            (Some(our_key), Some(our_info), None, None) if our_info.value.prefix == *our_prefix => {
+            (Some(our_key), Some(our_info), None, None, None, None)
+                if our_info.value.prefix == *our_prefix =>
+            {
                 Some(SectionUpdateDetails {
                     our: OurDetails {
                         key: our_key,
@@ -71,18 +98,25 @@ impl SectionUpdateBarrier {
                     sibling: None,
                 })
             }
-            (Some(our_key), Some(our_info), Some(sibling_key), Some(sibling_info)) => {
-                Some(SectionUpdateDetails {
-                    our: OurDetails {
-                        key: our_key,
-                        info: our_info,
-                    },
-                    sibling: Some(SiblingDetails {
-                        key: sibling_key,
-                        info: sibling_info,
-                    }),
-                })
-            }
+            (
+                Some(our_key),
+                Some(our_info),
+                Some(sibling_key),
+                Some(sibling_info),
+                Some(sibling_our_key),
+                Some(sibling_their_key),
+            ) => Some(SectionUpdateDetails {
+                our: OurDetails {
+                    key: our_key,
+                    info: our_info,
+                },
+                sibling: Some(SiblingDetails {
+                    key: sibling_key,
+                    info: sibling_info,
+                    sibling_our_key,
+                    sibling_their_key,
+                }),
+            }),
             _ => None,
         }
     }
@@ -117,6 +151,8 @@ pub struct OurDetails {
 pub struct SiblingDetails {
     pub key: Proven<(Prefix, bls::PublicKey)>,
     pub info: Proven<EldersInfo>,
+    pub sibling_our_key: Proven<bls::PublicKey>,
+    pub sibling_their_key: Proven<(Prefix, bls::PublicKey)>,
 }
 
 #[cfg(test)]
@@ -164,16 +200,20 @@ mod tests {
         let old_sk = test_utils::gen_secret_key(&mut rng);
 
         let our_new_prefix = our_prefix.pushed(rng.gen());
-        let our_new_key = test_utils::gen_secret_key(&mut rng).public_key();
-        let our_new_key = test_utils::proven(&old_sk, our_new_key);
+        let our_new_public_key = test_utils::gen_secret_key(&mut rng).public_key();
+        let our_new_key = test_utils::proven(&old_sk, our_new_public_key);
         let our_new_info = dummy_elders_info(our_new_prefix);
         let our_new_info = test_utils::proven(&old_sk, our_new_info);
 
         let sibling_new_prefix = our_new_prefix.sibling();
-        let sibling_new_key = test_utils::gen_secret_key(&mut rng).public_key();
-        let sibling_new_key = test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_key));
+        let sibling_new_public_key = test_utils::gen_secret_key(&mut rng).public_key();
+        let sibling_new_key =
+            test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_public_key));
         let sibling_new_info = dummy_elders_info(sibling_new_prefix);
         let sibling_new_info = test_utils::proven(&old_sk, sibling_new_info);
+
+        let sibling_our_key = test_utils::proven(&old_sk, sibling_new_public_key);
+        let sibling_their_key = test_utils::proven(&old_sk, (our_new_prefix, our_new_public_key));
 
         let our_name = our_new_prefix.substituted_in(rng.gen());
 
@@ -182,6 +222,8 @@ mod tests {
             Op::TheirKey(sibling_new_key.clone()),
             Op::Info(our_new_info.clone()),
             Op::Info(sibling_new_info.clone()),
+            Op::SiblingOurKey(sibling_our_key.clone()),
+            Op::SiblingTheirKey(sibling_their_key.clone()),
         ];
 
         assert_eq!(execute(&our_name, &our_prefix, vec![]), None);
@@ -198,7 +240,15 @@ mod tests {
             assert_eq!(execute(&our_name, &our_prefix, ops), None);
         }
 
-        for ops in all_ops.into_iter().combinations(4) {
+        for ops in all_ops.clone().into_iter().combinations(4) {
+            assert_eq!(execute(&our_name, &our_prefix, ops), None);
+        }
+
+        for ops in all_ops.clone().into_iter().combinations(5) {
+            assert_eq!(execute(&our_name, &our_prefix, ops), None);
+        }
+
+        for ops in all_ops.into_iter().combinations(6) {
             let details = execute(&our_name, &our_prefix, ops).unwrap();
             assert_eq!(details.our.key, our_new_key);
             assert_eq!(details.our.info, our_new_info);
@@ -211,6 +261,15 @@ mod tests {
                 details.sibling.as_ref().map(|d| &d.info),
                 Some(&sibling_new_info)
             );
+
+            assert_eq!(
+                details.sibling.as_ref().map(|d| &d.sibling_our_key),
+                Some(&sibling_our_key)
+            );
+            assert_eq!(
+                details.sibling.as_ref().map(|d| &d.sibling_their_key),
+                Some(&sibling_their_key)
+            );
         }
     }
 
@@ -219,6 +278,8 @@ mod tests {
         OurKey(Proven<bls::PublicKey>),
         TheirKey(Proven<(Prefix, bls::PublicKey)>),
         Info(Proven<EldersInfo>),
+        SiblingOurKey(Proven<bls::PublicKey>),
+        SiblingTheirKey(Proven<(Prefix, bls::PublicKey)>),
     }
 
     fn execute(
@@ -233,6 +294,10 @@ mod tests {
                 Op::OurKey(new_key) => barrier.handle_our_key(our_prefix, new_key),
                 Op::TheirKey(new_key) => barrier.handle_their_key(our_prefix, new_key),
                 Op::Info(new_info) => barrier.handle_info(our_name, our_prefix, new_info),
+                Op::SiblingOurKey(new_key) => barrier.handle_sibling_our_key(our_prefix, new_key),
+                Op::SiblingTheirKey(new_key) => {
+                    barrier.handle_sibling_their_key(our_prefix, new_key)
+                }
             }
         }
 

@@ -616,6 +616,8 @@ impl Approved {
         }
 
         self.send_elders_update(core)?;
+        self.send_send_neighbour_info()?;
+        self.send_their_knowledge();
 
         core.send_event(Event::Promoted);
         self.send_elders_changed_event(core);
@@ -1547,16 +1549,21 @@ impl Approved {
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
-        if !prefix.matches(core.name()) {
-            return Ok(());
-        }
-
         let key = Proven::new(key, proof);
 
-        if let Some(details) = self
-            .section_update_barrier
-            .handle_our_key(self.shared_state.our_prefix(), key)
-        {
+        let details = if !prefix.matches(core.name()) {
+            if prefix.popped() == *self.shared_state.our_prefix() {
+                self.section_update_barrier
+                    .handle_sibling_our_key(self.shared_state.our_prefix(), key)
+            } else {
+                None
+            }
+        } else {
+            self.section_update_barrier
+                .handle_our_key(self.shared_state.our_prefix(), key)
+        };
+
+        if let Some(details) = details {
             self.update_our_section(core, details)
         } else {
             Ok(())
@@ -1570,24 +1577,28 @@ impl Approved {
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
-        if prefix.matches(core.name()) {
-            return Ok(());
-        }
-
         let key = Proven::new((prefix, key), proof);
 
-        if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
-            if let Some(details) = self
-                .section_update_barrier
-                .handle_their_key(self.shared_state.our_prefix(), key)
-            {
-                self.update_our_section(core, details)?
+        let details = if prefix.matches(core.name()) {
+            if prefix.popped() == *self.shared_state.our_prefix() {
+                self.section_update_barrier
+                    .handle_sibling_their_key(self.shared_state.our_prefix(), key)
+            } else {
+                None
             }
+        } else if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
+            self.section_update_barrier
+                .handle_their_key(self.shared_state.our_prefix(), key)
         } else {
-            self.shared_state.sections.update_keys(key)
-        }
+            self.shared_state.sections.update_keys(key);
+            None
+        };
 
-        Ok(())
+        if let Some(details) = details {
+            self.update_our_section(core, details)
+        } else {
+            Ok(())
+        }
     }
 
     fn handle_their_knowledge_event(&mut self, prefix: Prefix, knowledge: u64, proof: Proof) {
@@ -1638,6 +1649,8 @@ impl Approved {
         let was_elder = self.is_our_elder(core.id());
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
 
+        let mut old_shared_state = self.shared_state.clone();
+
         let promoted_nodes: Vec<_> = details
             .all_elders()
             .filter(|p2p_node| {
@@ -1651,17 +1664,30 @@ impl Approved {
             .collect();
 
         self.add_force_gossip_peer(&details.our.info.value, old_prefix, was_elder);
-        self.update_our_key_and_info(core, details.our.key, details.our.info)?;
+        self.update_our_key_and_info(core, details.our.key, details.our.info.clone())?;
 
         if let Some(sibling) = details.sibling {
             self.add_force_gossip_peer(&sibling.info.value, old_prefix, was_elder);
             self.shared_state.sections.update_keys(sibling.key);
-            self.update_neighbour_info(core, sibling.info);
+            self.update_neighbour_info(core, sibling.info.clone());
+
+            old_shared_state.update_our_section(sibling.info, sibling.sibling_our_key);
+            old_shared_state.sections.add_neighbour(details.our.info);
+            old_shared_state
+                .sections
+                .update_keys(sibling.sibling_their_key);
         }
 
         let new_prefix = &self.shared_state.our_info().prefix;
         if new_prefix.is_extension_of(&old_prefix) {
             info!("Split");
+
+            self.send_promote(
+                core,
+                old_shared_state,
+                self.consensus_engine.parsec_version() + 1,
+                promoted_nodes.clone(),
+            )?;
         } else if old_prefix.is_extension_of(new_prefix) {
             panic!("Merge not supported: {:?} -> {:?}", old_prefix, new_prefix);
         }
@@ -1670,7 +1696,12 @@ impl Approved {
         self.section_update_barrier = Default::default();
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
 
-        self.send_promote(core, promoted_nodes)?;
+        self.send_promote(
+            core,
+            self.shared_state.clone(),
+            self.consensus_engine.parsec_version(),
+            promoted_nodes,
+        )?;
         self.send_elders_update(core)?;
 
         if !self.is_our_elder(core.id()) {
@@ -1684,6 +1715,8 @@ impl Approved {
         // on our `OurKey` so they know our latest key. Need to vote for it first though, to
         // accumulate the signatures.
         if let Some(prefix) = sibling_prefix {
+            self.send_send_neighbour_info()?;
+
             self.vote_for_event(AccumulatingEvent::TheirKnowledge {
                 prefix,
                 knowledge: self.shared_state.our_history.last_key_index(),
@@ -1858,21 +1891,49 @@ impl Approved {
         Ok(())
     }
 
-    fn send_elders_update(&self, core: &mut Core) -> Result<()> {
+    fn send_send_neighbour_info(&mut self) -> Result<()> {
+        let nonce = MessageHash::from_bytes(&bincode::serialize(&self.shared_state.our_info())?);
+        let destinations: Vec<_> = self
+            .shared_state
+            .sections
+            .neighbours()
+            .map(|neighbour| neighbour.prefix.name())
+            .collect();
+        for dst in destinations {
+            self.vote_for_event(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
+        }
+
+        Ok(())
+    }
+
+    fn send_their_knowledge(&mut self) {
+        let knowledge = self.shared_state.our_history.last_key_index();
+        let destinations: Vec<_> = self
+            .shared_state
+            .sections
+            .neighbours()
+            .map(|neighbour| neighbour.prefix)
+            .collect();
+        for prefix in destinations {
+            self.vote_for_event(AccumulatingEvent::TheirKnowledge { prefix, knowledge })
+        }
+    }
+
+    fn send_elders_update(&mut self, core: &mut Core) -> Result<()> {
         let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
+        let elders_update = self.create_elders_update();
+        let variant = Variant::EldersUpdate(elders_update);
+        let message = Message::single_src(
+            &core.full_id,
+            DstLocation::Direct,
+            variant.clone(),
+            Some(proof_chain),
+            None,
+        )?;
 
         for p2p_node in self.shared_state.adults_and_infants_p2p_nodes() {
-            let elders_update = self.create_elders_update();
-            let variant = Variant::EldersUpdate(elders_update);
-
             trace!("Send {:?} to {:?}", variant, p2p_node);
-            let message = Message::single_src(
-                &core.full_id,
-                DstLocation::Direct,
-                variant,
-                Some(proof_chain.clone()),
-                None,
-            )?;
+
             core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
         }
 
@@ -1886,11 +1947,17 @@ impl Approved {
         }
     }
 
-    fn send_promote(&self, core: &mut Core, new_elders: Vec<P2pNode>) -> Result<()> {
+    fn send_promote(
+        &self,
+        core: &mut Core,
+        shared_state: SharedState,
+        parsec_version: u64,
+        new_elders: Vec<P2pNode>,
+    ) -> Result<()> {
         for p2p_node in new_elders {
             let variant = Variant::Promote {
-                shared_state: self.shared_state.clone(),
-                parsec_version: self.consensus_engine.parsec_version(),
+                shared_state: shared_state.clone(),
+                parsec_version,
             };
 
             trace!("Send {:?} to {:?}", variant, p2p_node);
