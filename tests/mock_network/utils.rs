@@ -395,6 +395,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
                 | Event::Promoted
                 | Event::Demoted
                 | Event::MemberJoined { .. }
+                | Event::InfantJoined { .. }
                 | Event::MemberLeft { .. } => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
