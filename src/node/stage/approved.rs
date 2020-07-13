@@ -1287,11 +1287,19 @@ impl Approved {
             self.members_changed = true;
 
             if self.is_our_elder(core.id()) {
-                core.send_event(Event::MemberJoined {
-                    name: *p2p_node.name(),
-                    previous_name,
-                    age,
-                });
+                if let Some(previous_name) = previous_name {
+                    core.send_event(Event::MemberJoined {
+                        name: *p2p_node.name(),
+                        previous_name,
+                        age,
+                    });
+                } else {
+                    core.send_event(Event::InfantJoined {
+                        name: *p2p_node.name(),
+                        age,
+                    });
+                }
+
                 self.send_node_approval(core, p2p_node, their_knowledge);
                 self.print_network_stats();
             }

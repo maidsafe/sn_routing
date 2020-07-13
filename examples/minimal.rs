@@ -312,10 +312,18 @@ fn handle_event(
             age,
         } => {
             log::info!(
-                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}",
+                "Node #{} member joined - name: {}, previous_name: {}, age: {}",
                 index,
                 name,
                 previous_name,
+                age
+            );
+        }
+        Event::InfantJoined { name, age } => {
+            log::info!(
+                "Node #{} infant joined - name: {}, age: {}",
+                index,
+                name,
                 age
             );
         }

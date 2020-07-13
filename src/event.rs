@@ -52,12 +52,19 @@ pub enum Event {
     Promoted,
     /// The node has been demoted from elder
     Demoted,
-    /// A node joined our section.
+    /// An adult or elder joined our section.
     MemberJoined {
         /// Name of the node
         name: XorName,
-        /// Previous name if relocated
-        previous_name: Option<XorName>,
+        /// Previous name before relocation
+        previous_name: XorName,
+        /// Age of the node
+        age: u8,
+    },
+    /// An infant node joined our section.
+    InfantJoined {
+        /// Name of the node
+        name: XorName,
         /// Age of the node
         age: u8,
     },
@@ -105,6 +112,11 @@ impl Debug for Event {
                 .debug_struct("MemberJoined")
                 .field("name", name)
                 .field("previous_name", previous_name)
+                .field("age", age)
+                .finish(),
+            Self::InfantJoined { name, age } => formatter
+                .debug_struct("InfantJoined")
+                .field("name", name)
                 .field("age", age)
                 .finish(),
             Self::MemberLeft { name, age } => formatter
