@@ -37,6 +37,8 @@ pub enum AccumulatingEvent {
     Online {
         /// Identifier of the joining node.
         p2p_node: P2pNode,
+        /// Previous name if relocated.
+        previous_name: Option<XorName>,
         /// The age the node should have after joining.
         age: u8,
         /// The key of the destination section that the joining node knows, if any.
@@ -163,6 +165,7 @@ impl AccumulatingEvent {
             Self::SectionInfo(info) => bincode::serialize(info),
             Self::Online {
                 p2p_node,
+                previous_name: _,
                 age: _,
                 their_knowledge: _,
             } => bincode::serialize(&member_info::to_sign(p2p_node.name(), MemberState::Joined)),
@@ -200,11 +203,13 @@ impl Debug for AccumulatingEvent {
             ),
             Self::Online {
                 p2p_node,
+                previous_name,
                 age,
                 their_knowledge,
             } => formatter
                 .debug_struct("Online")
                 .field("p2p_node", p2p_node)
+                .field("previous_name", previous_name)
                 .field("age", age)
                 .field("their_knowledge", their_knowledge)
                 .finish(),

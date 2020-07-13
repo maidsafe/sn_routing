@@ -56,6 +56,8 @@ pub enum Event {
     MemberJoined {
         /// Name of the node
         name: XorName,
+        /// Previous name if relocated
+        previous_name: Option<XorName>,
         /// Age of the node
         age: u8,
     },
@@ -95,9 +97,14 @@ impl Debug for Event {
             Self::Consensus(payload) => write!(formatter, "Consensus({:<8})", HexFmt(payload)),
             Self::Promoted => write!(formatter, "Promoted"),
             Self::Demoted => write!(formatter, "Demoted"),
-            Self::MemberJoined { name, age } => formatter
+            Self::MemberJoined {
+                name,
+                previous_name,
+                age,
+            } => formatter
                 .debug_struct("MemberJoined")
                 .field("name", name)
+                .field("previous_name", previous_name)
                 .field("age", age)
                 .finish(),
             Self::MemberLeft { name, age } => formatter
