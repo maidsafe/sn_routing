@@ -79,7 +79,6 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    consensus::{AccumulationError, Proof, ProofShare, SignatureAccumulator},
     error::RoutingError,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},

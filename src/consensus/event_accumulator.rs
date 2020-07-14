@@ -6,11 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    network_event::AccumulatingEvent,
-    proof::{Proof, ProofShare},
-    signature_accumulator::AccumulationError,
-};
+use super::{network_event::AccumulatingEvent, AccumulationError, Proof, ProofShare};
 use crate::{error::Result, id::PublicId, section::EldersInfo};
 use serde::Serialize;
 use std::{
