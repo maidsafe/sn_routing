@@ -36,6 +36,7 @@ rand_crypto = { package = "rand", version = "~0.6.5" }
 rand_core = "~0.5.1"
 rand_os = "~0.2.2"
 rand_xorshift = "~0.2.0"
+safe-network-signature-aggregator = { git = "https://github.com/maidsafe/safe-network-signature-aggregator" }
 serde = { version = "1.0.111", features = ["derive" ,"rc"] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 xor_name = "1"
@@ -54,5 +55,6 @@ mock_base = [
     "lazy_static",
     "bls/use-insecure-test-only-mock-crypto",
     "env_logger",
+    "safe-network-signature-aggregator/mock_timer"
 ]
 mock = ["mock_base"]

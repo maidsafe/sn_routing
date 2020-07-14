@@ -11,8 +11,7 @@ mod event_accumulator;
 mod genesis_prefix_info;
 mod network_event;
 mod parsec;
-mod proof;
-mod signature_accumulator;
+mod proven;
 #[cfg(test)]
 pub mod test_utils;
 
@@ -24,8 +23,10 @@ pub use self::{
         Block, CreateGossipError, Observation, ParsecNetworkEvent, Request as ParsecRequest,
         Response as ParsecResponse, GOSSIP_PERIOD,
     },
-    proof::{Proof, ProofShare, Proven},
-    signature_accumulator::{AccumulationError, SignatureAccumulator},
+    proven::Proven,
+};
+pub use safe_network_signature_aggregator::{
+    AccumulationError, Proof, ProofShare, SignatureAggregator,
 };
 
 #[cfg(feature = "mock_base")]

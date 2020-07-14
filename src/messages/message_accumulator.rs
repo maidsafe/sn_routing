@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{AccumulationError, SignatureAccumulator},
+    consensus::{AccumulationError, SignatureAggregator},
     messages::{AccumulatingMessage, Message, PlainMessage, SrcAuthority},
     section::SectionProofChain,
 };
@@ -15,7 +15,7 @@ use serde::{Serialize, Serializer};
 
 /// Accumulator for section-source messages.
 #[derive(Default)]
-pub struct MessageAccumulator(SignatureAccumulator<Payload>);
+pub struct MessageAccumulator(SignatureAggregator<Payload>);
 
 impl MessageAccumulator {
     /// Add `AccumulatingMessage` to the accumulator. Returns the full `Message` if we have enough
