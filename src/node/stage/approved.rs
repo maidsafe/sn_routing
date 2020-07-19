@@ -59,6 +59,7 @@ pub(crate) struct Approved {
     members_changed: bool,
     // Voter for DKG
     dkg_voter: DkgVoter,
+    bounced_unknown_messages: Vec<(SocketAddr, Bytes)>,
 }
 
 impl Approved {
@@ -121,6 +122,7 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
+            bounced_unknown_messages: Default::default(),
         })
     }
 
@@ -182,6 +184,7 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
+            bounced_unknown_messages: Default::default(),
         };
 
         (stage, core)
@@ -205,7 +208,6 @@ impl Approved {
     }
 
     // Cast a vote that doesn't need total order, only section consensus.
-    #[allow(unused)]
     pub fn cast_unordered_vote(&mut self, core: &mut Core, vote: Vote) -> Result<()> {
         trace!("Vote for {:?}", vote);
 
@@ -291,6 +293,10 @@ impl Approved {
                 self.gossip_timer_token =
                     Some(core.timer.schedule(self.consensus_engine.gossip_period()));
                 self.consensus_engine.reset_gossip_period();
+
+                for (peer, msg) in std::mem::take(&mut self.bounced_unknown_messages) {
+                    core.send_message_to_target(&peer, msg)
+                }
             }
         } else if self.dkg_voter.timer_token() == token {
             self.dkg_voter
@@ -396,9 +402,16 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::Promote { .. } => {
+            Variant::Promote { shared_state, .. } => {
                 if self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Useless);
+                }
+                // DKG not completed yet.
+                if !self
+                    .section_keys_provider
+                    .has_key_or_candidate(shared_state.our_info())
+                {
+                    return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::JoinRequest(req) => {
@@ -607,7 +620,14 @@ impl Approved {
         // message again.
 
         self.send_parsec_gossip(core, Some((sender_parsec_version, sender.clone())));
-        core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
+
+        // With the removal of parsec, sending parsec_gossip won't update the peer anymore.
+        // We will have to send the message later on to allow the peer be updated by other delayed
+        // messages.
+        // TODO: use other duration schedule.
+        self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
+        self.bounced_unknown_messages
+            .push((*sender.peer_addr(), bounced_msg_bytes));
     }
 
     pub fn handle_neighbour_info(
@@ -645,6 +665,16 @@ impl Approved {
 
     pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
         info!("Received {:?}", payload);
+
+        // Receiving an old EldersUpdate or we are going to be promoted soon.
+        if payload.elders_info.value.position(core.name()).is_some()
+            || self
+                .section_keys_provider
+                .has_key_or_candidate(&payload.elders_info.value)
+        {
+            debug!("ignore EldersUpdate - actually promoted");
+            return Ok(());
+        }
 
         core.msg_filter.reset();
 
@@ -1541,6 +1571,11 @@ impl Approved {
 
             let key = dkg_result.public_key_set.public_key();
 
+            // Casting unordered_votes will check consensus and handle accumulated immediately.
+            let result = self
+                .section_keys_provider
+                .handle_dkg_result_event(&dkg_key.0, dkg_result);
+
             self.cast_unordered_vote(
                 core,
                 Vote::OurKey {
@@ -1560,8 +1595,8 @@ impl Approved {
             }
 
             self.cast_unordered_vote(core, Vote::SectionInfo(info))?;
-            self.section_keys_provider
-                .handle_dkg_result_event(&dkg_key.0, dkg_result)
+
+            result
         } else {
             // The latest participant was just following vote, which doesn't have the info to
             // vote for a section_info. Or the DKG process completed before receiving the
@@ -1581,6 +1616,10 @@ impl Approved {
         elders_info: EldersInfo,
         proof: Proof,
     ) -> Result<()> {
+        if elders_info == *self.shared_state.our_info() {
+            trace!("ignore SectionInfo {:?}, already updated", elders_info);
+            return Ok(());
+        }
         let elders_info = Proven::new(elders_info, proof);
 
         if elders_info.value.prefix == *self.shared_state.our_prefix()
@@ -1630,6 +1669,11 @@ impl Approved {
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
+        if self.section_keys_provider.public_key() == Some(key) {
+            trace!("Ignore OurKeyEvent {:?}, as already promoted", key);
+            return Ok(());
+        }
+
         let key = Proven::new(key, proof);
 
         let details = if !prefix.matches(core.name()) {
@@ -1696,6 +1740,7 @@ impl Approved {
         info!("handle ParsecPrune");
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
+        self.shared_state.handled_genesis_event = false;
         self.send_elders_update(core)?;
 
         Ok(())
@@ -1839,6 +1884,7 @@ impl Approved {
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state
             .update_our_section(elders_info, section_key);
+
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
 
@@ -1879,8 +1925,6 @@ impl Approved {
         );
 
         if is_elder {
-            self.shared_state.handled_genesis_event = false;
-
             for event in events {
                 self.cast_ordered_vote(event);
             }
@@ -2319,6 +2363,11 @@ impl Approved {
         } else {
             true
         }
+    }
+
+    #[cfg(all(test, feature = "mock"))]
+    pub fn gossip_timer_token(&self) -> Option<u64> {
+        self.gossip_timer_token
     }
 
     fn print_network_stats(&self) {

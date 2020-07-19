@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SectionKeyShare {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
@@ -27,6 +27,7 @@ pub struct SectionKeyShare {
 }
 
 /// Struct that holds the current section keys and helps with new key generation.
+#[derive(Debug)]
 pub struct SectionKeysProvider {
     /// Our current section BLS keys.
     current: Option<SectionKeyShare>,
@@ -38,10 +39,27 @@ pub struct SectionKeysProvider {
 }
 
 impl SectionKeysProvider {
+    pub fn has_key_or_candidate(&self, elders_info: &EldersInfo) -> bool {
+        let first_name = if let Some(first_name) = elders_info.elders.keys().next() {
+            first_name
+        } else {
+            return self.current.is_some();
+        };
+        self.current.is_some() || self.new.contains_key(first_name)
+    }
+
     pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
             current,
             new: Default::default(),
+        }
+    }
+
+    pub fn public_key(&self) -> Option<bls::PublicKey> {
+        if let Some(ref current) = self.current {
+            Some(current.public_key_set.public_key())
+        } else {
+            None
         }
     }
 

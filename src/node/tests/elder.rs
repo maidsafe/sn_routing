@@ -117,6 +117,13 @@ impl Env {
         self.network.poll(&mut self.rng)
     }
 
+    fn poll_time_out(&mut self) {
+        // Simulate a time out by calling with the token directly.
+        let token = self.subject.gossip_timer_token().unwrap();
+        self.subject.handle_time_out(token);
+        self.poll();
+    }
+
     fn quorum_count(&self) -> usize {
         quorum_count(self.elders_info.elders.len())
     }
@@ -706,6 +713,12 @@ fn handle_bounced_unknown_message() {
     }
 
     assert!(received_parsec_request);
+    assert!(!received_resent_message);
+
+    env.poll_time_out();
+    if let Variant::UserMessage(_) = msg.variant() {
+        received_resent_message = true
+    }
     assert!(received_resent_message);
 }
 
