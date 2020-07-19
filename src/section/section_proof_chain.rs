@@ -33,6 +33,10 @@ impl SectionProofChain {
 
     /// Pushes a new key into the chain but only if the signature is valid.
     pub(crate) fn push(&mut self, key: bls::PublicKey, signature: bls::Signature) {
+        if self.has_key(&key) {
+            trace!("already has key {:?}", key);
+            return;
+        }
         let valid = bincode::serialize(&key)
             .map(|bytes| self.last_key().verify(&signature, &bytes))
             .unwrap_or(false);
@@ -73,7 +77,6 @@ impl SectionProofChain {
     }
 
     /// Returns whether this chain contains the given key.
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys().any(|existing_key| existing_key == key)
     }
@@ -316,6 +319,9 @@ mod tests {
     }
 
     #[test]
+    // Clippy complains that range such as `1..1` yield no values, though the slice function still
+    // support it.
+    #[allow(clippy::reversed_empty_ranges)]
     fn slice() {
         let mut rng = rng::new();
         let chain = gen_chain(&mut rng, 3);

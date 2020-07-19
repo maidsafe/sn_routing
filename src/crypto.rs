@@ -24,7 +24,7 @@ pub fn sha3_256(input: &[u8]) -> Digest256 {
 
 /// Signing and verification.
 pub mod signing {
-    use ed25519_dalek::{ExpandedSecretKey, SignatureError};
+    use ed25519_dalek::{ExpandedSecretKey, SignatureError, Verifier};
     pub use ed25519_dalek::{SecretKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
     use std::{
         cmp::Ordering,
