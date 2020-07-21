@@ -194,14 +194,16 @@ impl SharedState {
     }
 
     /// Adds new member if its name matches our prefix and it's not already joined.
-    /// Returns whether the member was actually added.
+    /// Returns whether the member was actually added and whether our node gets promoted to Adult
+    /// as a part of this churn.
     pub fn add_member(
         &mut self,
         p2p_node: P2pNode,
         age: u8,
         proof: Proof,
         recommended_section_size: usize,
-    ) -> bool {
+        our_name: &XorName,
+    ) -> (bool, bool) {
         // FIXME: we should perform these checks before voting, but once the vote accumulates we
         // must obey it:
         if !self.our_prefix().matches(p2p_node.name()) {
@@ -209,12 +211,12 @@ impl SharedState {
                 "not adding node {} - not matching our prefix",
                 p2p_node.name()
             );
-            return false;
+            return (false, false);
         }
 
         if self.our_members.contains(p2p_node.name()) {
             trace!("not adding node {} - already a member", p2p_node.name());
-            return false;
+            return (false, false);
         }
 
         // The section public key of the proof shall be known to us.
@@ -224,15 +226,15 @@ impl SharedState {
                 p2p_node.name(),
                 proof
             );
-            return false;
+            return (false, false);
         }
 
         let name = *p2p_node.name();
 
         self.our_members.add(p2p_node, age, proof);
-        self.increment_age_counters(&name, recommended_section_size);
+        let new_adult = self.increment_age_counters(&name, recommended_section_size, our_name);
 
-        true
+        (true, new_adult)
     }
 
     /// Removes a member with the given pub_id.
@@ -242,7 +244,9 @@ impl SharedState {
         name: &XorName,
         proof: Proof,
         recommended_section_size: usize,
-    ) -> Option<MemberInfo> {
+        our_name: &XorName,
+    ) -> (Option<MemberInfo>, bool) {
+        let mut new_adult = false;
         // The section public key of the proof shall be known to us.
         if !self.our_history.has_key(&proof.public_key) {
             trace!(
@@ -250,7 +254,7 @@ impl SharedState {
                 name,
                 proof
             );
-            return None;
+            return (None, new_adult);
         }
 
         match self.our_members.get(name).map(|info| &info.state) {
@@ -258,17 +262,17 @@ impl SharedState {
                 // FIXME: perform this check before voting, but once the vote accumulates we must
                 // obey it.
                 trace!("not removing node {} - not a member", name);
-                return None;
+                return (None, new_adult);
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
-                self.increment_age_counters(name, recommended_section_size)
+                new_adult = self.increment_age_counters(name, recommended_section_size, our_name)
             }
         }
 
         self.relocate_queue
             .retain(|details| details.pub_id.name() != name);
-        self.our_members.remove(name, proof)
+        (self.our_members.remove(name, proof), new_adult)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -530,8 +534,14 @@ impl SharedState {
             .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
     }
 
-    // Increment the age counters of the members.
-    fn increment_age_counters(&mut self, trigger_node: &XorName, recommended_section_size: usize) {
+    // Increment the age counters of the members. Returns true if our node gets promoted to Adult.
+    fn increment_age_counters(
+        &mut self,
+        trigger_node: &XorName,
+        recommended_section_size: usize,
+        our_name: &XorName,
+    ) -> bool {
+        let mut new_adult = false;
         let our_section_size = self.our_members.joined().count();
         let our_prefix = &self.sections.our().prefix;
 
@@ -549,7 +559,7 @@ impl SharedState {
                 "Not incrementing age counters on infant churn (section size: {})",
                 our_section_size,
             );
-            return;
+            return new_adult;
         }
 
         let first_key = self.our_history.first_key();
@@ -567,6 +577,11 @@ impl SharedState {
 
             if !member_info.increment_age_counter() {
                 continue;
+            }
+
+            // Check if the member being aged is us.
+            if member_info.p2p_node.name() == our_name && member_info.is_new_adult() {
+                new_adult = true;
             }
 
             let destination = relocation::compute_destination(
@@ -602,6 +617,8 @@ impl SharedState {
         }
 
         trace!("increment_age_counters: {:?}", self.our_members);
+
+        new_adult
     }
 }
 

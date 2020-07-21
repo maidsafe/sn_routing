@@ -49,7 +49,9 @@ pub enum Event {
     /// Consensus on a custom event.
     Consensus(Vec<u8>),
     /// The node has been promoted to elder
-    Promoted,
+    PromotedToElder,
+    /// The node has been promoted to adult
+    PromotedToAdult,
     /// The node has been demoted from elder
     Demoted,
     /// An adult or elder joined our section.
@@ -102,7 +104,8 @@ impl Debug for Event {
                 dst
             ),
             Self::Consensus(payload) => write!(formatter, "Consensus({:<8})", HexFmt(payload)),
-            Self::Promoted => write!(formatter, "Promoted"),
+            Self::PromotedToElder => write!(formatter, "PromotedToElder"),
+            Self::PromotedToAdult => write!(formatter, "PromotedToAdult"),
             Self::Demoted => write!(formatter, "Demoted"),
             Self::MemberJoined {
                 name,
