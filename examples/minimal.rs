@@ -300,8 +300,11 @@ fn handle_event(
         Event::Connected(Connected::Relocate) => {
             log::info!("Node #{} relocated - new name: {}", index, node.name());
         }
-        Event::Promoted => {
-            log::info!("Node #{} promoted", index);
+        Event::PromotedToElder => {
+            log::info!("Node #{} promoted to Elder", index);
+        }
+        Event::PromotedToAdult => {
+            log::info!("Node #{} promoted to Adult", index);
         }
         Event::Demoted => {
             log::info!("Node #{} demoted", index);

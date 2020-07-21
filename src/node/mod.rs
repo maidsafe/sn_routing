@@ -113,7 +113,7 @@ impl Node {
                 Ok(stage) => {
                     info!("{} Started a new network as a seed node.", core.name());
                     core.send_event(Event::Connected(Connected::First));
-                    core.send_event(Event::Promoted);
+                    core.send_event(Event::PromotedToElder);
                     Stage::Approved(stage)
                 }
                 Err(error) => {

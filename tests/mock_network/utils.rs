@@ -392,7 +392,8 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
                 Event::EldersChanged { .. }
                 | Event::RestartRequired
                 | Event::Connected(Connected::Relocate)
-                | Event::Promoted
+                | Event::PromotedToElder
+                | Event::PromotedToAdult
                 | Event::Demoted
                 | Event::MemberJoined { .. }
                 | Event::InfantJoined { .. }

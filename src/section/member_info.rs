@@ -94,7 +94,10 @@ impl MemberInfo {
         self.age_counter >= AgeCounter(2_u32.pow(MAX_INFANT_AGE + 1))
     }
 
-    #[cfg(feature = "mock_base")]
+    pub fn is_new_adult(&self) -> bool {
+        self.age_counter_value() == 2_u32.saturating_pow(MAX_INFANT_AGE + 1)
+    }
+
     pub fn age_counter_value(&self) -> u32 {
         self.age_counter.0
     }

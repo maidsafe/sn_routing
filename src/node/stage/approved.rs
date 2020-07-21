@@ -702,7 +702,7 @@ impl Approved {
         self.reset_parsec(core, parsec_version)?;
         self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
 
-        info!("Promoted");
+        info!("Promoted To Elder");
 
         match self
             .section_keys_provider
@@ -722,7 +722,7 @@ impl Approved {
         self.send_send_neighbour_info()?;
         self.send_their_knowledge(core)?;
 
-        core.send_event(Event::Promoted);
+        core.send_event(Event::PromotedToElder);
         self.send_elders_changed_event(core);
 
         self.print_network_stats();
@@ -1410,12 +1410,19 @@ impl Approved {
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<()> {
-        if self.shared_state.add_member(
+        let (added, new_adult) = self.shared_state.add_member(
             p2p_node.clone(),
             age,
             proof,
             core.network_params.recommended_section_size,
-        ) {
+            core.name(),
+        );
+
+        if new_adult {
+            core.send_event(Event::PromotedToAdult)
+        }
+
+        if added {
             info!("handle Online: {} (age: {})", p2p_node, age);
 
             self.members_changed = true;
@@ -1442,11 +1449,13 @@ impl Approved {
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
-        if let Some(info) = self.shared_state.remove_member(
+        let (memberinfo, new_adult) = self.shared_state.remove_member(
             &name,
             proof,
             core.network_params.recommended_section_size,
-        ) {
+            core.name(),
+        );
+        if let Some(info) = memberinfo {
             info!("handle Offline: {}", name);
 
             self.members_changed = true;
@@ -1456,6 +1465,9 @@ impl Approved {
                 name,
                 age: info.age(),
             });
+            if new_adult {
+                core.send_event(Event::PromotedToAdult)
+            }
         } else {
             info!("ignore Offline: {}", name);
         }
@@ -1467,15 +1479,13 @@ impl Approved {
         details: RelocateDetails,
         proof: Proof,
     ) -> Result<(), RoutingError> {
-        match self
-            .shared_state
-            .remove_member(
-                details.pub_id.name(),
-                proof,
-                core.network_params.recommended_section_size,
-            )
-            .map(|info| info.state)
-        {
+        let (info, new_adult) = self.shared_state.remove_member(
+            details.pub_id.name(),
+            proof,
+            core.network_params.recommended_section_size,
+            core.name(),
+        );
+        match info.map(|info| info.state) {
             Some(MemberState::Relocating) => {
                 info!("handle Relocate: {:?}", details);
             }
@@ -1498,6 +1508,10 @@ impl Approved {
         if &details.pub_id == core.id() {
             // Do not send the message to ourselves.
             return Ok(());
+        }
+
+        if new_adult {
+            core.send_event(Event::PromotedToAdult)
         }
 
         // We need to construct a proof that would be trusted by the destination section.
