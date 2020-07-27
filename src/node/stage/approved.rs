@@ -254,6 +254,23 @@ impl Approved {
         }
     }
 
+    pub fn check_lagging(&mut self, core: &mut Core, peer: &SocketAddr, proof_share: &ProofShare) {
+        let public_key = proof_share.public_key_set.public_key();
+
+        if self.shared_state.our_history.has_key(&public_key)
+            && public_key != *self.shared_state.our_history.last_key()
+        {
+            // The key is recognized as non-last, indicating the peer is lagging.
+            core.send_direct_message(
+                peer,
+                Variant::NotifyLagging {
+                    shared_state: self.shared_state.clone(),
+                    parsec_version: self.consensus_engine.parsec_version(),
+                },
+            );
+        }
+    }
+
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
         let node = self
             .shared_state
@@ -414,6 +431,12 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
+            Variant::NotifyLagging { .. } => {
+                // Adult shall be updated by EldersUpdate, or Promote if is going to be promoted.
+                if !self.is_our_elder(our_id) {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::JoinRequest(req) => {
                 if !self.should_handle_join_request(our_id, req) {
                     // Note: We don't bounce this message because the current bounce-resend
@@ -442,11 +465,17 @@ impl Approved {
             }
             Variant::Vote { proof_share, .. } => {
                 if !self.should_handle_vote(proof_share) {
+                    // Message will be bounced if we are lagging (not known of the signing key).
+                    return Ok(MessageStatus::Unknown);
+                }
+            }
+            Variant::MessageSignature(accumulating_msg) => {
+                if !self.should_handle_vote(&accumulating_msg.proof_share) {
+                    // Message will be bounced if we are lagging (not known of the signing key).
                     return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::Relocate(_)
-            | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. } => (),
@@ -624,7 +653,9 @@ impl Approved {
         // With the removal of parsec, sending parsec_gossip won't update the peer anymore.
         // We will have to send the message later on to allow the peer be updated by other delayed
         // messages.
-        // TODO: use other duration schedule.
+        // TODO: When the testing framework is updated to use real messaging underlayer, i.e. not
+        // using fake clock, the bounced unknown message could be resent immediately. As the network
+        // already took time to exchange messages, which allows the lagging node to be updated.
         self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
         self.bounced_unknown_messages
             .push((*sender.peer_addr(), bounced_msg_bytes));
@@ -724,6 +755,56 @@ impl Approved {
 
         core.send_event(Event::PromotedToElder);
         self.send_elders_changed_event(core);
+
+        self.print_network_stats();
+
+        Ok(())
+    }
+
+    pub fn handle_lagging(
+        &mut self,
+        core: &mut Core,
+        shared_state: SharedState,
+        parsec_version: u64,
+    ) -> Result<()> {
+        if !shared_state.our_prefix().matches(core.name()) {
+            debug!("ignore lagging notification - not our section");
+            return Ok(());
+        }
+
+        if self
+            .shared_state
+            .our_history
+            .has_key(shared_state.our_history.last_key())
+        {
+            debug!("ignore lagging notification - already updated");
+            return Ok(());
+        }
+
+        if !shared_state
+            .our_history
+            .has_key(self.shared_state.our_history.last_key())
+        {
+            debug!("ignore lagging notification - our key is ahead");
+            return Ok(());
+        }
+
+        // TODO: verify `shared_state` !
+        self.shared_state.update(shared_state)?;
+
+        self.reset_parsec(core, parsec_version)?;
+
+        match self
+            .section_keys_provider
+            .finalise_dkg(core.name(), self.shared_state.our_info())
+        {
+            Ok(()) => (),
+            Err(error) => return Err(error),
+        }
+
+        self.send_elders_update(core)?;
+        self.send_send_neighbour_info()?;
+        self.send_their_knowledge(core)?;
 
         self.print_network_stats();
 

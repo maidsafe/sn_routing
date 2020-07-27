@@ -49,6 +49,11 @@ pub(crate) enum Variant {
         shared_state: SharedState,
         parsec_version: u64,
     },
+    /// Message sent to a lagging peer.
+    NotifyLagging {
+        shared_state: SharedState,
+        parsec_version: u64,
+    },
     /// Send from a section to the node being relocated.
     Relocate(RelocateDetails),
     /// Sent from members of a section message's source location to the first hop. The
@@ -142,6 +147,15 @@ impl Debug for Variant {
                 parsec_version,
             } => f
                 .debug_struct("Promote")
+                .field("elders_info", shared_state.sections.our())
+                .field("section_key", shared_state.our_history.last_key())
+                .field("parsec_version", parsec_version)
+                .finish(),
+            Self::NotifyLagging {
+                shared_state,
+                parsec_version,
+            } => f
+                .debug_struct("NotifyLagging")
                 .field("elders_info", shared_state.sections.our())
                 .field("section_key", shared_state.our_history.last_key())
                 .field("parsec_version", parsec_version)
