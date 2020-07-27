@@ -665,6 +665,10 @@ impl Node {
                     shared_state,
                     parsec_version,
                 } => stage.handle_promote(&mut self.core, shared_state.clone(), *parsec_version)?,
+                Variant::NotifyLagging {
+                    shared_state,
+                    parsec_version,
+                } => stage.handle_lagging(&mut self.core, shared_state.clone(), *parsec_version)?,
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
@@ -673,11 +677,15 @@ impl Node {
                     }
                 }
                 Variant::MessageSignature(accumulating_msg) => {
-                    stage.handle_message_signature(
+                    let result = stage.handle_message_signature(
                         &mut self.core,
                         *accumulating_msg.clone(),
                         *msg.src().as_node()?,
-                    )?;
+                    );
+                    if let Some(addr) = sender {
+                        stage.check_lagging(&mut self.core, &addr, &accumulating_msg.proof_share);
+                    }
+                    result?
                 }
                 Variant::BootstrapRequest(name) => stage.handle_bootstrap_request(
                     &mut self.core,
@@ -757,11 +765,18 @@ impl Node {
                 Variant::Vote {
                     content,
                     proof_share,
-                } => stage.handle_unordered_vote(
-                    &mut self.core,
-                    content.clone(),
-                    proof_share.clone(),
-                )?,
+                } => {
+                    let result = stage.handle_unordered_vote(
+                        &mut self.core,
+                        content.clone(),
+                        proof_share.clone(),
+                    );
+                    if let Some(addr) = sender {
+                        stage.check_lagging(&mut self.core, &addr, proof_share);
+                    }
+
+                    result?
+                }
                 Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
                     unreachable!()
                 }

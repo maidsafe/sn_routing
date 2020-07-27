@@ -111,6 +111,7 @@ impl Joining {
             | Variant::JoinRequest(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
+            | Variant::NotifyLagging { .. }
             | Variant::Ping => Ok(MessageStatus::Useless),
         }
     }
