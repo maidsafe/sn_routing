@@ -24,7 +24,7 @@ pub fn sha3_256(input: &[u8]) -> Digest256 {
 pub mod signing {
     pub use ed25519_dalek::SIGNATURE_LENGTH;
     use ed25519_dalek::{PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
-    use rand_crypto::{CryptoRng, Rng};
+    use rand::{CryptoRng, Rng};
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
     use std::{
         cmp::Ordering,
@@ -151,7 +151,7 @@ pub mod signing {
 }
 
 pub mod encryption {
-    use rand_crypto::{
+    use rand::{
         distributions::{Distribution, Standard},
         Rng,
     };

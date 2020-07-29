@@ -7,13 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Proof, Proven};
-use crate::rng::{MainRng, RngCompat};
-use rand_crypto::Rng;
+use crate::rng::MainRng;
+use rand::Rng;
 use serde::Serialize;
 
 // Generate random BLS `SecretKey`.
 pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
-    RngCompat(rng).gen()
+    rng.gen()
 }
 
 // Create proof for the given payload using the given secret key.
