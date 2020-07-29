@@ -14,51 +14,6 @@ pub use self::seed_printer::SeedPrinter;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test::Seed;
 
-// Note: routing uses different version of the rand crate than threshold_crypto. This is a
-// compatibility adapter between the two.
-pub(crate) struct RngCompat<R>(pub R);
-
-impl<R: rand::Rng> rand_crypto::RngCore for RngCompat<R> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_crypto::Error> {
-        self.0.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl<R: rand::CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
-
-impl<R: rand::Rng> rand::RngCore for RngCompat<R> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.0.try_fill_bytes(dest)
-    }
-}
-
-impl<R: rand::CryptoRng> rand::CryptoRng for RngCompat<R> {}
-
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
 #[cfg(not(any(test, feature = "mock_base")))]
 mod implementation {
@@ -154,25 +109,6 @@ mod test {
 
         fn from_seed(seed: Seed) -> Self {
             Self(XorShiftRng::from_seed(seed.0))
-        }
-    }
-
-    impl rand_crypto::RngCore for TestRng {
-        fn next_u32(&mut self) -> u32 {
-            self.0.next_u32()
-        }
-
-        fn next_u64(&mut self) -> u64 {
-            self.0.next_u64()
-        }
-
-        fn fill_bytes(&mut self, dest: &mut [u8]) {
-            self.0.fill_bytes(dest)
-        }
-
-        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_crypto::Error> {
-            self.0.fill_bytes(dest);
-            Ok(())
         }
     }
 

@@ -9,7 +9,7 @@
 use super::{vote::Vote, Proof};
 use crate::{
     id::{FullId, PublicId},
-    rng::{MainRng, RngCompat},
+    rng::MainRng,
     section::EldersInfo,
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
@@ -34,7 +34,7 @@ pub type DkgKey = (BTreeSet<PublicId>, u64);
 /// Used for generating first node, or for test.
 pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
     let threshold = threshold_count(participants);
-    bls::SecretKeySet::random(threshold, &mut RngCompat(rng))
+    bls::SecretKeySet::random(threshold, rng)
 }
 
 #[derive(Clone)]

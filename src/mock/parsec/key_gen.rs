@@ -10,7 +10,6 @@
 //! instead.
 
 use super::{DkgResult, PublicId};
-use crate::rng::RngCompat;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,7 +35,7 @@ impl<P: PublicId> KeyGen<P> {
         let secret_key_set = self
             .instances
             .entry(participants)
-            .or_insert_with(|| bls::SecretKeySet::random(threshold, &mut RngCompat(rng)));
+            .or_insert_with(|| bls::SecretKeySet::random(threshold, rng));
 
         let secret_key_share = index.map(|index| secret_key_set.secret_key_share(index));
         DkgResult::new(secret_key_set.public_keys(), secret_key_share)

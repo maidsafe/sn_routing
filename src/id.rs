@@ -8,10 +8,10 @@
 
 use crate::{
     crypto::{encryption, signing},
-    rng::{self, MainRng, RngCompat},
+    rng::{self, MainRng},
 };
 use bincode::{deserialize, serialize};
-use rand_crypto::Rng as _;
+use rand::Rng;
 use serde::{de::Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     cmp::Ordering,
@@ -35,9 +35,7 @@ pub struct FullId {
 impl FullId {
     /// Construct a `FullId` with randomly generated keys.
     pub fn gen(rng: &mut MainRng) -> Self {
-        let mut rng = RngCompat(rng);
-
-        let secret_signing_key = signing::SecretKey::generate(&mut rng);
+        let secret_signing_key = signing::SecretKey::generate(rng);
         let public_signing_key = signing::PublicKey::from(&secret_signing_key);
 
         let secret_encryption_key: encryption::SecretKey = rng.gen();
@@ -56,10 +54,8 @@ impl FullId {
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     pub fn within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> Self {
-        let mut rng = RngCompat(rng);
-
         loop {
-            let secret_signing_key = signing::SecretKey::generate(&mut rng);
+            let secret_signing_key = signing::SecretKey::generate(rng);
             let public_signing_key = signing::PublicKey::from(&secret_signing_key);
             let name = name_from_key(&public_signing_key);
 
@@ -110,7 +106,7 @@ impl parsec::SecretId for FullId {
     }
 
     fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
-        let mut rng = RngCompat(rng::new());
+        let mut rng = rng::new();
         let ciphertext = to
             .public_encryption_key
             .encrypt_with_rng(&mut rng, plaintext);
