@@ -347,12 +347,17 @@ pub fn section_knowledge_is_up_to_date(
 
         if count < threshold {
             trace!(
-                "Node {}({:b}) knows only {}/{} online nodes from {:?}",
+                "Node {}({:b}) knows only {}/{} online nodes from {:?}  {:?} among {:?}",
                 node_a.name(),
                 node_a.our_prefix(),
                 count,
                 threshold,
-                b
+                b,
+                names_b
+                    .iter()
+                    .filter(|name_b| node_a.inner.is_peer_elder(name_b))
+                    .collect_vec(),
+                names_b,
             );
             return false;
         }
@@ -896,6 +901,11 @@ pub fn update_neighbours_and_poll(env: &Environment, nodes: &mut [TestNode], thr
             for (a, b) in outdated {
                 let content = gen_vec(&mut rng, 32);
                 send_user_message(nodes, a, b, content);
+                // For the case that section a got churned, but section b not.
+                // A user message from a to b contains the latest knowledge of b, which will not
+                // incur neighbour update. It has to be a user message from b to a to be sent.
+                let content = gen_vec(&mut rng, 32);
+                send_user_message(nodes, b, a, content);
             }
         } else {
             send_countdown -= 1;

@@ -550,7 +550,7 @@ fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedSt
 fn neighbour_update() {
     // 1. Create two sections, A and B.
     // 2. Change the set of elders of B.
-    // 3. Send a message from B to A to make A request an update from B.
+    // 3. Send a message from A to B to make B send update to A.
     // 4. Verify A's view of B is up to date.
 
     let env = Environment::new(NetworkParams {
@@ -601,8 +601,8 @@ fn neighbour_update() {
         env.elder_size()
     ));
 
-    // Send a message from B to A to trigger the update request.
-    send_user_message(&mut nodes, prefix_b, prefix_a, gen_vec(&mut rng, 10));
+    // Send a message from A to B to trigger the update.
+    send_user_message(&mut nodes, prefix_a, prefix_b, gen_vec(&mut rng, 10));
     poll_until(&env, &mut nodes, |nodes| {
         section_knowledge_is_up_to_date(nodes, &prefix_a, &prefix_b, env.elder_size())
     });

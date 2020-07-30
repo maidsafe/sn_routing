@@ -654,6 +654,8 @@ impl Approved {
         core: &mut Core,
         elders_info: EldersInfo,
         src_key: bls::PublicKey,
+        dst_key: Option<bls::PublicKey>,
+        nonce: MessageHash,
     ) -> Result<()> {
         if !self.shared_state.sections.has_key(&src_key) {
             self.cast_unordered_vote(
@@ -676,10 +678,17 @@ impl Approved {
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.cast_unordered_vote(core, Vote::SectionInfo(elders_info))?;
+            self.cast_unordered_vote(core, Vote::SectionInfo(elders_info.clone()))?;
         }
 
-        Ok(())
+        if let Some(dst_key) = dst_key {
+            if dst_key == *self.shared_state.our_history.last_key() {
+                // The sender's knowledge of us is latest.
+                return Ok(());
+            }
+        }
+
+        self.send_neighbour_info(core, elders_info.prefix.name(), nonce, Some(src_key))
     }
 
     pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
@@ -1449,9 +1458,6 @@ impl Approved {
                 proof,
             )?,
             AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name, proof),
-            AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
-                self.handle_send_neighbour_info_event(core, dst, nonce)?
-            }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => {
                 self.handle_relocate_event(core, payload, proof)?
@@ -1783,24 +1789,6 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_send_neighbour_info_event(
-        &mut self,
-        core: &mut Core,
-        dst: XorName,
-        nonce: MessageHash,
-    ) -> Result<()> {
-        self.send_routing_message(
-            core,
-            SrcLocation::Section(*self.shared_state.our_prefix()),
-            DstLocation::Section(dst),
-            Variant::NeighbourInfo {
-                elders_info: self.shared_state.our_info().clone(),
-                nonce,
-            },
-            None,
-        )
-    }
-
     fn handle_our_key_event(
         &mut self,
         core: &mut Core,
@@ -2061,11 +2049,6 @@ impl Approved {
             AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::ParsecPrune => false,
-
-            // Only revote if the recipient is still our neighbour
-            AccumulatingEvent::SendNeighbourInfo { dst, .. } => {
-                self.shared_state.sections.is_in_neighbour(dst)
-            }
 
             // Keep: Still relevant after prefix change.
             AccumulatingEvent::User(_) => true,
@@ -2430,13 +2413,38 @@ impl Approved {
                 VoteTheirKnowledge { prefix, key_index } => {
                     self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?
                 }
-                VoteSendNeighbourInfo { dst, nonce } => {
-                    self.cast_ordered_vote(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
+                SendNeighbourInfo { dst, nonce } => {
+                    self.send_neighbour_info(core, dst, nonce, None)?
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn send_neighbour_info(
+        &mut self,
+        core: &mut Core,
+        dst: XorName,
+        nonce: MessageHash,
+        dst_key: Option<bls::PublicKey>,
+    ) -> Result<()> {
+        let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
+        let variant = Variant::NeighbourInfo {
+            elders_info: self.shared_state.sections.proven_our().clone(),
+            section_key: *self.shared_state.our_history.last_key(),
+            nonce,
+        };
+        trace!("sending NeighbourInfo {:?}", variant);
+        let msg = Message::single_src(
+            &core.full_id,
+            DstLocation::Section(dst),
+            variant,
+            Some(proof_chain),
+            dst_key,
+        )?;
+
+        self.try_relay_message(core, &msg)
     }
 
     #[cfg(feature = "mock_base")]

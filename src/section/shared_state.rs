@@ -395,8 +395,8 @@ impl SharedState {
         // - `[]`
         // - `[VoteTheirKey]`
         // - `[VoteTheirKey, VoteTheirKnowledge]`
-        // - `[VoteSendNeighbourInfo]`
-        // - `[VoteSendNeighbourInfo, VoteTheirKnowledge]`
+        // - `[SendNeighbourInfo]`
+        // - `[SendNeighbourInfo, VoteTheirKnowledge]`
         let mut actions = Vec::with_capacity(2);
         let mut vote_send_neighbour_info = false;
 
@@ -432,7 +432,7 @@ impl SharedState {
         if vote_send_neighbour_info {
             // TODO: if src has split, consider sending to all child prefixes that are still our
             // neighbours.
-            actions.push(VoteSendNeighbourInfo {
+            actions.push(SendNeighbourInfo {
                 dst: src_prefix.name(),
                 nonce: *hash,
             })
@@ -618,7 +618,7 @@ impl SharedState {
 pub(crate) enum UpdateSectionKnowledgeAction {
     VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
     VoteTheirKnowledge { prefix: Prefix, key_index: u64 },
-    VoteSendNeighbourInfo { dst: XorName, nonce: MessageHash },
+    SendNeighbourInfo { dst: XorName, nonce: MessageHash },
 }
 
 #[cfg(test)]
