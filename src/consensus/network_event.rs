@@ -10,7 +10,6 @@ use super::{Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
     error::Result,
     id::{P2pNode, PublicId},
-    messages::MessageHash,
     relocation::RelocateDetails,
     section::{member_info, MemberState, SectionKeyShare},
     XorName,
@@ -37,14 +36,6 @@ pub enum AccumulatingEvent {
     },
     /// Voted for node we no longer consider online.
     Offline(XorName),
-
-    // Voted to send info about our section to a neighbour section.
-    SendNeighbourInfo {
-        dst: XorName,
-        // Hash of the incoming message that triggered this vote. It's purpose is to make the votes
-        // triggered by different message unique.
-        nonce: MessageHash,
-    },
 
     // Prune the gossip graph.
     ParsecPrune,
@@ -114,7 +105,7 @@ impl AccumulatingEvent {
             }
 
             // TODO: serialise these variants properly
-            Self::SendNeighbourInfo { .. } | Self::ParsecPrune | Self::User(_) => Ok(vec![]),
+            Self::ParsecPrune | Self::User(_) => Ok(vec![]),
         }
     }
 }
@@ -136,11 +127,6 @@ impl Debug for AccumulatingEvent {
                 .finish(),
 
             Self::Offline(id) => write!(formatter, "Offline({})", id),
-            Self::SendNeighbourInfo { dst, nonce } => write!(
-                formatter,
-                "SendNeighbourInfo {{ dst: {:?}, nonce: {:?} }}",
-                dst, nonce
-            ),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
             Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
             Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),

@@ -30,8 +30,10 @@ use xor_name::XorName;
 pub(crate) enum Variant {
     /// Inform neighbours about our new section.
     NeighbourInfo {
-        /// `EldersInfo` of the neighbour section.
-        elders_info: EldersInfo,
+        /// `EldersInfo` of the sender's section, with the proof chain.
+        elders_info: Proven<EldersInfo>,
+        /// Latest section key of the sender's section
+        section_key: bls::PublicKey,
         /// Nonce that is derived from the incoming message that triggered sending this
         /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are identical
         /// but triggered by different messages are not filtered out.
@@ -126,6 +128,18 @@ impl Variant {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
                 payload.verify(proof_chain, trusted_keys)
             }
+            Self::NeighbourInfo { elders_info, .. } => {
+                let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+                if !elders_info.verify(proof_chain) {
+                    return Err(RoutingError::UntrustedMessage);
+                }
+
+                match proof_chain.check_trust(trusted_keys) {
+                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
+                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                }
+            }
             _ => Ok(VerifyStatus::Full),
         }
     }
@@ -134,9 +148,14 @@ impl Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::NeighbourInfo { elders_info, nonce } => f
+            Self::NeighbourInfo {
+                elders_info,
+                section_key,
+                nonce,
+            } => f
                 .debug_struct("NeighbourInfo")
                 .field("elders_info", elders_info)
+                .field("section_key", section_key)
                 .field("nonce", nonce)
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),

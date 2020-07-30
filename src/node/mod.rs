@@ -653,10 +653,19 @@ impl Node {
                 _ => unreachable!(),
             },
             Stage::Approved(stage) => match msg.variant() {
-                Variant::NeighbourInfo { elders_info, .. } => {
+                Variant::NeighbourInfo {
+                    elders_info,
+                    section_key,
+                    ..
+                } => {
                     msg.dst().check_is_section()?;
-                    let src_key = *msg.proof_chain_last_key()?;
-                    stage.handle_neighbour_info(&mut self.core, elders_info.clone(), src_key)?;
+                    stage.handle_neighbour_info(
+                        &mut self.core,
+                        elders_info.value.clone(),
+                        *section_key,
+                        *msg.dst_key(),
+                        *msg.hash(),
+                    )?;
                 }
                 Variant::EldersUpdate(payload) => {
                     stage.handle_elders_update(&mut self.core, payload.clone())?

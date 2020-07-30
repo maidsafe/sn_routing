@@ -85,11 +85,6 @@ impl SectionMap {
         self.all().map(|elders_info| &elders_info.prefix)
     }
 
-    /// Returns whether the given name is in any of our neighbour sections.
-    pub fn is_in_neighbour(&self, name: &XorName) -> bool {
-        self.neighbours.contains_matching(name)
-    }
-
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.all().flat_map(|info| info.elders.values())

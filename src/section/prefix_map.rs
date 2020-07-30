@@ -98,11 +98,6 @@ where
             .map(|entry| &entry.0)
     }
 
-    /// Returns whether the map contain at least one entry whose prefix matches `name`.
-    pub fn contains_matching(&self, name: &XorName) -> bool {
-        self.0.iter().any(|entry| entry.0.borrow().matches(name))
-    }
-
     /// Returns an iterator over the entries, in order by prefixes.
     pub fn iter(&self) -> impl Iterator<Item = &T> + Clone {
         self.0.iter().map(|entry| &entry.0)
