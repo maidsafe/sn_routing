@@ -720,6 +720,8 @@ impl Approved {
         shared_state: SharedState,
         parsec_version: u64,
     ) -> Result<()> {
+        // On sender side, the check has already been carried out once.
+        // Doing the check again here just to prevent malicious case.
         if !shared_state.our_info().elders.contains_key(core.name()) {
             debug!("ignore Promote - not actually promoted");
             return Ok(());
@@ -2169,15 +2171,23 @@ impl Approved {
         parsec_version: u64,
         new_elders: Vec<P2pNode>,
     ) -> Result<()> {
-        for p2p_node in new_elders {
-            let variant = Variant::Promote {
-                shared_state: shared_state.clone(),
-                parsec_version,
-            };
+        let variant = Variant::Promote {
+            shared_state: shared_state.clone(),
+            parsec_version,
+        };
 
+        for p2p_node in new_elders {
+            if !shared_state.our_info().elders.contains_key(p2p_node.name()) {
+                continue;
+            }
             trace!("Send {:?} to {:?}", variant, p2p_node);
-            let message =
-                Message::single_src(&core.full_id, DstLocation::Direct, variant, None, None)?;
+            let message = Message::single_src(
+                &core.full_id,
+                DstLocation::Direct,
+                variant.clone(),
+                None,
+                None,
+            )?;
             core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
         }
 
