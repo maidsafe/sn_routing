@@ -31,7 +31,6 @@ mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true 
 parsec = { git = "https://github.com/maidsafe/parsec" }
 quic-p2p = { version = "~0.7.0", features = ["upnp"] }
 rand = "~0.7.3"
-# rand in the versions used by the threshold-crypto crate
 rand_core = "~0.5.1"
 rand_os = "~0.2.2"
 rand_xorshift = "~0.2.0"

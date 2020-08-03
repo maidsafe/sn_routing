@@ -1089,17 +1089,28 @@ impl Approved {
         participants: BTreeSet<PublicId>,
         section_key_index: u64,
         message_bytes: Bytes,
-        pub_id: PublicId,
+        sender: PublicId,
     ) -> Result<()> {
         trace!(
             "handle dkg message of p{:?}-{:?} from {}",
             participants,
             section_key_index,
-            pub_id
+            sender
         );
 
         if participants.contains(core.id()) {
             self.init_dkg_gen(core, participants.clone(), section_key_index);
+        } else {
+            // During split, a non-participant Elder could be picked as a relayer to forward DKG
+            // messages, when the new elders of one sub-section are currently all non-elders.
+            self.try_forward_dkg_message_to_non_elder(
+                core,
+                participants,
+                section_key_index,
+                message_bytes,
+                &sender,
+            );
+            return Ok(());
         }
 
         let msg_parsed = bincode::deserialize(&message_bytes[..])?;
@@ -1120,6 +1131,15 @@ impl Approved {
             let _ =
                 self.broadcast_dkg_message(core, participants.clone(), section_key_index, response);
         }
+
+        self.try_forward_dkg_message_to_non_elder(
+            core,
+            participants,
+            section_key_index,
+            message_bytes,
+            &sender,
+        );
+
         self.check_dkg(core);
         Ok(())
     }
@@ -1320,6 +1340,34 @@ impl Approved {
         }
     }
 
+    // As an Elder, forwarding DKG message for Adult participants.
+    fn try_forward_dkg_message_to_non_elder(
+        &mut self,
+        core: &mut Core,
+        participants: BTreeSet<PublicId>,
+        section_key_index: u64,
+        message_bytes: Bytes,
+        sender: &PublicId,
+    ) {
+        if self.is_our_elder(core.id()) && !self.is_our_elder(sender) {
+            let variant = Variant::DKGMessage {
+                participants: participants.clone(),
+                section_key_index,
+                message: message_bytes,
+            };
+
+            for pub_id in participants.iter() {
+                if self.is_our_elder(pub_id) {
+                    continue;
+                }
+                if let Some(target) = self.shared_state.get_p2p_node(pub_id.name()) {
+                    trace!("Sending DKG to {:?} - {:?}", pub_id.name(), variant);
+                    core.send_direct_message(target.peer_addr(), variant.clone());
+                }
+            }
+        }
+    }
+
     fn broadcast_dkg_message(
         &mut self,
         core: &mut Core,
@@ -1327,19 +1375,36 @@ impl Approved {
         section_key_index: u64,
         dkg_message: DkgMessage<PublicId>,
     ) -> Result<()> {
-        let src = SrcLocation::Node(*core.id().name());
-        let message = bincode::serialize(&dkg_message)?.into();
+        let message: Bytes = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             participants: participants.clone(),
             section_key_index,
-            message,
+            message: message.clone(),
         };
 
         for pub_id in participants.iter() {
-            let dst = DstLocation::Node(*pub_id.name());
-            let _ = self.send_routing_message(core, src, dst, variant.clone(), None);
+            if pub_id == core.id() {
+                continue;
+            }
+            if let Some(target) = self.shared_state.get_p2p_node(pub_id.name()) {
+                trace!("Sending DKG to {:?} - {:?}", pub_id.name(), variant);
+                core.send_direct_message(target.peer_addr(), variant.clone());
+            }
         }
-        Ok(())
+
+        // In case all the participants are non-elders (could happen during split), existing elders
+        // have to be used as relayer to forward DKG messages.
+        if !participants.iter().any(|pub_id| self.is_our_elder(pub_id)) {
+            // Sending to all elders to prevent some of them got dropped or mis-behaved.
+            // TODO: consider sending to 1/3 ?
+            let targets: Vec<_> = self.shared_state.sections.our_elders().collect();
+            for target in targets {
+                trace!("Sending DKG to {:?} - {:?}", target.name(), variant);
+                core.send_direct_message(target.peer_addr(), variant.clone());
+            }
+        }
+
+        self.handle_dkg_message(core, participants, section_key_index, message, *core.id())
     }
 
     /// Polls and handles the next scheduled relocation, if any.
