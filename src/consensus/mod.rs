@@ -214,10 +214,6 @@ impl ConsensusEngine {
         self.parsec_map.vote_for(event)
     }
 
-    pub fn add_force_gossip_peer(&mut self, peer_id: &PublicId) {
-        self.parsec_map.add_force_gossip_peer(peer_id)
-    }
-
     pub fn create_gossip(
         &mut self,
         version: u64,

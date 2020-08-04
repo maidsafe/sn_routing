@@ -236,12 +236,6 @@ impl ParsecMap {
         }
     }
 
-    pub fn add_force_gossip_peer(&mut self, peer_id: &PublicId) {
-        if let Some(ref mut parsec) = self.map.values_mut().last() {
-            parsec.add_force_gossip_peer(peer_id)
-        }
-    }
-
     pub fn gossip_recipients(&self) -> Vec<&PublicId> {
         self.map
             .values()
