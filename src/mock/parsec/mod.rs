@@ -102,6 +102,7 @@ where
         }
     }
 
+    #[cfg(test)]
     pub fn our_pub_id(&self) -> &S::PublicId {
         self.our_id.public_id()
     }
@@ -130,16 +131,6 @@ where
                 ObservationHolder::new(observation, vote_id.public_id(), self.consensus_mode);
             let _ = state.vote(vote_id, holder);
         });
-    }
-
-    /// Add a gossip peer by force
-    pub fn add_force_gossip_peer(&mut self, peer_id: &S::PublicId) {
-        debug!(
-            "{:?}: adding a new gossip_peer {:?} by force.",
-            self.our_pub_id(),
-            peer_id
-        );
-        let _ = self.peer_list.insert(peer_id.clone());
     }
 
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {

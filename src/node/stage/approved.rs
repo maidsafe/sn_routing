@@ -1824,27 +1824,11 @@ impl Approved {
         Ok(())
     }
 
-    fn add_force_gossip_peer(
-        &mut self,
-        elders_info: &EldersInfo,
-        old_prefix: Prefix,
-        was_elder: bool,
-    ) {
-        if was_elder
-            && (elders_info.prefix == old_prefix || elders_info.prefix.is_extension_of(&old_prefix))
-        {
-            for id in elders_info.elders.values() {
-                self.consensus_engine.add_force_gossip_peer(id.public_id());
-            }
-        }
-    }
-
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         trace!("update our section with {:?}", details);
         info!("handle SectionInfo: {:?}", details.our.info.value);
 
         let old_prefix = *self.shared_state.our_prefix();
-        let was_elder = self.is_our_elder(core.id());
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
 
         let mut old_shared_state = self.shared_state.clone();
@@ -1861,11 +1845,9 @@ impl Approved {
             .cloned()
             .collect();
 
-        self.add_force_gossip_peer(&details.our.info.value, old_prefix, was_elder);
         self.update_our_key_and_info(core, details.our.key, details.our.info.clone())?;
 
         if let Some(sibling) = details.sibling {
-            self.add_force_gossip_peer(&sibling.info.value, old_prefix, was_elder);
             self.shared_state.sections.update_keys(sibling.key);
             self.update_neighbour_info(core, sibling.info.clone());
 
