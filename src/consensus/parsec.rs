@@ -122,10 +122,9 @@ impl ParsecMap {
         rng: &mut MainRng,
         full_id: FullId,
         elders_info: &EldersInfo,
-        serialised_state: Vec<u8>,
         parsec_version: u64,
     ) {
-        self.add_new(rng, full_id, elders_info, serialised_state, parsec_version);
+        self.add_new(rng, full_id, elders_info, parsec_version);
         self.remove_old();
     }
 
@@ -325,17 +324,10 @@ impl ParsecMap {
         rng: &mut MainRng,
         full_id: FullId,
         elders_info: &EldersInfo,
-        serialised_state: Vec<u8>,
         parsec_version: u64,
     ) {
         if let Entry::Vacant(entry) = self.map.entry(parsec_version) {
-            let _ = entry.insert(create(
-                rng,
-                full_id,
-                elders_info,
-                serialised_state,
-                parsec_version,
-            ));
+            let _ = entry.insert(create(rng, full_id, elders_info, parsec_version));
             self.size_counter = ParsecSizeCounter::default();
             info!("Init new Parsec v{}", parsec_version);
         }
@@ -357,7 +349,6 @@ fn create(
     rng: &mut MainRng,
     full_id: FullId,
     elders_info: &EldersInfo,
-    serialised_state: Vec<u8>,
     #[cfg_attr(not(feature = "mock"), allow(unused))] parsec_version: u64,
 ) -> Parsec {
     #[cfg(feature = "mock")]
@@ -372,7 +363,7 @@ fn create(
             hash,
             full_id,
             &elders_info.elder_ids().copied().collect(),
-            serialised_state,
+            vec![],
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
@@ -458,7 +449,7 @@ mod tests {
             })
             .collect();
         let elders_info = EldersInfo::new(members, Prefix::default());
-        parsec_map.init(rng, full_ids[0].clone(), &elders_info, vec![], version);
+        parsec_map.init(rng, full_ids[0].clone(), &elders_info, version);
     }
 
     fn create_parsec_map(rng: &mut MainRng, size: u64) -> ParsecMap {
