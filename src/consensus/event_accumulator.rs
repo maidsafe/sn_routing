@@ -115,13 +115,6 @@ impl EventAccumulator {
         proof_share: ProofShare,
         elders_info: &EldersInfo,
     ) -> Result<(AccumulatingEvent, Proof), AccumulationError> {
-        if let AccumulatingEvent::Genesis { .. } = event {
-            panic!(
-                "invalid event inserted into the event accumulator: {:?}",
-                event
-            );
-        }
-
         if self.accumulated_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &voter_name);
             return Err(AccumulationError::AlreadyAccumulated);

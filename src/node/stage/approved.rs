@@ -193,7 +193,7 @@ impl Approved {
         match self
             .section_keys_provider
             .key_share()
-            .and_then(|share| event.clone().into_signed_network_event(share))
+            .and_then(|share| event.clone().into_network_event(share))
         {
             Ok(event) => self.consensus_engine.vote_for(event),
             Err(error) => log_or_panic!(
@@ -1364,12 +1364,11 @@ impl Approved {
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
-        proof: Option<Proof>,
+        proof: Proof,
     ) -> Result<()> {
         debug!("Handle consensus on {:?}", event);
 
         match event {
-            AccumulatingEvent::Genesis { .. } => self.handle_genesis_event(),
             AccumulatingEvent::Online {
                 p2p_node,
                 previous_name,
@@ -1381,20 +1380,16 @@ impl Approved {
                 previous_name,
                 age,
                 their_knowledge,
-                proof.expect("missing proof for Online"),
+                proof,
             )?,
-            AccumulatingEvent::Offline(name) => {
-                self.handle_offline_event(core, name, proof.expect("missing proof for Offline"))
-            }
+            AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name, proof),
             AccumulatingEvent::SendNeighbourInfo { dst, nonce } => {
                 self.handle_send_neighbour_info_event(core, dst, nonce)?
             }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
-            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(
-                core,
-                payload,
-                proof.expect("missing proof for Relocate"),
-            )?,
+            AccumulatingEvent::Relocate(payload) => {
+                self.handle_relocate_event(core, payload, proof)?
+            }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
 
@@ -1463,15 +1458,6 @@ impl Approved {
                 Ok(())
             }
         }
-    }
-
-    // Handles an accumulated parsec Observation for genesis.
-    //
-    // The related_info is the serialized shared state that will be the starting
-    // point when processing parsec data.
-    fn handle_genesis_event(&mut self) {
-        // On split membership may need to be checked again.
-        self.members_changed = true;
     }
 
     fn handle_online_event(
@@ -2009,6 +1995,10 @@ impl Approved {
             }
         }
 
+        // FIXME: this should not be necessary because elder membership should always be up to date
+        // after parsec reset. But without this almost all the tests fail. Figure out why.
+        self.members_changed = true;
+
         Ok(())
     }
 
@@ -2024,7 +2014,7 @@ impl Approved {
             AccumulatingEvent::Offline(name) => our_prefix.matches(name),
             AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
-            AccumulatingEvent::Genesis { .. } | AccumulatingEvent::ParsecPrune => false,
+            AccumulatingEvent::ParsecPrune => false,
 
             // Only revote if the recipient is still our neighbour
             AccumulatingEvent::SendNeighbourInfo { dst, .. } => {

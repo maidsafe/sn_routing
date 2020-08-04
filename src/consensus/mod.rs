@@ -69,7 +69,7 @@ impl ConsensusEngine {
     }
 
     /// Returns the next consensused and accumulated event, if any.
-    pub fn poll(&mut self, our_elders: &EldersInfo) -> Option<(AccumulatingEvent, Option<Proof>)> {
+    pub fn poll(&mut self, our_elders: &EldersInfo) -> Option<(AccumulatingEvent, Proof)> {
         while let Some(block) = self.parsec_map.poll() {
             if let Some(output) = self.handle_parsec_block(block, our_elders) {
                 return Some(output);
@@ -83,7 +83,7 @@ impl ConsensusEngine {
         &mut self,
         block: Block,
         our_elders: &EldersInfo,
-    ) -> Option<(AccumulatingEvent, Option<Proof>)> {
+    ) -> Option<(AccumulatingEvent, Proof)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
             Observation::Genesis { group, .. } => {
@@ -93,7 +93,7 @@ impl ConsensusEngine {
                     group,
                 );
 
-                Some((AccumulatingEvent::Genesis, None))
+                None
             }
             Observation::OpaquePayload(event) => {
                 let voter_name = *block.proofs().iter().next()?.public_id().name();
@@ -102,8 +102,6 @@ impl ConsensusEngine {
                     payload: event,
                     proof_share,
                 } = event.clone();
-
-                let proof_share = proof_share?;
 
                 trace!(
                     "Parsec OpaquePayload v{}: {} - {:?}",
@@ -116,7 +114,7 @@ impl ConsensusEngine {
                     .accumulator
                     .insert(event, voter_name, proof_share, our_elders)
                 {
-                    Ok((event, proof)) => Some((event, Some(proof))),
+                    Ok(event_and_proof) => Some(event_and_proof),
                     Err(AccumulationError::NotEnoughShares)
                     | Err(AccumulationError::AlreadyAccumulated) => None,
                     Err(AccumulationError::InvalidShare) => {

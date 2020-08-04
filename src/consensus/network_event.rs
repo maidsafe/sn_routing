@@ -24,9 +24,6 @@ use std::fmt::{self, Debug, Formatter};
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Genesis event. This is output-only unsigned event.
-    Genesis,
-
     /// Voted for node that is about to join our section
     Online {
         /// Identifier of the joining node.
@@ -60,22 +57,12 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn needs_signature(&self) -> bool {
-        match self {
-            Self::Genesis { .. } => false,
-            _ => true,
-        }
-    }
-
     /// Sign and convert this event into `NetworkEvent`.
     ///
     /// # Panics
     ///
     /// Panics if `self.needs_signature()` is `false`
-    pub fn into_signed_network_event(
-        self,
-        section_key_share: &SectionKeyShare,
-    ) -> Result<NetworkEvent> {
+    pub fn into_network_event(self, section_key_share: &SectionKeyShare) -> Result<NetworkEvent> {
         let signature_share = self.sign(&section_key_share.secret_key_share)?;
         let proof_share = ProofShare {
             public_key_set: section_key_share.public_key_set.clone(),
@@ -85,23 +72,8 @@ impl AccumulatingEvent {
 
         Ok(NetworkEvent {
             payload: self,
-            proof_share: Some(proof_share),
+            proof_share,
         })
-    }
-
-    /// Convert this event into unsigned `NetworkEvent`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `self.needs_signature()` is `true`
-    #[cfg(all(test, feature = "mock"))]
-    pub fn into_unsigned_network_event(self) -> NetworkEvent {
-        assert!(!self.needs_signature());
-
-        NetworkEvent {
-            payload: self,
-            proof_share: None,
-        }
     }
 
     /// Create a signature share of this event using `secret key share`.
@@ -110,18 +82,14 @@ impl AccumulatingEvent {
     ///
     /// Panics if `self.needs_signature()` is `false`
     pub fn sign(&self, secret_key_share: &bls::SecretKeyShare) -> Result<bls::SignatureShare> {
-        assert!(self.needs_signature());
-
         let bytes = self.serialise_for_signing()?;
         Ok(secret_key_share.sign(&bytes))
     }
 
     pub fn verify(&self, proof_share: &ProofShare) -> bool {
-        self.needs_signature()
-            && self
-                .serialise_for_signing()
-                .map(|bytes| proof_share.verify(&bytes))
-                .unwrap_or(false)
+        self.serialise_for_signing()
+            .map(|bytes| proof_share.verify(&bytes))
+            .unwrap_or(false)
     }
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
@@ -147,7 +115,6 @@ impl AccumulatingEvent {
 
             // TODO: serialise these variants properly
             Self::SendNeighbourInfo { .. } | Self::ParsecPrune | Self::User(_) => Ok(vec![]),
-            Self::Genesis { .. } => unreachable!(),
         }
     }
 }
@@ -155,7 +122,6 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Genesis => write!(formatter, "Genesis"),
             Self::Online {
                 p2p_node,
                 previous_name,
@@ -185,7 +151,7 @@ impl Debug for AccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub proof_share: Option<ProofShare>,
+    pub proof_share: ProofShare,
 }
 
 impl NetworkEvent {
@@ -199,10 +165,10 @@ impl ParsecNetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if let Some(share) = self.proof_share.as_ref() {
-            write!(formatter, "{:?} (sig #{})", self.payload, share.index)
-        } else {
-            self.payload.fmt(formatter)
-        }
+        write!(
+            formatter,
+            "{:?} (sig #{})",
+            self.payload, self.proof_share.index
+        )
     }
 }
