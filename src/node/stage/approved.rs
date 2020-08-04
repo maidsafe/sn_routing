@@ -716,6 +716,7 @@ impl Approved {
         }
 
         info!("Promoted To Elder");
+        let old_prefix = self.shared_state.our_info().prefix;
 
         core.msg_filter.reset();
 
@@ -740,8 +741,13 @@ impl Approved {
         }
 
         self.send_elders_update(core)?;
-        self.send_send_neighbour_info()?;
-        self.send_their_knowledge(core)?;
+
+        // Only need to vote during split and for sibling section, to accumulate enough votes.
+        if old_prefix != self.shared_state.our_info().prefix {
+            let prefix = self.shared_state.our_info().prefix.sibling();
+            let key_index = self.shared_state.our_history.last_key_index();
+            self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?;
+        }
 
         core.send_event(Event::PromotedToElder);
         self.send_elders_changed_event(core);
@@ -780,6 +786,7 @@ impl Approved {
         }
 
         trace!("Handle NotifyLagging");
+        let old_prefix = self.shared_state.our_info().prefix;
 
         // TODO: verify `shared_state` !
         self.shared_state.update(shared_state)?;
@@ -795,8 +802,12 @@ impl Approved {
         }
 
         self.send_elders_update(core)?;
-        self.send_send_neighbour_info()?;
-        self.send_their_knowledge(core)?;
+        // Only need to vote during split and for sibling section, to accumulate enough votes.
+        if old_prefix != self.shared_state.our_info().prefix {
+            let prefix = self.shared_state.our_info().prefix.sibling();
+            let key_index = self.shared_state.our_history.last_key_index();
+            self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?;
+        }
 
         self.print_network_stats();
 
@@ -1950,8 +1961,6 @@ impl Approved {
         // on our `OurKey` so they know our latest key. Need to vote for it first though, to
         // accumulate the signatures.
         if let Some(prefix) = sibling_prefix {
-            self.send_send_neighbour_info()?;
-
             self.cast_unordered_vote(
                 core,
                 Vote::TheirKnowledge {
@@ -2113,35 +2122,6 @@ impl Approved {
         )?;
         core.send_message_to_target(p2p_node.peer_addr(), message.to_bytes());
 
-        Ok(())
-    }
-
-    fn send_send_neighbour_info(&mut self) -> Result<()> {
-        let nonce = MessageHash::from_bytes(&bincode::serialize(&self.shared_state.our_info())?);
-        let destinations: Vec<_> = self
-            .shared_state
-            .sections
-            .neighbours()
-            .map(|neighbour| neighbour.prefix.name())
-            .collect();
-        for dst in destinations {
-            self.cast_ordered_vote(AccumulatingEvent::SendNeighbourInfo { dst, nonce })
-        }
-
-        Ok(())
-    }
-
-    fn send_their_knowledge(&mut self, core: &mut Core) -> Result<()> {
-        let key_index = self.shared_state.our_history.last_key_index();
-        let destinations: Vec<_> = self
-            .shared_state
-            .sections
-            .neighbours()
-            .map(|neighbour| neighbour.prefix)
-            .collect();
-        for prefix in destinations {
-            self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?;
-        }
         Ok(())
     }
 
