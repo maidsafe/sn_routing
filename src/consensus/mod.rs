@@ -57,11 +57,10 @@ impl ConsensusEngine {
         rng: &mut MainRng,
         full_id: FullId,
         elders_info: &EldersInfo,
-        serialised_state: Vec<u8>,
         parsec_version: u64,
     ) -> Self {
         let mut parsec_map = ParsecMap::default();
-        parsec_map.init(rng, full_id, elders_info, serialised_state, parsec_version);
+        parsec_map.init(rng, full_id, elders_info, parsec_version);
 
         Self {
             parsec_map,
@@ -87,26 +86,14 @@ impl ConsensusEngine {
     ) -> Option<(AccumulatingEvent, Option<Proof>)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
-            Observation::Genesis {
-                group,
-                related_info,
-            } => {
-                // FIXME: Validate with Chain info.
-
+            Observation::Genesis { group, .. } => {
                 trace!(
-                    "Parsec Genesis v{}: group: {:?}, related_info: {}",
+                    "Parsec Genesis v{}: group: {:?}",
                     self.parsec_map.last_version(),
                     group,
-                    related_info.len()
                 );
 
-                Some((
-                    AccumulatingEvent::Genesis {
-                        group: group.clone(),
-                        related_info: related_info.clone(),
-                    },
-                    None,
-                ))
+                Some((AccumulatingEvent::Genesis, None))
             }
             Observation::OpaquePayload(event) => {
                 let voter_name = *block.proofs().iter().next()?.public_id().name();
@@ -215,11 +202,10 @@ impl ConsensusEngine {
         rng: &mut MainRng,
         full_id: FullId,
         elders_info: &EldersInfo,
-        serialised_state: Vec<u8>,
         parsec_version: u64,
     ) {
         self.parsec_map
-            .init(rng, full_id, elders_info, serialised_state, parsec_version)
+            .init(rng, full_id, elders_info, parsec_version)
     }
 
     pub fn detect_unresponsive(&self, elders_info: &EldersInfo) -> BTreeSet<PublicId> {

@@ -17,10 +17,7 @@ use crate::{
 };
 use hex_fmt::HexFmt;
 use serde::Serialize;
-use std::{
-    collections::BTreeSet,
-    fmt::{self, Debug, Formatter},
-};
+use std::fmt::{self, Debug, Formatter};
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?
@@ -28,10 +25,7 @@ use std::{
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
     /// Genesis event. This is output-only unsigned event.
-    Genesis {
-        group: BTreeSet<PublicId>,
-        related_info: Vec<u8>,
-    },
+    Genesis,
 
     /// Voted for node that is about to join our section
     Online {
@@ -161,15 +155,7 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Genesis {
-                group,
-                related_info,
-            } => write!(
-                formatter,
-                "Genesis {{ group: {:?}, related_info: {:10} }}",
-                group,
-                HexFmt(related_info)
-            ),
+            Self::Genesis => write!(formatter, "Genesis"),
             Self::Online {
                 p2p_node,
                 previous_name,

@@ -94,12 +94,10 @@ impl Approved {
         parsec_version: u64,
         section_key_share: Option<SectionKeyShare>,
     ) -> Result<Self> {
-        let serialised_state = bincode::serialize(&shared_state)?;
         let consensus_engine = ConsensusEngine::new(
             &mut core.rng,
             core.full_id.clone(),
             shared_state.sections.our(),
-            serialised_state,
             parsec_version,
         );
 
@@ -727,6 +725,8 @@ impl Approved {
             return Ok(());
         }
 
+        info!("Promoted To Elder");
+
         core.msg_filter.reset();
 
         // TODO: verify `shared_state` !
@@ -734,8 +734,6 @@ impl Approved {
 
         self.reset_parsec(core, parsec_version)?;
         self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
-
-        info!("Promoted To Elder");
 
         match self
             .section_keys_provider
@@ -790,6 +788,8 @@ impl Approved {
             debug!("ignore lagging notification - our key is ahead");
             return Ok(());
         }
+
+        trace!("Handle NotifyLagging");
 
         // TODO: verify `shared_state` !
         self.shared_state.update(shared_state)?;
@@ -1434,10 +1434,7 @@ impl Approved {
         debug!("Handle consensus on {:?}", event);
 
         match event {
-            AccumulatingEvent::Genesis {
-                group,
-                related_info,
-            } => self.handle_genesis_event(&group, &related_info)?,
+            AccumulatingEvent::Genesis { .. } => self.handle_genesis_event(),
             AccumulatingEvent::Online {
                 p2p_node,
                 previous_name,
@@ -1537,16 +1534,10 @@ impl Approved {
     //
     // The related_info is the serialized shared state that will be the starting
     // point when processing parsec data.
-    fn handle_genesis_event(
-        &mut self,
-        _group: &BTreeSet<PublicId>,
-        related_info: &[u8],
-    ) -> Result<()> {
-        let new_state = bincode::deserialize(related_info)?;
-
+    fn handle_genesis_event(&mut self) {
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.shared_state.update(new_state)
+        self.shared_state.handled_genesis_event = true;
     }
 
     fn handle_online_event(
@@ -2072,17 +2063,10 @@ impl Approved {
         let events = self.consensus_engine.prepare_reset(core.name());
         let events = self.filter_events_to_revote(events);
 
-        let serialised_state = if is_elder {
-            bincode::serialize(&self.shared_state)?
-        } else {
-            vec![]
-        };
-
         self.consensus_engine.finalise_reset(
             &mut core.rng,
             core.full_id.clone(),
             self.shared_state.our_info(),
-            serialised_state,
             new_parsec_version,
         );
 

@@ -53,6 +53,7 @@ impl SharedState {
         }
     }
 
+    // TODO: merge the new state into the old, don't replace it.
     pub fn update(&mut self, new: Self) -> Result<(), RoutingError> {
         if self.handled_genesis_event {
             error!("shared state update - genesis event already handled",);
