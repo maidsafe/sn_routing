@@ -202,7 +202,7 @@ impl SharedState {
         proof: Proof,
         recommended_section_size: usize,
         our_name: &XorName,
-    ) -> (bool, bool) {
+    ) -> (bool, Vec<XorName>) {
         // FIXME: we should perform these checks before voting, but once the vote accumulates we
         // must obey it:
         if !self.our_prefix().matches(p2p_node.name()) {
@@ -210,12 +210,12 @@ impl SharedState {
                 "not adding node {} - not matching our prefix",
                 p2p_node.name()
             );
-            return (false, false);
+            return (false, vec![]);
         }
 
         if self.our_members.contains(p2p_node.name()) {
             trace!("not adding node {} - already a member", p2p_node.name());
-            return (false, false);
+            return (false, vec![]);
         }
 
         // The section public key of the proof shall be known to us.
@@ -225,27 +225,27 @@ impl SharedState {
                 p2p_node.name(),
                 proof
             );
-            return (false, false);
+            return (false, vec![]);
         }
 
         let name = *p2p_node.name();
 
         self.our_members.add(p2p_node, age, proof);
-        let new_adult = self.increment_age_counters(&name, recommended_section_size, our_name);
+        let new_adults = self.increment_age_counters(&name, recommended_section_size, our_name);
 
-        (true, new_adult)
+        (true, new_adults)
     }
 
     /// Removes a member with the given pub_id.
-    /// Returns the removed `MemberInfo` or `None` if there was no such member.
+    /// Returns the removed `MemberInfo` or `None` if there was no such member and
+    /// the list of SocketAddr(s) of a nodes that got promoted to Adult on seeing churn .
     pub fn remove_member(
         &mut self,
         name: &XorName,
         proof: Proof,
         recommended_section_size: usize,
         our_name: &XorName,
-    ) -> (Option<MemberInfo>, bool) {
-        let mut new_adult = false;
+    ) -> (Option<MemberInfo>, Vec<XorName>) {
         // The section public key of the proof shall be known to us.
         if !self.our_history.has_key(&proof.public_key) {
             trace!(
@@ -253,25 +253,26 @@ impl SharedState {
                 name,
                 proof
             );
-            return (None, new_adult);
+            return (None, vec![]);
         }
 
+        let mut new_adults = vec![];
         match self.our_members.get(name).map(|info| &info.state) {
             Some(MemberState::Left) | None => {
                 // FIXME: perform this check before voting, but once the vote accumulates we must
                 // obey it.
                 trace!("not removing node {} - not a member", name);
-                return (None, new_adult);
+                return (None, vec![]);
             }
             Some(MemberState::Relocating { .. }) => (),
             Some(MemberState::Joined) => {
-                new_adult = self.increment_age_counters(name, recommended_section_size, our_name)
+                new_adults = self.increment_age_counters(name, recommended_section_size, our_name)
             }
         }
 
         self.relocate_queue
             .retain(|details| details.pub_id.name() != name);
-        (self.our_members.remove(name, proof), new_adult)
+        (self.our_members.remove(name, proof), new_adults)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -533,14 +534,14 @@ impl SharedState {
             .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
     }
 
-    // Increment the age counters of the members. Returns true if our node gets promoted to Adult.
+    // Increment the age counters of the members. Returns a list of SocketAddr(s) of the nodes that get promoted as new Adults.
     fn increment_age_counters(
         &mut self,
         trigger_node: &XorName,
         recommended_section_size: usize,
-        our_name: &XorName,
-    ) -> bool {
-        let mut new_adult = false;
+        _our_name: &XorName,
+    ) -> Vec<XorName> {
+        let mut new_adults = vec![];
         let our_section_size = self.our_members.joined().count();
         let our_prefix = &self.sections.our().prefix;
 
@@ -554,11 +555,11 @@ impl SharedState {
             && !self.our_members.is_mature(trigger_node)
             && !self.is_peer_our_elder(trigger_node)
         {
-            trace!(
+            info!(
                 "Not incrementing age counters on infant churn (section size: {})",
                 our_section_size,
             );
-            return new_adult;
+            return new_adults;
         }
 
         let first_key = self.our_history.first_key();
@@ -577,10 +578,9 @@ impl SharedState {
             if !member_info.increment_age_counter() {
                 continue;
             }
-
-            // Check if the member being aged is us.
-            if member_info.p2p_node.name() == our_name && member_info.is_new_adult() {
-                new_adult = true;
+            // Check if the member being aged becomes an Adult
+            if member_info.is_new_adult() {
+                new_adults.push(*member_info.p2p_node.name());
             }
 
             let destination = relocation::compute_destination(
@@ -617,7 +617,7 @@ impl SharedState {
 
         trace!("increment_age_counters: {:?}", self.our_members);
 
-        new_adult
+        new_adults
     }
 }
 

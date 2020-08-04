@@ -671,6 +671,10 @@ impl Node {
                     shared_state,
                     parsec_version,
                 } => stage.handle_promote(&mut self.core, shared_state.clone(), *parsec_version)?,
+                Variant::PromotedToAdult => {
+                    println!("FIRING PROMOTEDTOADULT");
+                    self.core.send_event(Event::PromotedToAdult)
+                }
                 Variant::NotifyLagging {
                     shared_state,
                     parsec_version,

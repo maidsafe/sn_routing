@@ -422,6 +422,7 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
+            Variant::PromotedToAdult => return Ok(MessageStatus::Useful),
             Variant::NotifyLagging { .. } => {
                 // Adult shall be updated by EldersUpdate, or Promote if is going to be promoted.
                 if !self.is_our_elder(our_id) {
@@ -1456,7 +1457,7 @@ impl Approved {
                 their_knowledge,
                 proof,
             )?,
-            AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name, proof),
+            AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name, proof)?,
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => {
                 self.handle_relocate_event(core, payload, proof)?
@@ -1540,7 +1541,7 @@ impl Approved {
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<()> {
-        let (added, new_adult) = self.shared_state.add_member(
+        let (added, new_adults) = self.shared_state.add_member(
             p2p_node.clone(),
             age,
             proof,
@@ -1548,8 +1549,21 @@ impl Approved {
             core.name(),
         );
 
-        if new_adult {
-            core.send_event(Event::PromotedToAdult)
+        for name in new_adults {
+            self.send_routing_message(
+                core,
+                SrcLocation::Section(*self.shared_state.our_prefix()),
+                DstLocation::Node(name),
+                Variant::PromotedToAdult,
+                None,
+            )
+            .map_err(|e| {
+                error!(
+                    "Error sending accumulation message to the promoted node: {:?}",
+                    e
+                );
+                e
+            })?;
         }
 
         if added {
@@ -1578,8 +1592,8 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
-        let (memberinfo, new_adult) = self.shared_state.remove_member(
+    fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) -> Result<()> {
+        let (memberinfo, new_adults) = self.shared_state.remove_member(
             &name,
             proof,
             core.network_params.recommended_section_size,
@@ -1595,12 +1609,27 @@ impl Approved {
                 name,
                 age: info.age(),
             });
-            if new_adult {
-                core.send_event(Event::PromotedToAdult)
+
+            for name in new_adults {
+                self.send_routing_message(
+                    core,
+                    SrcLocation::Section(*self.shared_state.our_prefix()),
+                    DstLocation::Node(name),
+                    Variant::PromotedToAdult,
+                    None,
+                )
+                .map_err(|e| {
+                    error!(
+                        "Error sending accumulation message to the promoted node: {:?}",
+                        e
+                    );
+                    e
+                })?;
             }
         } else {
             info!("ignore Offline: {}", name);
         }
+        Ok(())
     }
 
     fn handle_relocate_event(
@@ -1609,7 +1638,7 @@ impl Approved {
         details: RelocateDetails,
         proof: Proof,
     ) -> Result<(), RoutingError> {
-        let (info, new_adult) = self.shared_state.remove_member(
+        let (info, new_adults) = self.shared_state.remove_member(
             details.pub_id.name(),
             proof,
             core.network_params.recommended_section_size,
@@ -1640,8 +1669,21 @@ impl Approved {
             return Ok(());
         }
 
-        if new_adult {
-            core.send_event(Event::PromotedToAdult)
+        for name in new_adults {
+            self.send_routing_message(
+                core,
+                SrcLocation::Section(*self.shared_state.our_prefix()),
+                DstLocation::Node(name),
+                Variant::PromotedToAdult,
+                None,
+            )
+            .map_err(|e| {
+                error!(
+                    "Error sending accumulation message to the promoted node: {:?}",
+                    e
+                );
+                e
+            })?;
         }
 
         // We need to construct a proof that would be trusted by the destination section.

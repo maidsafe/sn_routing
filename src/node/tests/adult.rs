@@ -19,6 +19,7 @@ use crate::{
     section::{self, EldersInfo, SectionProofChain, SharedState},
 };
 
+use crate::event::Event;
 use mock_quic_p2p::Network;
 use rand::Rng;
 use xor_name::Prefix;
@@ -36,6 +37,7 @@ struct Env {
     sk_set: bls::SecretKeySet,
     elders_info: EldersInfo,
     elder_full_ids: Vec<FullId>,
+    subject_user_rx: crossbeam_channel::Receiver<Event>,
 }
 
 impl Env {
@@ -51,7 +53,7 @@ impl Env {
         let shared_state =
             SharedState::new(proven_elders_info.proof.public_key, proven_elders_info);
 
-        let (subject, ..) = Node::approved(
+        let (subject, user_rx, ..) = Node::approved(
             NodeConfig {
                 network_params: NETWORK_PARAMS,
                 ..Default::default()
@@ -68,6 +70,7 @@ impl Env {
             sk_set,
             elders_info,
             elder_full_ids,
+            subject_user_rx: user_rx,
         }
     }
 
@@ -124,6 +127,26 @@ impl Env {
             dst,
             dst_key: pk,
             variant: Variant::UserMessage(content),
+        };
+
+        let proof_chain = SectionProofChain::new(pk);
+
+        test_utils::accumulate_messages((0..ELDER_SIZE).map(|index| {
+            let sk_share = self.sk_set.secret_key_share(index);
+            let proof_share = plain_msg.prove(pk_set.clone(), index, &sk_share).unwrap();
+            AccumulatingMessage::new(plain_msg.clone(), proof_chain.clone(), proof_share)
+        }))
+    }
+
+    fn create_promote_message(&self, dst: DstLocation) -> Message {
+        let pk_set = self.sk_set.public_keys();
+        let pk = pk_set.public_key();
+
+        let plain_msg = PlainMessage {
+            src: Prefix::default(),
+            dst,
+            dst_key: pk,
+            variant: Variant::PromotedToAdult,
         };
 
         let proof_chain = SectionProofChain::new(pk);
@@ -267,4 +290,17 @@ fn handle_untrusted_accumulated_message() {
     }
 
     panic!("BouncedUntrustedMessage not received")
+}
+
+#[test]
+fn adult_promotion() {
+    let mut env = Env::new();
+    let name = env.subject.core.name();
+
+    let msg = env.create_promote_message(DstLocation::Node(*name));
+    let transport = env.create_elder_transport(0);
+    test_utils::handle_message(&mut env.subject, *transport.addr(), msg).unwrap();
+
+    let event = env.subject_user_rx.recv().unwrap();
+    assert_eq!(Event::PromotedToAdult, event);
 }

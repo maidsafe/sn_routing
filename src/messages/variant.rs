@@ -49,6 +49,8 @@ pub(crate) enum Variant {
         shared_state: SharedState,
         parsec_version: u64,
     },
+    /// Notify a Node when it becomes a new Adult.
+    PromotedToAdult,
     /// Message sent to a lagging peer.
     NotifyLagging {
         shared_state: SharedState,
@@ -163,6 +165,7 @@ impl Debug for Variant {
                 .field("section_key", shared_state.our_history.last_key())
                 .field("parsec_version", parsec_version)
                 .finish(),
+            Self::PromotedToAdult => write!(f, "PromotedToAdult"),
             Self::NotifyLagging {
                 shared_state,
                 parsec_version,

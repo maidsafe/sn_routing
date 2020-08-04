@@ -545,7 +545,7 @@ pub fn add_mature_nodes(
     // Make sure the section has enough elders before proceeding to remove them.
     poll_until_minimal_elder_count(env, nodes, prefix);
 
-    // Remove 16 mature notes so the remaining nodes become all mature.
+    // Remove 16 mature nodes so the remaining nodes become all mature.
     info!(
         "Removing the first half ({}) of the temporary nodes",
         churns_to_mature

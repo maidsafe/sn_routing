@@ -122,6 +122,14 @@ impl SectionMembers {
             .unwrap_or(false)
     }
 
+    // /// Returns whether the given member has already become an (adult or elder)
+    // pub fn is_already_adult(&self, name: &XorName) -> bool {
+    //     self.members
+    //         .get(name)
+    //         .map(|info| info.is_already_adult())
+    //         .unwrap_or(false)
+    // }
+
     /// Adds a member to our section.
     pub fn add(&mut self, p2p_node: P2pNode, age: u8, proof: Proof) {
         match self.members.entry(*p2p_node.name()) {

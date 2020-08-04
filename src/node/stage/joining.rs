@@ -98,6 +98,7 @@ impl Joining {
             | Variant::UserMessage(_)
             | Variant::EldersUpdate { .. }
             | Variant::Promote { .. }
+            | Variant::PromotedToAdult
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
