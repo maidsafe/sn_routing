@@ -1236,7 +1236,7 @@ impl Approved {
 
     // Can we perform an action right now that can result in churn?
     fn is_ready_to_churn(&self) -> bool {
-        self.shared_state.handled_genesis_event && !self.churn_in_progress
+        !self.churn_in_progress
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
@@ -1537,7 +1537,6 @@ impl Approved {
     fn handle_genesis_event(&mut self) {
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.shared_state.handled_genesis_event = true;
     }
 
     fn handle_online_event(
@@ -1893,7 +1892,6 @@ impl Approved {
         info!("handle ParsecPrune");
 
         self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-        self.shared_state.handled_genesis_event = false;
         self.send_elders_update(core)?;
 
         Ok(())

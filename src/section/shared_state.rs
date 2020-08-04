@@ -29,9 +29,6 @@ use xor_name::{Prefix, XorName};
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SharedState {
-    /// Indicate whether nodes are shared state because genesis event was seen
-    #[serde(skip)]
-    pub handled_genesis_event: bool,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// Info about all members of our section.
@@ -45,7 +42,6 @@ pub(crate) struct SharedState {
 impl SharedState {
     pub fn new(elders_info: Proven<EldersInfo>) -> Self {
         Self {
-            handled_genesis_event: false,
             our_history: SectionProofChain::new(elders_info.proof.public_key),
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
@@ -55,11 +51,6 @@ impl SharedState {
 
     // TODO: merge the new state into the old, don't replace it.
     pub fn update(&mut self, new: Self) -> Result<(), RoutingError> {
-        if self.handled_genesis_event {
-            error!("shared state update - genesis event already handled",);
-            return Err(RoutingError::InvalidState);
-        }
-
         if self.our_history.len() > 1 {
             if *self != new {
                 error!(
@@ -79,7 +70,7 @@ impl SharedState {
         }
 
         *self = new;
-        self.handled_genesis_event = true;
+
         Ok(())
     }
 
