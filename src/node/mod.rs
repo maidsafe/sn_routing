@@ -727,15 +727,13 @@ impl Node {
                         *msg.dst_key(),
                         *message.clone(),
                     ),
-                Variant::BouncedUnknownMessage {
-                    message,
-                    parsec_version,
-                } => stage.handle_bounced_unknown_message(
-                    &mut self.core,
-                    msg.src().to_sender_node(sender)?,
-                    message.clone(),
-                    *parsec_version,
-                ),
+                Variant::BouncedUnknownMessage { src_key, message } => stage
+                    .handle_bounced_unknown_message(
+                        &mut self.core,
+                        msg.src().to_sender_node(sender)?,
+                        message.clone(),
+                        src_key,
+                    ),
                 Variant::DKGMessage {
                     participants,
                     section_key_index,

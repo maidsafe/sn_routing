@@ -552,8 +552,8 @@ impl Approved {
             &core.full_id,
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
+                src_key: *self.shared_state.our_history.last_key(),
                 message: msg_bytes,
-                parsec_version: self.consensus_engine.parsec_version(),
             },
             None,
             None,
@@ -615,9 +615,11 @@ impl Approved {
         core: &mut Core,
         sender: P2pNode,
         bounced_msg_bytes: Bytes,
-        sender_parsec_version: u64,
+        sender_last_key: &bls::PublicKey,
     ) {
-        if sender_parsec_version >= self.consensus_engine.parsec_version() {
+        if !self.shared_state.our_history.has_key(sender_last_key)
+            || sender_last_key == self.shared_state.our_history.last_key()
+        {
             trace!(
                 "Received BouncedUnknownMessage({:?}) from {} \
                  - peer is up to date or ahead of us, discarding",
@@ -629,10 +631,14 @@ impl Approved {
 
         trace!(
             "Received BouncedUnknownMessage({:?}) from {} \
-             - peer is lagging behind, resending with parsec gossip",
+             - peer is lagging behind, resending with NotifyLagging",
             MessageHash::from_bytes(&bounced_msg_bytes),
             sender,
         );
+        // First send NotifyLagging to update the peer, then resend the message itself. If the
+        // messages arrive in the same order they were sent, the notification should update the peer
+        // so it will then be able to handle the resent message. If not, the peer will bounce the
+        // message again.
         core.send_direct_message(
             sender.peer_addr(),
             Variant::NotifyLagging {

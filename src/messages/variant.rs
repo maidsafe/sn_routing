@@ -80,10 +80,10 @@ pub(crate) enum Variant {
     /// Sent from a node that doesn't know how to handle `message` to its elders in order for them
     /// to decide what to do with it (resend with more info or discard).
     BouncedUnknownMessage {
-        /// The original message, serialized.
+        /// The last section key of the sender.
+        src_key: bls::PublicKey,
+        /// The serialized original message.
         message: Bytes,
-        /// The latest parsec version of the recipient of `message`.
-        parsec_version: u64,
     },
     /// Message exchanged for DKG process.
     DKGMessage {
@@ -172,13 +172,10 @@ impl Debug for Variant {
                 .debug_tuple("BouncedUntrustedMessage")
                 .field(message)
                 .finish(),
-            Self::BouncedUnknownMessage {
-                message,
-                parsec_version,
-            } => f
+            Self::BouncedUnknownMessage { src_key, message } => f
                 .debug_struct("BouncedUnknownMessage")
+                .field("src_key", src_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
-                .field("parsec_version", parsec_version)
                 .finish(),
             Self::DKGMessage {
                 participants,
