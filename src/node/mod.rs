@@ -1124,17 +1124,6 @@ impl Node {
             Err(RoutingError::InvalidState)
         }
     }
-
-    pub(crate) fn gossip_timer_token(&self) -> Option<u64> {
-        self.stage.approved().unwrap().gossip_timer_token()
-    }
-
-    pub(crate) fn handle_time_out(&mut self, token: u64) {
-        self.stage
-            .approved_mut()
-            .unwrap()
-            .handle_timeout(&mut self.core, token)
-    }
 }
 
 // Create channels for the network event. Returs a triple of:

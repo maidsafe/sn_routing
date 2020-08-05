@@ -59,7 +59,6 @@ pub(crate) struct Approved {
     members_changed: bool,
     // Voter for DKG
     dkg_voter: DkgVoter,
-    bounced_unknown_messages: Vec<(SocketAddr, Bytes)>,
 }
 
 impl Approved {
@@ -120,7 +119,6 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
-            bounced_unknown_messages: Default::default(),
         })
     }
 
@@ -182,7 +180,6 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
-            bounced_unknown_messages: Default::default(),
         };
 
         (stage, core)
@@ -308,10 +305,6 @@ impl Approved {
                 self.gossip_timer_token =
                     Some(core.timer.schedule(self.consensus_engine.gossip_period()));
                 self.consensus_engine.reset_gossip_period();
-
-                for (peer, msg) in std::mem::take(&mut self.bounced_unknown_messages) {
-                    core.send_message_to_target(&peer, msg)
-                }
             }
         } else if self.dkg_voter.timer_token() == token {
             self.dkg_voter
@@ -640,23 +633,14 @@ impl Approved {
             MessageHash::from_bytes(&bounced_msg_bytes),
             sender,
         );
-
-        // First send parsec gossip to update the peer, then resend the message itself. If the
-        // messages arrive in the same order they were sent, the gossip should update the peer so
-        // they will then be able to handle the resent message. If not, the peer will bounce the
-        // message again.
-
-        self.send_parsec_gossip(core, Some((sender_parsec_version, sender.clone())));
-
-        // With the removal of parsec, sending parsec_gossip won't update the peer anymore.
-        // We will have to send the message later on to allow the peer be updated by other delayed
-        // messages.
-        // TODO: When the testing framework is updated to use real messaging underlayer, i.e. not
-        // using fake clock, the bounced unknown message could be resent immediately. As the network
-        // already took time to exchange messages, which allows the lagging node to be updated.
-        self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
-        self.bounced_unknown_messages
-            .push((*sender.peer_addr(), bounced_msg_bytes));
+        core.send_direct_message(
+            sender.peer_addr(),
+            Variant::NotifyLagging {
+                shared_state: self.shared_state.clone(),
+                parsec_version: self.consensus_engine.parsec_version(),
+            },
+        );
+        core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
     pub fn handle_neighbour_info(
@@ -2487,11 +2471,6 @@ impl Approved {
         } else {
             true
         }
-    }
-
-    #[cfg(all(test, feature = "mock"))]
-    pub fn gossip_timer_token(&self) -> Option<u64> {
-        self.gossip_timer_token
     }
 
     fn print_network_stats(&self) {
