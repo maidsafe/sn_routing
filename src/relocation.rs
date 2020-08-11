@@ -8,6 +8,9 @@
 
 //! Relocation related types and utilities.
 
+// FIXME: remove this
+#![allow(unused)]
+
 use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,

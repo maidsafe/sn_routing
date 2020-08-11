@@ -25,8 +25,8 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     section::{
-        member_info, EldersInfo, MemberState, NeighbourEldersRemoved, SectionKeyShare,
-        SectionKeysProvider, SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
+        EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
+        SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
     },
     time::Duration,
 };
@@ -294,8 +294,13 @@ impl Approved {
             return;
         };
 
-        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&name) {
-            self.cast_ordered_vote(AccumulatingEvent::Offline(name))
+        if !self.is_our_elder(core.id()) {
+            return;
+        }
+
+        if let Some(info) = self.shared_state.our_members.get(&name) {
+            let info = info.clone().leave();
+            self.cast_ordered_vote(AccumulatingEvent::Offline(info))
         }
     }
 
@@ -944,7 +949,7 @@ impl Approved {
             return;
         }
 
-        if self.shared_state.our_members.contains(pub_id.name()) {
+        if self.shared_state.our_members.is_joined(pub_id.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -997,9 +1002,8 @@ impl Approved {
             };
 
         self.cast_ordered_vote(AccumulatingEvent::Online {
-            p2p_node,
+            member_info: MemberInfo::joined(p2p_node, age),
             previous_name,
-            age,
             their_knowledge,
         })
     }
@@ -1440,6 +1444,18 @@ impl Approved {
         false
     }
 
+    /// Detects which nodes to relocate after a churn event and cast the necessary votes.
+    fn trigger_relocations(&mut self, core: &mut Core, churn_name: &XorName) -> Result<()> {
+        let votes = self
+            .shared_state
+            .trigger_relocations(churn_name, core.network_params.recommended_section_size);
+        for vote in votes {
+            self.cast_unordered_vote(core, vote)?;
+        }
+
+        Ok(())
+    }
+
     fn handle_ordered_consensus(
         &mut self,
         core: &mut Core,
@@ -1450,19 +1466,15 @@ impl Approved {
 
         match event {
             AccumulatingEvent::Online {
-                p2p_node,
+                member_info,
                 previous_name,
-                age,
                 their_knowledge,
-            } => self.handle_online_event(
-                core,
-                p2p_node,
-                previous_name,
-                age,
-                their_knowledge,
-                proof,
-            )?,
-            AccumulatingEvent::Offline(name) => self.handle_offline_event(core, name, proof),
+            } => {
+                self.handle_online_event(core, member_info, previous_name, their_knowledge, proof)?
+            }
+            AccumulatingEvent::Offline(member_info) => {
+                self.handle_offline_event(core, member_info, proof)?
+            }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => {
                 self.handle_relocate_event(core, payload, proof)?
@@ -1534,93 +1546,94 @@ impl Approved {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
                 Ok(())
             }
+            Vote::ChangeAge(member_info) => {
+                self.handle_change_age_event(member_info, proof);
+                Ok(())
+            }
         }
     }
 
     fn handle_online_event(
         &mut self,
         core: &mut Core,
-        p2p_node: P2pNode,
+        member_info: MemberInfo,
         previous_name: Option<XorName>,
-        age: u8,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<()> {
-        let (added, new_adult) = self.shared_state.add_member(
-            p2p_node.clone(),
-            age,
-            proof,
-            core.network_params.recommended_section_size,
-            core.name(),
-        );
+        let p2p_node = member_info.p2p_node.clone();
+        let age = member_info.age;
 
-        if new_adult {
-            core.send_event(Event::PromotedToAdult)
+        if !self.shared_state.update_member(member_info, proof) {
+            info!("ignore Online: {}", p2p_node);
+            return Ok(());
         }
 
-        if added {
-            info!("handle Online: {} (age: {})", p2p_node, age);
+        info!("handle Online: {} (age: {})", p2p_node, age);
 
-            self.members_changed = true;
+        self.members_changed = true;
+        self.trigger_relocations(core, p2p_node.name())?;
+        self.send_node_approval(core, &p2p_node, their_knowledge)?;
+        self.print_network_stats();
 
-            if let Some(previous_name) = previous_name {
-                core.send_event(Event::MemberJoined {
-                    name: *p2p_node.name(),
-                    previous_name,
-                    age,
-                });
-            } else {
-                core.send_event(Event::InfantJoined {
-                    name: *p2p_node.name(),
-                    age,
-                });
-            }
-            self.send_node_approval(core, p2p_node, their_knowledge)?;
-            self.print_network_stats();
+        if let Some(previous_name) = previous_name {
+            core.send_event(Event::MemberJoined {
+                name: *p2p_node.name(),
+                previous_name,
+                age,
+            });
         } else {
-            info!("ignore Online: {}", p2p_node);
+            core.send_event(Event::InfantJoined {
+                name: *p2p_node.name(),
+                age,
+            });
         }
 
         Ok(())
     }
 
-    fn handle_offline_event(&mut self, core: &mut Core, name: XorName, proof: Proof) {
-        let (memberinfo, new_adult) = self.shared_state.remove_member(
-            &name,
-            proof,
-            core.network_params.recommended_section_size,
-            core.name(),
-        );
-        if let Some(info) = memberinfo {
-            info!("handle Offline: {}", name);
+    fn handle_offline_event(
+        &mut self,
+        core: &mut Core,
+        member_info: MemberInfo,
+        proof: Proof,
+    ) -> Result<()> {
+        let p2p_node = member_info.p2p_node.clone();
+        let age = member_info.age;
 
-            self.members_changed = true;
-
-            core.transport.disconnect(*info.p2p_node.peer_addr());
-            core.send_event(Event::MemberLeft {
-                name,
-                age: info.age(),
-            });
-            if new_adult {
-                core.send_event(Event::PromotedToAdult)
-            }
-        } else {
-            info!("ignore Offline: {}", name);
+        if !self.shared_state.update_member(member_info, proof) {
+            info!("ignore Offline: {}", p2p_node);
+            return Ok(());
         }
+
+        info!("handle Offline: {}", p2p_node);
+
+        self.members_changed = true;
+        self.trigger_relocations(core, p2p_node.name())?;
+        core.transport.disconnect(*p2p_node.peer_addr());
+
+        core.send_event(Event::MemberLeft {
+            name: *p2p_node.name(),
+            age,
+        });
+
+        Ok(())
     }
 
     fn handle_relocate_event(
         &mut self,
-        core: &mut Core,
-        details: RelocateDetails,
-        proof: Proof,
+        _core: &mut Core,
+        _details: RelocateDetails,
+        _proof: Proof,
     ) -> Result<(), RoutingError> {
-        let (info, new_adult) = self.shared_state.remove_member(
+        todo!()
+        /*
+        let info = self.shared_state.remove_member(
             details.pub_id.name(),
             proof,
             core.network_params.recommended_section_size,
-            core.name(),
         );
+
         match info.map(|info| info.state) {
             Some(MemberState::Relocating) => {
                 info!("handle Relocate: {:?}", details);
@@ -1646,10 +1659,6 @@ impl Approved {
             return Ok(());
         }
 
-        if new_adult {
-            core.send_event(Event::PromotedToAdult)
-        }
-
         // We need to construct a proof that would be trusted by the destination section.
         let knowledge_index = self
             .shared_state
@@ -1661,6 +1670,7 @@ impl Approved {
         let content = Variant::Relocate(details);
 
         self.send_routing_message(core, src, dst, content, Some(knowledge_index))
+        */
     }
 
     fn notify_old_elders(
@@ -1863,6 +1873,10 @@ impl Approved {
         self.shared_state.sections.update_knowledge(knowledge)
     }
 
+    fn handle_change_age_event(&mut self, _member_info: MemberInfo, _proof: Proof) {
+        todo!()
+    }
+
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
         if self.churn_in_progress {
             debug!("ignore ParsecPrune event - churn in progress");
@@ -2012,7 +2026,7 @@ impl Approved {
     }
 
     ////////////////////////////////////////////////////////////////////////////
-    // Parsec and Chain management
+    // Parsec management
     ////////////////////////////////////////////////////////////////////////////
 
     fn reset_parsec(&mut self, core: &mut Core, new_parsec_version: u64) -> Result<()> {
@@ -2049,13 +2063,17 @@ impl Approved {
 
         events.retain(|event| match &event {
             // Only re-vote if still relevant to our new prefix.
-            AccumulatingEvent::Online { p2p_node, .. } => our_prefix.matches(p2p_node.name()),
-            AccumulatingEvent::Offline(name) => our_prefix.matches(name),
+            AccumulatingEvent::Online { member_info, .. } => {
+                our_prefix.matches(member_info.p2p_node.name())
+            }
+            AccumulatingEvent::Offline(member_info) => {
+                our_prefix.matches(member_info.p2p_node.name())
+            }
             AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::ParsecPrune => false,
 
-            // Keep: Still relevant after prefix change.
+            // Always revote
             AccumulatingEvent::User(_) => true,
         });
         events
@@ -2063,12 +2081,17 @@ impl Approved {
 
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self) {
-        let unresponsive_nodes = self
+        let unresponsive_nodes: Vec<_> = self
             .consensus_engine
-            .detect_unresponsive(self.shared_state.our_info());
-        for pub_id in &unresponsive_nodes {
-            info!("Voting for unresponsive node {:?}", pub_id);
-            self.cast_ordered_vote(AccumulatingEvent::Offline(*pub_id.name()));
+            .detect_unresponsive(self.shared_state.our_info())
+            .into_iter()
+            .filter_map(|id| self.shared_state.our_members.get(id.name()))
+            .map(|info| info.clone().leave())
+            .collect();
+
+        for info in unresponsive_nodes {
+            info!("Voting for unresponsive node {}", info.p2p_node);
+            self.cast_ordered_vote(AccumulatingEvent::Offline(info));
         }
     }
 
@@ -2082,7 +2105,7 @@ impl Approved {
     fn send_node_approval(
         &mut self,
         core: &mut Core,
-        p2p_node: P2pNode,
+        p2p_node: &P2pNode,
         their_knowledge: Option<bls::PublicKey>,
     ) -> Result<()> {
         info!(
@@ -2507,14 +2530,11 @@ fn create_first_shared_state(
     let mut shared_state = SharedState::new(elders_info.proof.public_key, elders_info);
 
     for p2p_node in shared_state.sections.our().elders.values() {
-        let proof = create_first_proof(
-            pk_set,
-            sk_share,
-            &member_info::to_sign(p2p_node.name(), MemberState::Joined),
-        )?;
-        shared_state
+        let member_info = MemberInfo::joined(p2p_node.clone(), MIN_AGE);
+        let proof = create_first_proof(pk_set, sk_share, &member_info)?;
+        let _ = shared_state
             .our_members
-            .add(p2p_node.clone(), MIN_AGE, proof);
+            .update(member_info, proof, &shared_state.our_history);
     }
 
     Ok(shared_state)

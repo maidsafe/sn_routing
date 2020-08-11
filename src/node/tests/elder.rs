@@ -18,8 +18,8 @@ use crate::{
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{
-        self, member_info, quorum_count, EldersInfo, MemberState, SectionKeyShare,
-        SectionProofChain, SharedState, MIN_AGE,
+        self, quorum_count, EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain,
+        SharedState, MIN_AGE,
     },
     ELDER_SIZE,
 };
@@ -71,13 +71,9 @@ impl Env {
         let mut shared_state =
             SharedState::new(proven_elders_info.proof.public_key, proven_elders_info);
         for p2p_node in elders_info.elders.values() {
-            let proof = test_utils::create_proof(
-                &sk_set,
-                &member_info::to_sign(p2p_node.name(), MemberState::Joined),
-            );
-            shared_state
-                .our_members
-                .add(p2p_node.clone(), MIN_AGE, proof);
+            let member_info = MemberInfo::joined(p2p_node.clone(), MIN_AGE);
+            let proof = test_utils::create_proof(&sk_set, &member_info);
+            assert!(shared_state.update_member(member_info, proof));
         }
 
         let section_key_share = SectionKeyShare {
@@ -120,6 +116,13 @@ impl Env {
 
     fn quorum_count(&self) -> usize {
         quorum_count(self.elders_info.elders.len())
+    }
+
+    fn get_other_elder_p2p_node(&self, index: usize) -> &P2pNode {
+        self.elders_info
+            .elders
+            .get(self.other_ids[index].0.public_id().name())
+            .unwrap()
     }
 
     fn cast_ordered_votes(
@@ -248,9 +251,8 @@ impl Env {
         let _ = self.cast_ordered_votes_and_gossip(
             self.quorum_count(),
             iter::once(AccumulatingEvent::Online {
-                p2p_node,
+                member_info: MemberInfo::joined(p2p_node, MIN_AGE),
                 previous_name: None,
-                age: MIN_AGE,
                 their_knowledge: None,
             }),
         );
@@ -325,10 +327,12 @@ impl Env {
         let _ = self.create_gossip();
     }
 
-    fn accumulate_offline(&mut self, offline_payload: XorName) {
+    fn accumulate_offline(&mut self, p2p_node: P2pNode) {
         let _ = self.cast_ordered_votes_and_gossip(
             self.quorum_count(),
-            iter::once(AccumulatingEvent::Offline(offline_payload)),
+            iter::once(AccumulatingEvent::Offline(
+                MemberInfo::joined(p2p_node, MIN_AGE).leave(),
+            )),
         );
     }
 
@@ -420,13 +424,13 @@ impl Env {
     // completion by casting all necessary votes and letting them accumulate.
     fn perform_offline_and_promote(
         &mut self,
-        dropped_elder_name: XorName,
-        promoted_adult_node: P2pNode,
+        dropped_elder: P2pNode,
+        promoted_adult: P2pNode,
     ) -> Result<()> {
-        let new_info = self
-            .new_elders_info_after_offline_and_promote(&dropped_elder_name, promoted_adult_node);
+        let new_info =
+            self.new_elders_info_after_offline_and_promote(dropped_elder.name(), promoted_adult);
 
-        self.accumulate_offline(dropped_elder_name);
+        self.accumulate_offline(dropped_elder);
         self.simulate_dkg(&new_info)?;
         self.accumulate_our_key_and_section_info_if_vote(&new_info)?;
         self.accumulate_unconsensused_ordered_votes();
@@ -572,7 +576,7 @@ fn remove_member() {
     env.elders_info = info1.new_elders_info;
     env.public_key_set = info1.new_pk_set;
 
-    env.accumulate_offline(*env.candidate.name());
+    env.accumulate_offline(env.candidate.clone());
 
     assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
@@ -595,7 +599,7 @@ fn remove_elder() {
     env.elders_info = info1.new_elders_info;
     env.public_key_set = info1.new_pk_set;
 
-    env.accumulate_offline(*env.candidate.name());
+    env.accumulate_offline(env.candidate.clone());
     env.simulate_dkg(&info2).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info2)
         .unwrap();
@@ -663,7 +667,7 @@ fn handle_bounced_unknown_message() {
 
     // Simulate the section going through the elder change to generate new section key.
     let new = env.gen_peer().to_p2p_node();
-    let old = *env.other_ids[0].0.public_id().name();
+    let old = env.get_other_elder_p2p_node(0).clone();
     env.accumulate_online(new.clone());
     env.perform_offline_and_promote(old, new).unwrap();
 
@@ -710,7 +714,7 @@ fn handle_bounced_untrusted_message() {
 
     // Simulate the section going through the elder change to generate new section key.
     let new = env.gen_peer().to_p2p_node();
-    let old = *env.other_ids[0].0.public_id().name();
+    let old = env.get_other_elder_p2p_node(0).clone();
     env.accumulate_online(new.clone());
     env.perform_offline_and_promote(old, new).unwrap();
 

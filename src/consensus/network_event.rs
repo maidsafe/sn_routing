@@ -9,9 +9,9 @@
 use super::{Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
     error::Result,
-    id::{P2pNode, PublicId},
+    id::PublicId,
     relocation::RelocateDetails,
-    section::{member_info, MemberState, SectionKeyShare},
+    section::{MemberInfo, SectionKeyShare},
     XorName,
 };
 use hex_fmt::HexFmt;
@@ -25,17 +25,14 @@ use std::fmt::{self, Debug, Formatter};
 pub enum AccumulatingEvent {
     /// Voted for node that is about to join our section
     Online {
-        /// Identifier of the joining node.
-        p2p_node: P2pNode,
+        member_info: MemberInfo,
         /// Previous name if relocated.
         previous_name: Option<XorName>,
-        /// The age the node should have after joining.
-        age: u8,
         /// The key of the destination section that the joining node knows, if any.
         their_knowledge: Option<bls::PublicKey>,
     },
     /// Voted for node we no longer consider online.
-    Offline(XorName),
+    Offline(MemberInfo),
 
     // Prune the gossip graph.
     ParsecPrune,
@@ -86,22 +83,21 @@ impl AccumulatingEvent {
     fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
         match self {
             Self::Online {
-                p2p_node,
+                member_info,
                 previous_name: _,
-                age: _,
                 their_knowledge: _,
-            } => bincode::serialize(&member_info::to_sign(p2p_node.name(), MemberState::Joined)),
-            Self::Offline(name) => {
-                bincode::serialize(&member_info::to_sign(name, MemberState::Left))
-            }
-            Self::Relocate(details) => {
-                // Note: signing the same fields as for `Offline` because we need to update the
-                // members map the same way as if the node went offline. The relocate details
-                // will be signed using a different vote, but that is not implemented yet.
-                bincode::serialize(&member_info::to_sign(
-                    details.pub_id.name(),
-                    MemberState::Left,
-                ))
+            } => bincode::serialize(member_info),
+            Self::Offline(member_info) => bincode::serialize(member_info),
+            Self::Relocate(_details) => {
+                todo!()
+
+                // // Note: signing the same fields as for `Offline` because we need to update the
+                // // members map the same way as if the node went offline. The relocate details
+                // // will be signed using a different vote, but that is not implemented yet.
+                // bincode::serialize(&member_info::to_sign(
+                //     details.pub_id.name(),
+                //     MemberState::Left,
+                // ))
             }
 
             // TODO: serialise these variants properly
@@ -114,19 +110,17 @@ impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
             Self::Online {
-                p2p_node,
+                member_info,
                 previous_name,
-                age,
                 their_knowledge,
             } => formatter
                 .debug_struct("Online")
-                .field("p2p_node", p2p_node)
+                .field("member_info", member_info)
                 .field("previous_name", previous_name)
-                .field("age", age)
                 .field("their_knowledge", their_knowledge)
                 .finish(),
 
-            Self::Offline(id) => write!(formatter, "Offline({})", id),
+            Self::Offline(member_info) => write!(formatter, "Offline({:?})", member_info),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
             Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
             Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),

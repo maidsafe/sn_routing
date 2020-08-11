@@ -8,13 +8,13 @@
 
 use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::{Proof, Proven},
+    consensus::{Proof, Proven, Vote},
     error::RoutingError,
     id::P2pNode,
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
-    relocation::{self, RelocateDetails},
+    relocation::RelocateDetails,
 };
 
 use std::{
@@ -149,7 +149,7 @@ impl SharedState {
 
     /// Returns whether we know the given peer.
     pub fn is_known_peer(&self, name: &XorName) -> bool {
-        self.our_members.is_active(name) || self.sections.is_elder(name)
+        self.our_members.is_joined(name) || self.sections.is_elder(name)
     }
 
     /// Checks if given name is an elder in our section or one of our neighbour sections.
@@ -192,86 +192,10 @@ impl SharedState {
         }
     }
 
-    /// Adds new member if its name matches our prefix and it's not already joined.
-    /// Returns whether the member was actually added and whether our node gets promoted to Adult
-    /// as a part of this churn.
-    pub fn add_member(
-        &mut self,
-        p2p_node: P2pNode,
-        age: u8,
-        proof: Proof,
-        recommended_section_size: usize,
-        our_name: &XorName,
-    ) -> (bool, bool) {
-        // FIXME: we should perform these checks before voting, but once the vote accumulates we
-        // must obey it:
-        if !self.our_prefix().matches(p2p_node.name()) {
-            trace!(
-                "not adding node {} - not matching our prefix",
-                p2p_node.name()
-            );
-            return (false, false);
-        }
-
-        if self.our_members.contains(p2p_node.name()) {
-            trace!("not adding node {} - already a member", p2p_node.name());
-            return (false, false);
-        }
-
-        // The section public key of the proof shall be known to us.
-        if !self.our_history.has_key(&proof.public_key) {
-            trace!(
-                "not adding node {} - Proof {:?} section_key is not known to us.",
-                p2p_node.name(),
-                proof
-            );
-            return (false, false);
-        }
-
-        let name = *p2p_node.name();
-
-        self.our_members.add(p2p_node, age, proof);
-        let new_adult = self.increment_age_counters(&name, recommended_section_size, our_name);
-
-        (true, new_adult)
-    }
-
-    /// Removes a member with the given pub_id.
-    /// Returns the removed `MemberInfo` or `None` if there was no such member.
-    pub fn remove_member(
-        &mut self,
-        name: &XorName,
-        proof: Proof,
-        recommended_section_size: usize,
-        our_name: &XorName,
-    ) -> (Option<MemberInfo>, bool) {
-        let mut new_adult = false;
-        // The section public key of the proof shall be known to us.
-        if !self.our_history.has_key(&proof.public_key) {
-            trace!(
-                "not removing member {} - Proof {:?} section_key is not known to us.",
-                name,
-                proof
-            );
-            return (None, new_adult);
-        }
-
-        match self.our_members.get(name).map(|info| &info.state) {
-            Some(MemberState::Left) | None => {
-                // FIXME: perform this check before voting, but once the vote accumulates we must
-                // obey it.
-                trace!("not removing node {} - not a member", name);
-                return (None, new_adult);
-            }
-            Some(MemberState::Relocating { .. }) => (),
-            Some(MemberState::Joined) => {
-                new_adult = self.increment_age_counters(name, recommended_section_size, our_name)
-            }
-        }
-
-        self.relocate_queue
-            .retain(|details| details.pub_id.name() != name);
-        (self.our_members.remove(name, proof), new_adult)
+    /// Update the member. Returns whether it actually changed anything.
+    pub fn update_member(&mut self, member_info: MemberInfo, proof: Proof) -> bool {
+        self.our_members
+            .update(member_info, proof, &self.our_history)
     }
 
     /// Returns the `P2pNode` of all non-elders in the section
@@ -338,10 +262,43 @@ impl SharedState {
         self.sections.set_our(elders_info);
     }
 
+    // Calculates which nodes to relocate after a churn event (join or leave) of the node with
+    // `churn_name`.
+    // Returns the votes to cast to proceed with the relocations.
+    pub fn trigger_relocations(
+        &self,
+        churn_name: &XorName,
+        recommended_section_size: usize,
+    ) -> Vec<Vote> {
+        let our_section_size = self.our_members.joined().count();
+
+        // Is network startup in progress?
+        let startup =
+            *self.our_prefix() == Prefix::default() && our_section_size < recommended_section_size;
+        if startup {
+            // We are in the startup phase - don't relocate, just increment everyones ages.
+            return self
+                .our_members
+                .joined()
+                .map(|info| Vote::ChangeAge(info.clone().increment_age()))
+                .collect();
+        }
+
+        // As a measure against sybil attacks, don't relocate on infant churn.
+        if !self.our_members.is_mature(churn_name) && !self.is_peer_our_elder(churn_name) {
+            trace!("Skip relocation on infant churn",);
+            return vec![];
+        }
+
+        // TODO: actually perform the relocation
+        error!("Relocation not implemented");
+        vec![]
+    }
+
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         let details = loop {
             if let Some(details) = self.relocate_queue.pop_back() {
-                if self.our_members.contains(details.pub_id.name()) {
+                if self.our_members.is_joined(details.pub_id.name()) {
                     break details;
                 } else {
                     trace!("Not relocating {} - not a member", details.pub_id);
@@ -533,14 +490,18 @@ impl SharedState {
             .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
     }
 
-    // Increment the age counters of the members. Returns true if our node gets promoted to Adult.
+    // Increment the age counters of the members.
+    // TODO: delete this function
+    #[allow(unused)]
     fn increment_age_counters(
         &mut self,
-        trigger_node: &XorName,
-        recommended_section_size: usize,
-        our_name: &XorName,
-    ) -> bool {
-        let mut new_adult = false;
+        _trigger_node: &XorName,
+        _recommended_section_size: usize,
+    ) {
+        unreachable!()
+
+        /*
+
         let our_section_size = self.our_members.joined().count();
         let our_prefix = &self.sections.our().prefix;
 
@@ -558,7 +519,7 @@ impl SharedState {
                 "Not incrementing age counters on infant churn (section size: {})",
                 our_section_size,
             );
-            return new_adult;
+            return;
         }
 
         let first_key = self.our_history.first_key();
@@ -576,11 +537,6 @@ impl SharedState {
 
             if !member_info.increment_age_counter() {
                 continue;
-            }
-
-            // Check if the member being aged is us.
-            if member_info.p2p_node.name() == our_name && member_info.is_new_adult() {
-                new_adult = true;
             }
 
             let destination = relocation::compute_destination(
@@ -616,8 +572,7 @@ impl SharedState {
         }
 
         trace!("increment_age_counters: {:?}", self.our_members);
-
-        new_adult
+        */
     }
 }
 

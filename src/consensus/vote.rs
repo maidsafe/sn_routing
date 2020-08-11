@@ -7,11 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{AccumulationError, Proof, ProofShare, SignatureAggregator};
-use crate::{error::Result, section::EldersInfo};
+use crate::{
+    error::Result,
+    section::{EldersInfo, MemberInfo},
+};
 use serde::{Serialize, Serializer};
 use xor_name::Prefix;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum Vote {
     // Vote to update the elders info of a section.
     SectionInfo(EldersInfo),
@@ -35,6 +39,9 @@ pub enum Vote {
         prefix: Prefix,
         key_index: u64,
     },
+
+    // Votes to change the age of the given node.
+    ChangeAge(MemberInfo),
 }
 
 impl Vote {
@@ -89,6 +96,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
+            Vote::ChangeAge(member_info) => member_info.serialize(serializer),
         }
     }
 }
