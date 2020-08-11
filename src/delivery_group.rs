@@ -134,7 +134,8 @@ fn get_p2p_node<'a>(
     sections: &'a SectionMap,
 ) -> Option<&'a P2pNode> {
     our_members
-        .get_p2p_node(name)
+        .get(name)
+        .map(|info| &info.p2p_node)
         .or_else(|| sections.get_elder(name))
 }
 
