@@ -29,11 +29,6 @@ use xor_name::{Prefix, XorName};
 #[derive(Clone, Default, Debug, Eq, Serialize, Deserialize)]
 pub struct SectionMembers {
     members: BTreeMap<XorName, Proven<MemberInfo>>,
-    // Members of our sibling section immediately after the last split.
-    // Note: this field is not part of the shared state.
-    // TODO: do we still need this?
-    #[serde(skip)]
-    post_split_siblings: BTreeMap<XorName, Proven<MemberInfo>>,
 }
 
 impl SectionMembers {
@@ -63,14 +58,6 @@ impl SectionMembers {
     /// Get info for the member with the given name.
     pub fn get(&self, name: &XorName) -> Option<&MemberInfo> {
         self.members.get(name).map(|info| &info.value)
-    }
-
-    /// Returns a section member `P2pNode`
-    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.members
-            .get(name)
-            .or_else(|| self.post_split_siblings.get(name))
-            .map(|info| &info.value.p2p_node)
     }
 
     /// Returns the candidates for elders out of all the nodes in this section.
@@ -163,11 +150,10 @@ impl SectionMembers {
     /// Remove all members whose name does not match our prefix and assigns them to
     /// `post_split_siblings`.
     pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix) {
-        let (members, siblings) = mem::take(&mut self.members)
+        self.members = mem::take(&mut self.members)
             .into_iter()
-            .partition(|(name, _)| prefix.matches(name));
-        self.members = members;
-        self.post_split_siblings = siblings;
+            .filter(|(name, _)| prefix.matches(name))
+            .collect();
     }
 
     /// Iterate through member infos to ensure they are section approved.
@@ -175,10 +161,6 @@ impl SectionMembers {
         self.members
             .values()
             .all(|member_info| member_info.verify(history))
-            && self
-                .post_split_siblings
-                .values()
-                .all(|member_info| member_info.verify(history))
     }
 }
 

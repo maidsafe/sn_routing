@@ -144,7 +144,7 @@ impl SharedState {
             .our()
             .elders
             .get(name)
-            .or_else(|| self.our_members.get_p2p_node(name))
+            .or_else(|| self.our_members.get(name).map(|info| &info.p2p_node))
     }
 
     /// Returns whether we know the given peer.
