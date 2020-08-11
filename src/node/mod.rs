@@ -998,7 +998,7 @@ impl Node {
     /// Returns whether the given `XorName` is a member of our section.
     pub fn is_peer_our_member(&self, name: &XorName) -> bool {
         self.shared_state()
-            .map(|state| state.our_members.contains(name))
+            .map(|state| state.our_members.is_joined(name))
             .unwrap_or(false)
     }
 
@@ -1043,13 +1043,13 @@ impl Node {
     }
 
     /// If this node is elder and `name` belongs to a member of our section, returns the age
-    /// counter of that member. Otherwise returns `None`.
-    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+    /// of that member. Otherwise returns `None`.
+    pub fn member_age(&self, name: &XorName) -> Option<u8> {
         self.stage
             .approved()
             .filter(|stage| stage.is_our_elder(self.core.id()))
             .and_then(|stage| stage.shared_state.our_members.get(name))
-            .map(|info| info.age_counter_value())
+            .map(|info| info.age)
     }
 
     /// Returns the latest BLS public key of our section or `None` if we are not joined yet.
