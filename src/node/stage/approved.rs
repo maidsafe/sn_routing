@@ -1238,10 +1238,6 @@ impl Approved {
             return Ok(true);
         }
 
-        if self.poll_relocation(core.id()) {
-            return Ok(true);
-        }
-
         let (event, proof) = match self.consensus_engine.poll(self.shared_state.sections.our()) {
             None => return Ok(false),
             Some((event, proof)) => (event, proof),
@@ -1424,24 +1420,6 @@ impl Approved {
         }
 
         self.handle_dkg_message(core, participants, section_key_index, message, *core.id())
-    }
-
-    /// Polls and handles the next scheduled relocation, if any.
-    fn poll_relocation(&mut self, our_id: &PublicId) -> bool {
-        // Delay relocation until no additional churn is in progress.
-        if !self.is_ready_to_churn() {
-            return false;
-        }
-
-        if let Some(details) = self.shared_state.poll_relocation() {
-            if self.is_our_elder(our_id) {
-                self.cast_ordered_vote(AccumulatingEvent::Relocate(details));
-            }
-
-            return true;
-        }
-
-        false
     }
 
     /// Detects which nodes to relocate after a churn event and cast the necessary votes.
