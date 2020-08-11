@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, MemberInfo, MemberState, SectionMap, SectionMembers, SectionProofChain};
+use super::{EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::{Proof, Proven, Vote},
     error::RoutingError,
@@ -14,11 +14,10 @@ use crate::{
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
-    relocation::RelocateDetails,
 };
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     fmt::Debug,
     iter,
@@ -35,8 +34,6 @@ pub(crate) struct SharedState {
     pub our_members: SectionMembers,
     /// Info about known sections in the network.
     pub sections: SectionMap,
-    /// Queue of pending relocations.
-    pub relocate_queue: VecDeque<RelocateDetails>,
 }
 
 impl SharedState {
@@ -50,7 +47,6 @@ impl SharedState {
             our_history: SectionProofChain::new(section_key),
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
-            relocate_queue: VecDeque::new(),
         }
     }
 
@@ -295,34 +291,6 @@ impl SharedState {
         vec![]
     }
 
-    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        let details = loop {
-            if let Some(details) = self.relocate_queue.pop_back() {
-                if self.our_members.is_joined(details.pub_id.name()) {
-                    break details;
-                } else {
-                    trace!("Not relocating {} - not a member", details.pub_id);
-                }
-            } else {
-                return None;
-            }
-        };
-
-        if self.is_peer_our_elder(details.pub_id.name()) {
-            warn!(
-                "Not relocating {} - The peer is still our elder.",
-                details.pub_id,
-            );
-
-            // Keep the details in the queue so when the node is demoted we can relocate it.
-            self.relocate_queue.push_back(details);
-            return None;
-        }
-
-        trace!("relocating member {}", details.pub_id);
-        Some(details)
-    }
-
     /// Provide a SectionProofChain that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
@@ -464,30 +432,8 @@ impl SharedState {
     // Returns the candidates for elders out of all the nodes in the section, even out of the
     // relocating nodes if there would not be enough instead.
     fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
-        let mut elders = self
-            .our_members
-            .elder_candidates(elder_size, self.sections.our());
-
-        // Ensure that we can still handle one node lost when relocating.
-        // Ensure that the node we eject are the one we want to relocate first.
-        let missing = elder_size.saturating_sub(elders.len());
-        elders.extend(self.elder_candidates_from_relocating(missing));
-        elders
-    }
-
-    /// Returns the `count` candidates for elders out of currently relocating nodes. Use this
-    /// method when we don't have enough non-relocating nodes in the section to become elders.
-    fn elder_candidates_from_relocating<'a>(
-        &'a self,
-        count: usize,
-    ) -> impl Iterator<Item = (XorName, P2pNode)> + 'a {
-        self.relocate_queue
-            .iter()
-            .map(|details| details.pub_id.name())
-            .filter_map(move |name| self.our_members.get(name))
-            .filter(|info| info.state != MemberState::Left)
-            .take(count)
-            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
+        self.our_members
+            .elder_candidates(elder_size, self.sections.our())
     }
 
     // Increment the age counters of the members.
