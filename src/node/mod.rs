@@ -727,15 +727,13 @@ impl Node {
                         *msg.dst_key(),
                         *message.clone(),
                     ),
-                Variant::BouncedUnknownMessage {
-                    message,
-                    parsec_version,
-                } => stage.handle_bounced_unknown_message(
-                    &mut self.core,
-                    msg.src().to_sender_node(sender)?,
-                    message.clone(),
-                    *parsec_version,
-                ),
+                Variant::BouncedUnknownMessage { src_key, message } => stage
+                    .handle_bounced_unknown_message(
+                        &mut self.core,
+                        msg.src().to_sender_node(sender)?,
+                        message.clone(),
+                        src_key,
+                    ),
                 Variant::DKGMessage {
                     participants,
                     section_key_index,
@@ -1123,17 +1121,6 @@ impl Node {
         } else {
             Err(RoutingError::InvalidState)
         }
-    }
-
-    pub(crate) fn gossip_timer_token(&self) -> Option<u64> {
-        self.stage.approved().unwrap().gossip_timer_token()
-    }
-
-    pub(crate) fn handle_time_out(&mut self, token: u64) {
-        self.stage
-            .approved_mut()
-            .unwrap()
-            .handle_timeout(&mut self.core, token)
     }
 }
 

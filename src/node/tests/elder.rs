@@ -117,13 +117,6 @@ impl Env {
         self.network.poll(&mut self.rng)
     }
 
-    fn poll_time_out(&mut self) {
-        // Simulate a time out by calling with the token directly.
-        let token = self.subject.gossip_timer_token().unwrap();
-        self.subject.handle_time_out(token);
-        self.poll();
-    }
-
     fn quorum_count(&self) -> usize {
         quorum_count(self.elders_info.elders.len())
     }
@@ -350,14 +343,6 @@ impl Env {
         };
 
         self.cast_unordered_votes(self.quorum_count(), iter::once(vote))
-    }
-
-    // Accumulate `ParsecPrune` which should result in the parsec version increase.
-    fn accumulate_parsec_prune(&mut self) {
-        let _ = self.cast_ordered_votes_and_gossip(
-            self.quorum_count(),
-            iter::once(AccumulatingEvent::ParsecPrune),
-        );
     }
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
@@ -673,8 +658,13 @@ fn send_genesis_update() {
 fn handle_bounced_unknown_message() {
     let mut env = Env::new(ELDER_SIZE);
 
-    // Ensure parsec version is > 0
-    env.accumulate_parsec_prune();
+    let old_section_key = *env.subject.section_key().expect("subject is not approved");
+
+    // Simulate the section going through the elder change to generate new section key.
+    let new = env.gen_peer().to_p2p_node();
+    let old = *env.other_ids[0].0.public_id().name();
+    env.accumulate_online(new.clone());
+    env.perform_offline_and_promote(old, new).unwrap();
 
     let dst = DstLocation::Section(env.rng.gen());
     let msg = env.accumulate_message(dst, Variant::UserMessage(b"unknown message".to_vec()));
@@ -686,8 +676,8 @@ fn handle_bounced_unknown_message() {
         &env.other_ids[0].0,
         DstLocation::Direct,
         Variant::BouncedUnknownMessage {
+            src_key: old_section_key,
             message: msg.to_bytes(),
-            parsec_version: 0,
         },
         None,
         None,
@@ -697,24 +687,18 @@ fn handle_bounced_unknown_message() {
     test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
     env.poll();
 
-    let mut received_parsec_request = false;
+    let mut received_notify_lagging = false;
     let mut received_resent_message = false;
 
     for (_, msg) in other_node.received_messages() {
         match msg.variant() {
-            Variant::ParsecRequest(0, _) => received_parsec_request = true,
+            Variant::NotifyLagging { .. } => received_notify_lagging = true,
             Variant::UserMessage(_) => received_resent_message = true,
             _ => (),
         }
     }
 
-    assert!(received_parsec_request);
-    assert!(!received_resent_message);
-
-    env.poll_time_out();
-    if let Variant::UserMessage(_) = msg.variant() {
-        received_resent_message = true
-    }
+    assert!(received_notify_lagging);
     assert!(received_resent_message);
 }
 
