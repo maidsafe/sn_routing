@@ -16,8 +16,8 @@ use routing::{
     event::{Connected, Event},
     mock::Environment,
     rng::MainRng,
-    test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
-    RelocationOverrides, SrcLocation, TransportConfig,
+    test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, SrcLocation,
+    TransportConfig,
 };
 use sn_fake_clock::FakeClock;
 use std::{
@@ -521,8 +521,9 @@ pub fn add_mature_nodes(
         start_count0 + start_count1
     );
 
-    let mut overrides = RelocationOverrides::new();
-    overrides.suppress(*prefix);
+    // TODO: relocation overrides are gone. Figure out how to get by withou them.
+    // let mut overrides = RelocationOverrides::new();
+    // overrides.suppress(*prefix);
 
     // Add temporary nodes to the section until it has 32 nodes. Purposefully make the section
     // unbalanced to avoid splitting it just yet.

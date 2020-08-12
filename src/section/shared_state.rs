@@ -8,12 +8,13 @@
 
 use super::{EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
-    consensus::{Proof, Proven, Vote},
+    consensus::{Proof, Proven},
     error::RoutingError,
     id::P2pNode,
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
+    relocation::{self, RelocateDetails},
 };
 
 use std::{
@@ -122,7 +123,7 @@ impl SharedState {
     /// Returns adults from our own section.
     pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
-            .mature()
+            .adults()
             .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.name()))
     }
 
@@ -156,6 +157,11 @@ impl SharedState {
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, name: &XorName) -> bool {
         self.our_info().elders.contains_key(name)
+    }
+
+    /// Returns whether the given peer adult or elder.
+    pub fn is_peer_adult_or_elder(&self, name: &XorName) -> bool {
+        self.our_members.is_adult(name) || self.is_peer_our_elder(name)
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
@@ -258,39 +264,6 @@ impl SharedState {
         self.sections.set_our(elders_info);
     }
 
-    // Calculates which nodes to relocate after a churn event (join or leave) of the node with
-    // `churn_name`.
-    // Returns the votes to cast to proceed with the relocations.
-    pub fn trigger_relocations(
-        &self,
-        churn_name: &XorName,
-        recommended_section_size: usize,
-    ) -> Vec<Vote> {
-        let our_section_size = self.our_members.joined().count();
-
-        // Is network startup in progress?
-        let startup =
-            *self.our_prefix() == Prefix::default() && our_section_size < recommended_section_size;
-        if startup {
-            // We are in the startup phase - don't relocate, just increment everyones ages.
-            return self
-                .our_members
-                .joined()
-                .map(|info| Vote::ChangeAge(info.clone().increment_age()))
-                .collect();
-        }
-
-        // As a measure against sybil attacks, don't relocate on infant churn.
-        if !self.our_members.is_mature(churn_name) && !self.is_peer_our_elder(churn_name) {
-            trace!("Skip relocation on infant churn",);
-            return vec![];
-        }
-
-        // TODO: actually perform the relocation
-        error!("Relocation not implemented");
-        vec![]
-    }
-
     /// Provide a SectionProofChain that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
@@ -373,6 +346,61 @@ impl SharedState {
         actions
     }
 
+    pub fn compute_relocations(
+        &self,
+        churn_name: &XorName,
+        churn_signature: &bls::Signature,
+    ) -> Vec<(MemberInfo, RelocateDetails)> {
+        // We can relocate at most one elder, but any number of non-elders.
+        let mut relocated_nodes = vec![];
+        let mut relocated_elder = None;
+
+        for info in self.our_members.joined_proven() {
+            if relocation::check(info.value.age, churn_signature) {
+                if self.is_peer_our_elder(info.value.p2p_node.name()) {
+                    if let Some(other) = relocated_elder.take() {
+                        relocated_elder = Some(relocation::select(info, other));
+                    } else {
+                        relocated_elder = Some(info);
+                    }
+                } else {
+                    relocated_nodes.push(info);
+                }
+            }
+        }
+
+        relocated_nodes.extend(relocated_elder.take());
+        relocated_nodes
+            .into_iter()
+            .map(|info| {
+                (
+                    info.value.clone(),
+                    self.create_relocation_details(info, churn_name),
+                )
+            })
+            .collect()
+    }
+
+    fn create_relocation_details(
+        &self,
+        info: &Proven<MemberInfo>,
+        churn_name: &XorName,
+    ) -> RelocateDetails {
+        let pub_id = *info.value.p2p_node.public_id();
+        let destination = relocation::compute_destination(pub_id.name(), churn_name);
+        let destination_key = *self
+            .sections
+            .key_by_name(&destination)
+            .unwrap_or_else(|| self.our_history.first_key());
+
+        RelocateDetails {
+            pub_id,
+            destination,
+            destination_key,
+            age: info.value.age.saturating_add(1),
+        }
+    }
+
     // Tries to split our section.
     // If we have enough mature nodes for both subsections, returns the elders infos of the two
     // subsections. Otherwise returns `None`.
@@ -392,7 +420,7 @@ impl SharedState {
 
         let (our_new_size, sibling_new_size) = self
             .our_members
-            .mature()
+            .adults()
             .map(|p2p_node| p2p_node.name().bit(next_bit_index) == next_bit)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
@@ -434,91 +462,6 @@ impl SharedState {
     fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
         self.our_members
             .elder_candidates(elder_size, self.sections.our())
-    }
-
-    // Increment the age counters of the members.
-    // TODO: delete this function
-    #[allow(unused)]
-    fn increment_age_counters(
-        &mut self,
-        _trigger_node: &XorName,
-        _recommended_section_size: usize,
-    ) {
-        unreachable!()
-
-        /*
-
-        let our_section_size = self.our_members.joined().count();
-        let our_prefix = &self.sections.our().prefix;
-
-        // Is network startup in progress?
-        let startup =
-            *our_prefix == Prefix::default() && our_section_size < recommended_section_size;
-
-        // As a measure against sybil attacks, we don't increment the age counters on infant churn
-        // once we completed the startup phase.
-        if !startup
-            && !self.our_members.is_mature(trigger_node)
-            && !self.is_peer_our_elder(trigger_node)
-        {
-            trace!(
-                "Not incrementing age counters on infant churn (section size: {})",
-                our_section_size,
-            );
-            return;
-        }
-
-        let first_key = self.our_history.first_key();
-
-        for member_info in self.our_members.joined_mut() {
-            if member_info.p2p_node.name() == trigger_node {
-                continue;
-            }
-
-            // During network startup we go through accelerated ageing.
-            if startup {
-                member_info.increment_age();
-                continue;
-            }
-
-            if !member_info.increment_age_counter() {
-                continue;
-            }
-
-            let destination = relocation::compute_destination(
-                our_prefix,
-                member_info.p2p_node.name(),
-                trigger_node,
-            );
-            if our_prefix.matches(&destination) {
-                // Relocation destination inside the current section - ignoring.
-                trace!(
-                    "increment_age_counters: Ignoring relocation for {:?}",
-                    member_info.p2p_node.public_id()
-                );
-                continue;
-            }
-
-            trace!(
-                "Change state to Relocating {}",
-                member_info.p2p_node.public_id()
-            );
-            member_info.state = MemberState::Relocating;
-
-            let destination_key = *self.sections.key_by_name(&destination).unwrap_or(first_key);
-            let details = RelocateDetails {
-                pub_id: *member_info.p2p_node.public_id(),
-                destination,
-                destination_key,
-                // TODO: why the +1 ?
-                age: member_info.age() + 1,
-            };
-
-            self.relocate_queue.push_front(details);
-        }
-
-        trace!("increment_age_counters: {:?}", self.our_members);
-        */
     }
 }
 

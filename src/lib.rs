@@ -109,7 +109,6 @@ pub mod rng;
 #[cfg(feature = "mock_base")]
 pub use self::{
     consensus::threshold_count,
-    relocation::Overrides as RelocationOverrides,
     section::{quorum_count, MIN_AGE},
 };
 

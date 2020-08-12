@@ -48,10 +48,17 @@ impl SectionMembers {
             .filter(|member| member.state == MemberState::Joined)
     }
 
+    /// Returns an iterator over the members that have state == `Joined` together with their proofs.
+    pub fn joined_proven(&self) -> impl Iterator<Item = &Proven<MemberInfo>> {
+        self.members
+            .values()
+            .filter(|member| member.value.state == MemberState::Joined)
+    }
+
     /// Returns nodes from our section with age greater than `MIN_AGE`
-    pub fn mature(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn adults(&self) -> impl Iterator<Item = &P2pNode> {
         self.joined()
-            .filter(|info| info.is_mature())
+            .filter(|info| info.is_adult())
             .map(|info| &info.p2p_node)
     }
 
@@ -105,11 +112,11 @@ impl SectionMembers {
             .unwrap_or(false)
     }
 
-    /// Returns whether the given peer is mature (adult or elder)
-    pub fn is_mature(&self, name: &XorName) -> bool {
+    /// Returns whether the given peer has age > MIN_AGE.
+    pub fn is_adult(&self, name: &XorName) -> bool {
         self.members
             .get(name)
-            .map(|info| info.value.is_mature())
+            .map(|info| info.value.is_adult())
             .unwrap_or(false)
     }
 
