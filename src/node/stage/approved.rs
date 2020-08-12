@@ -1490,9 +1490,6 @@ impl Approved {
                 self.handle_offline_event(core, member_info, proof)?
             }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
-            AccumulatingEvent::Relocate(payload) => {
-                self.handle_relocate_event(core, payload, proof)?
-            }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
 
@@ -1634,59 +1631,6 @@ impl Approved {
         });
 
         Ok(())
-    }
-
-    fn handle_relocate_event(
-        &mut self,
-        _core: &mut Core,
-        _details: RelocateDetails,
-        _proof: Proof,
-    ) -> Result<(), RoutingError> {
-        todo!()
-        /*
-        let info = self.shared_state.remove_member(
-            details.pub_id.name(),
-            proof,
-            core.network_params.recommended_section_size,
-        );
-
-        match info.map(|info| info.state) {
-            Some(MemberState::Relocating) => {
-                info!("handle Relocate: {:?}", details);
-            }
-            Some(MemberState::Left) | None => {
-                info!("ignore Relocate: {:?} - not a member", details);
-                return Ok(());
-            }
-            Some(MemberState::Joined) => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Expected the state of {} to be Relocating, but was Joined",
-                    details.pub_id,
-                );
-                return Ok(());
-            }
-        };
-
-        self.members_changed = true;
-
-        if &details.pub_id == core.id() {
-            // Do not send the message to ourselves.
-            return Ok(());
-        }
-
-        // We need to construct a proof that would be trusted by the destination section.
-        let knowledge_index = self
-            .shared_state
-            .sections
-            .knowledge_by_location(&DstLocation::Section(details.destination));
-
-        let src = SrcLocation::Section(*self.shared_state.our_prefix());
-        let dst = DstLocation::Node(*details.pub_id.name());
-        let content = Variant::Relocate(details);
-
-        self.send_routing_message(core, src, dst, content, Some(knowledge_index))
-        */
     }
 
     fn notify_old_elders(
@@ -2085,7 +2029,6 @@ impl Approved {
             AccumulatingEvent::Offline(member_info) => {
                 our_prefix.matches(member_info.p2p_node.name())
             }
-            AccumulatingEvent::Relocate(details) => our_prefix.matches(details.pub_id.name()),
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::ParsecPrune => false,
 
