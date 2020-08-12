@@ -1422,16 +1422,52 @@ impl Approved {
         self.handle_dkg_message(core, participants, section_key_index, message, *core.id())
     }
 
-    /// Detects which nodes to relocate after a churn event and cast the necessary votes.
-    fn trigger_relocations(&mut self, core: &mut Core, churn_name: &XorName) -> Result<()> {
-        let votes = self
+    fn increment_ages(
+        &mut self,
+        core: &mut Core,
+        churn_name: &XorName,
+        churn_signature: &bls::Signature,
+    ) -> Result<()> {
+        if self.is_in_startup_phase(core) {
+            // We are in the startup phase - don't relocate, just increment everyones ages.
+            let votes: Vec<_> = self
+                .shared_state
+                .our_members
+                .joined()
+                .map(|info| Vote::ChangeAge(info.clone().increment_age()))
+                .collect();
+
+            for vote in votes {
+                self.cast_unordered_vote(core, vote)?;
+            }
+
+            return Ok(());
+        }
+
+        // As a measure against sybil attacks, don't relocate on infant churn.
+        if !self.shared_state.is_peer_adult_or_elder(churn_name) {
+            trace!("Skip relocation on infant churn",);
+            return Ok(());
+        }
+
+        let relocations = self
             .shared_state
-            .trigger_relocations(churn_name, core.network_params.recommended_section_size);
-        for vote in votes {
-            self.cast_unordered_vote(core, vote)?;
+            .compute_relocations(churn_name, churn_signature);
+
+        for (info, details) in relocations {
+            self.send_relocate(core, details)?;
+            self.cast_ordered_vote(AccumulatingEvent::Offline(info.leave()));
         }
 
         Ok(())
+    }
+
+    // Are we in the startup phase? Startup phase is when there is only one section and it has
+    // less than `recommended_section_size` members.
+    fn is_in_startup_phase(&self, core: &Core) -> bool {
+        *self.shared_state.our_prefix() == Prefix::default()
+            && self.shared_state.our_members.joined().count()
+                < core.network_params.recommended_section_size
     }
 
     fn handle_ordered_consensus(
@@ -1541,6 +1577,7 @@ impl Approved {
     ) -> Result<()> {
         let p2p_node = member_info.p2p_node.clone();
         let age = member_info.age;
+        let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
             info!("ignore Online: {}", p2p_node);
@@ -1550,7 +1587,7 @@ impl Approved {
         info!("handle Online: {} (age: {})", p2p_node, age);
 
         self.members_changed = true;
-        self.trigger_relocations(core, p2p_node.name())?;
+        self.increment_ages(core, p2p_node.name(), &signature)?;
         self.send_node_approval(core, &p2p_node, their_knowledge)?;
         self.print_network_stats();
 
@@ -1578,6 +1615,7 @@ impl Approved {
     ) -> Result<()> {
         let p2p_node = member_info.p2p_node.clone();
         let age = member_info.age;
+        let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
             info!("ignore Offline: {}", p2p_node);
@@ -1587,7 +1625,7 @@ impl Approved {
         info!("handle Offline: {}", p2p_node);
 
         self.members_changed = true;
-        self.trigger_relocations(core, p2p_node.name())?;
+        self.increment_ages(core, p2p_node.name(), &signature)?;
         core.transport.disconnect(*p2p_node.peer_addr());
 
         core.send_event(Event::MemberLeft {
@@ -2172,6 +2210,20 @@ impl Approved {
         Ok(())
     }
 
+    fn send_relocate(&mut self, core: &mut Core, details: RelocateDetails) -> Result<()> {
+        // We need to construct a proof that would be trusted by the destination section.
+        let knowledge_index = self
+            .shared_state
+            .sections
+            .knowledge_by_location(&DstLocation::Section(details.destination));
+
+        let src = SrcLocation::Section(*self.shared_state.our_prefix());
+        let dst = DstLocation::Node(*details.pub_id.name());
+        let variant = Variant::Relocate(details);
+
+        self.send_routing_message(core, src, dst, variant, Some(knowledge_index))
+    }
+
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
@@ -2236,7 +2288,7 @@ impl Approved {
     }
 
     // Send message over the network.
-    pub fn relay_message(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
+    pub fn relay_message(&self, core: &mut Core, msg: &Message) -> Result<()> {
         let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
             core.id(),

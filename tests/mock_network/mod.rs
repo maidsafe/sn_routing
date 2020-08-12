@@ -18,7 +18,7 @@ use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
     event::Event, mock::Environment, test_consts, NetworkParams, PausedState, Prefix,
-    RelocationOverrides, TransportConfig,
+    TransportConfig,
 };
 use sn_fake_clock::FakeClock;
 use std::collections::BTreeMap;
@@ -167,7 +167,7 @@ fn multi_split() {
 
 struct SimultaneousJoiningNode {
     // Destination section prefix: Use as relocation_dst for nodes in src_section_prefix.
-    dst_section_prefix: Prefix,
+    _dst_section_prefix: Prefix,
     // Section prefix that will match the initial id of the node to add.
     src_section_prefix: Prefix,
     // The prefix to find the proxy within.
@@ -185,13 +185,15 @@ fn simultaneous_joining_nodes(
     let mut rng = env.new_rng();
     nodes.shuffle(&mut rng);
 
-    let mut overrides = RelocationOverrides::new();
+    // TODO: relocation overrides are gone. Figure out how to get by without them.
+    // let mut overrides = RelocationOverrides::new();
 
     let mut nodes_to_add = Vec::new();
     for setup in nodes_to_add_setup {
-        // Set the specified relocation destination on the nodes of the given prefixes
-        let relocation_dst = setup.dst_section_prefix.substituted_in(rng.gen());
-        overrides.set(setup.src_section_prefix, relocation_dst);
+        // TODO: relocation overrides are gone...
+        // // Set the specified relocation destination on the nodes of the given prefixes
+        // let relocation_dst = setup.dst_section_prefix.substituted_in(rng.gen());
+        // overrides.set(setup.src_section_prefix, relocation_dst);
 
         // Create nodes and find proxies from the given prefixes
         let node_to_add = {
@@ -269,12 +271,12 @@ fn simultaneous_joining_nodes_two_sections() {
     // Relocate nodes to the section they were spawned in with a proxy from prefix_0
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
-            dst_section_prefix: prefix_0,
+            _dst_section_prefix: prefix_0,
             src_section_prefix: prefix_0,
             proxy_prefix: prefix_0,
         },
         SimultaneousJoiningNode {
-            dst_section_prefix: prefix_1,
+            _dst_section_prefix: prefix_1,
             src_section_prefix: prefix_1,
             proxy_prefix: prefix_0,
         },
@@ -297,12 +299,12 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Relocate nodes to the section they were not spawned in with a proxy from prefix_0
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
-            dst_section_prefix: prefix_0,
+            _dst_section_prefix: prefix_0,
             src_section_prefix: prefix_1,
             proxy_prefix: prefix_0,
         },
         SimultaneousJoiningNode {
-            dst_section_prefix: prefix_1,
+            _dst_section_prefix: prefix_1,
             src_section_prefix: prefix_0,
             proxy_prefix: prefix_0,
         },
@@ -344,17 +346,17 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     // which will no longer be a neighbour after the split.
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
-            dst_section_prefix: short_prefix,
+            _dst_section_prefix: short_prefix,
             src_section_prefix: short_prefix,
             proxy_prefix: short_prefix,
         },
         SimultaneousJoiningNode {
-            dst_section_prefix: long_prefix_0,
+            _dst_section_prefix: long_prefix_0,
             src_section_prefix: short_prefix,
             proxy_prefix: long_prefix_0.with_flipped_bit(0).with_flipped_bit(1),
         },
         SimultaneousJoiningNode {
-            dst_section_prefix: long_prefix_1,
+            _dst_section_prefix: long_prefix_1,
             src_section_prefix: long_prefix_0,
             proxy_prefix: long_prefix_1.with_flipped_bit(0).with_flipped_bit(1),
         },

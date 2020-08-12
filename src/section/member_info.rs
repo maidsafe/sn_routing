@@ -30,7 +30,7 @@ impl MemberInfo {
         }
     }
 
-    pub fn is_mature(&self) -> bool {
+    pub fn is_adult(&self) -> bool {
         self.age > MIN_AGE
     }
 
