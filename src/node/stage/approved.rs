@@ -1833,8 +1833,8 @@ impl Approved {
         self.shared_state.sections.update_knowledge(knowledge)
     }
 
-    fn handle_change_age_event(&mut self, _member_info: MemberInfo, _proof: Proof) {
-        todo!()
+    fn handle_change_age_event(&mut self, member_info: MemberInfo, proof: Proof) {
+        let _ = self.shared_state.update_member(member_info, proof);
     }
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
