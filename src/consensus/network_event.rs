@@ -10,7 +10,6 @@ use super::{Observation, ParsecNetworkEvent, ProofShare};
 use crate::{
     error::Result,
     id::PublicId,
-    relocation::RelocateDetails,
     section::{MemberInfo, SectionKeyShare},
     XorName,
 };
@@ -36,9 +35,6 @@ pub enum AccumulatingEvent {
 
     // Prune the gossip graph.
     ParsecPrune,
-
-    // Voted for node to be relocated out of our section.
-    Relocate(RelocateDetails),
 
     // Opaque user-defined event.
     User(Vec<u8>),
@@ -88,18 +84,6 @@ impl AccumulatingEvent {
                 their_knowledge: _,
             } => bincode::serialize(member_info),
             Self::Offline(member_info) => bincode::serialize(member_info),
-            Self::Relocate(_details) => {
-                todo!()
-
-                // // Note: signing the same fields as for `Offline` because we need to update the
-                // // members map the same way as if the node went offline. The relocate details
-                // // will be signed using a different vote, but that is not implemented yet.
-                // bincode::serialize(&member_info::to_sign(
-                //     details.pub_id.name(),
-                //     MemberState::Left,
-                // ))
-            }
-
             // TODO: serialise these variants properly
             Self::ParsecPrune | Self::User(_) => Ok(vec![]),
         }
@@ -122,7 +106,6 @@ impl Debug for AccumulatingEvent {
 
             Self::Offline(member_info) => write!(formatter, "Offline({:?})", member_info),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
-            Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
             Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }
