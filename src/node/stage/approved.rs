@@ -1429,11 +1429,13 @@ impl Approved {
         churn_signature: &bls::Signature,
     ) -> Result<()> {
         if self.is_in_startup_phase(core) {
-            // We are in the startup phase - don't relocate, just increment everyones ages.
+            // We are in the startup phase - don't relocate, just increment everyones ages
+            // (excluding the new node).
             let votes: Vec<_> = self
                 .shared_state
                 .our_members
                 .joined()
+                .filter(|info| info.p2p_node.name() != churn_name)
                 .map(|info| Vote::ChangeAge(info.clone().increment_age()))
                 .collect();
 
@@ -1462,12 +1464,12 @@ impl Approved {
         Ok(())
     }
 
-    // Are we in the startup phase? Startup phase is when there is only one section and it has
-    // less than `recommended_section_size` members.
+    // Are we in the startup phase? Startup phase is when the network consists of only one section
+    // and it has no more than `recommended_section_size` members.
     fn is_in_startup_phase(&self, core: &Core) -> bool {
-        *self.shared_state.our_prefix() == Prefix::default()
+        self.shared_state.our_prefix().is_empty()
             && self.shared_state.our_members.joined().count()
-                < core.network_params.recommended_section_size
+                <= core.network_params.recommended_section_size
     }
 
     fn handle_ordered_consensus(

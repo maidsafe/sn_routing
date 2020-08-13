@@ -736,6 +736,19 @@ pub fn elders_with_prefix_mut<'a>(
     nodes_with_prefix_mut(nodes, prefix).filter(|node| node.inner.is_elder())
 }
 
+/// Returns the age of the node with the given name.
+pub fn node_age(nodes: &[TestNode], name: &XorName) -> u8 {
+    if let Some(counter) = nodes
+        .iter()
+        .filter_map(|node| node.inner.member_age(name))
+        .max()
+    {
+        counter
+    } else {
+        panic!("{} is not a member known to any node", name)
+    }
+}
+
 pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     let our_prefix = node.our_prefix();
     let our_name = node.name();
