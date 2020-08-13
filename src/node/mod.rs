@@ -1042,12 +1042,10 @@ impl Node {
         self.shared_state().map(|state| state.prove(target, None))
     }
 
-    /// If this node is elder and `name` belongs to a member of our section, returns the age
-    /// of that member. Otherwise returns `None`.
+    /// Returns the age of the node with `name` if this node knows it. Otherwise returns `None`.
     pub fn member_age(&self, name: &XorName) -> Option<u8> {
         self.stage
             .approved()
-            .filter(|stage| stage.is_our_elder(self.core.id()))
             .and_then(|stage| stage.shared_state.our_members.get(name))
             .map(|info| info.age)
     }

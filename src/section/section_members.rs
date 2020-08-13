@@ -139,8 +139,10 @@ impl SectionMembers {
                 }
             }
             Entry::Occupied(mut entry) if entry.get().value.state == MemberState::Joined => {
-                // TODO: To maintain commutativity, if new_info is `Joined`, only apply it if its
-                // `age` is greater that the current age.
+                // To maintain commutativity, only allow the age to increase.
+                if new_info.state == MemberState::Joined && new_info.age <= entry.get().value.age {
+                    return false;
+                }
 
                 let new_info = Proven::new(new_info, proof);
                 if new_info.verify(section_chain) {
