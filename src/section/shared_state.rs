@@ -21,7 +21,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     fmt::Debug,
-    iter,
     net::SocketAddr,
 };
 use xor_name::{Prefix, XorName};
@@ -169,8 +168,11 @@ impl SharedState {
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
+    /// All section keys we know of, including the past keys of our section.
     pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
-        iter::once((&self.sections.our().prefix, self.our_history.last_key()))
+        self.our_history
+            .keys()
+            .map(move |key| (self.our_prefix(), key))
             .chain(self.sections.keys())
     }
 
@@ -350,14 +352,27 @@ impl SharedState {
         &self,
         churn_name: &XorName,
         churn_signature: &bls::Signature,
+        elder_size: usize,
     ) -> Vec<(MemberInfo, RelocateDetails)> {
         // We can relocate at most one elder, but any number of non-elders.
         let mut relocated_nodes = vec![];
         let mut relocated_elder = None;
 
+        let num_joined_elders = self
+            .our_info()
+            .elders
+            .keys()
+            .filter(|name| self.our_members.is_joined(name))
+            .count();
+        let can_relocate_elders = num_joined_elders >= elder_size;
+
         for info in self.our_members.joined_proven() {
             if relocation::check(info.value.age, churn_signature) {
                 if self.is_peer_our_elder(info.value.p2p_node.name()) {
+                    if !can_relocate_elders {
+                        continue;
+                    }
+
                     if let Some(other) = relocated_elder.take() {
                         relocated_elder = Some(relocation::select(info, other));
                     } else {

@@ -86,6 +86,15 @@ pub enum Event {
         /// The set of elders of our section.
         elders: BTreeSet<XorName>,
     },
+    /// A node has been chosen for relocation.
+    /// Note: this event is useful mostly for debugging and testing purposes and can be safely
+    /// ignored in production.
+    RelocationInitiated {
+        /// Original (pre-relocation) name of the node to relocate.
+        name: XorName,
+        /// Destination to relocate the node to.
+        destination: XorName,
+    },
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -136,6 +145,11 @@ impl Debug for Event {
                 .field("prefix", prefix)
                 .field("key", key)
                 .field("elders", elders)
+                .finish(),
+            Self::RelocationInitiated { name, destination } => formatter
+                .debug_struct("RelocationInitiated")
+                .field("name", name)
+                .field("destination", destination)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
             Self::Terminated => write!(formatter, "Terminated"),

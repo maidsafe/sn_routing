@@ -358,6 +358,12 @@ fn handle_event(
             index,
             HexFmt(payload)
         ),
+        Event::RelocationInitiated { name, destination } => log::debug!(
+            "Node #{} initiated relocation of {} to {}",
+            index,
+            name,
+            destination
+        ),
         Event::Terminated => {
             log::info!("Node #{} terminated", index);
             return false;
