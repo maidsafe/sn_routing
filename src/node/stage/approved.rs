@@ -968,6 +968,7 @@ impl Approved {
                     return;
                 }
 
+                // FIXME: this might panic if the payload is malformed.
                 let details = payload.relocate_details();
 
                 if !self.shared_state.our_prefix().matches(&details.destination) {
@@ -1448,15 +1449,27 @@ impl Approved {
 
         // As a measure against sybil attacks, don't relocate on infant churn.
         if !self.shared_state.is_peer_adult_or_elder(churn_name) {
-            trace!("Skip relocation on infant churn",);
+            trace!("Skip relocation on infant churn");
             return Ok(());
         }
 
-        let relocations = self
-            .shared_state
-            .compute_relocations(churn_name, churn_signature);
+        let relocations = self.shared_state.compute_relocations(
+            churn_name,
+            churn_signature,
+            core.network_params.elder_size,
+        );
 
         for (info, details) in relocations {
+            debug!(
+                "Relocating {} to {} (on churn of {})",
+                info.p2p_node, details.destination, churn_name
+            );
+
+            core.send_event(Event::RelocationInitiated {
+                name: *info.p2p_node.name(),
+                destination: details.destination,
+            });
+
             self.send_relocate(core, details)?;
             self.cast_ordered_vote(AccumulatingEvent::Offline(info.leave()));
         }

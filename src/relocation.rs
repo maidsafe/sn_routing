@@ -26,6 +26,9 @@ use xor_name::XorName;
 /// a churn event with the given signature.
 pub fn check(age: u8, churn_signature: &bls::Signature) -> bool {
     // Evaluate the formula: `signature % 2^age == 0`
+
+    // TODO: evaluate: num of trailing zeroes of sig >= age instead of this.
+
     //
     // Note: take only the first 8 bytes of the signature and use `saturating_pow` to avoid having
     // to use big integer arithmetic.
@@ -119,6 +122,8 @@ impl SignedRelocateDetails {
         }
     }
 
+    // FIXME: need a non-panicking version of this, because when we receive it from another node,
+    // we can't be sure it's well formed.
     pub fn relocate_details(&self) -> &RelocateDetails {
         if let Variant::Relocate(details) = &self.signed_msg.variant() {
             details

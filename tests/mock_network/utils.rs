@@ -10,6 +10,7 @@ use crossbeam_channel as mpmc;
 use itertools::Itertools;
 use rand::{
     distributions::{Distribution, Standard},
+    seq::IteratorRandom,
     Rng,
 };
 use routing::{
@@ -17,11 +18,16 @@ use routing::{
     mock::Environment,
     rng::MainRng,
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, SrcLocation,
-    TransportConfig,
+    TransportConfig, MIN_AGE,
 };
 use sn_fake_clock::FakeClock;
 use std::{
-    cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, time::Duration,
+    cmp::Ordering,
+    collections::{BTreeSet, HashMap},
+    convert::TryInto,
+    iter,
+    net::SocketAddr,
+    time::Duration,
 };
 use xor_name::XorName;
 
@@ -495,106 +501,194 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
     info!("trigger_split done: {:?}", prefix);
 }
 
-/// Add/remove nodes to the given section until it has exactly `count0` mature nodes from the
-/// 0-ending subprefix and `count1` mature nodes from the 1-ending subprefix.
-/// Note: if `count0` and `count1` are both at least `recommended_section_size`, this causes the section
-/// to split.
+/// Add/remove nodes to the given section until it has exactly `target_count_0` mature nodes from the
+/// 0-ending subprefix and `target_count_1` mature nodes from the 1-ending subprefix.
+/// Note: if `target_count_0` and `target_count_1` are both at least `recommended_section_size`, this
+/// causes the section to split.
 pub fn add_mature_nodes(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix,
-    count0: usize,
-    count1: usize,
+    target_count_0: usize,
+    target_count_1: usize,
 ) {
-    // Number of churn events to make an infant node become mature.
-    let churns_to_mature = 16usize;
+    let mut rng = env.new_rng();
 
-    let sub_prefix0 = prefix.pushed(false);
-    let sub_prefix1 = prefix.pushed(true);
+    let sub_prefix_0 = prefix.pushed(false);
+    let sub_prefix_1 = prefix.pushed(true);
 
-    // Count the number of nodes per sub-prefix.
-    let start_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
-    let start_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
-
-    info!(
-        "Starting with {} initial nodes",
-        start_count0 + start_count1
-    );
-
-    // TODO: relocation overrides are gone. Figure out how to get by withou them.
-    // let mut overrides = RelocationOverrides::new();
-    // overrides.suppress(*prefix);
-
-    // Add temporary nodes to the section until it has 32 nodes. Purposefully make the section
-    // unbalanced to avoid splitting it just yet.
-    let temp_sub_prefix = match start_count0.cmp(&start_count1) {
-        Ordering::Less => &sub_prefix1,
-        Ordering::Greater => &sub_prefix0,
-        Ordering::Equal => {
-            if env.new_rng().gen() {
-                &sub_prefix1
-            } else {
-                &sub_prefix0
-            }
-        }
-    };
-
-    let temp_count = (2 * churns_to_mature).saturating_sub(start_count0 + start_count1);
-    info!("Adding {} temporary nodes", temp_count);
-    add_nodes_to_section_and_poll(env, nodes, &temp_sub_prefix, temp_count);
-
-    // Make sure the section has enough elders before proceeding to remove them.
-    poll_until_minimal_elder_count(env, nodes, prefix);
-
-    // Remove 16 mature notes so the remaining nodes become all mature.
-    info!(
-        "Removing the first half ({}) of the temporary nodes",
-        churns_to_mature
-    );
-    remove_elders_from_section_and_poll(env, nodes, prefix, churns_to_mature);
-
-    // Add the final nodes. `count0` into the 0-ending sub-prefix and `count1` into the
-    // 1-ending.
-    info!("Adding {} final nodes", count0 + count1);
-    add_nodes_to_subsections_and_poll(env, nodes, &prefix, count0, count1);
-
-    // Make sure the section has enough elders before proceeding to remove them.
-    poll_until_minimal_elder_count(env, nodes, prefix);
-
-    // Remove another 16 matures nodes (which are the remaining temporary nodes) so all the new
-    // nodes become mature too.
-    info!(
-        "Removing the remaining half ({}) of the temporary nodes",
-        churns_to_mature
-    );
-    remove_elders_from_section_and_poll(env, nodes, prefix, churns_to_mature);
-
-    // We should now be left with just the final nodes who are now all mature.
-    // Verify it is the case.
-    let actual_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
-    let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
-    assert_eq!((actual_count0, actual_count1), (count0, count1));
-}
-
-// Add `count` nodes to the section with `prefix` and poll the network until all of them joined.
-fn add_nodes_to_section_and_poll(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix,
-    count: usize,
-) {
-    let mut first_index = nodes.len();
-
-    for i in 0..count {
-        add_node_to_section(env, nodes, prefix);
-
-        if (i + 1) % MAX_SIMULTANEOUS_JOINS == 0 {
-            poll_until_last_nodes_joined(env, nodes, first_index);
-            first_index = nodes.len();
-        }
+    // Is the node at `index` mature (adult or elder)?
+    fn is_mature(nodes: &[TestNode], index: usize) -> bool {
+        nodes[index].inner.is_elder() || node_age(nodes, nodes[index].name()) > MIN_AGE
     }
 
-    poll_until_last_nodes_joined(env, nodes, first_index);
+    // Churn until we reach the desired number of mature nodes.
+    for i in 0.. {
+        // Check the number of mature nodes in each subprefix.
+        let mature_count_0 = indexed_nodes_with_prefix(nodes, &sub_prefix_0)
+            .filter(|(index, _)| is_mature(nodes, *index))
+            .count();
+
+        let mature_count_1 = indexed_nodes_with_prefix(nodes, &sub_prefix_1)
+            .filter(|(index, _)| is_mature(nodes, *index))
+            .count();
+
+        info!(
+            "mature node counts (iteration {}): {:?}: {}/{}, {:?}: {}/{}",
+            i,
+            sub_prefix_0,
+            mature_count_0,
+            target_count_0,
+            sub_prefix_1,
+            mature_count_1,
+            target_count_1
+        );
+
+        // If there is enough, we are done.
+        if mature_count_0 >= target_count_0 && mature_count_1 >= target_count_1 {
+            break;
+        }
+
+        // Add nodes if necessary
+        let total_count_0 = nodes_with_prefix(nodes, &sub_prefix_0).count();
+        let total_count_1 = nodes_with_prefix(nodes, &sub_prefix_1).count();
+
+        let new_count_0 = target_count_0.saturating_sub(total_count_0);
+        let new_count_1 = target_count_1.saturating_sub(total_count_1);
+
+        add_nodes_to_subsections_and_poll(env, nodes, prefix, new_count_0, new_count_1);
+
+        // Make sure the section has enough elders before proceeding to remove them.
+        poll_until_elder_size(env, nodes, prefix);
+
+        // Pick a random mature node that we will remove later in order to trigger relocation.
+        let removed_index = indexed_nodes_with_prefix(nodes, prefix)
+            .map(|(index, _)| index)
+            .filter(|index| is_mature(nodes, *index))
+            .choose(&mut rng)
+            .expect("no mature node found");
+
+        // Add a new node to replace the removed one to keep the target section size.
+        if sub_prefix_0.matches(nodes[removed_index].name()) {
+            add_node_to_section(env, nodes, &sub_prefix_0);
+        } else {
+            add_node_to_section(env, nodes, &sub_prefix_1);
+        }
+
+        let last_index = nodes.len() - 1;
+        poll_until_last_nodes_joined(env, nodes, last_index);
+
+        // Remove the previously selected mature node. This might trigger one or more relocations.
+        trace!("add_mature_nodes: removing {}", nodes[removed_index].name());
+        let removed_name = *nodes.remove(removed_index).name();
+
+        let mut index_cache = create_node_index_cache(nodes);
+
+        // Let the remove settle.
+        poll_until(env, nodes, |nodes| node_left(nodes, &removed_name));
+        update_neighbours_and_poll(env, nodes, 2);
+
+        // Poll until all triggered relocations complete (if any).
+        poll_until_all_relocations_complete(env, nodes, &mut index_cache);
+    }
+}
+
+/// Poll until all relocations complete, including secondary relocations triggered by previous
+/// relocations.
+/// `index_cache` is a map from names to indices from the time before the event that caused
+pub fn poll_until_all_relocations_complete(
+    env: &Environment,
+    nodes: &mut [TestNode],
+    index_cache: &mut HashMap<XorName, usize>,
+) {
+    const MAX_ITERATIONS: usize = 100;
+
+    for _ in 0..MAX_ITERATIONS {
+        // Detect all initiated relocations.
+        let pending: BTreeSet<_> = nodes
+            .iter_mut()
+            .flat_map(|node| {
+                iter::from_fn(move || node.try_recv_event()).filter_map(|event| match event {
+                    Event::RelocationInitiated { name, .. } => Some(name),
+                    _ => None,
+                })
+            })
+            .collect();
+
+        if pending.is_empty() {
+            return;
+        }
+
+        trace!("pending relocations: {:?}", pending);
+        poll_until_relocations_complete(env, nodes, &pending, index_cache);
+    }
+
+    panic!(
+        "poll_until_all_relocations_complete has been called {} times",
+        MAX_ITERATIONS
+    );
+}
+
+// Poll until the given relocations (given as a set of old names of the relocating nodes) all
+// complete.
+fn poll_until_relocations_complete(
+    env: &Environment,
+    nodes: &mut [TestNode],
+    relocations: &BTreeSet<XorName>,
+    index_cache: &mut HashMap<XorName, usize>,
+) {
+    poll_until(env, nodes, |nodes| {
+        for old_name in relocations {
+            let index = if let Some(&index) = index_cache.get(old_name) {
+                index
+            } else {
+                // `old_name` is already relocated.
+                continue;
+            };
+
+            if nodes[index].name() == old_name {
+                trace!("pending relocation: {} still has old name", old_name);
+                return false;
+            }
+
+            let new_name = nodes[index].name();
+
+            if !node_left(nodes, old_name) {
+                trace!(
+                    "pending relocation: {} (was {}) hasn't yet left the source section",
+                    new_name,
+                    old_name
+                );
+                return false;
+            }
+
+            if !node_joined(nodes, index) {
+                trace!(
+                    "pending relocation: {} (was {}) hasn't yet re-joined the network",
+                    new_name,
+                    old_name,
+                );
+                return false;
+            }
+
+            trace!("relocation complete: {} -> {}", old_name, new_name);
+
+            // Update the index cache
+            let _ = index_cache.remove(old_name);
+            let _ = index_cache.insert(*new_name, index);
+        }
+
+        true
+    })
+}
+
+// Create map from node name to its index.
+fn create_node_index_cache(nodes: &[TestNode]) -> HashMap<XorName, usize> {
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (*node.name(), index))
+        .collect()
 }
 
 // Add `count0` nodes to the sub-prefix of `prefix` ending in 0 and `count1` nodes to the subprefix
@@ -644,25 +738,13 @@ fn add_nodes_to_subsections_and_poll(
     poll_until_last_nodes_joined(env, nodes, first_index);
 }
 
-fn remove_elders_from_section_and_poll(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix,
-    count: usize,
-) {
-    for _ in 0..count {
-        let removed_id = remove_elder_from_section(nodes, prefix);
-        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-        update_neighbours_and_poll(env, nodes, 2);
-    }
-}
-
 fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first_index: usize) {
     poll_until(env, nodes, |nodes| {
         all_nodes_joined(nodes, first_index..nodes.len())
     })
 }
 
+/*
 // Poll until the section with `prefix` has at least 4 elders which is the miminum so that if one
 // elder is removed, the consensus on it can still be reached.
 fn poll_until_minimal_elder_count(env: &Environment, nodes: &mut [TestNode], prefix: &Prefix) {
@@ -677,11 +759,45 @@ fn poll_until_minimal_elder_count(env: &Environment, nodes: &mut [TestNode], pre
         elder_count_reached(nodes, prefix, MIN_ELDER_SIZE)
     })
 }
+*/
+
+// Poll until the section with `prefix` has `elder_size` elders.
+fn poll_until_elder_size(env: &Environment, nodes: &mut [TestNode], prefix: &Prefix) {
+    poll_until(env, nodes, |nodes| {
+        let expected_count = env
+            .elder_size()
+            .min(nodes_with_prefix(nodes, prefix).count());
+        elder_count_reached(nodes, prefix, expected_count)
+    })
+}
 
 // Returns whether the section at `prefix` has at least `expected_count` elders.
 fn elder_count_reached(nodes: &[TestNode], prefix: &Prefix, expected_count: usize) -> bool {
-    elders_with_prefix(nodes, prefix)
-        .all(|elder| elder.inner.our_elders().count() >= expected_count)
+    let actual_count = elders_with_prefix(nodes, prefix).count();
+    if actual_count < expected_count {
+        trace!(
+            "there are only {}/{} elders in {:?}",
+            actual_count,
+            expected_count,
+            prefix
+        );
+        return false;
+    }
+
+    for node in elders_with_prefix(nodes, prefix) {
+        let actual_count = node.inner.our_elders().count();
+        if actual_count < expected_count {
+            trace!(
+                "node {} knows only {}/{} elders",
+                node.name(),
+                actual_count,
+                expected_count
+            );
+            return false;
+        }
+    }
+
+    true
 }
 
 // -----  Small misc functions  -----

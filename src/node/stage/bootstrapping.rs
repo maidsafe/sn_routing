@@ -175,32 +175,28 @@ impl Bootstrapping {
         core: &mut Core,
         elders_info: &EldersInfo,
     ) -> Result<Option<RelocatePayload>> {
-        let relocate_details = self.relocate_details.take();
-        let destination = match &relocate_details {
-            Some(details) => *details.destination(),
-            None => *core.name(),
+        let relocate_details = if let Some(details) = self.relocate_details.take() {
+            details
+        } else {
+            return Ok(None);
         };
-        let old_full_id = core.full_id.clone();
 
+        // We are relocating so we need to change our name.
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
         let name_prefix = Prefix::new(
             elders_info.prefix.bit_count() + extra_split_count,
-            destination,
+            *relocate_details.destination(),
         );
 
-        if !name_prefix.matches(core.name()) {
-            let new_full_id = FullId::within_range(&mut core.rng, &name_prefix.range_inclusive());
-            info!("Changing name to {}.", new_full_id.public_id().name());
-            core.full_id = new_full_id;
-        }
+        let new_full_id = FullId::within_range(&mut core.rng, &name_prefix.range_inclusive());
+        let relocate_payload =
+            RelocatePayload::new(relocate_details, new_full_id.public_id(), &core.full_id)?;
 
-        if let Some(details) = relocate_details {
-            let payload = RelocatePayload::new(details, core.full_id.public_id(), &old_full_id)?;
-            Ok(Some(payload))
-        } else {
-            Ok(None)
-        }
+        info!("Changing name to {}.", new_full_id.public_id().name());
+        core.full_id = new_full_id;
+
+        Ok(Some(relocate_payload))
     }
 }
 

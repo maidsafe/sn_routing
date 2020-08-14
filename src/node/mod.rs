@@ -274,14 +274,7 @@ impl Node {
     pub fn is_elder(&self) -> bool {
         self.stage
             .approved()
-            .map(|stage| {
-                stage
-                    .shared_state
-                    .sections
-                    .our()
-                    .elders
-                    .contains_key(self.core.name())
-            })
+            .map(|stage| stage.is_our_elder(self.core.id()))
             .unwrap_or(false)
     }
 
