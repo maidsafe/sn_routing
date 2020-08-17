@@ -433,7 +433,7 @@ impl SharedState {
             // TODO: if src has split, consider sending to all child prefixes that are still our
             // neighbours.
             actions.push(SendNeighbourInfo {
-                dst: src_prefix.name(),
+                dst: *src_prefix,
                 nonce: *hash,
             })
         }
@@ -618,7 +618,7 @@ impl SharedState {
 pub(crate) enum UpdateSectionKnowledgeAction {
     VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
     VoteTheirKnowledge { prefix: Prefix, key_index: u64 },
-    SendNeighbourInfo { dst: XorName, nonce: MessageHash },
+    SendNeighbourInfo { dst: Prefix, nonce: MessageHash },
 }
 
 #[cfg(test)]

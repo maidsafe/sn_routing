@@ -32,8 +32,6 @@ pub(crate) enum Variant {
     NeighbourInfo {
         /// `EldersInfo` of the sender's section, with the proof chain.
         elders_info: Proven<EldersInfo>,
-        /// Latest section key of the sender's section
-        section_key: bls::PublicKey,
         /// Nonce that is derived from the incoming message that triggered sending this
         /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are identical
         /// but triggered by different messages are not filtered out.
@@ -148,14 +146,9 @@ impl Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::NeighbourInfo {
-                elders_info,
-                section_key,
-                nonce,
-            } => f
+            Self::NeighbourInfo { elders_info, nonce } => f
                 .debug_struct("NeighbourInfo")
                 .field("elders_info", elders_info)
-                .field("section_key", section_key)
                 .field("nonce", nonce)
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),

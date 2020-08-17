@@ -688,7 +688,7 @@ impl Approved {
             }
         }
 
-        self.send_neighbour_info(core, elders_info.prefix.name(), nonce, Some(src_key))
+        self.send_neighbour_info(core, elders_info.prefix, nonce, Some(src_key))
     }
 
     pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
@@ -2413,9 +2413,12 @@ impl Approved {
                 VoteTheirKnowledge { prefix, key_index } => {
                     self.cast_unordered_vote(core, Vote::TheirKnowledge { prefix, key_index })?
                 }
-                SendNeighbourInfo { dst, nonce } => {
-                    self.send_neighbour_info(core, dst, nonce, None)?
-                }
+                SendNeighbourInfo { dst, nonce } => self.send_neighbour_info(
+                    core,
+                    dst,
+                    nonce,
+                    self.shared_state.sections.key_by_name(&dst.name()).cloned(),
+                )?,
             }
         }
 
@@ -2425,20 +2428,21 @@ impl Approved {
     fn send_neighbour_info(
         &mut self,
         core: &mut Core,
-        dst: XorName,
+        dst: Prefix,
         nonce: MessageHash,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<()> {
-        let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
+        let proof_chain = self.shared_state.create_proof_chain_for_our_info(Some(
+            self.shared_state.sections.knowledge_by_section(&dst),
+        ));
         let variant = Variant::NeighbourInfo {
             elders_info: self.shared_state.sections.proven_our().clone(),
-            section_key: *self.shared_state.our_history.last_key(),
             nonce,
         };
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
             &core.full_id,
-            DstLocation::Section(dst),
+            DstLocation::Section(dst.name()),
             variant,
             Some(proof_chain),
             dst_key,
