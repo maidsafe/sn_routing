@@ -379,11 +379,9 @@ fn check_close_names_for_elder_size_nodes() {
 
 #[test]
 fn sibling_knowledge_update_after_split() {
-    let elder_size = 8;
-    let recommended_section_size = 8;
     let env = Environment::new(NetworkParams {
-        elder_size,
-        recommended_section_size,
+        elder_size: MIN_ELDER_SIZE,
+        recommended_section_size: MIN_ELDER_SIZE,
     });
 
     let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
