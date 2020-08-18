@@ -654,8 +654,6 @@ impl Approved {
         core: &mut Core,
         elders_info: EldersInfo,
         src_key: bls::PublicKey,
-        dst_key: Option<bls::PublicKey>,
-        nonce: MessageHash,
     ) -> Result<()> {
         if !self.shared_state.sections.has_key(&src_key) {
             self.cast_unordered_vote(
@@ -678,17 +676,10 @@ impl Approved {
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.cast_unordered_vote(core, Vote::SectionInfo(elders_info.clone()))?;
+            self.cast_unordered_vote(core, Vote::SectionInfo(elders_info))
+        } else {
+            Ok(())
         }
-
-        if let Some(dst_key) = dst_key {
-            if dst_key == *self.shared_state.our_history.last_key() {
-                // The sender's knowledge of us is latest.
-                return Ok(());
-            }
-        }
-
-        self.send_neighbour_info(core, elders_info.prefix, nonce, Some(src_key))
     }
 
     pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
