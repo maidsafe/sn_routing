@@ -1875,7 +1875,6 @@ impl Approved {
     }
 
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
-        trace!("update our section with {:?}", details);
         info!("update our section: {:?}", details.our.info.value);
 
         let old_prefix = *self.shared_state.our_prefix();

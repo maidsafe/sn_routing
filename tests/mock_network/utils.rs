@@ -517,6 +517,29 @@ pub fn add_mature_nodes(
     let sub_prefix_0 = prefix.pushed(false);
     let sub_prefix_1 = prefix.pushed(true);
 
+    // Add nodes to reach the target size.
+    let total_count_0 = nodes_with_prefix(nodes, &sub_prefix_0).count();
+    let total_count_1 = nodes_with_prefix(nodes, &sub_prefix_1).count();
+
+    let excess_count_0 = total_count_0.saturating_sub(target_count_0);
+    let excess_count_1 = total_count_1.saturating_sub(target_count_1);
+
+    let new_count_0 = target_count_0
+        .saturating_sub(total_count_0)
+        .saturating_sub(excess_count_1);
+    let new_count_1 = target_count_1
+        .saturating_sub(total_count_1)
+        .saturating_sub(excess_count_0);
+
+    trace!(
+        "add_mature_nodes: adding {:?}: {}, {:?}: {}",
+        sub_prefix_0,
+        new_count_0,
+        sub_prefix_0,
+        new_count_1
+    );
+    add_nodes_to_subsections_and_poll(env, nodes, prefix, new_count_0, new_count_1);
+
     // Is the node at `index` mature (adult or elder)?
     fn is_mature(nodes: &[TestNode], index: usize) -> bool {
         nodes[index].inner.is_elder() || node_age(nodes, nodes[index].name()) > MIN_AGE
@@ -528,20 +551,24 @@ pub fn add_mature_nodes(
         let mature_count_0 = indexed_nodes_with_prefix(nodes, &sub_prefix_0)
             .filter(|(index, _)| is_mature(nodes, *index))
             .count();
-
         let mature_count_1 = indexed_nodes_with_prefix(nodes, &sub_prefix_1)
             .filter(|(index, _)| is_mature(nodes, *index))
             .count();
 
+        let total_count_0 = nodes_with_prefix(nodes, &sub_prefix_0).count();
+        let total_count_1 = nodes_with_prefix(nodes, &sub_prefix_1).count();
+
         info!(
-            "mature node counts (iteration {}): {:?}: {}/{}, {:?}: {}/{}",
+            "add_mature_nodes (#{}): ({:b}): mature: {}/{} total: {}, ({:b}): mature: {}/{} total: {}",
             i,
             sub_prefix_0,
             mature_count_0,
             target_count_0,
+            total_count_0,
             sub_prefix_1,
             mature_count_1,
-            target_count_1
+            target_count_1,
+            total_count_1,
         );
 
         // If there is enough, we are done.
@@ -549,47 +576,73 @@ pub fn add_mature_nodes(
             break;
         }
 
-        // Add nodes if necessary
-        let total_count_0 = nodes_with_prefix(nodes, &sub_prefix_0).count();
-        let total_count_1 = nodes_with_prefix(nodes, &sub_prefix_1).count();
+        // Pick prefixes to add and remove nodes to/from.
+        let remove_prefix = if mature_count_0 == 0 {
+            &sub_prefix_1
+        } else if mature_count_1 == 0 {
+            &sub_prefix_0
+        } else {
+            match total_count_0
+                .cmp(&total_count_1)
+                .then(mature_count_0.cmp(&mature_count_1))
+            {
+                Ordering::Less => &sub_prefix_1,
+                Ordering::Greater => &sub_prefix_0,
+                Ordering::Equal => {
+                    if rng.gen() {
+                        &sub_prefix_0
+                    } else {
+                        &sub_prefix_1
+                    }
+                }
+            }
+        };
 
-        let new_count_0 = target_count_0.saturating_sub(total_count_0);
-        let new_count_1 = target_count_1.saturating_sub(total_count_1);
-
-        add_nodes_to_subsections_and_poll(env, nodes, prefix, new_count_0, new_count_1);
-
-        // Make sure the section has enough elders before proceeding to remove them.
-        poll_until_elder_size(env, nodes, prefix);
+        let add_prefix = match total_count_0.cmp(&total_count_1) {
+            Ordering::Less => &sub_prefix_0,
+            Ordering::Greater => &sub_prefix_1,
+            Ordering::Equal => remove_prefix,
+        };
 
         // Pick a random mature node that we will remove later in order to trigger relocation.
-        let removed_index = indexed_nodes_with_prefix(nodes, prefix)
+        let remove_index = indexed_nodes_with_prefix(nodes, remove_prefix)
             .map(|(index, _)| index)
             .filter(|index| is_mature(nodes, *index))
             .choose(&mut rng)
             .expect("no mature node found");
 
         // Add a new node to replace the removed one to keep the target section size.
-        if sub_prefix_0.matches(nodes[removed_index].name()) {
-            add_node_to_section(env, nodes, &sub_prefix_0);
-        } else {
-            add_node_to_section(env, nodes, &sub_prefix_1);
-        }
+        add_node_to_section(env, nodes, add_prefix);
 
+        // Let the add settle.
         let last_index = nodes.len() - 1;
         poll_until_last_nodes_joined(env, nodes, last_index);
+        poll_until_elder_size(env, nodes, prefix);
 
         // Remove the previously selected mature node. This might trigger one or more relocations.
-        trace!("add_mature_nodes: removing {}", nodes[removed_index].name());
-        let removed_name = *nodes.remove(removed_index).name();
+        trace!(
+            "add_mature_nodes (#{}): removing {} (prefix: {:b}, elder: {})",
+            i,
+            nodes[remove_index].name(),
+            remove_prefix,
+            nodes[remove_index].inner.is_elder(),
+        );
+        let remove_name = *nodes.remove(remove_index).name();
 
         let mut index_cache = create_node_index_cache(nodes);
 
         // Let the remove settle.
-        poll_until(env, nodes, |nodes| node_left(nodes, &removed_name));
+        poll_until(env, nodes, |nodes| node_left(nodes, &remove_name));
+        trace!("add_mature_nodes (#{}): removed  {}", i, remove_name);
         update_neighbours_and_poll(env, nodes, 2);
 
+        trace!(
+            "add_mature_nodes (#{}): waiting for relocations to complete...",
+            i
+        );
         // Poll until all triggered relocations complete (if any).
         poll_until_all_relocations_complete(env, nodes, &mut index_cache);
+        trace!("add_mature_nodes (#{}): relocations complete", i);
     }
 }
 
