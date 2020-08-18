@@ -659,8 +659,6 @@ impl Node {
                         &mut self.core,
                         elders_info.value.clone(),
                         *msg.proof_chain_last_key()?,
-                        *msg.dst_key(),
-                        *msg.hash(),
                     )?;
                 }
                 Variant::EldersUpdate(payload) => {
