@@ -725,7 +725,9 @@ impl Approved {
             return Ok(());
         }
 
-        info!("Promoted To Elder");
+        info!("Promoted to Elder");
+        info!("update our section: {:?}", shared_state.our_info());
+
         let old_prefix = self.shared_state.our_info().prefix;
 
         core.msg_filter.reset();
@@ -1874,7 +1876,7 @@ impl Approved {
 
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         trace!("update our section with {:?}", details);
-        info!("handle SectionInfo: {:?}", details.our.info.value);
+        info!("update our section: {:?}", details.our.info.value);
 
         let old_prefix = *self.shared_state.our_prefix();
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
