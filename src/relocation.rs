@@ -25,33 +25,25 @@ use xor_name::XorName;
 /// Relocation check - returns whether a member with the given age is a candidate for relocation on
 /// a churn event with the given signature.
 pub fn check(age: u8, churn_signature: &bls::Signature) -> bool {
-    // Evaluate the formula: `signature % 2^age == 0`
-
-    // TODO: evaluate: num of trailing zeroes of sig >= age instead of this.
-
-    //
-    // Note: take only the first 8 bytes of the signature and use `saturating_pow` to avoid having
-    // to use big integer arithmetic.
-    partial_signature(churn_signature) % 2u64.saturating_pow(age as u32) == 0
+    // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
+    // has at least `age` trailing zero bits.
+    trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
 }
 
-// Extract the first 8 bytes of the signature.
-fn partial_signature(signature: &bls::Signature) -> u64 {
-    // Note: bls::Signature is normally 96 bytes long, but only 4 bytes if the mock feature is
-    // enabled. This function is designed to work well in both cases.
+// Returns the number of trailing zero bits of the byte slice.
+fn trailing_zeros(bytes: &[u8]) -> u32 {
+    let mut output = 0;
 
-    let src = signature.to_bytes();
-    let mut dst = [0; 8];
+    for &byte in bytes.iter().rev() {
+        if byte == 0 {
+            output += 8;
+        } else {
+            output += byte.trailing_zeros();
+            break;
+        }
+    }
 
-    // mock-only note: making sure to not exceed the array bounds
-    let len = src.len().min(dst.len());
-
-    dst[..len].copy_from_slice(&src[..len]);
-
-    // mock-only note: using `from_le_bytes` to make sure the signature bytes end up in the
-    // least-significant half of the returned value. If we used `from_be_bytes` instead, we would
-    // always relocate every node with age < 32.
-    u64::from_le_bytes(dst)
+    output
 }
 
 /// Picks the node to relocate from the two candidates. This is used to break ties in case more than
@@ -196,5 +188,22 @@ impl RelocatePayload {
 
     pub fn relocate_details(&self) -> &RelocateDetails {
         self.details.relocate_details()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_slice_trailing_zeros() {
+        assert_eq!(trailing_zeros(&[0]), 8);
+        assert_eq!(trailing_zeros(&[1]), 0);
+        assert_eq!(trailing_zeros(&[2]), 1);
+        assert_eq!(trailing_zeros(&[4]), 2);
+        assert_eq!(trailing_zeros(&[8]), 3);
+        assert_eq!(trailing_zeros(&[0, 0]), 16);
+        assert_eq!(trailing_zeros(&[1, 0]), 8);
+        assert_eq!(trailing_zeros(&[2, 0]), 9);
     }
 }
