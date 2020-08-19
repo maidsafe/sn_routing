@@ -682,7 +682,12 @@ impl Approved {
         }
     }
 
-    pub fn handle_elders_update(&mut self, core: &mut Core, payload: EldersUpdate) -> Result<()> {
+    pub fn handle_elders_update(
+        &mut self,
+        core: &mut Core,
+        section_key: bls::PublicKey,
+        payload: EldersUpdate,
+    ) -> Result<()> {
         info!("Received {:?}", payload);
 
         // Receiving an old EldersUpdate or we are going to be promoted soon.
@@ -697,7 +702,7 @@ impl Approved {
 
         core.msg_filter.reset();
 
-        self.shared_state = SharedState::new(payload.elders_info);
+        self.shared_state = SharedState::new(section_key, payload.elders_info);
         self.section_keys_provider = SectionKeysProvider::new(None);
         self.reset_parsec(core, payload.parsec_version)
     }
@@ -2490,7 +2495,7 @@ fn create_first_shared_state(
     sk_share: &bls::SecretKeyShare,
     elders_info: Proven<EldersInfo>,
 ) -> Result<SharedState> {
-    let mut shared_state = SharedState::new(elders_info);
+    let mut shared_state = SharedState::new(elders_info.proof.public_key, elders_info);
 
     for p2p_node in shared_state.sections.our().elders.values() {
         let proof = create_first_proof(

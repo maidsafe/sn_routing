@@ -68,7 +68,8 @@ impl Env {
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
-        let mut shared_state = SharedState::new(proven_elders_info);
+        let mut shared_state =
+            SharedState::new(proven_elders_info.proof.public_key, proven_elders_info);
         for p2p_node in elders_info.elders.values() {
             let proof = test_utils::create_proof(
                 &sk_set,

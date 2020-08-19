@@ -40,9 +40,14 @@ pub(crate) struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: Proven<EldersInfo>) -> Self {
+    /// Creates a minimal `SharedState` initially contains only info about our section elders
+    /// (`elders_info`) and whose section chain contains only a single key (`section_key`).
+    /// Note: currently the `EldersInfo`s are not signed with the latest section key, but with the
+    /// one before that. Because of that, we need to pass the latest key explicitly via the
+    /// `section_key` argument. This might change in the future.
+    pub fn new(section_key: bls::PublicKey, elders_info: Proven<EldersInfo>) -> Self {
         Self {
-            our_history: SectionProofChain::new(elders_info.proof.public_key),
+            our_history: SectionProofChain::new(section_key),
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
             relocate_queue: VecDeque::new(),
@@ -82,9 +87,11 @@ impl SharedState {
 
     // Clear all data except that which is needed for non-elders.
     pub fn demote(&mut self) {
+        let section_key = *self.our_history.last_key();
         // TODO: avoid this clone.
         let elders_info = self.sections.proven_our().clone();
-        *self = Self::new(elders_info);
+
+        *self = Self::new(section_key, elders_info);
     }
 
     /// Returns our own current elders info.
@@ -716,7 +723,7 @@ mod test {
         let elders_info = sections_iter.next().expect("section members");
         let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
-        let mut state = SharedState::new(elders_info);
+        let mut state = SharedState::new(sk.public_key(), elders_info);
 
         for info in sections_iter {
             let info = consensus::test_utils::proven(&sk, info);

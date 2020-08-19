@@ -648,7 +648,9 @@ impl Node {
                 Variant::NodeApproval(payload) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    self.approve(connect_type, payload.clone(), msg_backlog)?
+                    let section_key = *msg.proof_chain_last_key()?;
+
+                    self.approve(connect_type, msg_backlog, section_key, payload.clone())?
                 }
                 _ => unreachable!(),
             },
@@ -662,7 +664,8 @@ impl Node {
                     )?;
                 }
                 Variant::EldersUpdate(payload) => {
-                    stage.handle_elders_update(&mut self.core, payload.clone())?
+                    let section_key = *msg.proof_chain_last_key()?;
+                    stage.handle_elders_update(&mut self.core, section_key, payload.clone())?
                 }
                 Variant::Promote {
                     shared_state,
@@ -836,15 +839,16 @@ impl Node {
     fn approve(
         &mut self,
         connect_type: Connected,
-        elders_update: EldersUpdate,
         msg_backlog: Vec<QueuedMessage>,
+        section_key: bls::PublicKey,
+        elders_update: EldersUpdate,
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
             elders_update.elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(elders_update.elders_info);
+        let shared_state = SharedState::new(section_key, elders_update.elders_info);
         let stage = Approved::new(
             &mut self.core,
             shared_state,
