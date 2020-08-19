@@ -633,7 +633,6 @@ pub fn add_mature_nodes(
 
         // Let the remove settle.
         poll_until(env, nodes, |nodes| node_left(nodes, &remove_name));
-        trace!("add_mature_nodes (#{}): removed  {}", i, remove_name);
         update_neighbours_and_poll(env, nodes, 2);
 
         // Poll until all triggered relocations complete (if any).

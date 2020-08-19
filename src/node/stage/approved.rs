@@ -725,7 +725,7 @@ impl Approved {
             return Ok(());
         }
 
-        info!("promoted to elder");
+        info!("Promoted to elder");
         info!("section update: {:?}", shared_state.our_info());
 
         let old_prefix = self.shared_state.our_info().prefix;
@@ -1251,15 +1251,10 @@ impl Approved {
         Ok(true)
     }
 
-    // Can we perform an action right now that can result in churn?
-    fn is_ready_to_churn(&self) -> bool {
-        !self.churn_in_progress
-    }
-
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     fn promote_and_demote_elders(&mut self, core: &mut Core) -> bool {
-        if !self.members_changed || !self.is_ready_to_churn() {
+        if !self.members_changed || self.churn_in_progress {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return false;
         }
@@ -1685,32 +1680,35 @@ impl Approved {
         section_key_index: u64,
         dkg_result: &DkgResult,
     ) -> Result<()> {
+        info!(
+            "handle DKG result {:?} for {:?}",
+            dkg_result.public_key_set.public_key(),
+            participants,
+        );
+
         if self.is_our_elder(core.id()) {
             if self.section_keys_provider.key_share().is_err() {
                 // We've just been promoted and already received the `Promote` message.
                 self.section_keys_provider
-                    .handle_dkg_result_event(participants, dkg_result)?;
+                    .handle_dkg_result_event(participants, dkg_result);
                 self.section_keys_provider
                     .finalise_dkg(core.name(), self.shared_state.our_info())?;
                 return Ok(());
             }
         } else {
             // We are about to get promoted, but have not received the `Promote` message yet.
-            return self
-                .section_keys_provider
+            self.section_keys_provider
                 .handle_dkg_result_event(participants, dkg_result);
+            return Ok(());
         }
 
         let dkg_key = (participants.clone(), section_key_index);
 
         if let Some(info) = self.dkg_voter.take_info(&dkg_key) {
-            info!("handle DkgResult: {:?}", dkg_key);
-
             let key = dkg_result.public_key_set.public_key();
 
             // Casting unordered_votes will check consensus and handle accumulated immediately.
-            let result = self
-                .section_keys_provider
+            self.section_keys_provider
                 .handle_dkg_result_event(&dkg_key.0, dkg_result);
 
             self.cast_unordered_vote(
@@ -1731,9 +1729,7 @@ impl Approved {
                 )?;
             }
 
-            self.cast_unordered_vote(core, Vote::SectionInfo(info))?;
-
-            result
+            self.cast_unordered_vote(core, Vote::SectionInfo(info))
         } else {
             // The latest participant was just following vote, which doesn't have the info to
             // vote for a section_info. Or the DKG process completed before receiving the
