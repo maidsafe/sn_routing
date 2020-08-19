@@ -636,13 +636,8 @@ pub fn add_mature_nodes(
         trace!("add_mature_nodes (#{}): removed  {}", i, remove_name);
         update_neighbours_and_poll(env, nodes, 2);
 
-        trace!(
-            "add_mature_nodes (#{}): waiting for relocations to complete...",
-            i
-        );
         // Poll until all triggered relocations complete (if any).
         poll_until_all_relocations_complete(env, nodes, &mut index_cache);
-        trace!("add_mature_nodes (#{}): relocations complete", i);
     }
 }
 
