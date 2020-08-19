@@ -74,14 +74,12 @@ impl SectionKeysProvider {
         &mut self,
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResult,
-    ) -> Result<()> {
+    ) {
         if let Some(first) = participants.iter().next() {
             if self.new.insert(*first.name(), dkg_result.clone()).is_some() {
-                log_or_panic!(log::Level::Error, "Ejected previous DKG result");
+                warn!("ejected previous DKG result");
             }
         }
-
-        Ok(())
     }
 
     pub fn finalise_dkg(&mut self, our_name: &XorName, elders_info: &EldersInfo) -> Result<()> {
