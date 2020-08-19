@@ -725,8 +725,8 @@ impl Approved {
             return Ok(());
         }
 
-        info!("Promoted to Elder");
-        info!("update our section: {:?}", shared_state.our_info());
+        info!("promoted to elder");
+        info!("section update: {:?}", shared_state.our_info());
 
         let old_prefix = self.shared_state.our_info().prefix;
 
@@ -1875,7 +1875,12 @@ impl Approved {
     }
 
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
-        info!("update our section: {:?}", details.our.info.value);
+        if !self.is_our_elder(core.id()) {
+            trace!("ignore section update: {:?}", details.our.info.value);
+            return Ok(());
+        }
+
+        info!("section update: {:?}", details.our.info.value);
 
         let old_prefix = *self.shared_state.our_prefix();
         let sibling_prefix = details.sibling.as_ref().map(|sibling| sibling.key.value.0);
@@ -2267,6 +2272,8 @@ impl Approved {
         if targets.is_empty() {
             return Ok(());
         }
+
+        trace!("relay {:?} to {:?}", msg, targets);
 
         let targets: Vec<_> = targets.into_iter().map(|node| *node.peer_addr()).collect();
         core.send_message_to_targets(&targets, dg_size, msg.to_bytes());
