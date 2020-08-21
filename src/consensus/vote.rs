@@ -7,14 +7,27 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{AccumulationError, Proof, ProofShare, SignatureAggregator};
-use crate::{error::Result, section::EldersInfo};
+use crate::{error::Result, id::P2pNode, section::EldersInfo, XorName};
 use serde::{Serialize, Serializer};
 use xor_name::Prefix;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum Vote {
     // Vote to update the elders info of a section.
     SectionInfo(EldersInfo),
+
+    /// Voted for node that is about to join our section
+    Online {
+        /// Identifier of the joining node.
+        p2p_node: P2pNode,
+        /// Previous name if relocated.
+        previous_name: Option<XorName>,
+        /// The age the node should have after joining.
+        age: u8,
+        /// The key of the destination section that the joining node knows, if any.
+        their_knowledge: Option<bls::PublicKey>,
+    },
 
     // Voted to update our section key.
     OurKey {
@@ -86,6 +99,12 @@ impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
             Vote::SectionInfo(info) => info.serialize(serializer),
+            Vote::Online {
+                p2p_node,
+                previous_name,
+                age,
+                ..
+            } => (p2p_node, previous_name, age).serialize(serializer),
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),

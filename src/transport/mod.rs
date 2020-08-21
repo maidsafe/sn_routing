@@ -66,11 +66,11 @@ impl Transport {
 
         let token = self.next_msg_token();
 
-        trace!(
-            "Sending message with token {} to {:?}",
-            token,
-            &conn_infos[..delivery_group_size.min(conn_infos.len())]
-        );
+        // trace!(
+        //     "Sending message with token {} to {:?}",
+        //     token,
+        //     &conn_infos[..delivery_group_size.min(conn_infos.len())]
+        // );
 
         // initially only send to delivery_group_size targets
         for addr in conn_infos.iter().take(delivery_group_size) {

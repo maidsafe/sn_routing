@@ -328,7 +328,7 @@ impl Approved {
             {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
             } else {
-                self.dkg_voter.remove_voter(&dkg_key);
+                self.dkg_voter.remove_voter(dkg_key.1);
             }
         }
 
@@ -996,6 +996,20 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
+        // It is observed that some node got ordered Online vote consensused from parsec, meanwhile
+        // some other not and carried the vote into the new parsec instance. Which make those node
+        // never got consensused on the vote. So here casting it as unordered as well as a quick
+        // patch.
+        let _ = self.cast_unordered_vote(
+            core,
+            Vote::Online {
+                p2p_node: p2p_node.clone(),
+                previous_name,
+                age,
+                their_knowledge,
+            },
+        );
+
         self.cast_ordered_vote(AccumulatingEvent::Online {
             p2p_node,
             previous_name,
@@ -1120,6 +1134,8 @@ impl Approved {
         }
 
         let msg_parsed = bincode::deserialize(&message_bytes[..])?;
+
+        trace!("processing dkg message {:?}", msg_parsed);
 
         let responses = self.dkg_voter.process_dkg_message(
             &mut core.rng,
@@ -1381,6 +1397,7 @@ impl Approved {
         section_key_index: u64,
         dkg_message: DkgMessage<PublicId>,
     ) -> Result<()> {
+        trace!("broadcast DKG message {:?}", dkg_message);
         let message: Bytes = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             participants: participants.clone(),
@@ -1489,6 +1506,15 @@ impl Approved {
                     Err(error) => Err(error),
                 }
             }
+            Vote::Online {
+                p2p_node,
+                previous_name,
+                age,
+                their_knowledge,
+            } => {
+                self.handle_online_event(core, p2p_node, previous_name, age, their_knowledge, proof)
+            }
+
             Vote::OurKey { prefix, key } => {
                 match self.handle_our_key_event(core, prefix, key, proof.clone()) {
                     Ok(()) => Ok(()),
@@ -1736,7 +1762,6 @@ impl Approved {
             }
 
             self.cast_unordered_vote(core, Vote::SectionInfo(info))?;
-
             result
         } else {
             // The latest participant was just following vote, which doesn't have the info to
@@ -1980,6 +2005,10 @@ impl Approved {
         section_key: Proven<bls::PublicKey>,
         elders_info: Proven<EldersInfo>,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "update_our_key_and_info before section_key_index {:?}",
+            self.shared_state.our_history.last_key_index()
+        );
         self.section_keys_provider
             .finalise_dkg(core.name(), &elders_info.value)?;
 
