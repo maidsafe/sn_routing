@@ -24,11 +24,7 @@ impl<T: Serialize> Proven<T> {
     }
 
     pub fn verify(&self, history: &SectionProofChain) -> bool {
-        if let Ok(bytes) = bincode::serialize(&self.value) {
-            history.has_key(&self.proof.public_key) && self.proof.verify(&bytes)
-        } else {
-            false
-        }
+        history.has_key(&self.proof.public_key) && self.self_verify()
     }
 
     pub fn self_verify(&self) -> bool {

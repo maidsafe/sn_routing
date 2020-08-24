@@ -156,8 +156,7 @@ impl SectionMembers {
         }
     }
 
-    /// Remove all members whose name does not match our prefix and assigns them to
-    /// `post_split_siblings`.
+    /// Remove all members whose name does not match our prefix.
     pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix) {
         self.members = mem::take(&mut self.members)
             .into_iter()
@@ -165,11 +164,11 @@ impl SectionMembers {
             .collect();
     }
 
-    /// Iterate through member infos to ensure they are section approved.
-    pub fn verify(&self, history: &SectionProofChain) -> bool {
-        self.members
-            .values()
-            .all(|member_info| member_info.verify(history))
+    /// Merge two `SectionMembers` into one.
+    pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
+        for (_, info) in other.members {
+            let _ = self.update(info.value, info.proof, section_chain);
+        }
     }
 }
 

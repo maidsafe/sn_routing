@@ -50,35 +50,23 @@ impl SharedState {
         }
     }
 
-    // TODO: merge the new state into the old, don't replace it.
-    pub fn update(&mut self, new: Self) -> Result<(), RoutingError> {
-        if self.our_history.len() > 1 {
-            if *self != new {
-                error!(
-                    "shared state update - mismatch: old: {:?} --- new: {:?}",
-                    self, new
-                );
-                return Err(RoutingError::InvalidState);
-            }
-        } else if !new.self_verify()
-            && !self
-                .our_history
-                .keys()
-                .any(|key| new.our_history.has_key(key))
-        {
-            error!("shared state update - invalid new history: {:?}", new);
-            return Err(RoutingError::InvalidState);
+    // Merge two `SharedState`s into one.
+    pub fn merge(&mut self, other: Self) -> Result<(), RoutingError> {
+        if !other.our_history.self_verify() {
+            return Err(RoutingError::InvalidMessage);
         }
 
-        *self = new;
+        self.our_history
+            .merge(other.our_history)
+            .map_err(|_| RoutingError::UntrustedMessage)?;
+
+        self.sections.merge(other.sections, &self.our_history);
+
+        self.our_members.merge(other.our_members, &self.our_history);
+        self.our_members
+            .remove_not_matching_our_prefix(&self.sections.our().prefix);
 
         Ok(())
-    }
-
-    fn self_verify(&self) -> bool {
-        self.our_history.self_verify()
-            && self.our_members.verify(&self.our_history)
-            && self.sections.verify(&self.our_history)
     }
 
     // Clear all data except that which is needed for non-elders.
@@ -286,7 +274,7 @@ impl SharedState {
     /// Update our knowledge of their section and their knowledge of ours. Returns the actions to
     /// perform (if any).
     pub fn update_section_knowledge(
-        &mut self,
+        &self,
         our_name: &XorName,
         src_prefix: &Prefix,
         src_key: &bls::PublicKey,
