@@ -16,7 +16,7 @@ use crate::{
 use bls::{PublicKeySet, SecretKeyShare};
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Debug, Formatter},
     mem,
 };
@@ -74,12 +74,14 @@ pub struct DkgVoter {
     // Holds the info of the expected new elders.
     dkg_cache: BTreeMap<DkgKey, EldersInfo>,
     // Holds the key generator that carries out the DKG voting procedure.
-    key_gen_map: BTreeMap<DkgKey, KeyGen<FullId>>,
+    key_gen_map: HashMap<DkgKey, KeyGen<FullId>>,
     // Holds the accumulated votes that sent to us BEFORE the completion of the DKG process.
     pending_accumulated_votes: VecDeque<(Vote, Proof)>,
     // Cache of notified dkg_result. During split or demote,
     // old elders will be notified by the new elders.
     dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
+    // section_key_index of the latest completed DKG.
+    current_section_key_index: u64,
     timer_token: u64,
 }
 
@@ -90,6 +92,7 @@ impl Default for DkgVoter {
             key_gen_map: Default::default(),
             pending_accumulated_votes: Default::default(),
             dkg_result_cache: Default::default(),
+            current_section_key_index: 0,
             timer_token: 0,
         }
     }
@@ -123,9 +126,18 @@ impl DkgVoter {
         (completed, backlog_votes)
     }
 
-    // Free a completed key generator.
-    pub fn remove_voter(&mut self, dkg_key: &DkgKey) {
-        let _ = self.key_gen_map.remove(dkg_key);
+    // Free key generators not newer than the current one.
+    // After a DKG completion, routing will carry out votes of OurKey and SectionInfo.
+    // Only after these votes got consensused, will then the section_key_index got updated.
+    // So, a routing level check of section_index will not be enough within the gap.
+    // i.e. any DKG message received during the gap will cause a new round of DKG for the same.
+    // Hence here the info of completed highest section_key_index shall be recorded and checked
+    // against to cover the gap.
+    pub fn remove_voter(&mut self, current_section_key_index: u64) {
+        self.key_gen_map
+            .retain(|key, _| key.1 > current_section_key_index);
+        self.current_section_key_index =
+            std::cmp::max(self.current_section_key_index, current_section_key_index);
     }
 
     // Make key generator progress with timed phase. Returns with DkgMessages to broadcast if any.
@@ -164,7 +176,9 @@ impl DkgVoter {
         full_id: &FullId,
         dkg_key: &DkgKey,
     ) -> Vec<DkgMessage<PublicId>> {
-        if self.key_gen_map.contains_key(dkg_key) {
+        if (self.current_section_key_index > 0 && self.current_section_key_index >= dkg_key.1)
+            || self.key_gen_map.iter().any(|(key, _)| key.1 == dkg_key.1)
+        {
             trace!("already have key_gen of {:?}", dkg_key);
             return vec![];
         }
