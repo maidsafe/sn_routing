@@ -328,7 +328,7 @@ impl Approved {
             {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
             } else {
-                self.dkg_voter.remove_voter(&dkg_key);
+                self.dkg_voter.remove_voter(dkg_key.1);
             }
         }
 
@@ -1121,6 +1121,8 @@ impl Approved {
 
         let msg_parsed = bincode::deserialize(&message_bytes[..])?;
 
+        trace!("processing dkg message {:?}", msg_parsed);
+
         let responses = self.dkg_voter.process_dkg_message(
             &mut core.rng,
             &(participants.clone(), section_key_index),
@@ -1381,6 +1383,7 @@ impl Approved {
         section_key_index: u64,
         dkg_message: DkgMessage<PublicId>,
     ) -> Result<()> {
+        trace!("broadcasting DKG message {:?}", dkg_message);
         let message: Bytes = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             participants: participants.clone(),
