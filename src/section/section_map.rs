@@ -12,7 +12,9 @@ use super::{
 };
 use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
 
+use serde::Serialize;
 use std::{
+    cmp::Ordering,
     collections::{BTreeSet, HashSet},
     iter,
 };
@@ -32,13 +34,6 @@ pub struct SectionMap {
 }
 
 impl SectionMap {
-    pub fn verify(&self, history: &SectionProofChain) -> bool {
-        self.our.verify(history)
-            && self.neighbours.iter().all(|proven| proven.verify(history))
-            && self.keys.iter().all(|proven| proven.verify(history))
-            && self.knowledge.iter().all(|proven| proven.verify(history))
-    }
-
     pub fn new(our_info: Proven<EldersInfo>) -> Self {
         Self {
             our: our_info,
@@ -116,6 +111,46 @@ impl SectionMap {
     /// Returns whether the given peer is elder in a known sections.
     pub fn is_elder(&self, name: &XorName) -> bool {
         self.get_elder(name).is_some()
+    }
+
+    /// Merge two `SectionMap`s into one.
+    /// TODO: make this operation commutative, associative and idempotent (CRDT)
+    pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
+        match cmp_section_chain_position(&self.our, &other.our, section_chain) {
+            Some(Ordering::Less) => {
+                self.our = other.our;
+            }
+            Some(Ordering::Equal) if self.our.value.elders.len() < other.our.value.elders.len() => {
+                // Note: our `EldersInfo` is normally signed with the previous key, except the very
+                // first one which is signed with the latest key. This means that the first and
+                // second `EldersInfo`s are signed with the same key and so comparing only the keys
+                // is not enough to decide which one is newer. To break the ties, we use the fact
+                // that the first `EldersInfo` always has only one elder and the second one has
+                // two.
+                self.our = other.our;
+            }
+            Some(Ordering::Greater) | Some(Ordering::Equal) | None => (),
+        }
+
+        // FIXME: these operations are not commutative:
+
+        for entry in other.neighbours {
+            if entry.verify(section_chain) {
+                let _ = self.neighbours.insert(entry);
+            }
+        }
+
+        for entry in other.keys {
+            if entry.verify(section_chain) {
+                let _ = self.keys.insert(entry);
+            }
+        }
+
+        for entry in other.knowledge {
+            if entry.verify(section_chain) {
+                let _ = self.knowledge.insert(entry);
+            }
+        }
     }
 
     /// Set the new version of our section.
@@ -345,6 +380,29 @@ where
     };
 
     check(our, other, &known)
+}
+
+fn cmp_section_chain_position<T: Serialize>(
+    lhs: &Proven<T>,
+    rhs: &Proven<T>,
+    section_chain: &SectionProofChain,
+) -> Option<Ordering> {
+    match (lhs.self_verify(), rhs.self_verify()) {
+        (true, true) => (),
+        (true, false) => return Some(Ordering::Greater),
+        (false, true) => return Some(Ordering::Less),
+        (false, false) => return None,
+    }
+
+    let lhs_index = section_chain.index_of(&lhs.proof.public_key);
+    let rhs_index = section_chain.index_of(&rhs.proof.public_key);
+
+    match (lhs_index, rhs_index) {
+        (Some(lhs_index), Some(rhs_index)) => Some(lhs_index.cmp(&rhs_index)),
+        (Some(_), None) => Some(Ordering::Greater),
+        (None, Some(_)) => Some(Ordering::Less),
+        (None, None) => None,
+    }
 }
 
 #[cfg(test)]

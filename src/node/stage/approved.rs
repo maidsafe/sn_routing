@@ -416,9 +416,6 @@ impl Approved {
                 }
             }
             Variant::Promote { shared_state, .. } => {
-                if self.is_our_elder(our_id) {
-                    return Ok(MessageStatus::Useless);
-                }
                 // DKG not completed yet.
                 if !self
                     .section_keys_provider
@@ -725,15 +722,20 @@ impl Approved {
             return Ok(());
         }
 
-        info!("Promoted to elder");
-        info!("section update: {:?}", shared_state.our_info());
-
         let old_prefix = self.shared_state.our_info().prefix;
+        let was_elder = self.is_our_elder(core.id());
+
+        self.shared_state.merge(shared_state)?;
+
+        if was_elder {
+            // Already elder, nothing else to do.
+            return Ok(());
+        }
+
+        info!("Promoted to elder");
+        info!("section update: {:?}", self.shared_state.our_info());
 
         core.msg_filter.reset();
-
-        // TODO: verify `shared_state` !
-        self.shared_state.update(shared_state)?;
 
         self.reset_parsec(core, parsec_version)?;
         self.gossip_timer_token = Some(core.timer.schedule(self.consensus_engine.gossip_period()));
@@ -780,28 +782,10 @@ impl Approved {
             return Ok(());
         }
 
-        if self
-            .shared_state
-            .our_history
-            .has_key(shared_state.our_history.last_key())
-        {
-            debug!("ignore lagging notification - already updated");
-            return Ok(());
-        }
-
-        if !shared_state
-            .our_history
-            .has_key(self.shared_state.our_history.last_key())
-        {
-            debug!("ignore lagging notification - our key is ahead");
-            return Ok(());
-        }
-
         trace!("Handle NotifyLagging");
-        let old_prefix = self.shared_state.our_info().prefix;
 
-        // TODO: verify `shared_state` !
-        self.shared_state.update(shared_state)?;
+        let old_prefix = self.shared_state.our_info().prefix;
+        self.shared_state.merge(shared_state)?;
 
         self.reset_parsec(core, parsec_version)?;
 
@@ -1488,7 +1472,7 @@ impl Approved {
         event: AccumulatingEvent,
         proof: Proof,
     ) -> Result<()> {
-        debug!("Handle consensus on {:?}", event);
+        debug!("handle consensus on {:?}", event);
 
         match event {
             AccumulatingEvent::Online {
@@ -1514,7 +1498,7 @@ impl Approved {
         vote: Vote,
         proof: Proof,
     ) -> Result<()> {
-        debug!("Handle consensus on {:?}", vote);
+        debug!("handle consensus on {:?}", vote);
 
         match vote {
             Vote::SectionInfo(elders_info) => {
