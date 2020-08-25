@@ -656,18 +656,10 @@ impl Node {
                         *msg.proof_chain_last_key()?,
                     )?;
                 }
-                Variant::EldersUpdate(payload) => {
-                    let section_key = *msg.proof_chain_last_key()?;
-                    stage.handle_elders_update(&mut self.core, section_key, payload.clone())?
-                }
-                Variant::Promote {
+                Variant::Sync {
                     shared_state,
                     parsec_version,
-                } => stage.handle_promote(&mut self.core, shared_state.clone(), *parsec_version)?,
-                Variant::NotifyLagging {
-                    shared_state,
-                    parsec_version,
-                } => stage.handle_lagging(&mut self.core, shared_state.clone(), *parsec_version)?,
+                } => stage.handle_sync(&mut self.core, shared_state.clone(), *parsec_version)?,
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;

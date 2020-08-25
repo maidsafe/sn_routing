@@ -411,7 +411,7 @@ mod tests {
             elders_info,
             parsec_version: 1,
         };
-        let variant = Variant::EldersUpdate(elders_update);
+        let variant = Variant::NodeApproval(elders_update);
         let message = Message::single_src(
             &full_id,
             DstLocation::Direct,

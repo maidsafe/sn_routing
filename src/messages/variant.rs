@@ -42,15 +42,8 @@ pub(crate) enum Variant {
     /// Message sent to newly joined node containing the necessary info to become a member of our
     /// section.
     NodeApproval(EldersUpdate),
-    /// Message sent to non-elders to update them about the current section elders.
-    EldersUpdate(EldersUpdate),
-    /// Message sent to newly promoted elders to notify them about the promotion.
-    Promote {
-        shared_state: SharedState,
-        parsec_version: u64,
-    },
-    /// Message sent to a lagging peer.
-    NotifyLagging {
+    /// Message sent to all members to update them about the state of our section.
+    Sync {
         shared_state: SharedState,
         parsec_version: u64,
     },
@@ -122,7 +115,7 @@ impl Variant {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         match self {
-            Self::NodeApproval(payload) | Self::EldersUpdate(payload) => {
+            Self::NodeApproval(payload) => {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
                 payload.verify(proof_chain, trusted_keys)
             }
@@ -153,21 +146,11 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::EldersUpdate(payload) => write!(f, "EldersUpdate({:?})", payload),
-            Self::Promote {
+            Self::Sync {
                 shared_state,
                 parsec_version,
             } => f
-                .debug_struct("Promote")
-                .field("elders_info", shared_state.sections.our())
-                .field("section_key", shared_state.our_history.last_key())
-                .field("parsec_version", parsec_version)
-                .finish(),
-            Self::NotifyLagging {
-                shared_state,
-                parsec_version,
-            } => f
-                .debug_struct("NotifyLagging")
+                .debug_struct("Sync")
                 .field("elders_info", shared_state.sections.our())
                 .field("section_key", shared_state.our_history.last_key())
                 .field("parsec_version", parsec_version)
