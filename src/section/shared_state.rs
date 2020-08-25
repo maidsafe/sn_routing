@@ -71,11 +71,17 @@ impl SharedState {
 
     // Clear all data except that which is needed for non-elders.
     pub fn demote(&mut self) {
-        let section_key = *self.our_history.last_key();
-        // TODO: avoid this clone.
-        let elders_info = self.sections.proven_our().clone();
+        *self = self.to_minimal();
+    }
 
-        *self = Self::new(section_key, elders_info);
+    pub fn to_minimal(&self) -> Self {
+        let first_key_index = self.our_info_signing_key_index();
+
+        Self {
+            our_history: self.our_history.slice(first_key_index..),
+            our_members: Default::default(),
+            sections: SectionMap::new(self.sections.proven_our().clone()),
+        }
     }
 
     /// Returns our own current elders info.
@@ -89,16 +95,8 @@ impl SharedState {
         &self,
         their_knowledge: Option<u64>,
     ) -> SectionProofChain {
-        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
-        // present in our section proof chain. This is currently guaranteed, because we use the
-        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
-        // section key at the same time.
-        let first_index = self
-            .our_history
-            .index_of(&self.sections.proven_our().proof.public_key)
-            .expect("our EldersInfo signed with unknown key");
+        let first_index = self.our_info_signing_key_index();
         let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
-
         self.our_history.slice(first_index..)
     }
 
@@ -190,14 +188,6 @@ impl SharedState {
             .update(member_info, proof, &self.our_history)
     }
 
-    /// Returns the `P2pNode` of all non-elders in the section
-    pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_members
-            .joined()
-            .filter(move |info| !self.our_info().elders.contains_key(info.p2p_node.name()))
-            .map(|info| &info.p2p_node)
-    }
-
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
     pub fn promote_and_demote_elders(
@@ -235,8 +225,8 @@ impl SharedState {
 
     pub fn update_our_section(
         &mut self,
-        elders_info: Proven<EldersInfo>,
         section_key: Proven<bls::PublicKey>,
+        elders_info: Proven<EldersInfo>,
     ) {
         // The section public key of the proof shall be known to us.
         if !self.our_history.has_key(&section_key.proof.public_key) {
@@ -465,6 +455,16 @@ impl SharedState {
     fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
         self.our_members
             .elder_candidates(elder_size, self.sections.our())
+    }
+
+    fn our_info_signing_key_index(&self) -> u64 {
+        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
+        // present in our section proof chain. This is currently guaranteed, because we use the
+        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
+        // section key at the same time.
+        self.our_history
+            .index_of(&self.sections.proven_our().proof.public_key)
+            .expect("our EldersInfo signed with unknown key")
     }
 }
 

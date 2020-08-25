@@ -77,9 +77,7 @@ impl Bootstrapping {
             | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
-            | Variant::EldersUpdate { .. }
-            | Variant::Promote { .. }
-            | Variant::NotifyLagging { .. }
+            | Variant::Sync { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)

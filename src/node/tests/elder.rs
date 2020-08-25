@@ -692,18 +692,18 @@ fn handle_bounced_unknown_message() {
     test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
     env.poll();
 
-    let mut received_notify_lagging = false;
+    let mut received_sync = false;
     let mut received_resent_message = false;
 
     for (_, msg) in other_node.received_messages() {
         match msg.variant() {
-            Variant::NotifyLagging { .. } => received_notify_lagging = true,
+            Variant::Sync { .. } => received_sync = true,
             Variant::UserMessage(_) => received_resent_message = true,
             _ => (),
         }
     }
 
-    assert!(received_notify_lagging);
+    assert!(received_sync);
     assert!(received_resent_message);
 }
 

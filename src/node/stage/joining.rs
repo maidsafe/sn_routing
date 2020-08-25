@@ -96,8 +96,7 @@ impl Joining {
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
-            | Variant::EldersUpdate { .. }
-            | Variant::Promote { .. }
+            | Variant::Sync { .. }
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
@@ -111,7 +110,6 @@ impl Joining {
             | Variant::JoinRequest(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::NotifyLagging { .. }
             | Variant::Ping => Ok(MessageStatus::Useless),
         }
     }

@@ -39,15 +39,6 @@ pub struct SectionKeysProvider {
 }
 
 impl SectionKeysProvider {
-    pub fn has_key_or_candidate(&self, elders_info: &EldersInfo) -> bool {
-        let first_name = if let Some(first_name) = elders_info.elders.keys().next() {
-            first_name
-        } else {
-            return self.current.is_some();
-        };
-        self.current.is_some() || self.new.contains_key(first_name)
-    }
-
     pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
             current,

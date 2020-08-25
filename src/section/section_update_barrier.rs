@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::EldersInfo;
-use crate::{consensus::Proven, id::P2pNode};
+use crate::consensus::Proven;
 
 use xor_name::{Prefix, XorName};
 
@@ -126,19 +126,6 @@ impl SectionUpdateBarrier {
 pub struct SectionUpdateDetails {
     pub our: OurDetails,
     pub sibling: Option<SiblingDetails>,
-}
-
-impl SectionUpdateDetails {
-    // Returns all the nodes that will be elders after this update. In case of a split, returns
-    // nodes from both subsections.
-    pub fn all_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our.info.value.elders.values().chain(
-            self.sibling
-                .as_ref()
-                .into_iter()
-                .flat_map(|sibling| sibling.info.value.elders.values()),
-        )
-    }
 }
 
 #[derive(Eq, PartialEq, Debug)]
