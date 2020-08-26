@@ -11,7 +11,7 @@ use crate::{
     consensus::{ParsecRequest, ParsecResponse, ProofShare, Proven, Vote},
     error::{Result, RoutingError},
     id::PublicId,
-    relocation::{RelocateDetails, RelocatePayload},
+    relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
 };
 use bytes::Bytes;
@@ -47,8 +47,12 @@ pub(crate) enum Variant {
         shared_state: SharedState,
         parsec_version: u64,
     },
-    /// Send from a section to the node being relocated.
+    /// Send from a section to the node to be immediately relocated.
     Relocate(RelocateDetails),
+    /// Send:
+    /// - from a section to a current elder to be relocated after they are demoted.
+    /// - from the node to be relocated back to its section after it was demoted.
+    RelocatePromise(RelocatePromise),
     /// Sent from members of a section message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<AccumulatingMessage>),
@@ -156,6 +160,7 @@ impl Debug for Variant {
                 .field("parsec_version", parsec_version)
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
+            Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
             Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),

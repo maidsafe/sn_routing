@@ -79,6 +79,7 @@ impl Bootstrapping {
             Variant::NodeApproval(_)
             | Variant::Sync { .. }
             | Variant::Relocate(_)
+            | Variant::RelocatePromise(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)

@@ -40,7 +40,7 @@ pub enum Vote {
         key_index: u64,
     },
 
-    // Votes to change the age of the given node.
+    // Voted to change the age of the given node.
     ChangeAge(MemberInfo),
 }
 

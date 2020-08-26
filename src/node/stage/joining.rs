@@ -98,6 +98,7 @@ impl Joining {
             | Variant::UserMessage(_)
             | Variant::Sync { .. }
             | Variant::Relocate(_)
+            | Variant::RelocatePromise(_)
             | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }

@@ -14,7 +14,7 @@ use crate::{
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
-    relocation::{self, RelocateDetails},
+    relocation::{self, RelocateAction, RelocateDetails, RelocatePromise},
 };
 
 use std::{
@@ -118,6 +118,17 @@ impl SharedState {
             .active()
             .map(|info| &info.p2p_node)
             .chain(self.sections.neighbour_elders())
+    }
+
+    /// Returns our members that are either joined or are left but still elders.
+    pub fn active_members(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_members
+            .all()
+            .filter(move |info| {
+                self.our_members.is_joined(info.p2p_node.name())
+                    || self.is_peer_our_elder(info.p2p_node.name())
+            })
+            .map(|info| &info.p2p_node)
     }
 
     /// Returns a section member `P2pNode`
@@ -330,67 +341,51 @@ impl SharedState {
         &self,
         churn_name: &XorName,
         churn_signature: &bls::Signature,
-        elder_size: usize,
-    ) -> Vec<(MemberInfo, RelocateDetails)> {
-        // We can relocate at most one elder, but any number of non-elders.
-        let mut relocated_nodes = vec![];
-        let mut relocated_elder = None;
-
-        let num_joined_elders = self
-            .our_info()
-            .elders
-            .keys()
-            .filter(|name| self.our_members.is_joined(name))
-            .count();
-        let can_relocate_elders = num_joined_elders >= elder_size;
-
-        for info in self.our_members.joined_proven() {
-            if relocation::check(info.value.age, churn_signature) {
-                if self.is_peer_our_elder(info.value.p2p_node.name()) {
-                    if !can_relocate_elders {
-                        continue;
-                    }
-
-                    if let Some(other) = relocated_elder.take() {
-                        relocated_elder = Some(relocation::select(info, other));
-                    } else {
-                        relocated_elder = Some(info);
-                    }
-                } else {
-                    relocated_nodes.push(info);
-                }
-            }
-        }
-
-        relocated_nodes.extend(relocated_elder.take());
-        relocated_nodes
-            .into_iter()
+    ) -> Vec<(MemberInfo, RelocateAction)> {
+        self.our_members
+            .joined_proven()
+            .filter(|info| relocation::check(info.value.age, churn_signature))
             .map(|info| {
                 (
                     info.value.clone(),
-                    self.create_relocation_details(info, churn_name),
+                    self.create_relocation_action(info, churn_name),
                 )
             })
             .collect()
     }
 
-    fn create_relocation_details(
+    pub fn create_relocation_details(
         &self,
-        info: &Proven<MemberInfo>,
-        churn_name: &XorName,
+        info: &MemberInfo,
+        destination: XorName,
     ) -> RelocateDetails {
-        let pub_id = *info.value.p2p_node.public_id();
-        let destination = relocation::compute_destination(pub_id.name(), churn_name);
         let destination_key = *self
             .sections
             .key_by_name(&destination)
             .unwrap_or_else(|| self.our_history.first_key());
 
         RelocateDetails {
-            pub_id,
+            pub_id: *info.p2p_node.public_id(),
             destination,
             destination_key,
-            age: info.value.age.saturating_add(1),
+            age: info.age.saturating_add(1),
+        }
+    }
+
+    fn create_relocation_action(
+        &self,
+        info: &Proven<MemberInfo>,
+        churn_name: &XorName,
+    ) -> RelocateAction {
+        let destination = relocation::compute_destination(info.value.p2p_node.name(), churn_name);
+
+        if self.is_peer_our_elder(info.value.p2p_node.name()) {
+            RelocateAction::Delayed(RelocatePromise {
+                name: *info.value.p2p_node.name(),
+                destination,
+            })
+        } else {
+            RelocateAction::Instant(self.create_relocation_details(&info.value, destination))
         }
     }
 

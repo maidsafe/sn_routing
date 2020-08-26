@@ -667,6 +667,9 @@ impl Node {
                         self.relocate(params)
                     }
                 }
+                Variant::RelocatePromise(promise) => {
+                    stage.handle_relocate_promise(&mut self.core, *promise, msg.to_bytes())?
+                }
                 Variant::MessageSignature(accumulating_msg) => {
                     let result = stage.handle_message_signature(
                         &mut self.core,
