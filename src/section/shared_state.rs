@@ -25,7 +25,7 @@ use std::{
 };
 use xor_name::{Prefix, XorName};
 
-/// Section state that is shared among all elders of a section via Parsec consensus.
+/// Section state that is shared among all elders of a section via consensus.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SharedState {
     /// Our section's key history for Secure Message Delivery

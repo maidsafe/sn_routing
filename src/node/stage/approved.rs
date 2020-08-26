@@ -8,9 +8,8 @@
 
 use crate::{
     consensus::{
-        self, threshold_count, AccumulatingEvent, AccumulationError, ConsensusEngine, DkgKey,
-        DkgResult, DkgVoter, ParsecRequest, ParsecResponse, Proof, ProofShare, Proven, Vote,
-        VoteAccumulator,
+        self, threshold_count, AccumulationError, DkgKey, DkgResult, DkgVoter, Proof, ProofShare,
+        Proven, Vote, VoteAccumulator,
     },
     core::Core,
     delivery_group,
@@ -24,7 +23,6 @@ use crate::{
     },
     pause::PausedState,
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
-    rng::MainRng,
     section::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
         SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
@@ -35,9 +33,8 @@ use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use itertools::Itertools;
-use rand::Rng;
 use serde::Serialize;
-use std::{cmp::Ordering, collections::BTreeSet, iter, net::SocketAddr};
+use std::{collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
 // Interval to progress DKG timed phase
@@ -46,12 +43,10 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub(crate) struct Approved {
-    pub consensus_engine: ConsensusEngine,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
     vote_accumulator: VoteAccumulator,
-    gossip_timer_token: Option<u64>,
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
@@ -87,38 +82,21 @@ impl Approved {
             secret_key_share,
         };
 
-        Self::new(core, shared_state, 0, Some(section_key_share))
+        Self::new(shared_state, Some(section_key_share))
     }
 
     // Create the approved stage for a regular node.
     pub fn new(
-        core: &mut Core,
         shared_state: SharedState,
-        parsec_version: u64,
         section_key_share: Option<SectionKeyShare>,
     ) -> Result<Self> {
-        let consensus_engine = ConsensusEngine::new(
-            &mut core.rng,
-            core.full_id.clone(),
-            shared_state.sections.our(),
-            parsec_version,
-        );
-
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
-        let gossip_timer_token = if shared_state.our_info().elders.contains_key(core.name()) {
-            Some(core.timer.schedule(consensus_engine.gossip_period()))
-        } else {
-            None
-        };
-
         Ok(Self {
-            consensus_engine,
             shared_state,
             section_keys_provider,
             message_accumulator: Default::default(),
             vote_accumulator: Default::default(),
-            gossip_timer_token,
             section_update_barrier: Default::default(),
             churn_in_progress: false,
             members_changed: false,
@@ -130,7 +108,6 @@ impl Approved {
     pub fn pause(self, core: Core) -> PausedState {
         PausedState {
             network_params: core.network_params,
-            consensus_engine: self.consensus_engine,
             shared_state: self.shared_state,
             section_keys_provider: self.section_keys_provider,
             full_id: core.full_id,
@@ -161,26 +138,11 @@ impl Approved {
             user_event_tx,
         );
 
-        let is_self_elder = state
-            .shared_state
-            .sections
-            .our()
-            .elders
-            .contains_key(core.name());
-
-        let gossip_timer_token = if is_self_elder {
-            Some(core.timer.schedule(state.consensus_engine.gossip_period()))
-        } else {
-            None
-        };
-
         let stage = Self {
-            consensus_engine: state.consensus_engine,
             shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             message_accumulator: state.msg_accumulator,
             vote_accumulator: state.vote_accumulator,
-            gossip_timer_token,
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
             churn_in_progress: false,
@@ -190,18 +152,6 @@ impl Approved {
         };
 
         (stage, core)
-    }
-
-    // Cast a vote for totally ordered event via parsec.
-    pub fn cast_ordered_vote(&mut self, event: AccumulatingEvent) {
-        match self
-            .section_keys_provider
-            .key_share()
-            .and_then(|share| event.clone().into_network_event(share))
-        {
-            Ok(event) => self.consensus_engine.vote_for(event),
-            Err(error) => error!("Failed to create NetworkEvent {:?}: {}", event, error),
-        }
     }
 
     // Cast a vote that doesn't need total order, only section consensus.
@@ -260,12 +210,9 @@ impl Approved {
             // The key is recognized as non-last, indicating the peer is lagging.
             core.send_direct_message(
                 peer,
-                Variant::Sync {
-                    // TODO: consider sending only those parts of the shared state that are new
-                    // since `public_key` was the latest key.
-                    shared_state: self.shared_state.clone(),
-                    parsec_version: self.consensus_engine.parsec_version(),
-                },
+                // TODO: consider sending only those parts of the shared state that are new
+                // since `public_key` was the latest key.
+                Variant::Sync(self.shared_state.clone()),
             );
         }
     }
@@ -311,13 +258,7 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        if self.gossip_timer_token == Some(token) {
-            if self.is_our_elder(core.id()) {
-                self.gossip_timer_token =
-                    Some(core.timer.schedule(self.consensus_engine.gossip_period()));
-                self.consensus_engine.reset_gossip_period();
-            }
-        } else if self.dkg_voter.timer_token() == token {
+        if self.dkg_voter.timer_token() == token {
             self.dkg_voter
                 .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
             self.progress_dkg(core);
@@ -359,29 +300,6 @@ impl Approved {
         }
 
         self.check_dkg(core);
-    }
-
-    pub fn finish_handle_input(&mut self, core: &mut Core) {
-        if self.shared_state.our_info().elders.len() == 1 {
-            // If we're the only node then invoke poll_all directly
-            if let Err(error) = self.poll_all(core) {
-                error!("poll failed: {:?}", error);
-            }
-        }
-
-        if self.section_keys_provider.key_share().is_ok()
-            && self.is_our_elder(core.id())
-            && self.consensus_engine.needs_pruning()
-        {
-            self.cast_ordered_vote(AccumulatingEvent::ParsecPrune);
-        }
-
-        self.send_parsec_gossip(core, None);
-    }
-
-    /// Vote for a user-defined event.
-    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
-        self.cast_ordered_vote(AccumulatingEvent::User(event));
     }
 
     /// Is the node with the given id an elder in our section?
@@ -429,11 +347,6 @@ impl Approved {
                     return Ok(MessageStatus::Useful);
                 } else {
                     return Ok(MessageStatus::Unknown);
-                }
-            }
-            Variant::ParsecRequest(..) | Variant::ParsecResponse(..) => {
-                if !self.is_our_elder(our_id) {
-                    return Ok(MessageStatus::Useless);
                 }
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
@@ -637,13 +550,7 @@ impl Approved {
         // First send Sync to update the peer, then resend the message itself. If the messages
         // arrive in the same order they were sent, the Sync should update the peer so it will then
         // be able to handle the resent message. If not, the peer will bounce the message again.
-        core.send_direct_message(
-            sender.peer_addr(),
-            Variant::Sync {
-                shared_state: self.shared_state.clone(),
-                parsec_version: self.consensus_engine.parsec_version(),
-            },
-        );
+        core.send_direct_message(sender.peer_addr(), Variant::Sync(self.shared_state.clone()));
         core.send_message_to_target(sender.peer_addr(), bounced_msg_bytes)
     }
 
@@ -680,22 +587,10 @@ impl Approved {
         }
     }
 
-    pub fn handle_sync(
-        &mut self,
-        core: &mut Core,
-        shared_state: SharedState,
-        parsec_version: u64,
-    ) -> Result<()> {
+    pub fn handle_sync(&mut self, core: &mut Core, shared_state: SharedState) -> Result<()> {
         if self.update_shared_state(core, shared_state)? {
             core.msg_filter.reset();
             self.send_sync(core, self.shared_state.clone())?;
-        }
-
-        // Note: this is insecure, because the parsec version is not signed by the section and so
-        // it cannot be trusted. It's probably not worth fixing because parsec is going to be
-        // removed soon.
-        if parsec_version > self.consensus_engine.parsec_version() {
-            self.reset_parsec(core, parsec_version)?;
         }
 
         Ok(())
@@ -931,64 +826,8 @@ impl Approved {
         )
     }
 
-    pub fn handle_parsec_request(
-        &mut self,
-        core: &mut Core,
-        msg_version: u64,
-        parsec_request: ParsecRequest,
-        p2p_node: P2pNode,
-    ) -> Result<()> {
-        trace!(
-            "handle parsec request v{} from {} (last: v{})",
-            msg_version,
-            p2p_node.public_id(),
-            self.consensus_engine.parsec_version(),
-        );
-
-        let response = self.consensus_engine.handle_parsec_request(
-            msg_version,
-            parsec_request,
-            *p2p_node.public_id(),
-        );
-
-        if let Some(response) = response {
-            trace!("send parsec response v{} to {:?}", msg_version, p2p_node,);
-            core.send_direct_message(p2p_node.peer_addr(), response);
-        }
-
-        match msg_version.cmp(&self.consensus_engine.parsec_version()) {
-            Ordering::Equal => self.poll_all(core),
-            Ordering::Greater => {
-                // We are lagging behind. Send a request whose response might help us catch up.
-                self.send_parsec_gossip(
-                    core,
-                    Some((self.consensus_engine.parsec_version(), p2p_node)),
-                );
-                Ok(())
-            }
-            Ordering::Less => Ok(()),
-        }
-    }
-
-    pub fn handle_parsec_response(
-        &mut self,
-        core: &mut Core,
-        msg_version: u64,
-        parsec_response: ParsecResponse,
-        pub_id: PublicId,
-    ) -> Result<()> {
-        trace!("handle parsec response v{} from {}", msg_version, pub_id);
-
-        self.consensus_engine
-            .handle_parsec_response(msg_version, parsec_response, pub_id);
-
-        if msg_version == self.consensus_engine.parsec_version() {
-            self.poll_all(core)
-        } else {
-            Ok(())
-        }
-    }
-
+    // TODO: accumulate at least quorum of these messages
+    //       and only then proceed to handle the DKG result.
     pub fn handle_dkg_old_elders(
         &mut self,
         core: &mut Core,
@@ -1125,39 +964,12 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    // Polls and processes all accumulated events.
-    fn poll_all(&mut self, core: &mut Core) -> Result<()> {
-        while self.poll_one(core)? {}
-        self.vote_for_remove_unresponsive_peers(core)
-    }
-
-    // Polls and processes the next accumulated event. Returns whether any event was processed.
-    //
-    // If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
-    // containers.
-    fn poll_one(&mut self, core: &mut Core) -> Result<bool> {
-        // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
-        // otherwise we might relocate a node that we still need.
-        if self.promote_and_demote_elders(core) {
-            return Ok(true);
-        }
-
-        let (event, proof) = match self.consensus_engine.poll(self.shared_state.sections.our()) {
-            None => return Ok(false),
-            Some((event, proof)) => (event, proof),
-        };
-
-        self.handle_ordered_consensus(core, event, proof)?;
-
-        Ok(true)
-    }
-
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
-    fn promote_and_demote_elders(&mut self, core: &mut Core) -> bool {
+    fn promote_and_demote_elders(&mut self, core: &mut Core) {
         if !self.members_changed || self.churn_in_progress {
             // Nothing changed that could impact elder set, or we cannot process it yet.
-            return false;
+            return;
         }
 
         self.members_changed = false;
@@ -1170,7 +982,7 @@ impl Approved {
             new_infos
         } else {
             self.churn_in_progress = false;
-            return false;
+            return;
         };
 
         if new_infos.len() > 1 {
@@ -1219,8 +1031,6 @@ impl Approved {
                 self.init_dkg_gen(core, &dkg_key);
             }
         }
-
-        true
     }
 
     fn init_dkg_gen(&mut self, core: &mut Core, dkg_key: &DkgKey) {
@@ -1372,22 +1182,6 @@ impl Approved {
                 <= core.network_params.recommended_section_size
     }
 
-    fn handle_ordered_consensus(
-        &mut self,
-        core: &mut Core,
-        event: AccumulatingEvent,
-        _proof: Proof,
-    ) -> Result<()> {
-        debug!("handle consensus on {:?}", event);
-
-        match event {
-            AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
-            AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
-        }
-
-        Ok(())
-    }
-
     fn handle_unordered_consensus(
         &mut self,
         core: &mut Core,
@@ -1481,7 +1275,6 @@ impl Approved {
 
         info!("handle Online: {} (age: {})", p2p_node, age);
 
-        self.members_changed = true;
         self.increment_ages(core, p2p_node.name(), &signature)?;
         self.send_node_approval(core, &p2p_node, their_knowledge)?;
         self.print_network_stats();
@@ -1498,6 +1291,9 @@ impl Approved {
                 age,
             });
         }
+
+        self.members_changed = true;
+        let _ = self.promote_and_demote_elders(core);
 
         Ok(())
     }
@@ -1519,7 +1315,6 @@ impl Approved {
 
         info!("handle Offline: {}", p2p_node);
 
-        self.members_changed = true;
         self.increment_ages(core, p2p_node.name(), &signature)?;
         core.transport.disconnect(*p2p_node.peer_addr());
 
@@ -1527,6 +1322,9 @@ impl Approved {
             name: *p2p_node.name(),
             age,
         });
+
+        self.members_changed = true;
+        let _ = self.promote_and_demote_elders(core);
 
         Ok(())
     }
@@ -1719,26 +1517,6 @@ impl Approved {
         let _ = self.shared_state.update_member(member_info, proof);
     }
 
-    fn handle_prune_event(&mut self, core: &mut Core) -> Result<()> {
-        if self.churn_in_progress {
-            debug!("ignore ParsecPrune event - churn in progress");
-            return Ok(());
-        }
-
-        info!("handle ParsecPrune");
-
-        self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-        self.send_sync(core, self.shared_state.clone())?;
-
-        Ok(())
-    }
-
-    /// Handle an accumulated `User` event
-    fn handle_user_event(&mut self, core: &mut Core, payload: Vec<u8>) -> Result<(), RoutingError> {
-        core.send_event(Event::Consensus(payload));
-        Ok(())
-    }
-
     fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
         trace!(
             "update our section: {:?}, {:?}",
@@ -1751,8 +1529,6 @@ impl Approved {
         if self.update_shared_state(core, our_diff)? {
             core.msg_filter.reset();
             self.section_update_barrier = Default::default();
-            self.reset_parsec(core, self.consensus_engine.parsec_version() + 1)?;
-
             self.send_sync(core, self.shared_state.clone())?;
         }
 
@@ -1842,8 +1618,6 @@ impl Approved {
             (true, true) | (false, false) => (),
             (false, true) => {
                 info!("Promoted to elder");
-                self.gossip_timer_token =
-                    Some(core.timer.schedule(self.consensus_engine.gossip_period()));
                 core.send_event(Event::PromotedToElder);
 
                 // Ping all members to detect recent lost nodes for which the section might need
@@ -1924,50 +1698,7 @@ impl Approved {
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Parsec management
-    ////////////////////////////////////////////////////////////////////////////
-
-    fn reset_parsec(&mut self, core: &mut Core, new_parsec_version: u64) -> Result<()> {
-        let is_elder = self.is_our_elder(core.id());
-
-        let events = self.consensus_engine.prepare_reset(core.name());
-        let events = self.filter_events_to_revote(events);
-
-        self.consensus_engine.finalise_reset(
-            &mut core.rng,
-            core.full_id.clone(),
-            self.shared_state.our_info(),
-            new_parsec_version,
-        );
-
-        if is_elder {
-            for event in events {
-                self.cast_ordered_vote(event);
-            }
-        }
-
-        // FIXME: this should not be necessary because elder membership should always be up to date
-        // after parsec reset. But without this almost all the tests fail. Figure out why.
-        self.members_changed = true;
-
-        Ok(())
-    }
-
-    fn filter_events_to_revote(
-        &self,
-        mut events: Vec<AccumulatingEvent>,
-    ) -> Vec<AccumulatingEvent> {
-        events.retain(|event| match &event {
-            // Drop: no longer relevant after prefix change.
-            AccumulatingEvent::ParsecPrune => false,
-
-            // Always revote
-            AccumulatingEvent::User(_) => true,
-        });
-        events
-    }
-
+    /* FIXME: bring back unresponsiveness detection
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self, core: &mut Core) -> Result<()> {
         let unresponsive_nodes: Vec<_> = self
@@ -1985,14 +1716,13 @@ impl Approved {
 
         Ok(())
     }
+    */
 
     ////////////////////////////////////////////////////////////////////////////
     // Message sending
     ////////////////////////////////////////////////////////////////////////////
 
-    // Send NodeApproval to the current candidate which makes them a section member and allows them
-    // to passively participate in parsec consensus (that is, they can receive gossip and poll
-    // consensused blocks out of parsec, but they can't vote yet)
+    // Send NodeApproval to the current candidate which makes them a section member
     fn send_node_approval(
         &mut self,
         core: &mut Core,
@@ -2038,10 +1768,7 @@ impl Approved {
             } else {
                 shared_state.to_minimal()
             };
-            let variant = Variant::Sync {
-                shared_state,
-                parsec_version: self.consensus_engine.parsec_version(),
-            };
+            let variant = Variant::Sync(shared_state);
 
             trace!("Send {:?} to {:?}", variant, p2p_node);
             let message =
@@ -2055,7 +1782,6 @@ impl Approved {
     fn create_elders_update(&self) -> EldersUpdate {
         EldersUpdate {
             elders_info: self.shared_state.sections.proven_our().clone(),
-            parsec_version: self.consensus_engine.parsec_version(),
         }
     }
 
@@ -2118,68 +1844,6 @@ impl Approved {
         if let Some(bytes) = self.relocate_promise.take() {
             self.send_message_to_our_elders(core, bytes)
         }
-    }
-
-    fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {
-        let (version, gossip_target) = match target {
-            Some((v, p)) => (v, p),
-            None => {
-                if !self.consensus_engine.should_send_gossip() {
-                    return;
-                }
-
-                if let Some(recipient) = self.choose_gossip_recipient(&mut core.rng) {
-                    let version = self.consensus_engine.parsec_version();
-                    (version, recipient)
-                } else {
-                    trace!("can't pick a recipient for gossip");
-                    return;
-                }
-            }
-        };
-
-        match self
-            .consensus_engine
-            .create_gossip(version, gossip_target.public_id())
-        {
-            Ok(msg) => {
-                trace!("send parsec request v{} to {:?}", version, gossip_target,);
-                core.send_direct_message(gossip_target.peer_addr(), msg);
-            }
-            Err(error) => {
-                trace!(
-                    "failed to send parsec request v{} to {:?}: {:?}",
-                    version,
-                    gossip_target,
-                    error
-                );
-            }
-        }
-    }
-
-    fn choose_gossip_recipient(&mut self, rng: &mut MainRng) -> Option<P2pNode> {
-        let recipients = self.consensus_engine.gossip_recipients();
-        if recipients.is_empty() {
-            trace!("not sending parsec request: no recipients");
-            return None;
-        }
-
-        let mut p2p_recipients: Vec<_> = recipients
-            .into_iter()
-            .filter_map(|pub_id| self.shared_state.get_p2p_node(pub_id.name()))
-            .cloned()
-            .collect();
-
-        if p2p_recipients.is_empty() {
-            log_or_panic!(
-                log::Level::Error,
-                "not sending parsec request: not connected to any gossip recipient.",
-            );
-            return None;
-        }
-
-        let rand_index = rng.gen_range(0, p2p_recipients.len());
-        Some(p2p_recipients.swap_remove(rand_index))
     }
 
     // Send message over the network.

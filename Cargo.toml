@@ -28,7 +28,6 @@ lazy_static = { version = "1", optional = true }
 log = "~0.4.8"
 lru_time_cache = "~0.11.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "602dc620", optional = true }
-parsec = { git = "https://github.com/maidsafe/parsec" }
 quic-p2p = { version = "~0.7.0", features = ["upnp"] }
 rand = "~0.7.3"
 rand_core = "~0.5.1"
@@ -47,8 +46,6 @@ structopt = "~0.3.17"
 mock = [
     "lru_time_cache/sn_fake_clock",
     "mock-quic-p2p",
-    "parsec/mock",
-    "parsec/malice-detection",
     "ctrlc",
     "lazy_static",
     "bls/use-insecure-test-only-mock-crypto",

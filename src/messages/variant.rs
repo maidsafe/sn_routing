@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{DkgKey, ParsecRequest, ParsecResponse, ProofShare, Proven, Vote},
+    consensus::{DkgKey, ProofShare, Proven, Vote},
     error::{Result, RoutingError},
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
@@ -41,10 +41,7 @@ pub(crate) enum Variant {
     /// section.
     NodeApproval(EldersUpdate),
     /// Message sent to all members to update them about the state of our section.
-    Sync {
-        shared_state: SharedState,
-        parsec_version: u64,
-    },
+    Sync(SharedState),
     /// Send from a section to the node to be immediately relocated.
     Relocate(RelocateDetails),
     /// Send:
@@ -63,10 +60,6 @@ pub(crate) enum Variant {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Parsec request message
-    ParsecRequest(u64, ParsecRequest),
-    /// Parsec response message
-    ParsecResponse(u64, ParsecResponse),
     /// Message sent to a disconnected peer to trigger lost peer detection.
     Ping,
     /// Sent from a node that can't establish the trust of the contained message to its original
@@ -142,14 +135,10 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::Sync {
-                shared_state,
-                parsec_version,
-            } => f
+            Self::Sync(shared_state) => f
                 .debug_struct("Sync")
                 .field("elders_info", shared_state.sections.our())
                 .field("section_key", shared_state.our_history.last_key())
-                .field("parsec_version", parsec_version)
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
@@ -157,8 +146,6 @@ impl Debug for Variant {
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
-            Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
-            Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),
             Self::BouncedUntrustedMessage(message) => f
                 .debug_tuple("BouncedUntrustedMessage")
@@ -238,8 +225,6 @@ impl Debug for JoinRequest {
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct EldersUpdate {
     pub elders_info: Proven<EldersInfo>,
-    // TODO: this should have signature too.
-    pub parsec_version: u64,
 }
 
 impl EldersUpdate {
@@ -272,7 +257,6 @@ impl Debug for EldersUpdate {
         formatter
             .debug_struct("EldersUpdate")
             .field("elders_info", &self.elders_info)
-            .field("parsec_version", &self.parsec_version)
             .finish()
     }
 }

@@ -88,7 +88,6 @@ impl Env {
                 ..Default::default()
             },
             shared_state,
-            0,
             Some(section_key_share),
         );
 
@@ -315,10 +314,6 @@ impl Env {
         self.updated_other_ids(new_elders_info)
     }
 
-    fn has_unpolled_observations(&self) -> bool {
-        self.subject.has_unpolled_observations()
-    }
-
     fn is_candidate_member(&self) -> bool {
         self.subject.is_peer_our_member(self.candidate.name())
     }
@@ -441,8 +436,6 @@ impl Peer {
 #[test]
 fn construct() {
     let env = Env::new(ELDER_SIZE - 1);
-
-    assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_elder());
 }
 
@@ -451,7 +444,6 @@ fn add_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     env.accumulate_online(env.candidate.clone());
 
-    assert!(!env.has_unpolled_observations());
     assert!(env.is_candidate_member());
     assert!(!env.is_candidate_elder());
 }
@@ -466,7 +458,6 @@ fn add_and_promote_member() {
     env.accumulate_our_key_and_section_info_if_vote(&new_info)
         .unwrap();
 
-    assert!(!env.has_unpolled_observations());
     assert!(env.is_candidate_member());
     assert!(env.is_candidate_elder());
 }
@@ -486,7 +477,6 @@ fn remove_member() {
 
     env.accumulate_offline(env.candidate.clone());
 
-    assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
     assert!(env.is_candidate_elder());
 }
@@ -511,7 +501,6 @@ fn remove_elder() {
     env.accumulate_our_key_and_section_info_if_vote(&info2)
         .unwrap();
 
-    assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());
     assert!(!env.is_candidate_elder());
 }

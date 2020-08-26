@@ -56,7 +56,6 @@ impl Env {
                 ..Default::default()
             },
             shared_state,
-            0,
             None,
         );
 

@@ -224,10 +224,6 @@ impl Node {
 
         self.handle_messages();
 
-        if let Stage::Approved(stage) = &mut self.stage {
-            stage.finish_handle_input(&mut self.core);
-        }
-
         Ok(())
     }
 
@@ -321,22 +317,6 @@ impl Node {
                 dst.contains(self.core.name(), stage.shared_state.our_prefix())
             }
             Stage::Terminated => false,
-        }
-    }
-
-    /// Vote for a user-defined event.
-    /// Returns `InvalidState` error if we are not an elder.
-    pub fn vote_for_user_event(&mut self, event: Vec<u8>) -> Result<()> {
-        let our_id = self.core.id();
-        if let Some(stage) = self
-            .stage
-            .approved_mut()
-            .filter(|stage| stage.is_our_elder(our_id))
-        {
-            stage.vote_for_user_event(event);
-            Ok(())
-        } else {
-            Err(RoutingError::InvalidState)
         }
     }
 
@@ -658,10 +638,9 @@ impl Node {
                         *msg.proof_chain_last_key()?,
                     )?;
                 }
-                Variant::Sync {
-                    shared_state,
-                    parsec_version,
-                } => stage.handle_sync(&mut self.core, shared_state.clone(), *parsec_version)?,
+                Variant::Sync(shared_state) => {
+                    stage.handle_sync(&mut self.core, shared_state.clone())?
+                }
                 Variant::Relocate(_) => {
                     msg.src().check_is_section()?;
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
@@ -693,22 +672,6 @@ impl Node {
                     msg.src().to_sender_node(sender)?,
                     *join_request.clone(),
                 )?,
-                Variant::ParsecRequest(version, request) => {
-                    stage.handle_parsec_request(
-                        &mut self.core,
-                        *version,
-                        request.clone(),
-                        msg.src().to_sender_node(sender)?,
-                    )?;
-                }
-                Variant::ParsecResponse(version, response) => {
-                    stage.handle_parsec_response(
-                        &mut self.core,
-                        *version,
-                        response.clone(),
-                        *msg.src().as_node()?,
-                    )?;
-                }
                 Variant::UserMessage(content) => {
                     self.core.send_event(Event::MessageReceived {
                         content: content.clone(),
@@ -832,12 +795,7 @@ impl Node {
         );
 
         let shared_state = SharedState::new(section_key, elders_update.elders_info);
-        let stage = Approved::new(
-            &mut self.core,
-            shared_state,
-            elders_update.parsec_version,
-            None,
-        )?;
+        let stage = Approved::new(shared_state, None)?;
         self.stage = Stage::Approved(stage);
 
         self.core.msg_queue.extend(msg_backlog);
@@ -903,27 +861,6 @@ impl Node {
             .approved()
             .map(|stage| stage.is_ready(&self.core))
             .unwrap_or(false)
-    }
-
-    /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unpolled_observations(&self) -> bool {
-        self.stage
-            .approved()
-            .map(|stage| {
-                stage
-                    .consensus_engine
-                    .parsec_map()
-                    .has_unpolled_observations()
-            })
-            .unwrap_or(false)
-    }
-
-    /// Returns the version of the latest Parsec instance of this node.
-    pub fn parsec_last_version(&self) -> u64 {
-        self.stage
-            .approved()
-            .map(|stage| stage.consensus_engine.parsec_version())
-            .unwrap_or(0)
     }
 
     /// Checks whether the given location represents self.
@@ -1051,17 +988,15 @@ impl Node {
     pub(crate) fn approved(
         config: NodeConfig,
         shared_state: SharedState,
-        parsec_version: u64,
         section_key_share: Option<SectionKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
-        let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
+        let core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage =
-            Approved::new(&mut core, shared_state, parsec_version, section_key_share).unwrap();
+        let stage = Approved::new(shared_state, section_key_share).unwrap();
         let stage = Stage::Approved(stage);
 
         let node = Self {

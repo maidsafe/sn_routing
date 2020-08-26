@@ -66,8 +66,8 @@ fn disconnect_on_rebootstrap() {
 fn single_section() {
     let sec_size = 10;
     let env = Environment::new(NetworkParams {
-        elder_size: sec_size,
         recommended_section_size: sec_size,
+        ..Default::default()
     });
     let nodes = create_connected_nodes(&env, sec_size);
     verify_invariants_for_nodes(&env, &nodes);
@@ -403,67 +403,6 @@ fn sibling_knowledge_update_after_split() {
 
         true
     });
-}
-
-#[test]
-fn carry_out_parsec_pruning() {
-    let init_network_size = 7;
-    let elder_size = 8;
-    let recommended_section_size = 8;
-    let env = Environment::new(NetworkParams {
-        elder_size,
-        recommended_section_size,
-    });
-    let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes(&env, init_network_size);
-
-    let parsec_versions = |nodes: &[TestNode]| {
-        nodes
-            .iter()
-            .map(|node| node.inner.parsec_last_version())
-            .collect_vec()
-    };
-
-    // There is less than `elder_size` nodes so everyone should become elder.
-    poll_until(&env, &mut nodes, |nodes| {
-        nodes.iter().all(|node| node.inner.is_elder())
-    });
-
-    let initial_parsec_versions = parsec_versions(&nodes);
-
-    // Keeps polling and dispatching user data till trigger a pruning.
-    let max_gossips = 1_000;
-    let mut all_parsec_versions_increased = false;
-    for _ in 0..max_gossips {
-        let event = gen_vec(&mut rng, 10_000);
-        nodes.iter_mut().for_each(|node| {
-            node.inner.vote_for_user_event(event.clone()).unwrap();
-        });
-
-        let mut consensus_counter = 0;
-        poll_until(&env, &mut nodes, |nodes| {
-            consensus_reached(nodes, &event, nodes.len(), &mut consensus_counter)
-        });
-
-        let new_parsec_versions = parsec_versions(&nodes);
-        if initial_parsec_versions
-            .iter()
-            .zip(new_parsec_versions)
-            .all(|(&vi, vn)| vi < vn)
-        {
-            all_parsec_versions_increased = true;
-            break;
-        }
-    }
-
-    assert!(all_parsec_versions_increased);
-
-    let node = create_node_with_contact(&env, &mut nodes[0]);
-    nodes.push(node);
-    poll_until(&env, &mut nodes, |nodes| {
-        node_joined(nodes, nodes.len() - 1)
-    });
-    verify_invariants_for_nodes(&env, &nodes);
 }
 
 #[test]

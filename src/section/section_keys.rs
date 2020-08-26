@@ -60,7 +60,7 @@ impl SectionKeysProvider {
             .ok_or(RoutingError::InvalidElderDkgResult)
     }
 
-    /// Handles a completed parsec DKG Observation.
+    /// Handles a completed DKG
     pub fn handle_dkg_result_event(
         &mut self,
         participants: &BTreeSet<PublicId>,
