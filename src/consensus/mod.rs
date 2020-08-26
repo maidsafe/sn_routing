@@ -16,7 +16,7 @@ pub mod test_utils;
 mod vote;
 
 pub use self::{
-    dkg::{generate_secret_key_set, threshold_count, DkgResult, DkgVoter},
+    dkg::{generate_secret_key_set, threshold_count, DkgKey, DkgResult, DkgVoter},
     network_event::{AccumulatingEvent, NetworkEvent},
     parsec::{
         Block, CreateGossipError, Observation, ParsecNetworkEvent, Request as ParsecRequest,

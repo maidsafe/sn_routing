@@ -41,7 +41,7 @@ use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{
-    consensus::{ConsensusEngine, DkgResult},
+    consensus::{ConsensusEngine, DkgKey, DkgResult},
     section::SectionKeyShare,
 };
 #[cfg(feature = "mock_base")]
@@ -728,28 +728,21 @@ impl Node {
                         message.clone(),
                         src_key,
                     ),
-                Variant::DKGMessage {
-                    participants,
-                    section_key_index,
-                    message,
-                } => {
+                Variant::DKGMessage { dkg_key, message } => {
                     stage.handle_dkg_message(
                         &mut self.core,
-                        participants.clone(),
-                        *section_key_index,
+                        dkg_key,
                         message.clone(),
                         *msg.src().as_node()?,
                     )?;
                 }
                 Variant::DKGOldElders {
-                    participants,
-                    section_key_index,
+                    dkg_key,
                     public_key_set,
                 } => {
                     stage.handle_dkg_old_elders(
                         &mut self.core,
-                        participants.clone(),
-                        *section_key_index,
+                        dkg_key,
                         public_key_set.clone(),
                         *msg.src().as_node()?,
                     )?;
@@ -1100,17 +1093,11 @@ impl Node {
     // Simulate DKG completion
     pub(crate) fn handle_dkg_result_event(
         &mut self,
-        participants: &BTreeSet<PublicId>,
-        section_key_index: u64,
+        dkg_key: &DkgKey,
         dkg_result: &DkgResult,
     ) -> Result<()> {
         if let Some(stage) = self.stage.approved_mut() {
-            stage.handle_dkg_result_event(
-                &mut self.core,
-                participants,
-                section_key_index,
-                dkg_result,
-            )
+            stage.handle_dkg_result_event(&mut self.core, dkg_key, dkg_result)
         } else {
             Err(RoutingError::InvalidState)
         }

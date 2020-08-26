@@ -300,8 +300,10 @@ impl Env {
         };
         // TODO: verify that `subject` actually participated in the DKG
         self.subject.handle_dkg_result_event(
-            &new_info.new_elders_info.elder_ids().copied().collect(),
-            section_key_index,
+            &(
+                new_info.new_elders_info.elder_ids().copied().collect(),
+                section_key_index,
+            ),
             &new_info.dkg_result,
         )
     }
