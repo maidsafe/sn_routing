@@ -407,10 +407,7 @@ mod tests {
         let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info);
 
-        let elders_update = EldersUpdate {
-            elders_info,
-            parsec_version: 1,
-        };
+        let elders_update = EldersUpdate { elders_info };
         let variant = Variant::NodeApproval(elders_update);
         let message = Message::single_src(
             &full_id,

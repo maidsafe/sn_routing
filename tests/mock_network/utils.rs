@@ -312,26 +312,6 @@ pub fn section_split(nodes: &[TestNode], prefix: &Prefix) -> bool {
     }
 }
 
-// Returns whether consensus on the given user event has been reached by at least the given number
-// of nodes.
-// `current_count` must point to a variable that is initialized to zero before the polling starts.
-pub fn consensus_reached(
-    nodes: &[TestNode],
-    expected_content: &[u8],
-    expected_count: usize,
-    current_count: &mut usize,
-) -> bool {
-    for node in nodes {
-        if let Some(Event::Consensus(actual_content)) = node.try_recv_event() {
-            if &actual_content[..] == expected_content {
-                *current_count += 1;
-            }
-        }
-    }
-
-    *current_count >= expected_count
-}
-
 // Returns whether all elders of section `a` know at least `threshold` online nodes from
 // section `b`.
 pub fn section_knowledge_is_up_to_date(

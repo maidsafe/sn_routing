@@ -36,6 +36,7 @@ impl Stage {
         }
     }
 
+    #[cfg(all(test, feature = "mock"))]
     pub fn approved_mut(&mut self) -> Option<&mut Approved> {
         match self {
             Self::Approved(stage) => Some(stage),

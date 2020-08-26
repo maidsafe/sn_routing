@@ -46,8 +46,6 @@ pub enum Event {
         /// The destination location that receives the message.
         dst: DstLocation,
     },
-    /// Consensus on a custom event.
-    Consensus(Vec<u8>),
     /// The node has been promoted to elder
     PromotedToElder,
     /// The node has been promoted to adult
@@ -112,7 +110,6 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::Consensus(payload) => write!(formatter, "Consensus({:<8})", HexFmt(payload)),
             Self::PromotedToElder => write!(formatter, "PromotedToElder"),
             Self::PromotedToAdult => write!(formatter, "PromotedToAdult"),
             Self::Demoted => write!(formatter, "Demoted"),

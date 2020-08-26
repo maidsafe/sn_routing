@@ -116,7 +116,7 @@ pub use self::{
 #[doc(hidden)]
 pub mod test_consts {
     pub use crate::{
-        consensus::{GOSSIP_PERIOD, UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
+        consensus::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
         node::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
         transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
     };

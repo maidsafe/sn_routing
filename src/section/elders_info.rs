@@ -10,7 +10,7 @@
 use crate::{id::FullId, rng::MainRng};
 use crate::{
     id::{P2pNode, PublicId},
-    Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    Prefix, XorName,
 };
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -41,18 +41,6 @@ impl EldersInfo {
         self.elders.values().map(P2pNode::public_id)
     }
 
-    /// Returns `true` if the proofs are from a quorum of this section.
-    pub(crate) fn is_quorum<'a, I>(&self, names: I) -> bool
-    where
-        I: IntoIterator<Item = &'a XorName>,
-    {
-        names
-            .into_iter()
-            .filter(|name| self.elders.contains_key(name))
-            .count()
-            >= quorum_count(self.elders.len())
-    }
-
     /// Returns the index of the elder with `name` in this set of elders.
     /// This is useful for BLS signatures where the signature share needs to be mapped to a
     /// "field element" which is typically a numeric index.
@@ -80,8 +68,11 @@ impl Debug for EldersInfo {
 
 /// Returns the number of vote for a quorum of this section such that:
 /// quorum_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR
+#[cfg(feature = "mock")]
 #[inline]
 pub const fn quorum_count(elder_size: usize) -> usize {
+    use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+
     1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
 }
 

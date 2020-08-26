@@ -83,8 +83,6 @@ impl Bootstrapping {
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
-            | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..)
             | Variant::Ping
             | Variant::BouncedUnknownMessage { .. }
             | Variant::Vote { .. } => Ok(MessageStatus::Useless),

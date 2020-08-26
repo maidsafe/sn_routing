@@ -353,11 +353,6 @@ fn handle_event(
             dst,
             HexFmt(content)
         ),
-        Event::Consensus(payload) => log::info!(
-            "Node #{} reached consensus - payload: {}",
-            index,
-            HexFmt(payload)
-        ),
         Event::RelocationInitiated { name, destination } => log::debug!(
             "Node #{} initiated relocation of {} to {}",
             index,

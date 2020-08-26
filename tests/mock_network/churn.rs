@@ -14,12 +14,8 @@ use rand::{
     Rng,
 };
 use routing::{
-    event::Event,
-    mock::Environment,
-    quorum_count,
-    rng::MainRng,
-    test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig,
+    event::Event, mock::Environment, quorum_count, rng::MainRng, DstLocation, FullId,
+    NetworkParams, Prefix, SrcLocation, TransportConfig,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -51,6 +47,8 @@ fn messages_during_churn() {
     });
 }
 
+// FIXME: disabled due to parsec removal. Modify to post-parsec era and uncomment.
+/*
 // FIXME: this test currently fails because of the "cleanup period" at the end of polling which is
 // there to give the nodes time to detect lost peers. Because of this period, enough parsec gossip
 // messages are exchanged for the parsec pruning to be triggered which interferes with the
@@ -123,6 +121,7 @@ fn remove_unresponsive_node() {
         .collect_vec();
     assert_eq!(still_has_unresponsive_elder, Vec::<&XorName>::new());
 }
+*/
 
 // Parameters for the churn tests.
 //

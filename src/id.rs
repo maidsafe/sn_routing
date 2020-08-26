@@ -8,9 +8,8 @@
 
 use crate::{
     crypto::{encryption, signing},
-    rng::{self, MainRng},
+    rng::MainRng,
 };
-use bincode::{deserialize, serialize};
 use rand::Rng;
 use serde::{de::Deserialize, Deserializer, Serialize, Serializer};
 use std::{
@@ -94,31 +93,6 @@ impl FullId {
     }
 }
 
-impl parsec::SecretId for FullId {
-    type PublicId = PublicId;
-
-    fn public_id(&self) -> &Self::PublicId {
-        self.public_id()
-    }
-
-    fn sign_detached(&self, data: &[u8]) -> <Self::PublicId as parsec::PublicId>::Signature {
-        self.sign(data)
-    }
-
-    fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
-        let mut rng = rng::new();
-        let ciphertext = to
-            .public_encryption_key
-            .encrypt_with_rng(&mut rng, plaintext);
-        serialize(&ciphertext).ok()
-    }
-
-    fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
-        let ciphertext: encryption::Ciphertext = deserialize(ciphertext).ok()?;
-        self.secret_keys.encryption.decrypt(&ciphertext)
-    }
-}
-
 impl bls_dkg::id::SecretId for FullId {
     type PublicId = PublicId;
 
@@ -129,6 +103,8 @@ impl bls_dkg::id::SecretId for FullId {
 
 struct SecretKeys {
     signing: signing::SecretKey,
+    // TODO: remove this field
+    #[allow(unused)]
     encryption: encryption::SecretKey,
 }
 
@@ -165,14 +141,6 @@ impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (public_signing_key, public_encryption_key) = Deserialize::deserialize(deserialiser)?;
         Ok(Self::new(public_signing_key, public_encryption_key))
-    }
-}
-
-impl parsec::PublicId for PublicId {
-    type Signature = signing::Signature;
-
-    fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {
-        self.verify(data, signature)
     }
 }
 
@@ -317,8 +285,8 @@ mod tests {
     #[test]
     fn serialisation() {
         let full_id = FullId::gen(&mut rng::new());
-        let serialised = serialize(full_id.public_id()).unwrap();
-        let parsed = deserialize(&serialised).unwrap();
+        let serialised = bincode::serialize(full_id.public_id()).unwrap();
+        let parsed = bincode::deserialize(&serialised).unwrap();
         assert_eq!(*full_id.public_id(), parsed);
     }
 }
