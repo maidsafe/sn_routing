@@ -25,7 +25,7 @@ pub use self::{
     proven::Proven,
     vote::{Vote, VoteAccumulator},
 };
-pub use safe_network_signature_aggregator::{
+pub use bls_signature_aggregator::{
     AccumulationError, Proof, ProofShare, SignatureAggregator,
 };
 
