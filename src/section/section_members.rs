@@ -32,6 +32,11 @@ pub struct SectionMembers {
 }
 
 impl SectionMembers {
+    /// Returns an iterator over all current (joined) and past (left) members.
+    pub fn all(&self) -> impl Iterator<Item = &MemberInfo> {
+        self.members.values().map(|info| &info.value)
+    }
+
     /// Returns an iterator over the members that are not in the `Left` state.
     pub fn active(&self) -> impl Iterator<Item = &MemberInfo> {
         self.members

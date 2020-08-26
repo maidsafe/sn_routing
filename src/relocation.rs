@@ -9,17 +9,14 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    consensus::Proven,
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
     messages::{Message, Variant},
-    section::MemberInfo,
 };
 
 use bincode::serialize;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use std::cmp::Ordering;
 use xor_name::XorName;
 
 /// Relocation check - returns whether a member with the given age is a candidate for relocation on
@@ -44,26 +41,6 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
     }
 
     output
-}
-
-/// Picks the node to relocate from the two candidates. This is used to break ties in case more than
-/// one elder passed the relocation check. This is because we want to relocate at most one elder,
-/// to avoid breaking the section.
-///
-/// Prefer the older one. Break ties using the signatures.
-pub fn select<'a>(a: &'a Proven<MemberInfo>, b: &'a Proven<MemberInfo>) -> &'a Proven<MemberInfo> {
-    let ordering = a
-        .value
-        .age
-        .cmp(&b.value.age)
-        .then_with(|| a.proof.signature.cmp(&b.proof.signature));
-
-    // Note: `Ordering::Equal` is impossible, as the signatures will never be the same. Still need
-    // to mention it to make the compile happy.
-    match ordering {
-        Ordering::Greater => a,
-        Ordering::Less | Ordering::Equal => b,
-    }
 }
 
 /// Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
@@ -188,6 +165,29 @@ impl RelocatePayload {
 
     pub fn relocate_details(&self) -> &RelocateDetails {
         self.details.relocate_details()
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
+pub struct RelocatePromise {
+    pub name: XorName,
+    pub destination: XorName,
+}
+
+/// Action to relocate a node.
+pub(crate) enum RelocateAction {
+    /// Relocate the node instantly.
+    Instant(RelocateDetails),
+    /// Relocate the node after they are no longer our elder.
+    Delayed(RelocatePromise),
+}
+
+impl RelocateAction {
+    pub fn destination(&self) -> &XorName {
+        match self {
+            Self::Instant(details) => &details.destination,
+            Self::Delayed(promise) => &promise.destination,
+        }
     }
 }
 

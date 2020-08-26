@@ -16,6 +16,7 @@ use crate::{
     transport::Transport,
     TransportEvent,
 };
+use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use std::collections::VecDeque;
 
@@ -41,4 +42,5 @@ pub struct PausedState {
     pub(super) msg_accumulator: MessageAccumulator,
     pub(super) vote_accumulator: VoteAccumulator,
     pub(super) section_update_barrier: SectionUpdateBarrier,
+    pub(super) relocate_promise: Option<Bytes>,
 }

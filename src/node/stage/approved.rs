@@ -22,7 +22,7 @@ use crate::{
         MessageAccumulator, MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
-    relocation::{RelocateDetails, SignedRelocateDetails},
+    relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     rng::MainRng,
     section::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
@@ -59,6 +59,9 @@ pub(crate) struct Approved {
     members_changed: bool,
     // Voter for DKG
     dkg_voter: DkgVoter,
+    // Serialized `RelocatePromise` message that we received from our section. To be sent back to
+    // them after we are demoted.
+    relocate_promise: Option<Bytes>,
 }
 
 impl Approved {
@@ -119,6 +122,7 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
+            relocate_promise: None,
         })
     }
 
@@ -136,6 +140,7 @@ impl Approved {
             msg_accumulator: self.message_accumulator,
             vote_accumulator: self.vote_accumulator,
             section_update_barrier: self.section_update_barrier,
+            relocate_promise: self.relocate_promise,
         }
     }
 
@@ -180,6 +185,7 @@ impl Approved {
             churn_in_progress: false,
             members_changed: false,
             dkg_voter: Default::default(),
+            relocate_promise: state.relocate_promise,
         };
 
         (stage, core)
@@ -446,6 +452,19 @@ impl Approved {
                 if !self.should_handle_vote(&accumulating_msg.proof_share) {
                     // Message will be bounced if we are lagging (not known of the signing key).
                     return Ok(MessageStatus::Unknown);
+                }
+            }
+            Variant::RelocatePromise(promise) => {
+                if promise.name != *our_id.name() {
+                    if !self.is_our_elder(our_id) {
+                        return Ok(MessageStatus::Useless);
+                    }
+
+                    if self.shared_state.is_peer_our_elder(&promise.name) {
+                        // If the peer is honest and is still elder then we probably haven't yet
+                        // processed its demotion. Bounce the message back and try again on resend.
+                        return Ok(MessageStatus::Unknown);
+                    }
                 }
             }
             Variant::Sync { .. }
@@ -721,6 +740,48 @@ impl Approved {
             details: signed_msg,
             conn_infos,
         })
+    }
+
+    pub fn handle_relocate_promise(
+        &mut self,
+        core: &mut Core,
+        promise: RelocatePromise,
+        msg_bytes: Bytes,
+    ) -> Result<()> {
+        if promise.name == *core.name() {
+            // We are the node to be relocated. If we are still elder, store the `RelocatePromise`
+            // message and send it back after we are demoted. Otherwise send it already.
+            if self.is_our_elder(core.id()) {
+                self.relocate_promise = Some(msg_bytes);
+            } else {
+                self.send_message_to_our_elders(core, msg_bytes);
+            }
+
+            return Ok(());
+        }
+
+        if self.shared_state.is_peer_our_elder(&promise.name) {
+            error!(
+                "ignore returned RelocatePromise from {} - node is still elder",
+                promise.name
+            );
+            return Ok(());
+        }
+
+        if let Some(info) = self.shared_state.our_members.get(&promise.name) {
+            let details = self
+                .shared_state
+                .create_relocation_details(info, promise.destination);
+            let addr = *info.p2p_node.peer_addr();
+
+            self.send_relocate(core, addr, details)
+        } else {
+            error!(
+                "ignore returned RelocatePromise from {} - unknown node",
+                promise.name
+            );
+            Ok(())
+        }
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -1312,25 +1373,33 @@ impl Approved {
             return Ok(());
         }
 
-        let relocations = self.shared_state.compute_relocations(
-            churn_name,
-            churn_signature,
-            core.network_params.elder_size,
-        );
+        let relocations = self
+            .shared_state
+            .compute_relocations(churn_name, churn_signature);
 
-        for (info, details) in relocations {
+        for (info, action) in relocations {
             debug!(
                 "Relocating {} to {} (on churn of {})",
-                info.p2p_node, details.destination, churn_name
+                info.p2p_node,
+                action.destination(),
+                churn_name
             );
 
             core.send_event(Event::RelocationInitiated {
                 name: *info.p2p_node.name(),
-                destination: details.destination,
+                destination: *action.destination(),
             });
 
-            self.send_relocate(core, details)?;
+            let addr = *info.p2p_node.peer_addr();
+
             self.cast_ordered_vote(AccumulatingEvent::Offline(info.leave()));
+
+            match action {
+                RelocateAction::Instant(details) => self.send_relocate(core, addr, details)?,
+                RelocateAction::Delayed(promise) => {
+                    self.send_relocate_promise(core, addr, promise)?
+                }
+            }
         }
 
         Ok(())
@@ -1847,6 +1916,10 @@ impl Approved {
             }
         }
 
+        if !new_is_elder {
+            self.return_relocate_promise(core);
+        }
+
         if new_prefix != old_prefix {
             info!("Split");
 
@@ -2018,7 +2091,7 @@ impl Approved {
     }
 
     fn send_sync(&self, core: &mut Core, shared_state: SharedState) -> Result<()> {
-        for p2p_node in shared_state.our_members.joined().map(|info| &info.p2p_node) {
+        for p2p_node in shared_state.active_members() {
             if p2p_node.name() == core.name() {
                 continue;
             }
@@ -2049,18 +2122,65 @@ impl Approved {
         }
     }
 
-    fn send_relocate(&mut self, core: &mut Core, details: RelocateDetails) -> Result<()> {
+    fn send_relocate(
+        &mut self,
+        core: &mut Core,
+        recipient: SocketAddr,
+        details: RelocateDetails,
+    ) -> Result<()> {
         // We need to construct a proof that would be trusted by the destination section.
         let knowledge_index = self
             .shared_state
             .sections
             .knowledge_by_location(&DstLocation::Section(details.destination));
 
-        let src = SrcLocation::Section(*self.shared_state.our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());
         let variant = Variant::Relocate(details);
 
-        self.send_routing_message(core, src, dst, variant, Some(knowledge_index))
+        // Message accumulated at destination.
+        let message = self.to_accumulating_message(dst, variant, Some(knowledge_index))?;
+        let message = Message::single_src(
+            &core.full_id,
+            dst,
+            Variant::MessageSignature(Box::new(message)),
+            None,
+            None,
+        )?;
+        core.send_message_to_target(&recipient, message.to_bytes());
+
+        Ok(())
+    }
+
+    fn send_relocate_promise(
+        &mut self,
+        core: &mut Core,
+        recipient: SocketAddr,
+        promise: RelocatePromise,
+    ) -> Result<()> {
+        // Note: this message is first sent to a single node who then sends it back to the section
+        // where it needs to be handled by all the elders. This is why the destination is
+        // `Section`, not `Node`.
+        let dst = DstLocation::Section(promise.name);
+        let variant = Variant::RelocatePromise(promise);
+
+        // Message accumulated at destination
+        let message = self.to_accumulating_message(dst, variant, None)?;
+        let message = Message::single_src(
+            &core.full_id,
+            dst,
+            Variant::MessageSignature(Box::new(message)),
+            None,
+            None,
+        )?;
+        core.send_message_to_target(&recipient, message.to_bytes());
+
+        Ok(())
+    }
+
+    fn return_relocate_promise(&mut self, core: &mut Core) {
+        if let Some(bytes) = self.relocate_promise.take() {
+            self.send_message_to_our_elders(core, bytes)
+        }
     }
 
     fn send_parsec_gossip(&mut self, core: &mut Core, target: Option<(u64, P2pNode)>) {
