@@ -12,12 +12,24 @@ use crate::{
     section::{EldersInfo, MemberInfo},
 };
 use serde::{Serialize, Serializer};
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum Vote {
-    // Vote to update the elders info of a section.
+    /// Voted for node that is about to join our section
+    Online {
+        member_info: MemberInfo,
+        /// Previous name if relocated.
+        previous_name: Option<XorName>,
+        /// The key of the destination section that the joining node knows, if any.
+        their_knowledge: Option<bls::PublicKey>,
+    },
+
+    /// Voted for node we no longer consider online.
+    Offline(MemberInfo),
+
+    // Voted to update the elders info of a section.
     SectionInfo(EldersInfo),
 
     // Voted to update our section key.
@@ -92,6 +104,8 @@ struct SignableView<'a>(&'a Vote);
 impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
+            Vote::Online { member_info, .. } => member_info.serialize(serializer),
+            Vote::Offline(member_info) => member_info.serialize(serializer),
             Vote::SectionInfo(info) => info.serialize(serializer),
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),

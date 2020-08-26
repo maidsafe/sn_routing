@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, AccumulatingEvent, DkgResult, ParsecRequest, Vote},
+    consensus::{self, DkgResult, ParsecRequest, Vote},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -125,40 +125,6 @@ impl Env {
             .unwrap()
     }
 
-    fn cast_ordered_votes(
-        &mut self,
-        count: usize,
-        events: impl IntoIterator<Item = AccumulatingEvent>,
-    ) {
-        assert!(count <= self.other_ids.len());
-
-        let parsec = self
-            .subject
-            .consensus_engine_mut()
-            .unwrap()
-            .parsec_map_mut();
-
-        for event in events {
-            for (full_id, secret_key_share) in self.other_ids.iter().take(count) {
-                let index = self
-                    .elders_info
-                    .position(full_id.public_id().name())
-                    .unwrap();
-                let event = event
-                    .clone()
-                    .into_network_event(&SectionKeyShare {
-                        public_key_set: self.public_key_set.clone(),
-                        index,
-                        secret_key_share: secret_key_share.clone(),
-                    })
-                    .unwrap();
-
-                info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
-                parsec.vote_for_as(event.into_obs(), full_id);
-            }
-        }
-    }
-
     fn cast_unconsensused_ordered_votes(&mut self, count: usize) {
         let parsec = self
             .subject
@@ -193,15 +159,6 @@ impl Env {
         .unwrap();
 
         self.subject.dispatch_message(Some(addr), message)
-    }
-
-    fn cast_ordered_votes_and_gossip(
-        &mut self,
-        count: usize,
-        events: impl IntoIterator<Item = AccumulatingEvent>,
-    ) -> Result<()> {
-        self.cast_ordered_votes(count, events);
-        self.create_gossip()
     }
 
     fn cast_unordered_votes(
@@ -248,9 +205,9 @@ impl Env {
     }
 
     fn accumulate_online(&mut self, p2p_node: P2pNode) {
-        let _ = self.cast_ordered_votes_and_gossip(
+        let _ = self.cast_unordered_votes(
             self.quorum_count(),
-            iter::once(AccumulatingEvent::Online {
+            iter::once(Vote::Online {
                 member_info: MemberInfo::joined(p2p_node, MIN_AGE),
                 previous_name: None,
                 their_knowledge: None,
@@ -330,11 +287,9 @@ impl Env {
     }
 
     fn accumulate_offline(&mut self, p2p_node: P2pNode) {
-        let _ = self.cast_ordered_votes_and_gossip(
+        let _ = self.cast_unordered_votes(
             self.quorum_count(),
-            iter::once(AccumulatingEvent::Offline(
-                MemberInfo::joined(p2p_node, MIN_AGE).leave(),
-            )),
+            iter::once(Vote::Offline(MemberInfo::joined(p2p_node, MIN_AGE).leave())),
         );
     }
 
