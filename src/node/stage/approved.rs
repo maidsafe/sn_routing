@@ -328,6 +328,12 @@ impl Approved {
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
             self.notify_old_elders(core, &dkg_key, dkg_result.public_key_set.clone());
+
+            if !dkg_key.0.contains(core.id()) {
+                self.dkg_voter.remove_voter(&dkg_key);
+                continue;
+            }
+
             if let Err(err) = self.handle_dkg_result_event(core, &dkg_key, &dkg_result) {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
             } else {
@@ -1840,6 +1846,12 @@ impl Approved {
                 self.gossip_timer_token =
                     Some(core.timer.schedule(self.consensus_engine.gossip_period()));
                 core.send_event(Event::PromotedToElder);
+
+                // Ping all members to detect recent lost nodes for which the section might need
+                // our Offline vote.
+                for p2p_node in self.shared_state.active_members() {
+                    core.send_direct_message(p2p_node.peer_addr(), Variant::Ping);
+                }
             }
             (true, false) => {
                 info!("Demoted");
