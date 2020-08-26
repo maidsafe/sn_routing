@@ -8,9 +8,8 @@
 
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{ParsecRequest, ParsecResponse, ProofShare, Proven, Vote},
+    consensus::{DkgKey, ParsecRequest, ParsecResponse, ProofShare, Proven, Vote},
     error::{Result, RoutingError},
-    id::PublicId,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
 };
@@ -18,7 +17,6 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
@@ -85,20 +83,14 @@ pub(crate) enum Variant {
     /// Message exchanged for DKG process.
     DKGMessage {
         /// The identifier of the key_gen instance this message is about.
-        /// Currently just using the participants.
-        /// TODO: may need to consider using other unique identifying approach.
-        participants: BTreeSet<PublicId>,
-        /// The section key index this DKG message related to.
-        section_key_index: u64,
+        dkg_key: DkgKey,
         /// The serialized DKG message.
         message: Bytes,
     },
     /// Message of notify old elders that DKG completed. Mainly used during split or demote.
     DKGOldElders {
-        /// Participants of the DKG
-        participants: BTreeSet<PublicId>,
-        /// Section key index of the DKG
-        section_key_index: u64,
+        /// The identifier of the key_gen instance this message is about.
+        dkg_key: DkgKey,
         /// Public key set that got consensused
         public_key_set: bls::PublicKeySet,
     },
@@ -177,24 +169,19 @@ impl Debug for Variant {
                 .field("src_key", src_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGMessage {
-                participants,
-                section_key_index,
-                message,
-            } => f
+            Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
-                .field("participants", participants)
-                .field("section_key_index", section_key_index)
+                .field("participants", &dkg_key.0)
+                .field("section_key_index", &dkg_key.1)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
             Self::DKGOldElders {
-                participants,
-                section_key_index,
+                dkg_key,
                 public_key_set,
             } => f
                 .debug_struct("DKGMessage")
-                .field("participants", participants)
-                .field("section_key_index", section_key_index)
+                .field("participants", &dkg_key.0)
+                .field("section_key_index", &dkg_key.1)
                 .field("public_key_set", public_key_set)
                 .finish(),
             Self::Vote {
