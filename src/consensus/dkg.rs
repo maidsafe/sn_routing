@@ -15,11 +15,15 @@ use crate::{
 };
 use bls::{PublicKeySet, SecretKeyShare};
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
+use lru_time_cache::LruCache;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Debug, Formatter},
     mem,
+    time::Duration,
 };
+
+const OLD_ELDERS_EXPIRY_DURATION: Duration = Duration::from_secs(2 * 60);
 
 /// Returns the number of minumn responsive participants expected for the DKG process
 #[inline]
@@ -82,6 +86,8 @@ pub struct DkgVoter {
     dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
     // section_key_index of the latest completed DKG.
     current_section_key_index: u64,
+    // Cache of DKGOldElders notifications.
+    old_elders_notifications: LruCache<BTreeSet<PublicId>, BTreeSet<PublicId>>,
     timer_token: u64,
 }
 
@@ -93,6 +99,7 @@ impl Default for DkgVoter {
             pending_accumulated_votes: Default::default(),
             dkg_result_cache: Default::default(),
             current_section_key_index: 0,
+            old_elders_notifications: LruCache::with_expiry_duration(OLD_ELDERS_EXPIRY_DURATION),
             timer_token: 0,
         }
     }
@@ -259,5 +266,23 @@ impl DkgVoter {
     // process is not completed yet.
     pub fn push_vote(&mut self, vote: Vote, proof: Proof) {
         self.pending_accumulated_votes.push_front((vote, proof));
+    }
+
+    // Return with true only when accumulated quorum valid notifications first time.
+    pub fn add_old_elders_notification(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        src_id: &PublicId,
+    ) -> bool {
+        if !participants.contains(src_id) {
+            return false;
+        }
+
+        let senders = self
+            .old_elders_notifications
+            .entry(participants.clone())
+            .or_insert(BTreeSet::new());
+        let _ = senders.insert(*src_id);
+        senders.len() == threshold_count(participants.len())
     }
 }

@@ -1062,20 +1062,26 @@ impl Approved {
         }
     }
 
-    // TODO: accumulate at least quorum of these messages
-    //       and only then proceed to handle the DKG result.
     pub fn handle_dkg_old_elders(
         &mut self,
         core: &mut Core,
         participants: BTreeSet<PublicId>,
         section_key_index: u64,
         public_key_set: bls::PublicKeySet,
-        _src_id: PublicId,
+        src_id: PublicId,
     ) -> Result<()> {
         debug!(
             "notified by DKG participants {:?} to vote for SectionInfo",
             participants
         );
+
+        // Accumulate quorum notifications then carry out the further process.
+        if !self
+            .dkg_voter
+            .add_old_elders_notification(&participants, &src_id)
+        {
+            return Ok(());
+        }
 
         let dkg_result = DkgResult::new(public_key_set, None);
         if self.dkg_voter.has_info(
