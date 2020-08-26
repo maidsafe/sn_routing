@@ -25,9 +25,7 @@ pub use self::{
     proven::Proven,
     vote::{Vote, VoteAccumulator},
 };
-pub use bls_signature_aggregator::{
-    AccumulationError, Proof, ProofShare, SignatureAggregator,
-};
+pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};
 
 #[cfg(feature = "mock_base")]
 pub use self::event_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
