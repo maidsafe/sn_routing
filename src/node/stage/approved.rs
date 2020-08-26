@@ -1797,9 +1797,9 @@ impl Approved {
 
     fn update_shared_state(&mut self, core: &mut Core, update: SharedState) -> Result<bool> {
         if update.our_prefix().matches(core.name()) {
-            debug!("update shared state");
+            trace!("update shared state");
         } else {
-            debug!("ignore update shared state - not our section");
+            trace!("ignore update shared state - not our section");
             return Ok(false);
         }
 
@@ -1865,12 +1865,20 @@ impl Approved {
         }
 
         if new_last_key_index != old_last_key_index {
-            info!("Section updated: {:?}", self.shared_state.our_info());
+            info!(
+                "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
+                self.shared_state.our_prefix(),
+                self.shared_state.our_history.last_key(),
+                self.shared_state.our_info().elders.values().format(", ")
+            );
 
             self.churn_in_progress = false;
 
             self.send_elders_changed_event(core);
-            self.print_network_stats();
+
+            if self.is_our_elder(core.id()) {
+                self.print_network_stats();
+            }
 
             Ok(true)
         } else {
@@ -2273,6 +2281,10 @@ impl Approved {
     // Update our knowledge of their (sender's) section and their knowledge of our section.
     pub fn update_section_knowledge(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
         use crate::section::UpdateSectionKnowledgeAction::*;
+
+        if !self.is_our_elder(core.id()) {
+            return Ok(());
+        }
 
         let src_prefix = if let Ok(prefix) = msg.src().as_section_prefix() {
             prefix

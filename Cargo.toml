@@ -41,7 +41,7 @@ xor_name = "1"
 
 [dev-dependencies]
 env_logger = "~0.7.1"
-structopt = "~0.3.9"
+structopt = "~0.3.17"
 
 [features]
 mock_base = [
