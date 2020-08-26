@@ -524,7 +524,9 @@ impl Node {
 
     fn handle_peer_lost(&mut self, peer_addr: SocketAddr) {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.handle_peer_lost(&self.core, peer_addr);
+            if let Err(error) = stage.handle_peer_lost(&mut self.core, peer_addr) {
+                error!("failed to handle lost peer {}: {}", peer_addr, error);
+            }
         }
     }
 
@@ -690,7 +692,7 @@ impl Node {
                     &mut self.core,
                     msg.src().to_sender_node(sender)?,
                     *join_request.clone(),
-                ),
+                )?,
                 Variant::ParsecRequest(version, request) => {
                     stage.handle_parsec_request(
                         &mut self.core,

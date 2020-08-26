@@ -7,12 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Observation, ParsecNetworkEvent, ProofShare};
-use crate::{
-    error::Result,
-    id::PublicId,
-    section::{MemberInfo, SectionKeyShare},
-    XorName,
-};
+use crate::{error::Result, id::PublicId, section::SectionKeyShare};
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
@@ -22,17 +17,6 @@ use std::fmt::{self, Debug, Formatter};
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Voted for node that is about to join our section
-    Online {
-        member_info: MemberInfo,
-        /// Previous name if relocated.
-        previous_name: Option<XorName>,
-        /// The key of the destination section that the joining node knows, if any.
-        their_knowledge: Option<bls::PublicKey>,
-    },
-    /// Voted for node we no longer consider online.
-    Offline(MemberInfo),
-
     // Prune the gossip graph.
     ParsecPrune,
 
@@ -78,12 +62,6 @@ impl AccumulatingEvent {
 
     fn serialise_for_signing(&self) -> Result<Vec<u8>, bincode::Error> {
         match self {
-            Self::Online {
-                member_info,
-                previous_name: _,
-                their_knowledge: _,
-            } => bincode::serialize(member_info),
-            Self::Offline(member_info) => bincode::serialize(member_info),
             // TODO: serialise these variants properly
             Self::ParsecPrune | Self::User(_) => Ok(vec![]),
         }
@@ -93,18 +71,6 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Online {
-                member_info,
-                previous_name,
-                their_knowledge,
-            } => formatter
-                .debug_struct("Online")
-                .field("member_info", member_info)
-                .field("previous_name", previous_name)
-                .field("their_knowledge", their_knowledge)
-                .finish(),
-
-            Self::Offline(member_info) => write!(formatter, "Offline({:?})", member_info),
             Self::ParsecPrune => write!(formatter, "ParsecPrune"),
             Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }

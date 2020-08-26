@@ -289,23 +289,25 @@ impl Approved {
         }
     }
 
-    pub fn handle_peer_lost(&mut self, core: &Core, peer_addr: SocketAddr) {
+    pub fn handle_peer_lost(&mut self, core: &mut Core, peer_addr: SocketAddr) -> Result<()> {
         let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
             *node.name()
         } else {
             trace!("Lost unknown peer {}", peer_addr);
-            return;
+            return Ok(());
         };
 
         if !self.is_our_elder(core.id()) {
-            return;
+            return Ok(());
         }
 
         if let Some(info) = self.shared_state.our_members.get(&name) {
             let info = info.clone().leave();
-            self.cast_ordered_vote(AccumulatingEvent::Offline(info))
+            self.cast_unordered_vote(core, Vote::Offline(info))?;
         }
+
+        Ok(())
     }
 
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
@@ -843,7 +845,7 @@ impl Approved {
         core: &mut Core,
         p2p_node: P2pNode,
         join_request: JoinRequest,
-    ) {
+    ) -> Result<()> {
         debug!("Received {:?} from {}", join_request, p2p_node);
 
         if join_request.section_key != *self.shared_state.our_history.last_key() {
@@ -853,7 +855,7 @@ impl Approved {
             };
             trace!("Resending BootstrapResponse {:?} to {}", response, p2p_node,);
             core.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
-            return;
+            return Ok(());
         }
 
         let pub_id = *p2p_node.public_id();
@@ -863,7 +865,7 @@ impl Approved {
                 pub_id,
                 self.shared_state.our_prefix()
             );
-            return;
+            return Ok(());
         }
 
         if self.shared_state.our_members.is_joined(pub_id.name()) {
@@ -871,7 +873,7 @@ impl Approved {
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
             );
-            return;
+            return Ok(());
         }
 
         // This joining node is being relocated to us.
@@ -882,7 +884,7 @@ impl Approved {
                         "Ignoring relocation JoinRequest from {} - invalid signature.",
                         pub_id
                     );
-                    return;
+                    return Ok(());
                 }
 
                 // FIXME: this might panic if the payload is malformed.
@@ -896,7 +898,7 @@ impl Approved {
                         details.destination,
                         self.shared_state.our_prefix()
                     );
-                    return;
+                    return Ok(());
                 }
 
                 if !self
@@ -907,7 +909,7 @@ impl Approved {
                         "Ignoring relocation JoinRequest from {} - untrusted.",
                         pub_id
                     );
-                    return;
+                    return Ok(());
                 }
 
                 (
@@ -919,11 +921,14 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
-        self.cast_ordered_vote(AccumulatingEvent::Online {
-            member_info: MemberInfo::joined(p2p_node, age),
-            previous_name,
-            their_knowledge,
-        })
+        self.cast_unordered_vote(
+            core,
+            Vote::Online {
+                member_info: MemberInfo::joined(p2p_node, age),
+                previous_name,
+                their_knowledge,
+            },
+        )
     }
 
     pub fn handle_parsec_request(
@@ -1123,9 +1128,7 @@ impl Approved {
     // Polls and processes all accumulated events.
     fn poll_all(&mut self, core: &mut Core) -> Result<()> {
         while self.poll_one(core)? {}
-        self.vote_for_remove_unresponsive_peers();
-
-        Ok(())
+        self.vote_for_remove_unresponsive_peers(core)
     }
 
     // Polls and processes the next accumulated event. Returns whether any event was processed.
@@ -1348,7 +1351,7 @@ impl Approved {
 
             let addr = *info.p2p_node.peer_addr();
 
-            self.cast_ordered_vote(AccumulatingEvent::Offline(info.leave()));
+            self.cast_unordered_vote(core, Vote::Offline(info.leave()))?;
 
             match action {
                 RelocateAction::Instant(details) => self.send_relocate(core, addr, details)?,
@@ -1373,21 +1376,11 @@ impl Approved {
         &mut self,
         core: &mut Core,
         event: AccumulatingEvent,
-        proof: Proof,
+        _proof: Proof,
     ) -> Result<()> {
         debug!("handle consensus on {:?}", event);
 
         match event {
-            AccumulatingEvent::Online {
-                member_info,
-                previous_name,
-                their_knowledge,
-            } => {
-                self.handle_online_event(core, member_info, previous_name, their_knowledge, proof)?
-            }
-            AccumulatingEvent::Offline(member_info) => {
-                self.handle_offline_event(core, member_info, proof)?
-            }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
@@ -1404,6 +1397,12 @@ impl Approved {
         debug!("handle consensus on {:?}", vote);
 
         match vote {
+            Vote::Online {
+                member_info,
+                previous_name,
+                their_knowledge,
+            } => self.handle_online_event(core, member_info, previous_name, their_knowledge, proof),
+            Vote::Offline(member_info) => self.handle_offline_event(core, member_info, proof),
             Vote::SectionInfo(elders_info) => {
                 match self.handle_section_info_event(core, elders_info.clone(), proof.clone()) {
                     Ok(()) => Ok(()),
@@ -1959,16 +1958,7 @@ impl Approved {
         &self,
         mut events: Vec<AccumulatingEvent>,
     ) -> Vec<AccumulatingEvent> {
-        let our_prefix = *self.shared_state.our_prefix();
-
         events.retain(|event| match &event {
-            // Only re-vote if still relevant to our new prefix.
-            AccumulatingEvent::Online { member_info, .. } => {
-                our_prefix.matches(member_info.p2p_node.name())
-            }
-            AccumulatingEvent::Offline(member_info) => {
-                our_prefix.matches(member_info.p2p_node.name())
-            }
             // Drop: no longer relevant after prefix change.
             AccumulatingEvent::ParsecPrune => false,
 
@@ -1979,7 +1969,7 @@ impl Approved {
     }
 
     // Detect non-responsive peers and vote them out.
-    fn vote_for_remove_unresponsive_peers(&mut self) {
+    fn vote_for_remove_unresponsive_peers(&mut self, core: &mut Core) -> Result<()> {
         let unresponsive_nodes: Vec<_> = self
             .consensus_engine
             .detect_unresponsive(self.shared_state.our_info())
@@ -1990,8 +1980,10 @@ impl Approved {
 
         for info in unresponsive_nodes {
             info!("Voting for unresponsive node {}", info.p2p_node);
-            self.cast_ordered_vote(AccumulatingEvent::Offline(info));
+            self.cast_unordered_vote(core, Vote::Offline(info))?;
         }
+
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
