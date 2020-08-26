@@ -200,12 +200,7 @@ impl Approved {
             .and_then(|share| event.clone().into_network_event(share))
         {
             Ok(event) => self.consensus_engine.vote_for(event),
-            Err(error) => log_or_panic!(
-                log::Level::Error,
-                "Failed to create NetworkEvent {:?}: {}",
-                event,
-                error,
-            ),
+            Err(error) => error!("Failed to create NetworkEvent {:?}: {}", event, error),
         }
     }
 
