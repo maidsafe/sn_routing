@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use sn_fake_clock::FakeClock as Instant;
 pub use std::time::Duration;
-#[cfg(not(feature = "mock_base"))]
+#[cfg(not(feature = "mock"))]
 pub use std::time::Instant;

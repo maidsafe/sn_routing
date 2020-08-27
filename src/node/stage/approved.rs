@@ -332,7 +332,7 @@ impl Approved {
             self.notify_old_elders(core, &dkg_key, dkg_result.public_key_set.clone());
 
             if !dkg_key.0.contains(core.id()) {
-                self.dkg_voter.remove_voter(&dkg_key);
+                self.dkg_voter.remove_voter(dkg_key.1);
                 continue;
             }
 
@@ -2410,7 +2410,7 @@ impl Approved {
         self.try_relay_message(core, &msg)
     }
 
-    #[cfg(feature = "mock_base")]
+    #[cfg(feature = "mock")]
     // Returns whether node has completed the full joining process
     pub fn is_ready(&self, core: &Core) -> bool {
         // TODO: This is mainly to prevent bootstrapping a new node too quickly when the previous

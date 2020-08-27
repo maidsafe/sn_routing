@@ -17,7 +17,7 @@ pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
 }
 
 // Create proof for the given payload using the given secret key.
-#[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+#[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
 pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Proof {
     let bytes = bincode::serialize(payload).unwrap();
     Proof {

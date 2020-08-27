@@ -16,7 +16,7 @@ pub(crate) use self::{
     joining::Joining,
 };
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
 // Type to represent the various stages a node goes through during its lifetime.

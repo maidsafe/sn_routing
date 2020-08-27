@@ -9,9 +9,9 @@
 use crate::time::{Duration, Instant};
 use crossbeam_channel as mpmc;
 use itertools::Itertools;
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 use std::cell::RefCell;
-#[cfg(not(feature = "mock_base"))]
+#[cfg(not(feature = "mock"))]
 use std::thread;
 use std::{cell::Cell, collections::BTreeMap};
 
@@ -25,13 +25,13 @@ pub struct Timer {
     next_token: Cell<u64>,
     tx: mpmc::Sender<Detail>,
 
-    #[cfg(feature = "mock_base")]
+    #[cfg(feature = "mock")]
     worker: Worker,
 }
 
 impl Timer {
     /// Creates a new timer, passing a channel sender used to send timeouted tokens.
-    #[cfg(not(feature = "mock_base"))]
+    #[cfg(not(feature = "mock"))]
     pub fn new(sender: mpmc::Sender<u64>) -> Self {
         let (tx, rx) = mpmc::bounded(1);
         let _ = thread::Builder::new()
@@ -44,7 +44,7 @@ impl Timer {
         }
     }
 
-    #[cfg(feature = "mock_base")]
+    #[cfg(feature = "mock")]
     pub fn new(sender: mpmc::Sender<u64>) -> Self {
         let (tx, rx) = mpmc::unbounded();
         let worker = Worker {
@@ -78,7 +78,7 @@ impl Timer {
         })
     }
 
-    #[cfg(not(feature = "mock_base"))]
+    #[cfg(not(feature = "mock"))]
     fn run(sender: mpmc::Sender<u64>, rx: mpmc::Receiver<Detail>) {
         let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
@@ -110,7 +110,7 @@ impl Timer {
         }
     }
 
-    #[cfg(feature = "mock_base")]
+    #[cfg(feature = "mock")]
     pub fn process_timers(&self) {
         self.worker.process()
     }
@@ -133,14 +133,14 @@ fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, sender: &mpmc:
     }
 }
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 struct Worker {
     deadlines: RefCell<BTreeMap<Instant, Vec<u64>>>,
     sender: mpmc::Sender<u64>,
     rx: mpmc::Receiver<Detail>,
 }
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 impl Worker {
     fn process(&self) {
         let mut deadlines = self.deadlines.borrow_mut();
@@ -153,7 +153,7 @@ impl Worker {
     }
 }
 
-#[cfg(all(test, not(feature = "mock_base")))]
+#[cfg(all(test, not(feature = "mock")))]
 mod tests {
     use super::*;
     use std::{

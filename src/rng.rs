@@ -9,13 +9,13 @@
 //! Random number generation utilities.
 
 pub use self::implementation::{new, new_from, MainRng};
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use self::seed_printer::SeedPrinter;
-#[cfg(any(test, feature = "mock_base"))]
+#[cfg(any(test, feature = "mock"))]
 pub use self::test::Seed;
 
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
-#[cfg(not(any(test, feature = "mock_base")))]
+#[cfg(not(any(test, feature = "mock")))]
 mod implementation {
     // Parsec has a very old rand dependecy. This osRng is required to interact with that, until
     // parsec upgrades
@@ -35,7 +35,7 @@ mod implementation {
 
 // Rng implementation used in tests. Uses `TestRng` to allow reproducible test results and
 // to avoid opening too many file handles which could happen on some platforms if we used `OsRng`.
-#[cfg(any(test, feature = "mock_base"))]
+#[cfg(any(test, feature = "mock"))]
 mod implementation {
     pub use super::test::TestRng as MainRng;
     use rand::{Rng, RngCore, SeedableRng};
@@ -51,7 +51,7 @@ mod implementation {
     }
 }
 
-#[cfg(any(test, feature = "mock_base"))]
+#[cfg(any(test, feature = "mock"))]
 mod test {
     use rand::{
         distributions::{Distribution, Standard},
@@ -273,7 +273,7 @@ mod test {
     }
 }
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 mod seed_printer {
     use super::Seed;
     use std::thread;
