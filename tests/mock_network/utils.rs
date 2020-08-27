@@ -16,6 +16,7 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
+    quorum_count,
     rng::MainRng,
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, SrcLocation,
     TransportConfig, MIN_AGE,
@@ -631,15 +632,27 @@ pub fn poll_until_all_relocations_complete(
     const MAX_ITERATIONS: usize = 100;
 
     for _ in 0..MAX_ITERATIONS {
-        // Detect all initiated relocations.
-        let pending: BTreeSet<_> = nodes
-            .iter_mut()
-            .flat_map(|node| {
-                iter::from_fn(move || node.try_recv_event()).filter_map(|event| match event {
+        // Detect all relocations voted for by at least quorum of nodes.
+        let mut pending = HashMap::<_, Vec<_>>::new();
+
+        for node in nodes.iter_mut() {
+            let relocating_nodes =
+                iter::from_fn(|| node.try_recv_event()).filter_map(|event| match event {
                     Event::RelocationInitiated { name, .. } => Some(name),
                     _ => None,
-                })
-            })
+                });
+            for relocating_node in relocating_nodes {
+                pending
+                    .entry(relocating_node)
+                    .or_default()
+                    .push(*node.name());
+            }
+        }
+
+        let pending: BTreeSet<_> = pending
+            .into_iter()
+            .filter(|(_, voters)| voters.len() >= quorum_count(env.elder_size()))
+            .map(|(name, _)| name)
             .collect();
 
         if pending.is_empty() {
