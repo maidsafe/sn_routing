@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::signing::Signature as SimpleSignature,
+    crypto::Signature as SimpleSignature,
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::SrcLocation,

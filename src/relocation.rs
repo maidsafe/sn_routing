@@ -9,7 +9,7 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    crypto::{self, signing::Signature},
+    crypto::{self, Signature},
     error::RoutingError,
     id::{FullId, PublicId},
     messages::{Message, Variant},
