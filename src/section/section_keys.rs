@@ -47,7 +47,7 @@ impl SectionKeysProvider {
     }
 
     pub fn public_key(&self) -> Option<bls::PublicKey> {
-        if let Some(ref current) = self.current {
+        if let Some(current) = &self.current {
             Some(current.public_key_set.public_key())
         } else {
             None

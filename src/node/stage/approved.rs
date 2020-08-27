@@ -50,9 +50,6 @@ pub(crate) struct Approved {
     section_update_barrier: SectionUpdateBarrier,
     // Marker indicating we are processing churn event
     churn_in_progress: bool,
-    // Flag indicating that our section members changed (a node joined or left) and we might need
-    // to change our elders.
-    members_changed: bool,
     // Voter for DKG
     dkg_voter: DkgVoter,
     // Serialized `RelocatePromise` message that we received from our section. To be sent back to
@@ -99,7 +96,6 @@ impl Approved {
             vote_accumulator: Default::default(),
             section_update_barrier: Default::default(),
             churn_in_progress: false,
-            members_changed: false,
             dkg_voter: Default::default(),
             relocate_promise: None,
         })
@@ -146,7 +142,6 @@ impl Approved {
             section_update_barrier: state.section_update_barrier,
             // TODO: these fields should come from PausedState too
             churn_in_progress: false,
-            members_changed: false,
             dkg_voter: Default::default(),
             relocate_promise: state.relocate_promise,
         };
@@ -271,11 +266,6 @@ impl Approved {
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
             self.notify_old_elders(core, &dkg_key, dkg_result.public_key_set.clone());
-
-            if !dkg_key.0.contains(core.id()) {
-                self.dkg_voter.remove_voter(dkg_key.1);
-                continue;
-            }
 
             if let Err(err) = self.handle_dkg_result_event(core, &dkg_key, &dkg_result) {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
@@ -867,19 +857,11 @@ impl Approved {
         message_bytes: Bytes,
         sender: PublicId,
     ) -> Result<()> {
-        trace!(
-            "handle dkg message of p{:?}-{:?} from {}",
-            dkg_key.0,
-            dkg_key.1,
-            sender
-        );
+        trace!("handle DKG message of {:?} from {}", dkg_key, sender);
 
         if dkg_key.0.contains(core.id()) {
             self.init_dkg_gen(core, dkg_key);
         } else {
-            // During split, a non-participant Elder could be picked as a relayer to forward DKG
-            // messages, when the new elders of one sub-section are currently all non-elders.
-            self.try_forward_dkg_message_to_non_elder(core, dkg_key, message_bytes, &sender);
             return Ok(());
         }
 
@@ -901,9 +883,8 @@ impl Approved {
             let _ = self.broadcast_dkg_message(core, dkg_key, response);
         }
 
-        self.try_forward_dkg_message_to_non_elder(core, dkg_key, message_bytes, &sender);
-
         self.check_dkg(core);
+
         Ok(())
     }
 
@@ -967,12 +948,10 @@ impl Approved {
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     fn promote_and_demote_elders(&mut self, core: &mut Core) {
-        if !self.members_changed || self.churn_in_progress {
+        if self.churn_in_progress {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return;
         }
-
-        self.members_changed = false;
 
         let new_infos = if let Some(new_infos) = self
             .shared_state
@@ -990,11 +969,11 @@ impl Approved {
         }
 
         for info in new_infos {
-            trace!("start DKG for {:?}", info);
-
             let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let section_key_index = self.shared_state.our_history.last_key_index();
             let dkg_key = (participants, section_key_index);
+
+            trace!("start DKG {:?}", dkg_key);
 
             if let Some(dkg_result) = self.dkg_voter.push_info(&dkg_key, info) {
                 // Got notified of the DKG result, happen during split or demote.
@@ -1034,43 +1013,25 @@ impl Approved {
     }
 
     fn init_dkg_gen(&mut self, core: &mut Core, dkg_key: &DkgKey) {
-        if dkg_key.1 < self.shared_state.our_history.last_key_index()
-            || self.section_keys_provider.has_dkg(&dkg_key.0)
-        {
-            trace!("Already has DKG of {:?} - {:?}", dkg_key.0, dkg_key.1);
+        if self.section_keys_provider.has_dkg(&dkg_key.0) {
+            trace!("DKG for {:?} already completed", dkg_key);
             return;
+        }
+
+        if dkg_key.1 < self.shared_state.our_history.last_key_index() {
+            if let Some(our_key) = self.section_keys_provider.public_key() {
+                if let Some(index) = self.shared_state.our_history.index_of(&our_key) {
+                    if index > dkg_key.1 {
+                        trace!("DKG for {:?} already completed", dkg_key);
+                    }
+                }
+            }
         }
 
         for message in self.dkg_voter.init_dkg_gen(&core.full_id, dkg_key) {
             let _ = self.broadcast_dkg_message(core, dkg_key, message);
             self.dkg_voter
                 .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
-        }
-    }
-
-    // As an Elder, forwarding DKG message for Adult participants.
-    fn try_forward_dkg_message_to_non_elder(
-        &mut self,
-        core: &mut Core,
-        dkg_key: &DkgKey,
-        message_bytes: Bytes,
-        sender: &PublicId,
-    ) {
-        if self.is_our_elder(core.id()) && !self.is_our_elder(sender) {
-            let variant = Variant::DKGMessage {
-                dkg_key: dkg_key.clone(),
-                message: message_bytes,
-            };
-
-            for pub_id in &dkg_key.0 {
-                if self.is_our_elder(pub_id) {
-                    continue;
-                }
-                if let Some(target) = self.shared_state.get_p2p_node(pub_id.name()) {
-                    trace!("Sending DKG to {:?} - {:?}", pub_id.name(), variant);
-                    core.send_direct_message(target.peer_addr(), variant.clone());
-                }
-            }
         }
     }
 
@@ -1082,30 +1043,38 @@ impl Approved {
     ) -> Result<()> {
         trace!("broadcasting DKG message {:?}", dkg_message);
         let message: Bytes = bincode::serialize(&dkg_message)?.into();
-        let variant = Variant::DKGMessage {
-            dkg_key: dkg_key.clone(),
-            message: message.clone(),
-        };
 
         for pub_id in &dkg_key.0 {
             if pub_id == core.id() {
                 continue;
             }
-            if let Some(target) = self.shared_state.get_p2p_node(pub_id.name()) {
-                trace!("Sending DKG to {:?} - {:?}", pub_id.name(), variant);
-                core.send_direct_message(target.peer_addr(), variant.clone());
-            }
-        }
 
-        // In case all the participants are non-elders (could happen during split), existing elders
-        // have to be used as relayer to forward DKG messages.
-        if !dkg_key.0.iter().any(|pub_id| self.is_our_elder(pub_id)) {
-            // Sending to all elders to prevent some of them got dropped or mis-behaved.
-            // TODO: consider sending to 1/3 ?
-            let targets: Vec<_> = self.shared_state.sections.our_elders().collect();
-            for target in targets {
-                trace!("Sending DKG to {:?} - {:?}", target.name(), variant);
-                core.send_direct_message(target.peer_addr(), variant.clone());
+            let variant = Variant::DKGMessage {
+                dkg_key: dkg_key.clone(),
+                message: message.clone(),
+            };
+            let message = Message::single_src(
+                &core.full_id,
+                DstLocation::Node(*pub_id.name()),
+                variant,
+                None,
+                None,
+            )?;
+
+            if let Some(target) = self.shared_state.get_p2p_node(pub_id.name()) {
+                trace!(
+                    "Sending DKG to {:?} - {:?}",
+                    pub_id.name(),
+                    message.variant()
+                );
+                core.send_message_to_target(target.peer_addr(), message.to_bytes());
+            } else {
+                trace!(
+                    "Relaying DKG to {:?} - {:?}",
+                    pub_id.name(),
+                    message.variant()
+                );
+                self.relay_message(core, &message)?;
             }
         }
 
@@ -1292,8 +1261,7 @@ impl Approved {
             });
         }
 
-        self.members_changed = true;
-        let _ = self.promote_and_demote_elders(core);
+        self.promote_and_demote_elders(core);
 
         Ok(())
     }
@@ -1323,8 +1291,7 @@ impl Approved {
             age,
         });
 
-        self.members_changed = true;
-        let _ = self.promote_and_demote_elders(core);
+        self.promote_and_demote_elders(core);
 
         Ok(())
     }
@@ -1363,7 +1330,7 @@ impl Approved {
     ) -> Result<()> {
         let public_key = dkg_result.public_key_set.public_key();
 
-        info!("handle DKG result {:?} for {:?}", public_key, dkg_key.0);
+        info!("handle DKG result {:?} for {:?}", public_key, dkg_key);
 
         self.section_keys_provider
             .handle_dkg_result_event(&dkg_key.0, dkg_result);
@@ -1664,6 +1631,9 @@ impl Approved {
             );
 
             self.churn_in_progress = false;
+            if new_is_elder {
+                self.promote_and_demote_elders(core);
+            }
 
             self.send_elders_changed_event(core);
 

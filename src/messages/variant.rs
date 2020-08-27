@@ -179,7 +179,7 @@ impl Debug for Variant {
                 dkg_key,
                 public_key_set,
             } => f
-                .debug_struct("DKGMessage")
+                .debug_struct("DKGOldElders")
                 .field("participants", &dkg_key.0)
                 .field("section_key_index", &dkg_key.1)
                 .field("public_key_set", public_key_set)
