@@ -10,9 +10,8 @@ use super::elders_info::EldersInfo;
 use crate::{
     consensus::DkgResult,
     error::{Result, RoutingError},
-    id::PublicId,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{collections::BTreeMap, mem};
 use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
@@ -31,18 +30,15 @@ pub struct SectionKeyShare {
 pub struct SectionKeysProvider {
     /// Our current section BLS keys.
     current: Option<SectionKeyShare>,
-    /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
-    /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
-    /// then members are disjoint. We are working around not having access to the prefix for the
-    /// DkgResult but only the list of participants.
-    new: BTreeMap<XorName, DkgResult>,
+    /// The new keys to use when section update completes.
+    pending: BTreeMap<u64, DkgResult>,
 }
 
 impl SectionKeysProvider {
     pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
             current,
-            new: Default::default(),
+            pending: Default::default(),
         }
     }
 
@@ -61,29 +57,37 @@ impl SectionKeysProvider {
     }
 
     /// Handles a completed DKG
-    pub fn handle_dkg_result_event(
-        &mut self,
-        participants: &BTreeSet<PublicId>,
-        dkg_result: &DkgResult,
-    ) {
-        if let Some(first) = participants.iter().next() {
-            if self.new.insert(*first.name(), dkg_result.clone()).is_some() {
-                warn!("ejected previous DKG result");
-            }
-        }
+    pub fn handle_dkg_result_event(&mut self, section_key_index: u64, dkg_result: DkgResult) {
+        let _ = self.pending.entry(section_key_index).or_insert_with(|| {
+            trace!(
+                "insert pending DKG result #{}: {:?}",
+                section_key_index,
+                dkg_result.public_key_set.public_key()
+            );
+            dkg_result
+        });
     }
 
-    pub fn finalise_dkg(&mut self, our_name: &XorName, elders_info: &EldersInfo) -> Result<()> {
-        let first_name = elders_info
-            .elders
-            .keys()
-            .next()
-            .ok_or(RoutingError::InvalidElderDkgResult)?;
-        let dkg_result = self
-            .new
-            .remove(first_name)
-            .ok_or(RoutingError::InvalidElderDkgResult)?;
+    pub fn finalise_dkg(
+        &mut self,
+        section_key_index: u64,
+        our_name: &XorName,
+        elders_info: &EldersInfo,
+    ) {
+        let dkg_result = if let Some(result) = self.pending.remove(&section_key_index) {
+            result
+        } else {
+            trace!("missing pending DKG result #{}", section_key_index);
+            return;
+        };
+
         let public_key_set = dkg_result.public_key_set;
+
+        trace!(
+            "finalise DKG result #{}: {:?}",
+            section_key_index,
+            public_key_set.public_key()
+        );
 
         self.current = dkg_result
             .secret_key_share
@@ -97,16 +101,14 @@ impl SectionKeysProvider {
                 index,
                 secret_key_share,
             });
-        self.new.clear();
 
-        Ok(())
+        self.pending = mem::take(&mut self.pending)
+            .into_iter()
+            .filter(|(index, _)| *index > section_key_index)
+            .collect();
     }
 
-    pub fn has_dkg(&self, participants: &BTreeSet<PublicId>) -> bool {
-        if let Some(first) = participants.iter().next() {
-            self.new.contains_key(first.name())
-        } else {
-            false
-        }
+    pub fn has_pending(&self, section_key_index: u64) -> bool {
+        self.pending.contains_key(&section_key_index)
     }
 }
