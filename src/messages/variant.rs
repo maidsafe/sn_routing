@@ -39,7 +39,7 @@ pub(crate) enum Variant {
     UserMessage(Vec<u8>),
     /// Message sent to newly joined node containing the necessary info to become a member of our
     /// section.
-    NodeApproval(EldersUpdate),
+    NodeApproval(Proven<EldersInfo>),
     /// Message sent to all members to update them about the state of our section.
     Sync(SharedState),
     /// Send from a section to the node to be immediately relocated.
@@ -104,9 +104,22 @@ impl Variant {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         match self {
-            Self::NodeApproval(payload) => {
+            Self::NodeApproval(elders_info) => {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
-                payload.verify(proof_chain, trusted_keys)
+
+                if !elders_info.self_verify() {
+                    return Err(RoutingError::FailedSignature);
+                }
+
+                if !proof_chain.has_key(&elders_info.proof.public_key) {
+                    return Err(RoutingError::UntrustedMessage);
+                }
+
+                match proof_chain.check_trust(trusted_keys) {
+                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
+                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
+                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                }
             }
             Self::NeighbourInfo { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
@@ -218,45 +231,6 @@ impl Debug for JoinRequest {
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
             )
-            .finish()
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct EldersUpdate {
-    pub elders_info: Proven<EldersInfo>,
-}
-
-impl EldersUpdate {
-    pub fn verify<'a, I>(
-        &self,
-        proof_chain: &SectionProofChain,
-        trusted_keys: I,
-    ) -> Result<VerifyStatus>
-    where
-        I: IntoIterator<Item = &'a bls::PublicKey>,
-    {
-        if !self.elders_info.self_verify() {
-            return Err(RoutingError::FailedSignature);
-        }
-
-        if !proof_chain.has_key(&self.elders_info.proof.public_key) {
-            return Err(RoutingError::UntrustedMessage);
-        }
-
-        match proof_chain.check_trust(trusted_keys) {
-            TrustStatus::Trusted => Ok(VerifyStatus::Full),
-            TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-            TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
-        }
-    }
-}
-
-impl Debug for EldersUpdate {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        formatter
-            .debug_struct("EldersUpdate")
-            .field("elders_info", &self.elders_info)
             .finish()
     }
 }

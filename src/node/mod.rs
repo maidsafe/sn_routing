@@ -15,20 +15,20 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
+    consensus::Proven,
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{BootstrapResponse, EldersUpdate, Message, MessageStatus, QueuedMessage, Variant},
+    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant},
     network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
-    section::SectionProofChain,
-    section::SharedState,
+    section::{EldersInfo, SectionProofChain, SharedState},
     transport::PeerStatus,
     TransportConfig, TransportEvent,
 };
@@ -45,7 +45,7 @@ use crate::{
     section::SectionKeyShare,
 };
 #[cfg(feature = "mock")]
-use {crate::section::EldersInfo, std::collections::BTreeSet};
+use std::collections::BTreeSet;
 
 /// Node configuration.
 pub struct NodeConfig {
@@ -787,14 +787,14 @@ impl Node {
         connect_type: Connected,
         msg_backlog: Vec<QueuedMessage>,
         section_key: bls::PublicKey,
-        elders_update: EldersUpdate,
+        elders_info: Proven<EldersInfo>,
     ) -> Result<()> {
         info!(
             "This node has been approved to join the network at {:?}!",
-            elders_update.elders_info.value.prefix,
+            elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(section_key, elders_update.elders_info);
+        let shared_state = SharedState::new(section_key, elders_info);
         let stage = Approved::new(shared_state, None)?;
         self.stage = Stage::Approved(stage);
 
