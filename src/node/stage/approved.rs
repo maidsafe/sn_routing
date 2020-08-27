@@ -1013,7 +1013,7 @@ impl Approved {
     }
 
     fn init_dkg_gen(&mut self, core: &mut Core, dkg_key: &DkgKey) {
-        if self.section_keys_provider.has_dkg(&dkg_key.0) {
+        if self.section_keys_provider.has_pending(dkg_key.1) {
             trace!("DKG for {:?} already completed", dkg_key);
             return;
         }
@@ -1333,13 +1333,17 @@ impl Approved {
         info!("handle DKG result {:?} for {:?}", public_key, dkg_key);
 
         self.section_keys_provider
-            .handle_dkg_result_event(&dkg_key.0, dkg_result);
+            .handle_dkg_result_event(dkg_key.1, dkg_result.clone());
 
-        if self.shared_state.our_history.has_key(&public_key) {
+        if let Some(index) = self.shared_state.our_history.index_of(&public_key) {
             // Our shared state is already up to date, so no need to vote. Just finalize the DKG so
             // we can start using the new secret key share.
-            self.section_keys_provider
-                .finalise_dkg(core.name(), self.shared_state.our_info())?;
+            self.section_keys_provider.finalise_dkg(
+                index - 1,
+                core.name(),
+                self.shared_state.our_info(),
+            );
+
             return Ok(());
         }
 
@@ -1557,18 +1561,11 @@ impl Approved {
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
 
-        match self
-            .section_keys_provider
-            .finalise_dkg(core.name(), update.our_info())
-        {
-            Ok(()) => (),
-            // Ignore `InvalidElderDkgResult` because it just means the DKG hasn't completed
-            // for us yet.
-            // TODO: check that we have an ongoing DKG instance corresponding to the latest
-            // EldersInfo.
-            Err(RoutingError::InvalidElderDkgResult) if !old_is_elder => (),
-            Err(error) => return Err(error),
-        }
+        self.section_keys_provider.finalise_dkg(
+            self.shared_state.our_history.last_key_index(),
+            core.name(),
+            update.our_info(),
+        );
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
 
@@ -1623,23 +1620,21 @@ impl Approved {
         }
 
         if new_last_key_index != old_last_key_index {
-            info!(
-                "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
-                self.shared_state.our_prefix(),
-                self.shared_state.our_history.last_key(),
-                self.shared_state.our_info().elders.values().format(", ")
-            );
-
             self.churn_in_progress = false;
+
             if new_is_elder {
+                info!(
+                    "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
+                    self.shared_state.our_prefix(),
+                    self.shared_state.our_history.last_key(),
+                    self.shared_state.our_info().elders.values().format(", ")
+                );
+
                 self.promote_and_demote_elders(core);
+                self.print_network_stats();
             }
 
             self.send_elders_changed_event(core);
-
-            if self.is_our_elder(core.id()) {
-                self.print_network_stats();
-            }
 
             Ok(true)
         } else {
