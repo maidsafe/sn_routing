@@ -10,7 +10,7 @@ mod stage;
 #[cfg(all(test, feature = "mock"))]
 mod tests;
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
@@ -41,10 +41,10 @@ use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
 use crate::{
-    consensus::{ConsensusEngine, DkgKey, DkgResult},
+    consensus::{DkgKey, DkgResult},
     section::SectionKeyShare,
 };
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 use {crate::section::EldersInfo, std::collections::BTreeSet};
 
 /// Node configuration.
@@ -186,7 +186,7 @@ impl Node {
     /// Register the node event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
         // Populate action_rx timeouts
-        #[cfg(feature = "mock_base")]
+        #[cfg(feature = "mock")]
         self.core.timer.process_timers();
 
         self.timer_rx_idx = select.recv(&self.timer_rx);
@@ -895,7 +895,7 @@ impl Node {
     }
 }
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 impl Node {
     /// Returns whether the node is approved member of a section.
     pub fn is_approved(&self) -> bool {
@@ -1074,22 +1074,6 @@ impl Node {
         };
 
         (node, user_event_rx, transport_client_rx)
-    }
-
-    pub(crate) fn consensus_engine(&self) -> Result<&ConsensusEngine> {
-        if let Some(stage) = self.stage.approved() {
-            Ok(&stage.consensus_engine)
-        } else {
-            Err(RoutingError::InvalidState)
-        }
-    }
-
-    pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {
-        if let Some(stage) = self.stage.approved_mut() {
-            Ok(&mut stage.consensus_engine)
-        } else {
-            Err(RoutingError::InvalidState)
-        }
     }
 
     // Simulate DKG completion

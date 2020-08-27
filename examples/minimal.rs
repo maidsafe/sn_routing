@@ -92,8 +92,8 @@ struct Options {
 }
 
 fn main() {
-    if cfg!(feature = "mock_base") {
-        panic!("This example must be built without the `mock_base` feature");
+    if cfg!(feature = "mock") {
+        panic!("This example must be built without the `mock` feature");
     }
 
     let opts = Options::from_args();

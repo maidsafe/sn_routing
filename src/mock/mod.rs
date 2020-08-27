@@ -6,9 +6,5 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// Mock version of Parsec.
-#[cfg(feature = "mock")]
-pub(crate) mod parsec;
-
 mod env;
 pub use self::env::Environment;

@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, DkgResult, ParsecRequest, Vote},
+    consensus::{self, DkgResult, Vote},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -94,7 +94,7 @@ impl Env {
 
         let candidate = Peer::gen(&mut rng, &network).to_p2p_node();
 
-        let mut env = Self {
+        Self {
             rng,
             network,
             subject,
@@ -102,12 +102,7 @@ impl Env {
             elders_info,
             public_key_set: sk_set.public_keys(),
             candidate,
-        };
-
-        // Process initial unpolled event including genesis
-        env.cast_unconsensused_ordered_votes(env.other_ids.len());
-        env.create_gossip().unwrap();
-        env
+        }
     }
 
     fn poll(&mut self) {
@@ -123,42 +118,6 @@ impl Env {
             .elders
             .get(self.other_ids[index].0.public_id().name())
             .unwrap()
-    }
-
-    fn cast_unconsensused_ordered_votes(&mut self, count: usize) {
-        let parsec = self
-            .subject
-            .consensus_engine_mut()
-            .unwrap()
-            .parsec_map_mut();
-        let events = parsec.our_unpolled_observations().cloned().collect_vec();
-        for event in events {
-            self.other_ids.iter().take(count).for_each(|(full_id, _)| {
-                info!(
-                    "Vote as {:?} for unconsensused event {:?}",
-                    full_id.public_id(),
-                    event
-                );
-                parsec.vote_for_as(event.clone(), full_id);
-            });
-        }
-    }
-
-    fn create_gossip(&mut self) -> Result<()> {
-        let other_full_id = &self.other_ids[0].0;
-        let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
-        let parsec_version = self.subject.consensus_engine()?.parsec_version();
-        let request = ParsecRequest::new();
-        let message = Message::single_src(
-            other_full_id,
-            DstLocation::Direct,
-            Variant::ParsecRequest(parsec_version, request),
-            None,
-            None,
-        )
-        .unwrap();
-
-        self.subject.dispatch_message(Some(addr), message)
     }
 
     fn cast_unordered_votes(
@@ -281,11 +240,6 @@ impl Env {
         )
     }
 
-    fn accumulate_unconsensused_ordered_votes(&mut self) {
-        self.cast_unconsensused_ordered_votes(self.quorum_count());
-        let _ = self.create_gossip();
-    }
-
     fn accumulate_offline(&mut self, p2p_node: P2pNode) {
         let _ = self.cast_unordered_votes(
             self.quorum_count(),
@@ -390,7 +344,6 @@ impl Env {
         self.accumulate_offline(dropped_elder);
         self.simulate_dkg(&new_info)?;
         self.accumulate_our_key_and_section_info_if_vote(&new_info)?;
-        self.accumulate_unconsensused_ordered_votes();
 
         self.elders_info = new_info.new_elders_info;
         self.other_ids = new_info.new_other_ids;
@@ -512,7 +465,6 @@ fn add_and_promote_member() {
     env.simulate_dkg(&new_info).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&new_info)
         .unwrap();
-    env.accumulate_unconsensused_ordered_votes();
 
     assert!(!env.has_unpolled_observations());
     assert!(env.is_candidate_member());
@@ -527,7 +479,6 @@ fn remove_member() {
     env.simulate_dkg(&info1).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info1)
         .unwrap();
-    env.accumulate_unconsensused_ordered_votes();
 
     env.other_ids = info1.new_other_ids;
     env.elders_info = info1.new_elders_info;
@@ -548,7 +499,6 @@ fn remove_elder() {
     env.simulate_dkg(&info1).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info1)
         .unwrap();
-    env.accumulate_unconsensused_ordered_votes();
 
     let info2 = env.new_elders_info_without_candidate();
 
@@ -560,7 +510,6 @@ fn remove_elder() {
     env.simulate_dkg(&info2).unwrap();
     env.accumulate_our_key_and_section_info_if_vote(&info2)
         .unwrap();
-    env.accumulate_unconsensused_ordered_votes();
 
     assert!(!env.has_unpolled_observations());
     assert!(!env.is_candidate_member());

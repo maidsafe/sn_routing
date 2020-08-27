@@ -3,5 +3,4 @@
 set -x -e
 
 cargo clippy "$@" --all-targets
-cargo clippy "$@" --all-targets --features=mock_base
 cargo clippy "$@" --all-targets --features=mock

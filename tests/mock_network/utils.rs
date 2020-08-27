@@ -40,7 +40,7 @@ const POLL_UNTIL_MAX_ITERATIONS: usize = 2000;
 
 // Duration to advance the time after each iteration of poll_until.
 const POLL_UNTIL_TIME_STEP: Duration =
-    Duration::from_millis(test_consts::GOSSIP_PERIOD.as_millis() as u64 + 1);
+    Duration::from_millis(test_consts::RESEND_DELAY.as_millis() as u64 + 1);
 
 // Maximum number of iterations of the `poll_all` function. Hitting this limit does not necessarily
 // indicate an error. It just prevents infinite loops in case the time needs to be advanced to make

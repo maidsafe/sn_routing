@@ -27,7 +27,7 @@ pub use self::{
 };
 pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use self::event_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 
 use self::{
@@ -263,13 +263,8 @@ impl ConsensusEngine {
         self.parsec_map.gossip_recipients()
     }
 
-    #[cfg(feature = "mock_base")]
+    #[cfg(feature = "mock")]
     pub fn parsec_map(&self) -> &ParsecMap {
         &self.parsec_map
-    }
-
-    #[cfg(all(test, feature = "mock"))]
-    pub fn parsec_map_mut(&mut self) -> &mut ParsecMap {
-        &mut self.parsec_map
     }
 }

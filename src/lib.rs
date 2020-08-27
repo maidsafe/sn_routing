@@ -99,20 +99,20 @@ pub mod event;
 // ############################################################################
 
 /// Mocking utilities.
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub mod mock;
 /// Random number generation
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub mod rng;
 
 /// Mock network
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 pub use self::{
     consensus::threshold_count,
     section::{quorum_count, MIN_AGE},
 };
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 #[doc(hidden)]
 pub mod test_consts {
     pub use crate::{
@@ -121,9 +121,6 @@ pub mod test_consts {
         transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
     };
 }
-
-#[cfg(feature = "mock")]
-pub use self::mock::parsec::init_mock;
 
 // ############################################################################
 // Private
@@ -141,7 +138,7 @@ mod network_params;
 mod node;
 mod pause;
 mod relocation;
-#[cfg(not(feature = "mock_base"))]
+#[cfg(not(feature = "mock"))]
 mod rng;
 mod section;
 mod time;
@@ -168,9 +165,9 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 const ELDER_SIZE: usize = 7;
 
 // Quic-p2p
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock")]
 use mock_quic_p2p as quic_p2p;
-#[cfg(not(feature = "mock_base"))]
+#[cfg(not(feature = "mock"))]
 use quic_p2p;
 
 #[cfg(test)]

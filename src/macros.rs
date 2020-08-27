@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// This macro will panic with the given message if compiled with "mock_base", otherwise it
+/// This macro will panic with the given message if compiled with "mock", otherwise it
 /// will simply log the message at the requested level.
 ///
 /// Example usage:
@@ -14,7 +14,7 @@
 #[macro_export]
 macro_rules! log_or_panic {
     ($log_level:expr, $($arg:tt)*) => {
-        if cfg!(feature = "mock_base") && !::std::thread::panicking() {
+        if cfg!(feature = "mock") && !::std::thread::panicking() {
             $crate::log_utils::with_ident(|ident| {
                 panic!("{}{}", ident, format_args!($($arg)*));
             })

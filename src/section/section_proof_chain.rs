@@ -53,7 +53,7 @@ impl SectionProofChain {
     }
 
     /// Pushed a new key into the chain without validating the signature. For testing only.
-    #[cfg(any(test, feature = "mock_base"))]
+    #[cfg(any(test, feature = "mock"))]
     pub fn push_without_validation(&mut self, key: bls::PublicKey, signature: bls::Signature) {
         self.tail.push(Block { key, signature })
     }
@@ -82,7 +82,7 @@ impl SectionProofChain {
     }
 
     /// Returns the index of the key in the chain or `None` if not present in the chain.
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn index_of(&self, key: &bls::PublicKey) -> Option<u64> {
         self.keys()
             .position(|existing_key| existing_key == key)
@@ -313,7 +313,7 @@ struct Block {
 }
 
 impl Block {
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     fn verify(&self, public_key: &bls::PublicKey) -> bool {
         bincode::serialize(&self.key)
             .map(|bytes| public_key.verify(&self.signature, &bytes))

@@ -194,7 +194,7 @@ impl SectionMap {
             .map(|entry| (&entry.value.0, &entry.value.1))
     }
 
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys.iter().any(|entry| entry.value.1 == *key)
     }
@@ -306,7 +306,7 @@ impl SectionMap {
     }
 
     /// Returns iterator over all neighbours sections.
-    #[cfg(any(test, feature = "mock_base"))]
+    #[cfg(any(test, feature = "mock"))]
     pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
         self.neighbours.iter().map(|info| &info.value)
     }

@@ -261,7 +261,7 @@ impl Message {
 
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
     // last key (and therefore the signature) intact.
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,

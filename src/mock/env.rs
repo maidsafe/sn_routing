@@ -6,8 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "mock")]
-use crate::mock::parsec;
 use crate::{
     network_params::NetworkParams,
     quic_p2p::Network,
@@ -51,9 +49,6 @@ impl Environment {
                 })
                 .init()
         });
-
-        #[cfg(feature = "mock")]
-        parsec::init_mock();
 
         let seed = Seed::default();
         let network = Network::new();
