@@ -12,7 +12,6 @@ mod message_accumulator;
 mod src_authority;
 mod variant;
 
-pub(crate) use self::variant::EldersUpdate;
 pub(crate) use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
     message_accumulator::MessageAccumulator,
@@ -407,8 +406,7 @@ mod tests {
         let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info);
 
-        let elders_update = EldersUpdate { elders_info };
-        let variant = Variant::NodeApproval(elders_update);
+        let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(
             &full_id,
             DstLocation::Direct,

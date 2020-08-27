@@ -18,8 +18,8 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{
-        self, AccumulatingMessage, BootstrapResponse, EldersUpdate, JoinRequest, Message,
-        MessageAccumulator, MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
+        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageAccumulator,
+        MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
@@ -1741,8 +1741,7 @@ impl Approved {
             .shared_state
             .create_proof_chain_for_our_info(their_knowledge);
 
-        let elders_update = self.create_elders_update();
-        let variant = Variant::NodeApproval(elders_update);
+        let variant = Variant::NodeApproval(self.shared_state.sections.proven_our().clone());
 
         trace!("Send {:?} to {:?}", variant, p2p_node);
         let message = Message::single_src(
@@ -1777,12 +1776,6 @@ impl Approved {
         }
 
         Ok(())
-    }
-
-    fn create_elders_update(&self) -> EldersUpdate {
-        EldersUpdate {
-            elders_info: self.shared_state.sections.proven_our().clone(),
-        }
     }
 
     fn send_relocate(
