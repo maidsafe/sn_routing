@@ -87,11 +87,37 @@ impl bls_dkg::id::SecretId for FullId {
 /// Network identity component containing name and public keys.
 ///
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
-/// `public_signing_key` when deserialising.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+/// `public_key` when deserialising.
+#[derive(Copy, Clone)]
 pub struct PublicId {
     name: XorName,
     public_key: PublicKey,
+}
+
+impl PartialEq for PublicId {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.eq(&other.name)
+    }
+}
+
+impl Eq for PublicId {}
+
+impl Hash for PublicId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
+impl Ord for PublicId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl PartialOrd for PublicId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Debug for PublicId {
@@ -135,7 +161,8 @@ impl PublicId {
 
     /// Verifies this id signed a message
     pub fn verify(&self, message: &[u8], sig: &Signature) -> bool {
-        self.public_key.verify(message, sig).is_ok()
+        use ed25519_dalek::Verifier;
+        self.public_key.verify(message, &sig.0).is_ok()
     }
 
     /// Returns public signing key.
