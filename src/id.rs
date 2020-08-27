@@ -122,7 +122,7 @@ impl PartialOrd for PublicId {
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "PublicId(name: {})", self.name())
+        write!(formatter, "PublicId({})", self.name())
     }
 }
 
