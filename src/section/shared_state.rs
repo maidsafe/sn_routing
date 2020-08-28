@@ -37,20 +37,24 @@ pub(crate) struct SharedState {
 }
 
 impl SharedState {
-    /// Creates a minimal `SharedState` initially contains only info about our section elders
-    /// (`elders_info`) and whose section chain contains only a single key (`section_key`).
-    /// Note: currently the `EldersInfo`s are not signed with the latest section key, but with the
-    /// one before that. Because of that, we need to pass the latest key explicitly via the
-    /// `section_key` argument. This might change in the future.
-    pub fn new(section_key: bls::PublicKey, elders_info: Proven<EldersInfo>) -> Self {
+    /// Creates a minimal `SharedState` initially containing only info about our section elders
+    /// (`elders_info`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key used to sign `elders_info` is not present in `section_chain`.
+    pub fn new(section_chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Self {
+        assert!(section_chain.has_key(&elders_info.proof.public_key));
+
         Self {
-            our_history: SectionProofChain::new(section_key),
+            our_history: section_chain,
             sections: SectionMap::new(elders_info),
             our_members: SectionMembers::default(),
         }
     }
 
     // Merge two `SharedState`s into one.
+    // TODO: return `bool` indicating whether anything changed.
     pub fn merge(&mut self, other: Self) -> Result<(), RoutingError> {
         if !other.our_history.self_verify() {
             return Err(RoutingError::InvalidMessage);
@@ -72,6 +76,36 @@ impl SharedState {
     // Clear all data except that which is needed for non-elders.
     pub fn demote(&mut self) {
         *self = self.to_minimal();
+    }
+
+    pub fn update_our_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
+        if self
+            .sections
+            .update_our_info(elders_info, &self.our_history)
+        {
+            self.our_members
+                .remove_not_matching_our_prefix(&self.sections.our().prefix);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
+        self.sections.update_neighbour_info(elders_info)
+    }
+
+    pub fn update_our_key(&mut self, key: Proven<bls::PublicKey>) -> bool {
+        self.our_history.push(key.value, key.proof.signature)
+    }
+
+    pub fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
+        if key.value.0 == *self.our_prefix() {
+            // Ignore our keys. Use `update_our_key` for that.
+            return false;
+        }
+
+        self.sections.update_their_key(key)
     }
 
     pub fn to_minimal(&self) -> Self {
@@ -232,27 +266,6 @@ impl SharedState {
 
             Some(vec![new_info])
         }
-    }
-
-    pub fn update_our_section(
-        &mut self,
-        section_key: Proven<bls::PublicKey>,
-        elders_info: Proven<EldersInfo>,
-    ) {
-        // The section public key of the proof shall be known to us.
-        if !self.our_history.has_key(&section_key.proof.public_key) {
-            trace!(
-                "not updating our section - Old section key {:?} is not known to us.",
-                section_key.proof.public_key
-            );
-            return;
-        }
-
-        self.our_members
-            .remove_not_matching_our_prefix(&elders_info.value.prefix);
-        self.our_history
-            .push(section_key.value, section_key.proof.signature);
-        self.sections.set_our(elders_info);
     }
 
     /// Provide a SectionProofChain that proves the given signature to the given destination
@@ -459,7 +472,7 @@ impl SharedState {
         // section key at the same time.
         self.our_history
             .index_of(&self.sections.proven_our().proof.public_key)
-            .expect("our EldersInfo signed with unknown key")
+            .unwrap_or_else(|| unreachable!("our EldersInfo signed with unknown key"))
     }
 }
 
@@ -538,7 +551,7 @@ mod test {
             !neighbour_info.value.prefix.matches(our_id.name()),
             "Only add neighbours."
         );
-        state.sections.add_neighbour(neighbour_info)
+        let _ = state.sections.update_neighbour_info(neighbour_info);
     }
 
     fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId, bls::SecretKey)
@@ -565,7 +578,7 @@ mod test {
         let elders_info = sections_iter.next().expect("section members");
         let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
-        let mut state = SharedState::new(sk.public_key(), elders_info);
+        let mut state = SharedState::new(SectionProofChain::new(sk.public_key()), elders_info);
 
         for info in sections_iter {
             let info = consensus::test_utils::proven(&sk, info);

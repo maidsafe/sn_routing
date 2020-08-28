@@ -107,11 +107,7 @@ impl Variant {
             Self::NodeApproval(elders_info) => {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
 
-                if !elders_info.self_verify() {
-                    return Err(RoutingError::FailedSignature);
-                }
-
-                if !proof_chain.has_key(&elders_info.proof.public_key) {
+                if !elders_info.verify(proof_chain) {
                     return Err(RoutingError::UntrustedMessage);
                 }
 
@@ -123,6 +119,7 @@ impl Variant {
             }
             Self::NeighbourInfo { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+
                 if !elders_info.verify(proof_chain) {
                     return Err(RoutingError::UntrustedMessage);
                 }

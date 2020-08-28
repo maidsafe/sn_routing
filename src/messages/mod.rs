@@ -245,17 +245,15 @@ impl Message {
     }
 
     /// Returns the attached proof chain, if any.
-    #[cfg(all(test, feature = "mock"))]
-    pub(crate) fn proof_chain(&self) -> Option<&SectionProofChain> {
-        self.proof_chain.as_ref()
+    pub(crate) fn proof_chain(&self) -> Result<&SectionProofChain> {
+        self.proof_chain
+            .as_ref()
+            .ok_or(RoutingError::InvalidMessage)
     }
 
     /// Returns the last key of the attached the proof chain, if any.
     pub(crate) fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
-        self.proof_chain
-            .as_ref()
-            .map(|proof_chain| proof_chain.last_key())
-            .ok_or(RoutingError::InvalidMessage)
+        self.proof_chain().map(|proof_chain| proof_chain.last_key())
     }
 
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
@@ -401,7 +399,7 @@ mod tests {
 
         let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1).unwrap());
-        full_proof_chain.push(pk1, pk1_sig);
+        let _ = full_proof_chain.push(pk1, pk1_sig);
 
         let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info);

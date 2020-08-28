@@ -6,295 +6,177 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::EldersInfo;
+use super::{EldersInfo, SharedState};
 use crate::consensus::Proven;
-
 use xor_name::{Prefix, XorName};
 
-/// Helper structure to synchronize the events necessary to update our section.
+/// Helper structure to synchronize updates to `SharedState` in order to keep certain useful
+/// invariants:
+///
+/// - our `EldersInfo` corresponds to the latest section chain key.
+/// - in case of split, both siblings know each others latest keys
+///
+/// Usage: each mutation to be applied to our `SharedState` must pass through this barrier first.
+/// Call the corresponding handler (`handle_section_info`, `handle_our_key`, ...) and then call
+/// `take`. If it returns `Some` for our and/or sibling section, apply it to the corresponding
+/// state, otherwise do nothing.
+///
+/// TODO: this whole machinery might not be necessary. It's possible the above invariants are not
+/// really needed. Investigate whether that is the case.
 #[derive(Default)]
-pub struct SectionUpdateBarrier {
-    our_key: Option<Proven<bls::PublicKey>>,
-    our_info: Option<Proven<EldersInfo>>,
-
-    sibling_key: Option<Proven<(Prefix, bls::PublicKey)>>,
-    sibling_info: Option<Proven<EldersInfo>>,
-
-    // Sibling's own key
-    sibling_our_key: Option<Proven<bls::PublicKey>>,
-    // Our key for sibling
-    sibling_their_key: Option<Proven<(Prefix, bls::PublicKey)>>,
+pub(crate) struct SectionUpdateBarrier {
+    our: Option<SharedState>,
+    sibling: Option<SharedState>,
 }
 
 impl SectionUpdateBarrier {
-    pub fn handle_sibling_our_key(
+    pub fn handle_section_info(
         &mut self,
-        our_prefix: &Prefix,
-        new_key: Proven<bls::PublicKey>,
-    ) -> Option<SectionUpdateDetails> {
-        self.sibling_our_key = Some(new_key);
-        self.try_get_details(our_prefix)
-    }
-
-    pub fn handle_sibling_their_key(
-        &mut self,
-        our_prefix: &Prefix,
-        new_key: Proven<(Prefix, bls::PublicKey)>,
-    ) -> Option<SectionUpdateDetails> {
-        self.sibling_their_key = Some(new_key);
-        self.try_get_details(our_prefix)
+        current: &SharedState,
+        our_name: &XorName,
+        elders_info: Proven<EldersInfo>,
+    ) {
+        if elders_info
+            .value
+            .prefix
+            .is_extension_of(current.our_prefix())
+        {
+            if elders_info.value.prefix.matches(our_name) {
+                update(&mut self.our, current, |state| {
+                    state.update_our_info(elders_info.clone())
+                });
+                update(&mut self.sibling, current, |state| {
+                    state.update_neighbour_info(elders_info)
+                });
+            } else {
+                update(&mut self.sibling, current, |state| {
+                    state.update_our_info(elders_info.clone())
+                });
+                update(&mut self.our, current, |state| {
+                    state.update_neighbour_info(elders_info)
+                });
+            }
+        } else {
+            update(&mut self.our, current, |state| {
+                state.update_our_info(elders_info.clone())
+            });
+        }
     }
 
     pub fn handle_our_key(
         &mut self,
-        our_prefix: &Prefix,
-        new_key: Proven<bls::PublicKey>,
-    ) -> Option<SectionUpdateDetails> {
-        self.our_key = Some(new_key);
-        self.try_get_details(our_prefix)
+        current: &SharedState,
+        our_name: &XorName,
+        prefix: &Prefix,
+        key: Proven<bls::PublicKey>,
+    ) {
+        if prefix.matches(our_name) {
+            update(&mut self.our, current, |state| state.update_our_key(key))
+        } else {
+            update(&mut self.sibling, current, |state| {
+                state.update_our_key(key)
+            })
+        }
     }
 
     pub fn handle_their_key(
         &mut self,
-        our_prefix: &Prefix,
-        new_key: Proven<(Prefix, bls::PublicKey)>,
-    ) -> Option<SectionUpdateDetails> {
-        self.sibling_key = Some(new_key);
-        self.try_get_details(our_prefix)
-    }
-
-    pub fn handle_info(
-        &mut self,
+        current: &SharedState,
         our_name: &XorName,
-        our_prefix: &Prefix,
-        new_info: Proven<EldersInfo>,
-    ) -> Option<SectionUpdateDetails> {
-        if new_info.value.prefix.matches(our_name) {
-            self.our_info = Some(new_info);
+        key: Proven<(Prefix, bls::PublicKey)>,
+    ) {
+        if key.value.0.matches(our_name) {
+            update(&mut self.sibling, current, |state| {
+                state.update_their_key(key)
+            })
         } else {
-            self.sibling_info = Some(new_info);
-        }
-
-        self.try_get_details(our_prefix)
-    }
-
-    fn try_get_details(&self, our_prefix: &Prefix) -> Option<SectionUpdateDetails> {
-        match (
-            self.our_key.clone(),
-            self.our_info.clone(),
-            self.sibling_key.clone(),
-            self.sibling_info.clone(),
-            self.sibling_our_key.clone(),
-            self.sibling_their_key.clone(),
-        ) {
-            (Some(our_key), Some(our_info), None, None, None, None)
-                if our_info.value.prefix == *our_prefix =>
-            {
-                Some(SectionUpdateDetails {
-                    our: OurDetails {
-                        key: our_key,
-                        info: our_info,
-                    },
-                    sibling: None,
-                })
-            }
-            (
-                Some(our_key),
-                Some(our_info),
-                Some(sibling_key),
-                Some(sibling_info),
-                Some(sibling_our_key),
-                Some(sibling_their_key),
-            ) => Some(SectionUpdateDetails {
-                our: OurDetails {
-                    key: our_key,
-                    info: our_info,
-                },
-                sibling: Some(SiblingDetails {
-                    key: sibling_key,
-                    info: sibling_info,
-                    sibling_our_key,
-                    sibling_their_key,
-                }),
-            }),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub struct SectionUpdateDetails {
-    pub our: OurDetails,
-    pub sibling: Option<SiblingDetails>,
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub struct OurDetails {
-    pub key: Proven<bls::PublicKey>,
-    pub info: Proven<EldersInfo>,
-}
-
-#[derive(Eq, PartialEq, Debug)]
-pub struct SiblingDetails {
-    pub key: Proven<(Prefix, bls::PublicKey)>,
-    pub info: Proven<EldersInfo>,
-    pub sibling_our_key: Proven<bls::PublicKey>,
-    pub sibling_their_key: Proven<(Prefix, bls::PublicKey)>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{consensus::test_utils, rng};
-    use itertools::Itertools;
-    use rand::Rng;
-
-    #[test]
-    fn simple() {
-        let mut rng = rng::new();
-
-        let our_prefix: Prefix = "01".parse().unwrap();
-        let our_name = our_prefix.substituted_in(rng.gen());
-
-        let old_sk = test_utils::gen_secret_key(&mut rng);
-        let new_key = test_utils::gen_secret_key(&mut rng).public_key();
-        let new_key = test_utils::proven(&old_sk, new_key);
-
-        let new_info = dummy_elders_info(our_prefix);
-        let new_info = test_utils::proven(&old_sk, new_info);
-
-        let all_ops = vec![Op::OurKey(new_key.clone()), Op::Info(new_info.clone())];
-
-        assert_eq!(execute(&our_name, &our_prefix, vec![]), None);
-
-        for ops in all_ops.clone().into_iter().combinations(1) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
-        }
-
-        for ops in all_ops.into_iter().combinations(2) {
-            let details = execute(&our_name, &our_prefix, ops).unwrap();
-            assert_eq!(details.our.key, new_key);
-            assert_eq!(details.our.info, new_info);
-            assert_eq!(details.sibling, None);
+            update(&mut self.our, current, |state| state.update_their_key(key))
         }
     }
 
-    #[test]
-    fn split() {
-        let mut rng = rng::new();
+    // Takes out the `SharedState` diffs to be applied to our (and siblings, in case of a split)
+    // shared state if the invariants described above are met.
+    // Returns `(our_state, sibling_state)`.
+    pub fn take(&mut self, current_prefix: &Prefix) -> (Option<SharedState>, Option<SharedState>) {
+        let our = if let Some(state) = &self.our {
+            state
+        } else {
+            return (None, None);
+        };
 
-        let our_prefix: Prefix = "01".parse().unwrap();
-        let old_sk = test_utils::gen_secret_key(&mut rng);
-
-        let our_new_prefix = our_prefix.pushed(rng.gen());
-        let our_new_public_key = test_utils::gen_secret_key(&mut rng).public_key();
-        let our_new_key = test_utils::proven(&old_sk, our_new_public_key);
-        let our_new_info = dummy_elders_info(our_new_prefix);
-        let our_new_info = test_utils::proven(&old_sk, our_new_info);
-
-        let sibling_new_prefix = our_new_prefix.sibling();
-        let sibling_new_public_key = test_utils::gen_secret_key(&mut rng).public_key();
-        let sibling_new_key =
-            test_utils::proven(&old_sk, (sibling_new_prefix, sibling_new_public_key));
-        let sibling_new_info = dummy_elders_info(sibling_new_prefix);
-        let sibling_new_info = test_utils::proven(&old_sk, sibling_new_info);
-
-        let sibling_our_key = test_utils::proven(&old_sk, sibling_new_public_key);
-        let sibling_their_key = test_utils::proven(&old_sk, (our_new_prefix, our_new_public_key));
-
-        let our_name = our_new_prefix.substituted_in(rng.gen());
-
-        let all_ops = vec![
-            Op::OurKey(our_new_key.clone()),
-            Op::TheirKey(sibling_new_key.clone()),
-            Op::Info(our_new_info.clone()),
-            Op::Info(sibling_new_info.clone()),
-            Op::SiblingOurKey(sibling_our_key.clone()),
-            Op::SiblingTheirKey(sibling_their_key.clone()),
-        ];
-
-        assert_eq!(execute(&our_name, &our_prefix, vec![]), None);
-
-        for ops in all_ops.clone().into_iter().combinations(1) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
+        if !is_our_info_in_sync_with_our_key(our) {
+            return (None, None);
         }
 
-        for ops in all_ops.clone().into_iter().combinations(2) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
-        }
-
-        for ops in all_ops.clone().into_iter().combinations(3) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
-        }
-
-        for ops in all_ops.clone().into_iter().combinations(4) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
-        }
-
-        for ops in all_ops.clone().into_iter().combinations(5) {
-            assert_eq!(execute(&our_name, &our_prefix, ops), None);
-        }
-
-        for ops in all_ops.into_iter().combinations(6) {
-            let details = execute(&our_name, &our_prefix, ops).unwrap();
-            assert_eq!(details.our.key, our_new_key);
-            assert_eq!(details.our.info, our_new_info);
-
-            assert_eq!(
-                details.sibling.as_ref().map(|d| &d.key),
-                Some(&sibling_new_key)
-            );
-            assert_eq!(
-                details.sibling.as_ref().map(|d| &d.info),
-                Some(&sibling_new_info)
-            );
-
-            assert_eq!(
-                details.sibling.as_ref().map(|d| &d.sibling_our_key),
-                Some(&sibling_our_key)
-            );
-            assert_eq!(
-                details.sibling.as_ref().map(|d| &d.sibling_their_key),
-                Some(&sibling_their_key)
-            );
-        }
-    }
-
-    #[derive(Clone, Debug)]
-    enum Op {
-        OurKey(Proven<bls::PublicKey>),
-        TheirKey(Proven<(Prefix, bls::PublicKey)>),
-        Info(Proven<EldersInfo>),
-        SiblingOurKey(Proven<bls::PublicKey>),
-        SiblingTheirKey(Proven<(Prefix, bls::PublicKey)>),
-    }
-
-    fn execute(
-        our_name: &XorName,
-        our_prefix: &Prefix,
-        ops: Vec<Op>,
-    ) -> Option<SectionUpdateDetails> {
-        let mut barrier = SectionUpdateBarrier::default();
-        let mut output = None;
-        for op in ops {
-            output = match op {
-                Op::OurKey(new_key) => barrier.handle_our_key(our_prefix, new_key),
-                Op::TheirKey(new_key) => barrier.handle_their_key(our_prefix, new_key),
-                Op::Info(new_info) => barrier.handle_info(our_name, our_prefix, new_info),
-                Op::SiblingOurKey(new_key) => barrier.handle_sibling_our_key(our_prefix, new_key),
-                Op::SiblingTheirKey(new_key) => {
-                    barrier.handle_sibling_their_key(our_prefix, new_key)
+        if our.our_prefix() == current_prefix {
+            if let Some(sibling) = &self.sibling {
+                if sibling.our_prefix().is_extension_of(current_prefix) {
+                    return (None, None);
                 }
+            } else {
+                return (self.our.take(), None);
             }
         }
 
-        output
-    }
+        let sibling = if let Some(state) = &self.sibling {
+            state
+        } else {
+            return (None, None);
+        };
 
-    fn dummy_elders_info(prefix: Prefix) -> EldersInfo {
-        EldersInfo {
-            prefix,
-            elders: Default::default(),
+        if !is_our_info_in_sync_with_our_key(sibling) {
+            return (None, None);
+        }
+
+        if !our.sections.has_key(sibling.our_history.last_key()) {
+            return (None, None);
+        }
+
+        if our.sections.get(sibling.our_prefix()) != Some(sibling.our_info()) {
+            return (None, None);
+        }
+
+        if !sibling.sections.has_key(our.our_history.last_key()) {
+            return (None, None);
+        }
+
+        if sibling.sections.get(our.our_prefix()) != Some(our.our_info()) {
+            return (None, None);
+        }
+
+        (self.our.take(), self.sibling.take())
+    }
+}
+
+fn update(
+    barrier_state: &mut Option<SharedState>,
+    current: &SharedState,
+    f: impl FnOnce(&mut SharedState) -> bool,
+) {
+    if let Some(state) = barrier_state {
+        let _ = f(state);
+    } else {
+        let mut state = current.clone();
+        if f(&mut state) {
+            *barrier_state = Some(state);
         }
     }
 }
+
+fn is_our_info_in_sync_with_our_key(state: &SharedState) -> bool {
+    // Note: the first key in the chain is signed with itself, so we need to special-case this to
+    // avoid returning incomplete state prematurely when there is only one node in the network.
+    if state.our_info().prefix == Prefix::default() && state.our_info().elders.len() <= 1 {
+        return false;
+    }
+
+    state
+        .our_history
+        .index_of(&state.sections.proven_our().proof.public_key)
+        .map(|index| index + 1 == state.our_history.last_key_index())
+        .unwrap_or(false)
+}
+
+// TODO: write tests
+#[cfg(test)]
+mod tests {}

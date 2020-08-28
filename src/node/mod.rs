@@ -623,9 +623,9 @@ impl Node {
                 Variant::NodeApproval(payload) => {
                     let connect_type = stage.connect_type();
                     let msg_backlog = stage.take_message_backlog();
-                    let section_key = *msg.proof_chain_last_key()?;
+                    let section_chain = msg.proof_chain()?.clone();
 
-                    self.approve(connect_type, msg_backlog, section_key, payload.clone())?
+                    self.approve(connect_type, msg_backlog, section_chain, payload.clone())?
                 }
                 _ => unreachable!(),
             },
@@ -786,7 +786,7 @@ impl Node {
         &mut self,
         connect_type: Connected,
         msg_backlog: Vec<QueuedMessage>,
-        section_key: bls::PublicKey,
+        section_chain: SectionProofChain,
         elders_info: Proven<EldersInfo>,
     ) -> Result<()> {
         info!(
@@ -794,7 +794,7 @@ impl Node {
             elders_info.value.prefix,
         );
 
-        let shared_state = SharedState::new(section_key, elders_info);
+        let shared_state = SharedState::new(section_chain, elders_info);
         let stage = Approved::new(shared_state, None)?;
         self.stage = Stage::Approved(stage);
 
