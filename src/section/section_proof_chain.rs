@@ -32,23 +32,25 @@ impl SectionProofChain {
     }
 
     /// Pushes a new key into the chain but only if the signature is valid.
-    pub(crate) fn push(&mut self, key: bls::PublicKey, signature: bls::Signature) {
+    /// Returns whether the chain changed.
+    pub(crate) fn push(&mut self, key: bls::PublicKey, signature: bls::Signature) -> bool {
         if self.has_key(&key) {
             trace!("already has key {:?}", key);
-            return;
+            return false;
         }
         let valid = bincode::serialize(&key)
             .map(|bytes| self.last_key().verify(&signature, &bytes))
             .unwrap_or(false);
 
         if valid {
-            self.tail.push(Block { key, signature })
+            self.tail.push(Block { key, signature });
+            true
         } else {
-            log_or_panic!(
-                log::Level::Error,
+            error!(
                 "invalid SectionProofChain block signature (last key: {:?})",
                 self.last_key()
-            )
+            );
+            false
         }
     }
 
@@ -353,7 +355,7 @@ mod tests {
 
         // Add another block with valid signature by the previous block.
         let (key, signature, _) = gen_block(&mut rng, &secret_key);
-        chain.push(key, signature);
+        let _ = chain.push(key, signature);
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
         // because the rest of the chain contains invalid block.
@@ -519,10 +521,10 @@ mod tests {
         let mut chain1 = chain0.clone();
 
         let (c0b0_pk, c0b0_signature, _) = gen_block(&mut rng, &sk);
-        chain0.push(c0b0_pk, c0b0_signature);
+        let _ = chain0.push(c0b0_pk, c0b0_signature);
 
         let (c1b0_pk, c1b0_signature, _) = gen_block(&mut rng, &sk);
-        chain1.push(c1b0_pk, c1b0_signature);
+        let _ = chain1.push(c1b0_pk, c1b0_signature);
 
         assert_eq!(chain0.merge(chain1), Err(MergeError));
     }
@@ -539,17 +541,17 @@ mod tests {
         let mut chain1 = chain0.clone();
 
         let (c0b0_pk, c0b0_signature, c0b0_sk) = gen_block(&mut rng, &sk);
-        chain0.push(c0b0_pk, c0b0_signature);
+        let _ = chain0.push(c0b0_pk, c0b0_signature);
 
         let (c1b0_pk, c1b0_signature, c1b0_sk) = gen_block(&mut rng, &sk);
-        chain1.push(c1b0_pk, c1b0_signature);
+        let _ = chain1.push(c1b0_pk, c1b0_signature);
 
         let (b1_pk, _) = gen_keys(&mut rng);
         let c0b1_signature = c0b0_sk.sign(&bincode::serialize(&b1_pk).unwrap());
-        chain0.push(b1_pk, c0b1_signature);
+        let _ = chain0.push(b1_pk, c0b1_signature);
 
         let c1b1_signature = c1b0_sk.sign(&bincode::serialize(&b1_pk).unwrap());
-        chain1.push(b1_pk, c1b1_signature);
+        let _ = chain1.push(b1_pk, c1b1_signature);
 
         assert_eq!(chain0.merge(chain1), Err(MergeError));
     }
@@ -576,7 +578,7 @@ mod tests {
         for _ in 1..len {
             let (new_public_key, new_signature, new_secret_key) =
                 gen_block(rng, &current_secret_key);
-            chain.push(new_public_key, new_signature);
+            let _ = chain.push(new_public_key, new_signature);
             current_secret_key = new_secret_key;
         }
 

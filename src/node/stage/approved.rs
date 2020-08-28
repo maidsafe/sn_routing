@@ -25,7 +25,7 @@ use crate::{
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
-        SectionUpdateBarrier, SectionUpdateDetails, SharedState, MIN_AGE,
+        SectionProofChain, SectionUpdateBarrier, SharedState, MIN_AGE,
     },
     time::Duration,
 };
@@ -69,6 +69,8 @@ impl Approved {
 
         // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
         // of the network there is no previous key. Sign with the current key instead.
+        // TODO: consider signing it with a throwaway key instead, to avoid having to special-case
+        // this in some places.
         let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node)?;
         let shared_state =
             create_first_shared_state(&public_key_set, &secret_key_share, elders_info)?;
@@ -578,12 +580,12 @@ impl Approved {
     }
 
     pub fn handle_sync(&mut self, core: &mut Core, shared_state: SharedState) -> Result<()> {
-        if self.update_shared_state(core, shared_state)? {
-            core.msg_filter.reset();
-            self.send_sync(core, self.shared_state.clone())?;
+        if !shared_state.our_prefix().matches(core.name()) {
+            trace!("ignore Sync - not our section");
+            return Ok(());
         }
 
-        Ok(())
+        self.update_shared_state(core, shared_state)
     }
 
     pub fn handle_relocate(
@@ -1387,10 +1389,6 @@ impl Approved {
         elders_info: EldersInfo,
         proof: Proof,
     ) -> Result<()> {
-        if elders_info == *self.shared_state.our_info() {
-            trace!("ignore SectionInfo {:?}, already updated", elders_info);
-            return Ok(());
-        }
         let elders_info = Proven::new(elders_info, proof);
 
         if elders_info.value.prefix == *self.shared_state.our_prefix()
@@ -1399,20 +1397,17 @@ impl Approved {
                 .prefix
                 .is_extension_of(self.shared_state.our_prefix())
         {
-            // Our section
-            if let Some(details) = self.section_update_barrier.handle_info(
+            self.section_update_barrier.handle_section_info(
+                &self.shared_state,
                 core.name(),
-                self.shared_state.our_prefix(),
                 elders_info,
-            ) {
-                self.update_our_section(core, details)?
-            }
+            );
+            self.try_update_our_section(core)
         } else {
             // Other section
-            self.update_neighbour_info(core, elders_info)
+            self.update_neighbour_info(core, elders_info);
+            Ok(())
         }
-
-        Ok(())
     }
 
     fn handle_our_key_event(
@@ -1422,30 +1417,11 @@ impl Approved {
         key: bls::PublicKey,
         proof: Proof,
     ) -> Result<()> {
-        if self.section_keys_provider.public_key() == Some(key) {
-            trace!("Ignore OurKeyEvent {:?}, as already promoted", key);
-            return Ok(());
-        }
-
         let key = Proven::new(key, proof);
 
-        let details = if !prefix.matches(core.name()) {
-            if prefix.popped() == *self.shared_state.our_prefix() {
-                self.section_update_barrier
-                    .handle_sibling_our_key(self.shared_state.our_prefix(), key)
-            } else {
-                None
-            }
-        } else {
-            self.section_update_barrier
-                .handle_our_key(self.shared_state.our_prefix(), key)
-        };
-
-        if let Some(details) = details {
-            self.update_our_section(core, details)
-        } else {
-            Ok(())
-        }
+        self.section_update_barrier
+            .handle_our_key(&self.shared_state, core.name(), &prefix, key);
+        self.try_update_our_section(core)
     }
 
     fn handle_their_key_event(
@@ -1457,24 +1433,12 @@ impl Approved {
     ) -> Result<()> {
         let key = Proven::new((prefix, key), proof);
 
-        let details = if prefix.matches(core.name()) {
-            if prefix.popped() == *self.shared_state.our_prefix() {
-                self.section_update_barrier
-                    .handle_sibling_their_key(self.shared_state.our_prefix(), key)
-            } else {
-                None
-            }
-        } else if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
+        if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
             self.section_update_barrier
-                .handle_their_key(self.shared_state.our_prefix(), key)
+                .handle_their_key(&self.shared_state, core.name(), key);
+            self.try_update_our_section(core)
         } else {
-            self.shared_state.sections.update_keys(key);
-            None
-        };
-
-        if let Some(details) = details {
-            self.update_our_section(core, details)
-        } else {
+            let _ = self.shared_state.update_their_key(key);
             Ok(())
         }
     }
@@ -1488,75 +1452,37 @@ impl Approved {
         let _ = self.shared_state.update_member(member_info, proof);
     }
 
-    fn update_our_section(&mut self, core: &mut Core, details: SectionUpdateDetails) -> Result<()> {
-        trace!(
-            "update our section: {:?}, {:?}",
-            details.our.info.value,
-            details.sibling.as_ref().map(|details| &details.info.value)
-        );
+    fn try_update_our_section(&mut self, core: &mut Core) -> Result<()> {
+        let (our, sibling) = self
+            .section_update_barrier
+            .take(self.shared_state.our_prefix());
 
-        let (our_diff, sibling_diff) = self.create_shared_state_diffs(details);
-
-        if self.update_shared_state(core, our_diff)? {
-            core.msg_filter.reset();
-            self.section_update_barrier = Default::default();
-            self.send_sync(core, self.shared_state.clone())?;
+        if let Some(our) = our {
+            trace!("update our section: {:?}", our.our_info(),);
+            self.update_shared_state(core, our)?;
         }
 
-        if let Some(sibling_diff) = sibling_diff {
+        if let Some(sibling) = sibling {
+            trace!("update sibling section: {:?}", sibling.our_info(),);
+
             // We can update the sibling knowledge already because we know they also reached consensus
             // on our `OurKey` so they know our latest key. Need to vote for it first though, to
             // accumulate the signatures.
             self.cast_unordered_vote(
                 core,
                 Vote::TheirKnowledge {
-                    prefix: *sibling_diff.our_prefix(),
+                    prefix: *sibling.our_prefix(),
                     key_index: self.shared_state.our_history.last_key_index(),
                 },
             )?;
 
-            self.send_sync(core, sibling_diff)?;
+            self.send_sync(core, sibling)?;
         }
 
         Ok(())
     }
 
-    // Creates diff between the current shared state and the new one according to the update details.
-    // In case of a split, returns two diffs - one for our section and one for the sibling section.
-    fn create_shared_state_diffs(
-        &self,
-        details: SectionUpdateDetails,
-    ) -> (SharedState, Option<SharedState>) {
-        let mut our = self.shared_state.to_minimal();
-        our.update_our_section(details.our.key, details.our.info);
-
-        let sibling = if let Some(details) = details.sibling {
-            our.sections.update_keys(details.key);
-            our.sections.add_neighbour(details.info.clone());
-
-            let mut sibling = self.shared_state.clone();
-            sibling.update_our_section(details.sibling_our_key, details.info);
-            sibling
-                .sections
-                .add_neighbour(our.sections.proven_our().clone());
-            sibling.sections.update_keys(details.sibling_their_key);
-
-            Some(sibling)
-        } else {
-            None
-        };
-
-        (our, sibling)
-    }
-
-    fn update_shared_state(&mut self, core: &mut Core, update: SharedState) -> Result<bool> {
-        if update.our_prefix().matches(core.name()) {
-            trace!("update shared state");
-        } else {
-            trace!("ignore update shared state - not our section");
-            return Ok(false);
-        }
-
+    fn update_shared_state(&mut self, core: &mut Core, update: SharedState) -> Result<()> {
         let old_is_elder = self.is_our_elder(core.id());
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
@@ -1621,6 +1547,7 @@ impl Approved {
 
         if new_last_key_index != old_last_key_index {
             self.churn_in_progress = false;
+            core.msg_filter.reset();
 
             if new_is_elder {
                 info!(
@@ -1631,15 +1558,14 @@ impl Approved {
                 );
 
                 self.promote_and_demote_elders(core);
+                self.send_sync(core, self.shared_state.clone())?;
                 self.print_network_stats();
             }
 
             self.send_elders_changed_event(core);
-
-            Ok(true)
-        } else {
-            Ok(false)
         }
+
+        Ok(())
     }
 
     fn send_elders_changed_event(&self, core: &mut Core) {
@@ -1658,7 +1584,7 @@ impl Approved {
 
     fn update_neighbour_info(&mut self, core: &mut Core, elders_info: Proven<EldersInfo>) {
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
-        self.shared_state.sections.add_neighbour(elders_info);
+        let _ = self.shared_state.update_neighbour_info(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
     }
@@ -2080,7 +2006,10 @@ fn create_first_shared_state(
     sk_share: &bls::SecretKeyShare,
     elders_info: Proven<EldersInfo>,
 ) -> Result<SharedState> {
-    let mut shared_state = SharedState::new(elders_info.proof.public_key, elders_info);
+    let mut shared_state = SharedState::new(
+        SectionProofChain::new(elders_info.proof.public_key),
+        elders_info,
+    );
 
     for p2p_node in shared_state.sections.our().elders.values() {
         let member_info = MemberInfo::joined(p2p_node.clone(), MIN_AGE);

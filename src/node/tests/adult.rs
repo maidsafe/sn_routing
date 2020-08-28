@@ -47,8 +47,10 @@ impl Env {
         let sk_set = consensus::generate_secret_key_set(&mut rng, ELDER_SIZE);
 
         let proven_elders_info = test_utils::create_proven(&sk_set, elders_info.clone());
-        let shared_state =
-            SharedState::new(proven_elders_info.proof.public_key, proven_elders_info);
+        let shared_state = SharedState::new(
+            SectionProofChain::new(proven_elders_info.proof.public_key),
+            proven_elders_info,
+        );
 
         let (subject, ..) = Node::approved(
             NodeConfig {

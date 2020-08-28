@@ -75,6 +75,15 @@ impl SectionMap {
         result
     }
 
+    /// Get `EldersInfo` of a known section with the given prefix.
+    pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
+        if *prefix == self.our.value.prefix {
+            Some(&self.our.value)
+        } else {
+            self.neighbours.get(prefix).map(|info| &info.value)
+        }
+    }
+
     /// Returns prefixes of all known sections.
     pub fn prefixes(&self) -> impl Iterator<Item = &Prefix> + Clone {
         self.all().map(|elders_info| &elders_info.prefix)
@@ -115,6 +124,7 @@ impl SectionMap {
 
     /// Merge two `SectionMap`s into one.
     /// TODO: make this operation commutative, associative and idempotent (CRDT)
+    /// TODO: return bool indicating whether anything changed.
     pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
         match cmp_section_chain_position(&self.our, &other.our, section_chain) {
             Some(Ordering::Less) => {
@@ -153,15 +163,59 @@ impl SectionMap {
         }
     }
 
-    /// Set the new version of our section.
-    pub fn set_our(&mut self, elders_info: Proven<EldersInfo>) {
-        self.our = elders_info;
-        self.prune_neighbours()
+    /// Update the `EldersInfo` of our section.
+    pub fn update_our_info(
+        &mut self,
+        elders_info: Proven<EldersInfo>,
+        section_chain: &SectionProofChain,
+    ) -> bool {
+        if !elders_info.verify(section_chain) {
+            return false;
+        }
+
+        if elders_info != self.our {
+            self.our = elders_info;
+            self.prune_neighbours();
+            true
+        } else {
+            false
+        }
     }
 
-    pub fn add_neighbour(&mut self, elders_info: Proven<EldersInfo>) {
-        let _ = self.neighbours.insert(elders_info);
+    pub fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
+        // TODO: verify
+        // if !elders_info.verify(section_chain) {
+        //     return false;
+        // }
+
+        if let Some(old) = self.neighbours.insert(elders_info.clone()) {
+            if old == elders_info {
+                return false;
+            }
+        }
+
         self.prune_neighbours();
+
+        true
+    }
+
+    /// Updates the entry in `keys` for `prefix` to the latest known key.
+    pub fn update_their_key(&mut self, new_key: Proven<(Prefix, bls::PublicKey)>) -> bool {
+        // TODO: verify against section chain
+
+        trace!(
+            "update key for {:?}: {:?}",
+            new_key.value.0,
+            new_key.value.1
+        );
+
+        if let Some(old) = self.keys.insert(new_key.clone()) {
+            if old == new_key {
+                return false;
+            }
+        }
+
+        true
     }
 
     // Remove sections that are no longer our neighbours.
@@ -202,16 +256,6 @@ impl SectionMap {
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
         self.keys.get_matching(name).map(|entry| &entry.value.1)
-    }
-
-    /// Updates the entry in `keys` for `prefix` to the latest known key.
-    pub fn update_keys(&mut self, new_key: Proven<(Prefix, bls::PublicKey)>) {
-        trace!(
-            "update key for {:?}: {:?}",
-            new_key.value.0,
-            new_key.value.1
-        );
-        let _ = self.keys.insert(new_key);
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the given
@@ -295,16 +339,6 @@ impl SectionMap {
         }
     }
 
-    /// Get `EldersInfo` of a known section with the given prefix.
-    #[cfg(test)]
-    pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
-        if *prefix == self.our.value.prefix {
-            Some(&self.our.value)
-        } else {
-            self.neighbours.get(prefix).map(|info| &info.value)
-        }
-    }
-
     /// Returns iterator over all neighbours sections.
     #[cfg(any(test, feature = "mock"))]
     pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
@@ -361,7 +395,7 @@ where
         .collect();
 
     fn check(our: &Prefix, other: &Prefix, known: &HashSet<&Prefix>) -> bool {
-        if !other.is_neighbour(our) {
+        if !other.is_neighbour(our) && !other.is_extension_of(our) {
             return true;
         }
 
@@ -568,8 +602,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = SectionMap::new(gen_proven_elders_info(&mut rng, &sk, p00));
-        map.add_neighbour(gen_proven_elders_info(&mut rng, &sk, p01));
-        map.add_neighbour(gen_proven_elders_info(&mut rng, &sk, p10));
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p01));
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p10));
 
         let n00 = p00.substituted_in(rng.gen());
         let n01 = p01.substituted_in(rng.gen());
@@ -593,7 +627,7 @@ mod tests {
 
         let p1 = "1".parse().unwrap();
         let section1 = gen_proven_elders_info(&mut rng, &sk, p1);
-        map.add_neighbour(section1);
+        let _ = map.update_neighbour_info(section1);
 
         assert!(map.prefixes().any(|&prefix| prefix == p1));
 
@@ -601,7 +635,7 @@ mod tests {
         // we no longer need (1)
         let p10 = "10".parse().unwrap();
         let section10 = gen_proven_elders_info(&mut rng, &sk, p10);
-        map.add_neighbour(section10);
+        let _ = map.update_neighbour_info(section10);
 
         assert!(map.prefixes().any(|&prefix| prefix == p10));
         assert!(map.prefixes().all(|&prefix| prefix != p1));
@@ -629,7 +663,7 @@ mod tests {
             let prefix = prefix.parse().unwrap();
             let proof = consensus::test_utils::prove(&sk, &(&prefix, key));
             let proven = Proven::new((prefix, *key), proof);
-            map.update_keys(proven);
+            let _ = map.update_their_key(proven);
         }
 
         let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();

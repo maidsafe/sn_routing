@@ -68,8 +68,10 @@ impl Env {
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
 
-        let mut shared_state =
-            SharedState::new(proven_elders_info.proof.public_key, proven_elders_info);
+        let mut shared_state = SharedState::new(
+            SectionProofChain::new(proven_elders_info.proof.public_key),
+            proven_elders_info,
+        );
         for p2p_node in elders_info.elders.values() {
             let member_info = MemberInfo::joined(p2p_node.clone(), MIN_AGE);
             let proof = test_utils::create_proof(&sk_set, &member_info);
@@ -636,7 +638,7 @@ fn handle_bounced_untrusted_message() {
     let proof_chain = other_node
         .received_messages()
         .find_map(|(_, msg)| match (msg.variant(), msg.proof_chain()) {
-            (Variant::UserMessage(_), Some(proof_chain)) => Some(proof_chain.clone()),
+            (Variant::UserMessage(_), Ok(proof_chain)) => Some(proof_chain.clone()),
             _ => None,
         })
         .expect("message was not resent");
@@ -655,7 +657,7 @@ fn receive_message_with_invalid_signature() {
 
     let (pk0, signature1) = env.sign_by_section(&bincode::serialize(&pk1).unwrap());
     let mut proof_chain = SectionProofChain::new(pk0);
-    proof_chain.push(pk1, signature1);
+    let _ = proof_chain.push(pk1, signature1);
 
     let src = SrcAuthority::Section {
         prefix: Prefix::default(),

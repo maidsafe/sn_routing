@@ -200,6 +200,7 @@ pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) {
 }
 
 /// Polls the network until the given predicate returns `true`.
+#[track_caller]
 pub fn poll_until<F>(env: &Environment, nodes: &mut [TestNode], mut predicate: F)
 where
     F: FnMut(&[TestNode]) -> bool,

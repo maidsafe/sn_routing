@@ -21,7 +21,6 @@ mod shared_state;
 pub(crate) use self::elders_info::gen_elders_info;
 #[cfg(feature = "mock")]
 pub use self::elders_info::quorum_count;
-pub(crate) use self::shared_state::{SharedState, UpdateSectionKnowledgeAction};
 pub use self::{
     elders_info::EldersInfo,
     member_info::{MemberInfo, MemberState, MIN_AGE},
@@ -30,5 +29,8 @@ pub use self::{
     section_map::{NeighbourEldersRemoved, SectionMap},
     section_members::SectionMembers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
-    section_update_barrier::{SectionUpdateBarrier, SectionUpdateDetails},
+};
+pub(crate) use self::{
+    section_update_barrier::SectionUpdateBarrier,
+    shared_state::{SharedState, UpdateSectionKnowledgeAction},
 };

@@ -49,6 +49,8 @@ where
     /// Does not insert anything if any descendant of the prefix of `entry` is already present in
     /// the map.
     /// Returns the previous entry with the same prefix, if any.
+    // TODO: change to return `bool` indicating whether anything changed. It's more useful for our
+    // purposes.
     pub fn insert(&mut self, entry: T) -> Option<T> {
         // Don't insert if any descendant is already present in the map.
         if self.descendants(entry.borrow()).next().is_some() {
