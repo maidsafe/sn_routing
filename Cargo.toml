@@ -13,7 +13,7 @@ edition = "2018"
 [dependencies]
 bincode = "1.2.1"
 bls = { package = "threshold_crypto", version = "~0.4.0" }
-bls_dkg = { git = "https://github.com/maidsafe/BLS-DKG" }
+bls_dkg = "~0.1.0"
 bytes = "~0.5.4"
 crossbeam-channel = "~0.4.2"
 ctrlc = { version = "3", optional = true, features = ["termination"] }
