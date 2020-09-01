@@ -20,13 +20,13 @@ ctrlc = { version = "3", optional = true, features = ["termination"] }
 ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.4"
-fake_clock = "~0.3.0"
+sn_fake_clock = "~0.4.0"
 fxhash = "~0.2.1"
 hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 lazy_static = { version = "1", optional = true }
 log = "~0.4.8"
-lru_time_cache = "~0.10.0"
+lru_time_cache = "~0.11.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "602dc620", optional = true }
 parsec = { git = "https://github.com/maidsafe/parsec" }
 quic-p2p = { version = "~0.7.0", features = ["upnp"] }
@@ -45,7 +45,7 @@ structopt = "~0.3.9"
 
 [features]
 mock_base = [
-    "lru_time_cache/fake_clock",
+    "lru_time_cache/sn_fake_clock",
     "mock-quic-p2p",
     "parsec/mock",
     "parsec/malice-detection",

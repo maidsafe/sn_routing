@@ -14,13 +14,13 @@ mod node_ageing;
 pub mod utils;
 
 use self::utils::*;
-use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
     event::Event, mock::Environment, test_consts, NetworkParams, PausedState, Prefix,
     RelocationOverrides, TransportConfig,
 };
+use sn_fake_clock::FakeClock;
 use std::collections::BTreeMap;
 
 // -----  Miscellaneous tests below  -----

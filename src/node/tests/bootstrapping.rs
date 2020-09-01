@@ -16,7 +16,7 @@ use crate::{
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::{self as mpmc, TryRecvError};
-use fake_clock::FakeClock;
+use sn_fake_clock::FakeClock;
 
 #[test]
 // Check that losing our proxy connection while in the bootstrapping stage doesn't stall
