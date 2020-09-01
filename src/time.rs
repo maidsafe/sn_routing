@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 #[cfg(feature = "mock_base")]
-pub use fake_clock::FakeClock as Instant;
+pub use sn_fake_clock::FakeClock as Instant;
 pub use std::time::Duration;
 #[cfg(not(feature = "mock_base"))]
 pub use std::time::Instant;

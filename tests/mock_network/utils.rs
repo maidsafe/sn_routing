@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crossbeam_channel as mpmc;
-use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{
     distributions::{Distribution, Standard},
@@ -20,6 +19,7 @@ use routing::{
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
     RelocationOverrides, SrcLocation, TransportConfig,
 };
+use sn_fake_clock::FakeClock;
 use std::{
     cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, time::Duration,
 };

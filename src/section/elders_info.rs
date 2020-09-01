@@ -102,6 +102,9 @@ pub(crate) fn gen_elders_info(
     }
 
     let mut full_ids: Vec<_> = (0..count).map(|_| FullId::gen(rng)).collect();
+    // Clippy false positive - https://github.com/rust-lang/rust-clippy/issues/5754
+    // (note the issue is closed, but it probably hasn't been merged into stable yet)
+    #[allow(clippy::unnecessary_sort_by)]
     full_ids.sort_by(|lhs, rhs| lhs.public_id().name().cmp(rhs.public_id().name()));
 
     let elders = full_ids
