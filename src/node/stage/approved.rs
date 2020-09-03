@@ -292,11 +292,17 @@ impl Approved {
     }
 
     fn progress_dkg(&mut self, core: &mut Core) {
+        let prev_has_dkg_voter = self.dkg_voter.has_live_dkg_voter();
         for (dkg_key, message) in self.dkg_voter.progress_dkg(&mut core.rng) {
             let _ = self.broadcast_dkg_message(core, &dkg_key, message);
         }
 
         self.check_dkg(core);
+
+        if prev_has_dkg_voter && !self.dkg_voter.has_live_dkg_voter() {
+            self.churn_in_progress = false;
+            self.promote_and_demote_elders(core);
+        }
     }
 
     /// Is the node with the given id an elder in our section?
@@ -1033,6 +1039,7 @@ impl Approved {
                 if let Some(index) = self.shared_state.our_history.index_of(&our_key) {
                     if index > dkg_key.1 {
                         trace!("DKG for {:?} already completed", dkg_key);
+                        return;
                     }
                 }
             }
