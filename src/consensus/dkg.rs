@@ -143,13 +143,24 @@ impl DkgVoter {
     // Make key generator progress with timed phase. Returns with DkgMessages to broadcast if any.
     pub fn progress_dkg(&mut self, rng: &mut MainRng) -> Vec<(DkgKey, DkgMessage<PublicId>)> {
         let mut broadcast = Vec::new();
+        let mut blocked = Vec::new();
         for (key, key_gen) in self.key_gen_map.iter_mut() {
             debug!("Progressing DKG {:?}", key);
             if let Ok(messages) = key_gen.timed_phase_transition(rng) {
                 for message in messages {
                     broadcast.push((key.clone(), message));
                 }
+            } else {
+                // Whenever there is an error, we consider such dkg process is blocked and shall be
+                // discarded.
+                blocked.push(key.clone());
             }
+        }
+
+        for dkg_key in blocked.iter() {
+            debug!("discarding DKG voter {:?}", dkg_key);
+            let _ = self.dkg_cache.remove(dkg_key);
+            let _ = self.key_gen_map.remove(dkg_key);
         }
 
         broadcast
@@ -277,5 +288,10 @@ impl DkgVoter {
             .or_insert(BTreeSet::new());
         let _ = senders.insert(*src_id);
         senders.len() == threshold_count(participants.len())
+    }
+
+    // Returns whether there is live dkg_voter
+    pub fn has_live_dkg_voter(&self) -> bool {
+        !self.key_gen_map.is_empty()
     }
 }
