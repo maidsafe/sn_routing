@@ -1458,12 +1458,12 @@ impl Approved {
             .take(self.shared_state.our_prefix());
 
         if let Some(our) = our {
-            trace!("update our section: {:?}", our.our_info(),);
+            trace!("update our section: {:?}", our.our_info());
             self.update_shared_state(core, our)?;
         }
 
         if let Some(sibling) = sibling {
-            trace!("update sibling section: {:?}", sibling.our_info(),);
+            trace!("update sibling section: {:?}", sibling.our_info());
 
             // We can update the sibling knowledge already because we know they also reached consensus
             // on our `OurKey` so they know our latest key. Need to vote for it first though, to
@@ -1504,30 +1504,6 @@ impl Approved {
         let new_last_key_index = self.shared_state.our_history.last_key_index();
         let new_prefix = *self.shared_state.our_prefix();
 
-        match (old_is_elder, new_is_elder) {
-            (true, true) | (false, false) => (),
-            (false, true) => {
-                info!("Promoted to elder");
-                core.send_event(Event::PromotedToElder);
-
-                // Ping all members to detect recent lost nodes for which the section might need
-                // our Offline vote.
-                for p2p_node in self.shared_state.active_members() {
-                    core.send_direct_message(p2p_node.peer_addr(), Variant::Ping);
-                }
-            }
-            (true, false) => {
-                info!("Demoted");
-                self.shared_state.demote();
-                self.section_keys_provider = SectionKeysProvider::new(None);
-                core.send_event(Event::Demoted);
-            }
-        }
-
-        if !new_is_elder {
-            self.return_relocate_promise(core);
-        }
-
         if new_prefix != old_prefix {
             info!("Split");
 
@@ -1558,11 +1534,36 @@ impl Approved {
                 );
 
                 self.promote_and_demote_elders(core);
-                self.send_sync(core, self.shared_state.clone())?;
                 self.print_network_stats();
             }
 
+            if new_is_elder || old_is_elder {
+                self.send_sync(core, self.shared_state.clone())?;
+            }
+
             self.send_elders_changed_event(core);
+        }
+
+        if !old_is_elder && new_is_elder {
+            info!("Promoted to elder");
+            core.send_event(Event::PromotedToElder);
+
+            // Ping all members to detect recent lost nodes for which the section might need
+            // our Offline vote.
+            for p2p_node in self.shared_state.active_members() {
+                core.send_direct_message(p2p_node.peer_addr(), Variant::Ping);
+            }
+        }
+
+        if old_is_elder && !new_is_elder {
+            info!("Demoted");
+            self.shared_state.demote();
+            self.section_keys_provider = SectionKeysProvider::new(None);
+            core.send_event(Event::Demoted);
+        }
+
+        if !new_is_elder {
+            self.return_relocate_promise(core);
         }
 
         Ok(())
