@@ -182,17 +182,17 @@ impl SectionProofChain {
             return Err(ExtendError::AlreadySufficient);
         }
 
-        let index_from = if let Some(index) = full_proof_chain.index_of(new_first_key) {
-            index
-        } else {
-            return Err(ExtendError::InvalidFirstKey);
-        };
+        let index_from = full_proof_chain
+            .index_of(new_first_key)
+            .ok_or(ExtendError::InvalidFirstKey)?;
 
-        let index_to = if let Some(index) = full_proof_chain.index_of(self.last_key()) {
-            index
-        } else {
-            return Err(ExtendError::InvalidLastKey);
-        };
+        let index_to = full_proof_chain
+            .index_of(self.last_key())
+            .ok_or(ExtendError::InvalidLastKey)?;
+
+        if index_from > index_to {
+            return Err(ExtendError::InvalidFirstKey);
+        }
 
         *self = full_proof_chain.slice(index_from..=index_to);
 

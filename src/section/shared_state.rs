@@ -268,23 +268,6 @@ impl SharedState {
         }
     }
 
-    /// Provide a SectionProofChain that proves the given signature to the given destination
-    /// location.
-    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
-    pub fn prove(
-        &self,
-        target: &DstLocation,
-        node_knowledge_override: Option<u64>,
-    ) -> SectionProofChain {
-        let index = match (target, node_knowledge_override) {
-            (DstLocation::Node(_), Some(knowledge)) => knowledge,
-            _ => self.sections.knowledge_by_location(target),
-        };
-
-        self.our_history.slice(index..)
-    }
-
     /// Update our knowledge of their section and their knowledge of ours. Returns the actions to
     /// perform (if any).
     pub fn update_section_knowledge(

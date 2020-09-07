@@ -70,12 +70,12 @@ impl Message {
             variant: &msg.variant,
         })?;
 
-        match msg.src.clone() {
+        match &msg.src {
             SrcAuthority::Node {
                 public_id,
                 signature,
             } => {
-                if !public_id.verify(&signed_bytes, &signature) {
+                if !public_id.verify(&signed_bytes, signature) {
                     error!("Failed signature: {:?}", msg);
                     return Err(CreateError::FailedSignature);
                 }
@@ -83,7 +83,7 @@ impl Message {
             SrcAuthority::Section { signature, .. } => {
                 if let Some(proof_chain) = msg.proof_chain.as_ref() {
                     // FIXME Assumes the nodes proof last key is the one signing this message
-                    if !proof_chain.last_key().verify(&signature, &signed_bytes) {
+                    if !proof_chain.last_key().verify(signature, &signed_bytes) {
                         error!("Failed signature: {:?}", msg);
                         return Err(CreateError::FailedSignature);
                     }

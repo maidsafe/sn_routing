@@ -957,11 +957,6 @@ impl Node {
         self.core.network_params.recommended_section_size
     }
 
-    /// Provide a SectionProofSlice that proves the given signature to the given destination.
-    pub fn prove(&self, target: &DstLocation) -> Option<SectionProofChain> {
-        self.shared_state().map(|state| state.prove(target, None))
-    }
-
     /// Returns the age of the node with `name` if this node knows it. Otherwise returns `None`.
     pub fn member_age(&self, name: &XorName) -> Option<u8> {
         self.stage
