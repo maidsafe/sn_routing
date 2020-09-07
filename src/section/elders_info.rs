@@ -44,6 +44,7 @@ impl EldersInfo {
     /// Returns the index of the elder with `name` in this set of elders.
     /// This is useful for BLS signatures where the signature share needs to be mapped to a
     /// "field element" which is typically a numeric index.
+    #[cfg(all(test, feature = "mock"))]
     pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
         self.elders.keys().position(|other_name| other_name == name)
     }

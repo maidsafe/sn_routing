@@ -267,7 +267,12 @@ impl Approved {
 
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
-            self.notify_old_elders(core, &dkg_key, dkg_result.public_key_set.clone());
+            self.notify_old_elders(
+                core,
+                &dkg_key,
+                &dkg_result.participants,
+                &dkg_result.public_key_set,
+            );
 
             if let Err(err) = self.handle_dkg_result_event(core, &dkg_key, &dkg_result) {
                 debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
@@ -818,29 +823,32 @@ impl Approved {
         )
     }
 
-    // TODO: accumulate at least quorum of these messages
-    //       and only then proceed to handle the DKG result.
     pub fn handle_dkg_old_elders(
         &mut self,
         core: &mut Core,
         dkg_key: &DkgKey,
+        participants: BTreeSet<PublicId>,
         public_key_set: bls::PublicKeySet,
         src_id: PublicId,
     ) -> Result<()> {
         debug!(
             "notified by DKG participants {:?} to vote for SectionInfo",
-            dkg_key.0
+            participants,
         );
 
         // Accumulate quorum notifications then carry out the further process.
         if !self
             .dkg_voter
-            .add_old_elders_notification(&dkg_key.0, &src_id)
+            .add_old_elders_notification(&participants, &src_id)
         {
             return Ok(());
         }
 
-        let dkg_result = DkgResult::new(public_key_set, None);
+        let dkg_result = DkgResult {
+            participants,
+            public_key_set,
+            secret_key_share: None,
+        };
         if self.dkg_voter.has_info(
             dkg_key,
             &dkg_result,
@@ -1299,28 +1307,33 @@ impl Approved {
     }
 
     fn notify_old_elders(
-        &mut self,
+        &self,
         core: &mut Core,
         dkg_key: &DkgKey,
-        public_key_set: bls::PublicKeySet,
+        participants: &BTreeSet<PublicId>,
+        public_key_set: &bls::PublicKeySet,
     ) {
-        let src = SrcLocation::Node(*core.id().name());
-        let variant = Variant::DKGOldElders {
-            dkg_key: dkg_key.clone(),
-            public_key_set,
-        };
-        let elder_ids: Vec<PublicId> = self.shared_state.our_info().elder_ids().copied().collect();
+        let recipients = self
+            .shared_state
+            .our_info()
+            .elders
+            .values()
+            .filter(|p2p_node| !participants.contains(p2p_node.public_id()));
 
-        for elder_id in elder_ids {
-            if !dkg_key.0.contains(&elder_id) {
-                trace!(
-                    "notify {:?} for the completion of DKG {:?}",
-                    elder_id,
-                    dkg_key.0
-                );
-                let dst = DstLocation::Node(*elder_id.name());
-                let _ = self.send_routing_message(core, src, dst, variant.clone(), None);
-            }
+        trace!(
+            "notify {{{:?}}} for the completion of DKG {:?}",
+            recipients.clone().format(", "),
+            participants,
+        );
+
+        for recipient in recipients {
+            let variant = Variant::DKGOldElders {
+                dkg_key: dkg_key.clone(),
+                participants: participants.clone(),
+                public_key_set: public_key_set.clone(),
+            };
+
+            core.send_direct_message(recipient.peer_addr(), variant)
         }
     }
 
@@ -1340,11 +1353,8 @@ impl Approved {
         if let Some(index) = self.shared_state.our_history.index_of(&public_key) {
             // Our shared state is already up to date, so no need to vote. Just finalize the DKG so
             // we can start using the new secret key share.
-            self.section_keys_provider.finalise_dkg(
-                index - 1,
-                core.name(),
-                self.shared_state.our_info(),
-            );
+            self.section_keys_provider
+                .finalise_dkg(index - 1, core.name());
 
             return Ok(());
         }
@@ -1487,11 +1497,8 @@ impl Approved {
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
 
-        self.section_keys_provider.finalise_dkg(
-            self.shared_state.our_history.last_key_index(),
-            core.name(),
-            update.our_info(),
-        );
+        self.section_keys_provider
+            .finalise_dkg(self.shared_state.our_history.last_key_index(), core.name());
 
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
 

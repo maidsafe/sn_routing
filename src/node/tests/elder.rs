@@ -195,6 +195,7 @@ impl Env {
             .collect();
 
         let dkg_result = DkgResult {
+            participants: new_elders_info.elder_ids().copied().collect(),
             public_key_set: new_pk_set.clone(),
             secret_key_share: new_elders_info
                 .position(self.subject.name())
