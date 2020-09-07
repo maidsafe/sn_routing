@@ -703,11 +703,13 @@ impl Node {
                 }
                 Variant::DKGOldElders {
                     dkg_key,
+                    participants,
                     public_key_set,
                 } => {
                     stage.handle_dkg_old_elders(
                         &mut self.core,
                         dkg_key,
+                        participants.clone(),
                         public_key_set.clone(),
                         *msg.src().as_node()?,
                     )?;

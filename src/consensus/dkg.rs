@@ -44,6 +44,8 @@ pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::S
 #[derive(Clone)]
 /// DKG result
 pub struct DkgResult {
+    /// Actual participants of the DKG. Excludes the non-participating nodes.
+    pub participants: BTreeSet<PublicId>,
     /// Public key set to verify threshold signatures
     pub public_key_set: PublicKeySet,
     /// Secret Key share: None if the node was not participating in the DKG and did not receive
@@ -51,24 +53,14 @@ pub struct DkgResult {
     pub secret_key_share: Option<SecretKeyShare>,
 }
 
-impl DkgResult {
-    /// Create DkgResult from components
-    pub fn new(public_key_set: PublicKeySet, secret_key_share: Option<SecretKeyShare>) -> Self {
-        Self {
-            public_key_set,
-            secret_key_share,
-        }
-    }
-}
-
 impl Debug for DkgResult {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "DkgResult({:?}, {})",
-            self.public_key_set,
-            self.secret_key_share.is_some()
-        )
+        formatter
+            .debug_struct("DkgResult")
+            .field("participants", &self.participants)
+            .field("public_key", &self.public_key_set.public_key())
+            .field("secret_key_share", &self.secret_key_share.is_some())
+            .finish()
     }
 }
 
@@ -113,11 +105,12 @@ impl DkgVoter {
         for (key, key_gen) in self.key_gen_map.iter_mut() {
             if key_gen.is_finalized() {
                 let dkg_key = (key.0.clone(), key.1);
-                if let Some((_participants, dkg_outcome)) = key_gen.generate_keys() {
-                    let dkg_result = DkgResult::new(
-                        dkg_outcome.public_key_set,
-                        Some(dkg_outcome.secret_key_share),
-                    );
+                if let Some((participants, dkg_outcome)) = key_gen.generate_keys() {
+                    let dkg_result = DkgResult {
+                        participants,
+                        public_key_set: dkg_outcome.public_key_set,
+                        secret_key_share: Some(dkg_outcome.secret_key_share),
+                    };
                     let _ = completed.insert(dkg_key.clone(), dkg_result);
                 }
             }

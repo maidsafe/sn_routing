@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::elders_info::EldersInfo;
 use crate::{
     consensus::DkgResult,
     error::{Result, RoutingError},
@@ -68,12 +67,7 @@ impl SectionKeysProvider {
         });
     }
 
-    pub fn finalise_dkg(
-        &mut self,
-        section_key_index: u64,
-        our_name: &XorName,
-        elders_info: &EldersInfo,
-    ) {
+    pub fn finalise_dkg(&mut self, section_key_index: u64, our_name: &XorName) {
         let dkg_result = if let Some(result) = self.pending.remove(&section_key_index) {
             result
         } else {
@@ -81,7 +75,11 @@ impl SectionKeysProvider {
             return;
         };
 
-        let public_key_set = dkg_result.public_key_set;
+        let DkgResult {
+            participants,
+            public_key_set,
+            secret_key_share,
+        } = dkg_result;
 
         trace!(
             "finalise DKG result #{}: {:?}",
@@ -89,11 +87,11 @@ impl SectionKeysProvider {
             public_key_set.public_key()
         );
 
-        self.current = dkg_result
-            .secret_key_share
+        self.current = secret_key_share
             .and_then(|secret_key_share| {
-                elders_info
-                    .position(our_name)
+                participants
+                    .iter()
+                    .position(|id| id.name() == our_name)
                     .map(|index| (index, secret_key_share))
             })
             .map(|(index, secret_key_share)| SectionKeyShare {
