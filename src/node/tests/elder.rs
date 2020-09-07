@@ -354,7 +354,10 @@ impl Env {
             .subject
             .shared_state()
             .expect("subject is not approved");
-        let proof_chain = state.prove(&dst, None);
+
+        let proof_start_index = state.sections.knowledge_by_location(&dst);
+        let proof_chain = state.our_history.slice(..proof_start_index);
+
         let dst_key = *state.section_key_by_location(&dst);
 
         let content = PlainMessage {

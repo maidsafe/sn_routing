@@ -1712,14 +1712,7 @@ impl Approved {
 
         // Message accumulated at destination
         let message = self.to_accumulating_message(dst, variant, None)?;
-        let message = Message::single_src(
-            &core.full_id,
-            dst,
-            Variant::MessageSignature(Box::new(message)),
-            None,
-            None,
-        )?;
-        core.send_message_to_target(&recipient, message.to_bytes());
+        core.send_direct_message(&recipient, Variant::MessageSignature(Box::new(message)));
 
         Ok(())
     }
@@ -1829,8 +1822,21 @@ impl Approved {
         variant: Variant,
         proof_start_index_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
-        let proof_chain = self.shared_state.prove(&dst, proof_start_index_override);
         let key_share = self.section_keys_provider.key_share()?;
+
+        let first_index = proof_start_index_override
+            .unwrap_or_else(|| self.shared_state.sections.knowledge_by_location(&dst));
+        let last_key = key_share.public_key_set.public_key();
+        let last_index = self
+            .shared_state
+            .our_history
+            .index_of(&last_key)
+            .unwrap_or_else(|| self.shared_state.our_history.last_key_index());
+        let proof_chain = self
+            .shared_state
+            .our_history
+            .slice(first_index..=last_index);
+
         let dst_key = *self.shared_state.section_key_by_location(&dst);
 
         let content = PlainMessage {
