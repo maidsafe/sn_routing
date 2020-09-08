@@ -8,7 +8,7 @@
 
 use crate::{
     network_params::NetworkParams,
-    quic_p2p::Network,
+    qp2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
 };
 use rand::SeedableRng;

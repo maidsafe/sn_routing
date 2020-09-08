@@ -18,7 +18,7 @@ use crate::{
     section::{self, EldersInfo, SectionProofChain, SharedState},
 };
 
-use mock_quic_p2p::Network;
+use mock_qp2p::Network;
 use rand::Rng;
 use xor_name::Prefix;
 

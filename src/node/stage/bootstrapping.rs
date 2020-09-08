@@ -6,18 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::joining::Joining;
 use crate::{
-    core::Core,
+    comm::Comm,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, Message, MessageStatus, QueuedMessage, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, Variant, VerifyStatus},
+    network_params::NetworkParams,
     relocation::{RelocatePayload, SignedRelocateDetails},
+    rng::MainRng,
     section::EldersInfo,
     time::Duration,
 };
-
 use fxhash::FxHashSet;
-use std::{collections::HashMap, iter, mem, net::SocketAddr};
+use std::{iter, net::SocketAddr};
 use xor_name::Prefix;
 
 /// Time after which bootstrap is cancelled (and possibly retried).
@@ -27,52 +29,76 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 pub(crate) struct Bootstrapping {
     // Using `FxHashSet` for deterministic iteration order.
     pending_requests: FxHashSet<SocketAddr>,
-    timeout_tokens: HashMap<u64, SocketAddr>,
     relocate_details: Option<SignedRelocateDetails>,
-    msg_backlog: Vec<QueuedMessage>,
+    full_id: FullId,
+    rng: MainRng,
+    comm: Comm,
+    network_params: NetworkParams,
 }
 
 impl Bootstrapping {
-    pub fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
+    pub fn new(
+        relocate_details: Option<SignedRelocateDetails>,
+        full_id: FullId,
+        rng: MainRng,
+        comm: Comm,
+        network_params: NetworkParams,
+    ) -> Self {
         Self {
             pending_requests: Default::default(),
-            timeout_tokens: Default::default(),
             relocate_details,
-            msg_backlog: Vec::new(),
+            full_id,
+            rng,
+            comm,
+            network_params,
         }
     }
 
-    pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        let peer_addr = if let Some(peer_addr) = self.timeout_tokens.remove(&token) {
-            peer_addr
-        } else {
-            return;
-        };
-
-        debug!("Timeout when trying to bootstrap against {}.", peer_addr);
-
-        if !self.pending_requests.remove(&peer_addr) {
-            return;
-        }
-
-        core.transport.disconnect(peer_addr);
-
-        if self.pending_requests.is_empty() {
-            // Rebootstrap
-            core.transport.bootstrap();
-        }
-    }
-
-    pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
+    pub async fn process_message(
+        &mut self,
+        sender: SocketAddr,
+        msg: Message,
+    ) -> Result<Option<Joining>> {
         match msg.variant() {
-            Variant::BootstrapResponse(_) => {
-                verify_message(msg)?;
-                Ok(MessageStatus::Useful)
+            Variant::BootstrapResponse(response) => {
+                msg.verify(iter::empty())
+                    .and_then(VerifyStatus::require_full)?;
+
+                match self
+                    .handle_bootstrap_response(
+                        msg.src().to_sender_node(Some(sender))?,
+                        response.clone(),
+                    )
+                    .await?
+                {
+                    Some(JoinParams {
+                        elders_info,
+                        section_key,
+                        relocate_payload,
+                    }) => {
+                        let joining = Joining::new(
+                            self.comm.clone(),
+                            elders_info,
+                            section_key,
+                            relocate_payload,
+                            self.full_id.clone(),
+                            self.network_params,
+                            self.rng,
+                        )
+                        .await?;
+
+                        Ok(Some(joining))
+                    }
+                    None => Ok(None),
+                }
             }
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
-            | Variant::BouncedUntrustedMessage(_) => Ok(MessageStatus::Unknown),
+            | Variant::BouncedUntrustedMessage(_) => {
+                debug!("Unknown message from {}: {:?} ", sender, msg);
+                Ok(None)
+            }
 
             Variant::NodeApproval(_)
             | Variant::Sync { .. }
@@ -86,29 +112,28 @@ impl Bootstrapping {
             | Variant::Vote { .. }
             | Variant::DKGResult { .. }
             | Variant::DKGStart { .. }
-            | Variant::DKGMessage { .. } => Ok(MessageStatus::Useless),
+            | Variant::DKGMessage { .. } => {
+                debug!("Useless message from {}: {:?}", sender, msg);
+                Ok(None)
+            }
         }
     }
 
-    pub fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message) {
-        self.msg_backlog.push(msg.into_queued(Some(sender)))
-    }
-
-    pub fn handle_bootstrap_response(
+    async fn handle_bootstrap_response(
         &mut self,
-        core: &mut Core,
         sender: P2pNode,
         response: BootstrapResponse,
     ) -> Result<Option<JoinParams>> {
+        // TODO: do we really need to keep track of which peers we are trying to bootstrap to?
         // Ignore messages from peers we didn't send `BootstrapRequest` to.
-        if !self.pending_requests.contains(sender.peer_addr()) {
+        /*if !self.pending_requests.contains(sender.peer_addr()) {
             debug!(
                 "Ignoring BootstrapResponse from unexpected peer: {}",
                 sender,
             );
             core.transport.disconnect(*sender.peer_addr());
             return Ok(None);
-        }
+        }*/
 
         match response {
             BootstrapResponse::Join {
@@ -120,12 +145,11 @@ impl Bootstrapping {
                     elders_info, sender
                 );
 
-                let relocate_payload = self.join_section(core, &elders_info)?;
+                let relocate_payload = self.join_section(&elders_info)?;
                 Ok(Some(JoinParams {
                     elders_info,
                     section_key,
                     relocate_payload,
-                    msg_backlog: mem::take(&mut self.msg_backlog),
                 }))
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
@@ -133,46 +157,38 @@ impl Bootstrapping {
                     "Bootstrapping redirected to another set of peers: {:?}",
                     new_conn_infos
                 );
-                self.reconnect_to_new_section(core, new_conn_infos);
+                self.reconnect_to_new_section(new_conn_infos).await?;
                 Ok(None)
             }
         }
     }
 
-    pub fn send_bootstrap_request(&mut self, core: &mut Core, dst: SocketAddr) {
-        if !self.pending_requests.insert(dst) {
-            return;
-        }
-
-        let token = core.timer.schedule(BOOTSTRAP_TIMEOUT);
-        let _ = self.timeout_tokens.insert(token, dst);
-
-        let destination = match &self.relocate_details {
+    pub async fn send_bootstrap_request(&mut self, dst: SocketAddr) -> Result<()> {
+        let xorname = match &self.relocate_details {
             Some(details) => *details.destination(),
-            None => *core.name(),
+            None => *self.full_id.public_id().name(),
         };
 
         debug!("Sending BootstrapRequest to {}.", dst);
-        core.send_direct_message(&dst, Variant::BootstrapRequest(destination));
+        self.comm
+            .send_direct_message(&self.full_id, &dst, Variant::BootstrapRequest(xorname))
+            .await
     }
 
-    fn reconnect_to_new_section(&mut self, core: &mut Core, new_conn_infos: Vec<SocketAddr>) {
-        for addr in self.pending_requests.drain() {
+    async fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
+        // TODO???
+        /*for addr in self.pending_requests.drain() {
             core.transport.disconnect(addr);
-        }
-
-        self.timeout_tokens.clear();
+        }*/
 
         for conn_info in new_conn_infos {
-            self.send_bootstrap_request(core, conn_info);
+            self.send_bootstrap_request(conn_info).await?;
         }
+
+        Ok(())
     }
 
-    fn join_section(
-        &mut self,
-        core: &mut Core,
-        elders_info: &EldersInfo,
-    ) -> Result<Option<RelocatePayload>> {
+    fn join_section(&mut self, elders_info: &EldersInfo) -> Result<Option<RelocatePayload>> {
         let relocate_details = if let Some(details) = self.relocate_details.take() {
             details
         } else {
@@ -187,12 +203,12 @@ impl Bootstrapping {
             *relocate_details.destination(),
         );
 
-        let new_full_id = FullId::within_range(&mut core.rng, &name_prefix.range_inclusive());
+        let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
         let relocate_payload =
-            RelocatePayload::new(relocate_details, new_full_id.public_id(), &core.full_id)?;
+            RelocatePayload::new(relocate_details, new_full_id.public_id(), &self.full_id)?;
 
         info!("Changing name to {}.", new_full_id.public_id().name());
-        core.full_id = new_full_id;
+        self.full_id = new_full_id;
 
         Ok(Some(relocate_payload))
     }
@@ -202,10 +218,4 @@ pub(crate) struct JoinParams {
     pub elders_info: EldersInfo,
     pub section_key: bls::PublicKey,
     pub relocate_payload: Option<RelocatePayload>,
-    pub msg_backlog: Vec<QueuedMessage>,
-}
-
-fn verify_message(msg: &Message) -> Result<()> {
-    msg.verify(iter::empty())
-        .and_then(VerifyStatus::require_full)
 }

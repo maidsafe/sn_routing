@@ -24,7 +24,7 @@ use crate::{
     ELDER_SIZE,
 };
 use itertools::Itertools;
-use mock_quic_p2p::Network;
+use mock_qp2p::Network;
 use rand::Rng;
 use std::{iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};

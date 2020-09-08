@@ -21,14 +21,15 @@ ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.4"
 sn_fake_clock = "~0.4.0"
+futures = "~0.3.5"
 fxhash = "~0.2.1"
 hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 lazy_static = { version = "1", optional = true }
 log = "~0.4.8"
 lru_time_cache = "~0.11.0"
-mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "602dc620", optional = true }
-quic-p2p = { version = "~0.7.0", features = ["upnp"] }
+mock-quic-p2p = { git = "https://github.com/maidsafe/qp2p", rev = "602dc620", optional = true }
+qp2p = { git = "https://github.com/maidsafe/qp2p", features = ["upnp"], branch = "master" }
 rand = "~0.7.3"
 rand_core = "~0.5.1"
 rand_os = "~0.2.2"
@@ -36,7 +37,8 @@ rand_xorshift = "~0.2.0"
 bls_signature_aggregator = "~0.1.0"
 serde = { version = "1.0.111", features = ["derive" ,"rc"] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
-xor_name = "1"
+tokio = { version = "~0.2.5", features = ["sync"] }
+xor_name = "1.1.0"
 
 [dev-dependencies]
 env_logger = "~0.7.1"

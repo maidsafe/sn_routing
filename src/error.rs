@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::quic_p2p::QuicP2pError;
+use crate::qp2p::Error as QuicP2pError;
 use err_derive::Error;
 
 /// The type returned by the sn_routing message handling methods.
@@ -38,4 +38,6 @@ pub enum Error {
     InvalidSignatureShare,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+    #[error(display = "TODO: error type to be defined: {}", 0)]
+    ToBeDefined(String),
 }
