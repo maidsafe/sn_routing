@@ -122,7 +122,7 @@ impl Stage {
 
     pub fn approved(&self) -> Option<&Approved> {
         match &self.state {
-            State::Approved(stage) => Some(&stage),
+            State::Approved(stage) => Some(stage),
             _ => None,
         }
     }

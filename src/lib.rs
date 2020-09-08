@@ -26,7 +26,7 @@
 )]
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-/*#![forbid(
+#![forbid(
     arithmetic_overflow,
     mutable_transmutes,
     no_mangle_const_items,
@@ -63,9 +63,7 @@
     unused_results,
     clippy::needless_borrow
 )]
-// Need this to stop clippy complaining about the `use quic_p2p` line which is actually necessary.
-#![allow(clippy::single_component_path_imports)]
-*/
+
 #[macro_use]
 extern crate serde;
 
@@ -158,9 +156,9 @@ const ELDER_SIZE: usize = 7;
 
 // Quic-p2p
 #[cfg(feature = "mock")]
-use mock_qp2p as q2p;
+use mock_qp2p as qp2p;
 #[cfg(not(feature = "mock"))]
-use qp2p;
+use qp2p::{self};
 
 #[cfg(test)]
 mod tests {

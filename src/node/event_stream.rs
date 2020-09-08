@@ -37,13 +37,7 @@ impl EventStream {
         is_genesis: bool,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
-        Self::spawn_connections_handler(
-            stage.clone(),
-            events_tx,
-            incoming_conns,
-            xorname,
-            is_genesis,
-        );
+        Self::spawn_connections_handler(stage, events_tx, incoming_conns, xorname, is_genesis);
 
         Self { events_rx }
     }

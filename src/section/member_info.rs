@@ -36,12 +36,15 @@ impl MemberInfo {
     }
 
     // Converts this info into one with the state changed to `Left`.
+    // TODO: review if we still need this function
+    /*
     pub fn leave(self) -> Self {
         Self {
             state: MemberState::Left,
             ..self
         }
     }
+    */
 
     // Convert this info into one with the state changed to `Relocated`.
     pub fn relocate(self, destination: XorName) -> Self {

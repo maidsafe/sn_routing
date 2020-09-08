@@ -34,7 +34,7 @@
 //!
 
 use hex_fmt::HexFmt;
-use log::{info, LevelFilter};
+use log::{debug, info, LevelFilter};
 use sn_routing::{
     event::{Connected, Event},
     Node, NodeConfig, TransportConfig,
@@ -201,16 +201,18 @@ async fn start_node(
 
     let contact_info = node
         .our_connection_info()
+        .await
         .expect("Failed to obtain node's contact info.");
-    run_node(index, node);
+    run_node(index, node).await;
 
     contact_info
 }
 
 // Runs the nodes event loop. Blocks until terminated.
-fn run_node(index: usize, node: Node) {
+async fn run_node(index: usize, node: Node) {
     let mut event_stream = node
         .listen_events()
+        .await
         .expect("Failed to start listening for events from node.");
 
     tokio::spawn(async move {
@@ -285,14 +287,19 @@ fn handle_event(index: usize, event: Event) -> bool {
             "Node #{} relocation started - previous_name: {}",
             index, previous_name
         ),
-        Event::Terminated => {
-            info!("Node #{} terminated", index);
-            return false;
-        }
         Event::RestartRequired => {
             info!("Node #{} requires restart", index);
             return false;
         }
+        Event::ClientMessageReceived {
+            content, src, dst, ..
+        } => info!(
+            "Node #{} received message from client: {:?}, dst: {:?}, content: {}",
+            index,
+            src,
+            dst,
+            HexFmt(content)
+        ),
     }
 
     true

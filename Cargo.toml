@@ -22,7 +22,6 @@ env_logger = { version = "~0.7.1", optional = true }
 err-derive = "~0.2.4"
 sn_fake_clock = "~0.4.0"
 futures = "~0.3.5"
-fxhash = "~0.2.1"
 hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 lazy_static = { version = "1", optional = true }
