@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::bootstrapping::Bootstrapping;
+use super::{bootstrapping::Bootstrapping, NodeInfo};
 use crate::{
     comm::Comm,
     consensus::{
@@ -15,16 +15,14 @@ use crate::{
     delivery_group,
     error::{Error, Result},
     event::Event,
-    id::{FullId, P2pNode, PublicId},
+    id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageAccumulator,
         MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
     },
-    network_params::NetworkParams,
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
-    rng::MainRng,
     section::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
         SectionUpdateBarrier, SharedState, MIN_AGE,
@@ -54,10 +52,7 @@ pub(crate) struct Approved {
     // Serialized `RelocatePromise` message that we received from our section. To be sent back to
     // them after we are demoted.
     relocate_promise: Option<Bytes>,
-    /// Global network parameters. Must be identical for all nodes in the network.
-    network_params: NetworkParams,
-    full_id: FullId,
-    rng: MainRng,
+    node_info: NodeInfo,
     comm: Comm,
     msg_filter: MessageFilter,
 }
@@ -68,9 +63,7 @@ impl Approved {
         comm: Comm,
         shared_state: SharedState,
         section_key_share: Option<SectionKeyShare>,
-        full_id: FullId,
-        network_params: NetworkParams,
-        rng: MainRng,
+        node_info: NodeInfo,
     ) -> Result<Self> {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
@@ -82,9 +75,7 @@ impl Approved {
             section_update_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_promise: None,
-            full_id,
-            network_params,
-            rng,
+            node_info,
             comm,
             msg_filter: MessageFilter::new(),
         })
@@ -152,7 +143,7 @@ impl Approved {
         };
         let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -163,7 +154,7 @@ impl Approved {
             .our_info()
             .elders
             .values()
-            .filter(|p2p_node| p2p_node.name() != self.full_id.public_id().name())
+            .filter(|p2p_node| p2p_node.name() != self.node_info.full_id.public_id().name())
             .map(P2pNode::peer_addr)
             .copied()
             .collect();
@@ -210,7 +201,7 @@ impl Approved {
             // The key is recognized as non-last, indicating the peer is lagging.
             self.comm
                 .send_direct_message(
-                    &self.full_id,
+                    &self.node_info.full_id,
                     peer,
                     // TODO: consider sending only those parts of the shared state that are new
                     // since `public_key` was the latest key.
@@ -239,7 +230,7 @@ impl Approved {
             // Ping the peer to trigger lost peer detection.
             let addr = *node.peer_addr();
             self.comm
-                .send_direct_message(&self.full_id, &addr, Variant::Ping)
+                .send_direct_message(&self.node_info.full_id, &addr, Variant::Ping)
                 .await?;
         } else {
             trace!("ConnectionFailure from non-member {}", addr);
@@ -261,7 +252,7 @@ impl Approved {
             return Ok(());
         };
 
-        if !self.is_our_elder(self.full_id.public_id()) {
+        if !self.is_our_elder(self.node_info.full_id.public_id()) {
             return Ok(());
         }
 
@@ -294,15 +285,15 @@ impl Approved {
             Some(Ok((elders_info, outcome))) => {
                 let public_key = outcome.public_key_set.public_key();
                 self.section_keys_provider.insert_dkg_outcome(
-                    self.full_id.public_id().name(),
+                    self.node_info.full_id.public_id().name(),
                     &elders_info,
                     outcome,
                 );
-                self.handle_dkg_result(dkg_key, Ok(public_key), *self.full_id.public_id())
+                self.handle_dkg_result(dkg_key, Ok(public_key), *self.node_info.full_id.public_id())
                     .await
             }
             Some(Err(())) => {
-                self.handle_dkg_result(dkg_key, Err(()), *self.full_id.public_id())
+                self.handle_dkg_result(dkg_key, Err(()), *self.node_info.full_id.public_id())
                     .await
             }
             None => Ok(()),
@@ -320,7 +311,7 @@ impl Approved {
                 self.check_dkg(dkg_key).await
             }
             Some((dkg_key, Err(()))) => {
-                self.handle_dkg_result(dkg_key, Err(()), *self.full_id.public_id())
+                self.handle_dkg_result(dkg_key, Err(()), *self.node_info.full_id.public_id())
                     .await
             }
             None => Ok(()),
@@ -353,7 +344,7 @@ impl Approved {
     }
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
-        let our_id = self.full_id.public_id();
+        let our_id = self.node_info.full_id.public_id();
 
         trace!(
             "Deciding message status based upon variant: {:?}",
@@ -463,10 +454,8 @@ impl Approved {
                         // Transition from Approved to Bootstrapping on relocation
                         let mut bootstrapping = Bootstrapping::new(
                             Some(details),
-                            self.full_id.clone(),
-                            self.rng,
                             self.comm.clone(),
-                            self.network_params,
+                            self.node_info.clone(),
                         );
 
                         for conn_info in conn_infos {
@@ -616,7 +605,7 @@ impl Approved {
         let bounce_dst_key = *self.shared_state.section_key_by_location(&bounce_dst);
 
         let bounce_msg = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             bounce_dst,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
@@ -640,7 +629,7 @@ impl Approved {
         msg_bytes: Bytes,
     ) -> Result<()> {
         let bounce_msg = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
                 src_key: *self.shared_state.our_history.last_key(),
@@ -724,7 +713,7 @@ impl Approved {
         // be able to handle the resent message. If not, the peer will bounce the message again.
         self.comm
             .send_direct_message(
-                &self.full_id,
+                &self.node_info.full_id,
                 sender.peer_addr(),
                 Variant::Sync(self.shared_state.clone()),
             )
@@ -772,7 +761,7 @@ impl Approved {
     ) -> Result<()> {
         if !shared_state
             .our_prefix()
-            .matches(self.full_id.public_id().name())
+            .matches(self.node_info.full_id.public_id().name())
         {
             trace!("ignore Sync - not our section");
             return Ok(());
@@ -786,7 +775,7 @@ impl Approved {
         signed_msg: SignedRelocateDetails,
         events_tx: &mut mpsc::Sender<Event>,
     ) -> Option<RelocateParams> {
-        if signed_msg.relocate_details().pub_id != *self.full_id.public_id() {
+        if signed_msg.relocate_details().pub_id != *self.node_info.full_id.public_id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
             return None;
@@ -801,7 +790,7 @@ impl Approved {
             self.send_event(
                 events_tx,
                 Event::RelocationStarted {
-                    previous_name: *self.full_id.public_id().name(),
+                    previous_name: *self.node_info.full_id.public_id().name(),
                 },
             )
             .await;
@@ -836,7 +825,7 @@ impl Approved {
         msg_bytes: Bytes,
         events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
-        if promise.name == *self.full_id.public_id().name() {
+        if promise.name == *self.node_info.full_id.public_id().name() {
             // Store the `RelocatePromise` message and send it back after we are demoted.
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
@@ -844,7 +833,7 @@ impl Approved {
                 self.send_event(
                     events_tx,
                     Event::RelocationStarted {
-                        previous_name: *self.full_id.public_id().name(),
+                        previous_name: *self.node_info.full_id.public_id().name(),
                     },
                 )
                 .await;
@@ -853,7 +842,7 @@ impl Approved {
             }
 
             // We are no longer elder. Send the promise back already.
-            if !self.is_our_elder(self.full_id.public_id()) {
+            if !self.is_our_elder(self.node_info.full_id.public_id()) {
                 self.send_message_to_our_elders(msg_bytes).await?;
             }
 
@@ -940,7 +929,7 @@ impl Approved {
         debug!("Sending BootstrapResponse {:?} to {}", response, p2p_node);
         self.comm
             .send_direct_message(
-                &self.full_id,
+                &self.node_info.full_id,
                 p2p_node.peer_addr(),
                 Variant::BootstrapResponse(response),
             )
@@ -963,7 +952,7 @@ impl Approved {
             return self
                 .comm
                 .send_direct_message(
-                    &self.full_id,
+                    &self.node_info.full_id,
                     p2p_node.peer_addr(),
                     Variant::BootstrapResponse(response),
                 )
@@ -1050,7 +1039,7 @@ impl Approved {
 
         if let Some(message) =
             self.dkg_voter
-                .start_participating(&self.full_id, dkg_key, new_elders_info)
+                .start_participating(&self.node_info.full_id, dkg_key, new_elders_info)
         {
             // TODO ??
             //self.dkg_voter
@@ -1067,11 +1056,11 @@ impl Approved {
         result: Result<bls::PublicKey, ()>,
         sender: PublicId,
     ) -> Result<()> {
-        if sender == *self.full_id.public_id() {
+        if sender == *self.node_info.full_id.public_id() {
             self.send_dkg_result(dkg_key, result).await?;
         }
 
-        if !self.is_our_elder(self.full_id.public_id()) {
+        if !self.is_our_elder(self.node_info.full_id.public_id()) {
             return Ok(());
         }
 
@@ -1084,10 +1073,10 @@ impl Approved {
 
         trace!("accumulated DKG result for {}: {:?}", elders_info, result);
 
-        for info in self
-            .shared_state
-            .promote_and_demote_elders(&self.network_params, self.full_id.public_id().name())
-        {
+        for info in self.shared_state.promote_and_demote_elders(
+            &self.node_info.network_params,
+            self.node_info.full_id.public_id().name(),
+        ) {
             // Check whether the result still corresponds to the current elder candidates.
             if info == elders_info {
                 debug!("handle DKG result for {}: {:?}", info, result);
@@ -1122,9 +1111,11 @@ impl Approved {
 
         trace!("handle DKG message {:?} from {}", message, sender);
 
+        // FIXME: do we need to reuse MainRng everywhere really??
+        let mut rng = crate::rng::MainRng::default();
         let responses = self
             .dkg_voter
-            .process_dkg_message(&mut self.rng, &dkg_key, message);
+            .process_dkg_message(&mut rng, &dkg_key, message);
 
         // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
         // TODO ??
@@ -1142,7 +1133,7 @@ impl Approved {
 
     async fn try_relay_message(&mut self, msg: &Message) -> Result<()> {
         if !msg.dst().contains(
-            self.full_id.public_id().name(),
+            self.node_info.full_id.public_id().name(),
             self.shared_state.our_prefix(),
         ) || msg.dst().is_section()
         {
@@ -1161,7 +1152,7 @@ impl Approved {
         self.try_relay_message(&msg).await?;
 
         if !msg.dst().contains(
-            self.full_id.public_id().name(),
+            self.node_info.full_id.public_id().name(),
             self.shared_state.our_prefix(),
         ) {
             return Ok(());
@@ -1199,10 +1190,10 @@ impl Approved {
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     async fn promote_and_demote_elders(&mut self) -> Result<()> {
-        for info in self
-            .shared_state
-            .promote_and_demote_elders(&self.network_params, self.full_id.public_id().name())
-        {
+        for info in self.shared_state.promote_and_demote_elders(
+            &self.node_info.network_params,
+            self.node_info.full_id.public_id().name(),
+        ) {
             self.send_dkg_start(info).await?;
         }
 
@@ -1271,7 +1262,7 @@ impl Approved {
     fn is_in_startup_phase(&self) -> bool {
         self.shared_state.our_prefix().is_empty()
             && self.shared_state.our_members.joined().count()
-                <= self.network_params.recommended_section_size
+                <= self.node_info.network_params.recommended_section_size
     }
 
     async fn handle_unordered_consensus(
@@ -1420,7 +1411,7 @@ impl Approved {
         {
             self.section_update_barrier.handle_section_info(
                 &self.shared_state,
-                self.full_id.public_id().name(),
+                self.node_info.full_id.public_id().name(),
                 elders_info,
             );
             self.try_update_our_section(events_tx).await
@@ -1442,7 +1433,7 @@ impl Approved {
 
         self.section_update_barrier.handle_our_key(
             &self.shared_state,
-            self.full_id.public_id().name(),
+            self.node_info.full_id.public_id().name(),
             &prefix,
             key,
         );
@@ -1461,7 +1452,7 @@ impl Approved {
         if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
             self.section_update_barrier.handle_their_key(
                 &self.shared_state,
-                self.full_id.public_id().name(),
+                self.node_info.full_id.public_id().name(),
                 key,
             );
             self.try_update_our_section(events_tx).await
@@ -1555,7 +1546,7 @@ impl Approved {
         update: SharedState,
         mut events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
-        let old_is_elder = self.is_our_elder(self.full_id.public_id());
+        let old_is_elder = self.is_our_elder(self.node_info.full_id.public_id());
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
 
@@ -1571,7 +1562,7 @@ impl Approved {
         self.dkg_voter
             .stop_observing(self.shared_state.our_history.last_key_index());
 
-        let new_is_elder = self.is_our_elder(self.full_id.public_id());
+        let new_is_elder = self.is_our_elder(self.node_info.full_id.public_id());
         let new_last_key_index = self.shared_state.our_history.last_key_index();
         let new_prefix = *self.shared_state.our_prefix();
 
@@ -1634,7 +1625,11 @@ impl Approved {
             // our Offline vote.
             for p2p_node in self.shared_state.active_members() {
                 self.comm
-                    .send_direct_message(&self.full_id, p2p_node.peer_addr(), Variant::Ping)
+                    .send_direct_message(
+                        &self.node_info.full_id,
+                        p2p_node.peer_addr(),
+                        Variant::Ping,
+                    )
                     .await?;
             }
         }
@@ -1706,7 +1701,7 @@ impl Approved {
 
         trace!("Send {:?} to {:?}", variant, p2p_node);
         let message = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -1720,7 +1715,7 @@ impl Approved {
 
     async fn send_sync(&mut self, shared_state: SharedState) -> Result<()> {
         for p2p_node in shared_state.active_members() {
-            if p2p_node.name() == self.full_id.public_id().name() {
+            if p2p_node.name() == self.node_info.full_id.public_id().name() {
                 continue;
             }
 
@@ -1732,8 +1727,13 @@ impl Approved {
             let variant = Variant::Sync(shared_state);
 
             trace!("Send {:?} to {:?}", variant, p2p_node);
-            let message =
-                Message::single_src(&self.full_id, DstLocation::Direct, variant, None, None)?;
+            let message = Message::single_src(
+                &self.node_info.full_id,
+                DstLocation::Direct,
+                variant,
+                None,
+                None,
+            )?;
             self.comm
                 .send_message_to_target(p2p_node.peer_addr(), message.to_bytes())
                 .await?;
@@ -1762,7 +1762,7 @@ impl Approved {
         let message = self.to_accumulating_message(dst, variant, Some(knowledge_index))?;
         self.comm
             .send_direct_message(
-                &self.full_id,
+                &self.node_info.full_id,
                 &recipient,
                 Variant::MessageSignature(Box::new(message)),
             )
@@ -1784,7 +1784,7 @@ impl Approved {
         let message = self.to_accumulating_message(dst, variant, None)?;
         self.comm
             .send_direct_message(
-                &self.full_id,
+                &self.node_info.full_id,
                 &recipient,
                 Variant::MessageSignature(Box::new(message)),
             )
@@ -1820,7 +1820,7 @@ impl Approved {
         };
         let message = self.to_accumulating_message(DstLocation::Direct, variant, None)?;
         let message = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             DstLocation::Direct,
             Variant::MessageSignature(Box::new(message)),
             None,
@@ -1852,12 +1852,18 @@ impl Approved {
             .our_info()
             .elders
             .values()
-            .filter(|p2p_node| p2p_node.name() != self.full_id.public_id().name());
+            .filter(|p2p_node| p2p_node.name() != self.node_info.full_id.public_id().name());
 
         trace!("Send {:?} to {}", variant, recipients.clone().format(", "));
 
         let recipients: Vec<_> = recipients.map(P2pNode::peer_addr).copied().collect();
-        let message = Message::single_src(&self.full_id, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(
+            &self.node_info.full_id,
+            DstLocation::Direct,
+            variant,
+            None,
+            None,
+        )?;
         self.comm
             .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
             .await?;
@@ -1876,12 +1882,18 @@ impl Approved {
             dkg_key,
             message: dkg_message_bytes.clone(),
         };
-        let message = Message::single_src(&self.full_id, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(
+            &self.node_info.full_id,
+            DstLocation::Direct,
+            variant,
+            None,
+            None,
+        )?;
 
         let recipients: Vec<_> = self
             .dkg_voter
             .participants()
-            .filter(|p2p_node| p2p_node.public_id() != self.full_id.public_id())
+            .filter(|p2p_node| p2p_node.public_id() != self.node_info.full_id.public_id())
             .map(P2pNode::peer_addr)
             .copied()
             .collect();
@@ -1903,7 +1915,7 @@ impl Approved {
     pub async fn relay_message(&mut self, msg: &Message) -> Result<()> {
         let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
-            self.full_id.public_id(),
+            self.node_info.full_id.public_id(),
             &self.shared_state.our_members,
             &self.shared_state.sections,
         )?;
@@ -1944,7 +1956,7 @@ impl Approved {
         variant: Variant,
         proof_start_index_override: Option<u64>,
     ) -> Result<()> {
-        if !src.contains(self.full_id.public_id().name()) {
+        if !src.contains(self.node_info.full_id.public_id().name()) {
             log_or_panic!(
                 log::Level::Error,
                 "Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",
@@ -1958,7 +1970,7 @@ impl Approved {
         // If the source is a single node, we don't even need to send signatures, so let's cut this
         // short
         if !src.is_section() {
-            let msg = Message::single_src(&self.full_id, dst, variant, None, None)?;
+            let msg = Message::single_src(&self.node_info.full_id, dst, variant, None, None)?;
             return self.handle_accumulated_message(msg).await;
         }
 
@@ -1977,14 +1989,14 @@ impl Approved {
         );
 
         for target in targets {
-            if target.name() == self.full_id.public_id().name() {
+            if target.name() == self.node_info.full_id.public_id().name() {
                 if let Some(msg) = self.message_accumulator.add(accumulating_msg.clone()) {
                     self.handle_accumulated_message(msg).await?;
                 }
             } else {
                 self.comm
                     .send_direct_message(
-                        &self.full_id,
+                        &self.node_info.full_id,
                         target.peer_addr(),
                         Variant::MessageSignature(Box::new(accumulating_msg.clone())),
                     )
@@ -2071,7 +2083,7 @@ impl Approved {
     async fn update_section_knowledge(&mut self, msg: &Message) -> Result<()> {
         use crate::section::UpdateSectionKnowledgeAction::*;
 
-        if !self.is_our_elder(self.full_id.public_id()) {
+        if !self.is_our_elder(self.node_info.full_id.public_id()) {
             return Ok(());
         }
 
@@ -2089,7 +2101,7 @@ impl Approved {
 
         let hash = msg.hash();
         let actions = self.shared_state.update_section_knowledge(
-            self.full_id.public_id().name(),
+            self.node_info.full_id.public_id().name(),
             src_prefix,
             src_key,
             msg.dst_key().as_ref(),
@@ -2135,7 +2147,7 @@ impl Approved {
         };
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
-            &self.full_id,
+            &self.node_info.full_id,
             DstLocation::Section(dst.name()),
             variant,
             Some(proof_chain),
@@ -2156,10 +2168,13 @@ impl Approved {
         if self
             .shared_state
             .our_members
-            .elder_candidates(self.network_params.elder_size, self.shared_state.our_info())
-            .contains_key(self.full_id.public_id().name())
+            .elder_candidates(
+                self.node_info.network_params.elder_size,
+                self.shared_state.our_info(),
+            )
+            .contains_key(self.node_info.full_id.public_id().name())
         {
-            self.is_our_elder(self.full_id.public_id())
+            self.is_our_elder(self.node_info.full_id.public_id())
         } else {
             true
         }

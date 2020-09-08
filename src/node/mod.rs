@@ -131,7 +131,7 @@ impl Node {
 
     /// Returns the `PublicId` of this node.
     pub async fn id(&self) -> PublicId {
-        self.stage.lock().await.full_id().public_id().clone()
+        *self.stage.lock().await.full_id().public_id()
     }
 
     /// The name of this node.

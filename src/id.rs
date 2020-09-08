@@ -26,7 +26,7 @@ use xor_name::XorName;
 #[derive(Clone)]
 pub struct FullId {
     public_id: PublicId,
-    // Keep the secret key in Rc to allow Clone while also preventing multiple copies to exist in
+    // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
     // memory which might be insecure.
     secret_key: Arc<Box<SecretKey>>,
 }

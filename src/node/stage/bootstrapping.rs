@@ -6,15 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::joining::Joining;
+use super::{joining::Joining, NodeInfo};
 use crate::{
     comm::Comm,
     error::Result,
     id::{FullId, P2pNode},
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
-    network_params::NetworkParams,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    rng::MainRng,
     section::EldersInfo,
 };
 use std::{iter, net::SocketAddr};
@@ -29,26 +27,20 @@ pub(crate) struct Bootstrapping {
     // Using `FxHashSet` for deterministic iteration order.
     // TODO - we may not need it anymore: pending_requests: FxHashSet<SocketAddr>,
     relocate_details: Option<SignedRelocateDetails>,
-    full_id: FullId,
-    rng: MainRng,
+    node_info: NodeInfo,
     comm: Comm,
-    network_params: NetworkParams,
 }
 
 impl Bootstrapping {
     pub fn new(
         relocate_details: Option<SignedRelocateDetails>,
-        full_id: FullId,
-        rng: MainRng,
         comm: Comm,
-        network_params: NetworkParams,
+        node_info: NodeInfo,
     ) -> Self {
         Self {
             relocate_details,
-            full_id,
-            rng,
+            node_info,
             comm,
-            network_params,
         }
     }
 
@@ -79,9 +71,7 @@ impl Bootstrapping {
                             elders_info,
                             section_key,
                             relocate_payload,
-                            self.full_id.clone(),
-                            self.network_params,
-                            self.rng,
+                            self.node_info.clone(),
                         )
                         .await?;
 
@@ -164,12 +154,16 @@ impl Bootstrapping {
     pub async fn send_bootstrap_request(&mut self, dst: SocketAddr) -> Result<()> {
         let xorname = match &self.relocate_details {
             Some(details) => *details.destination(),
-            None => *self.full_id.public_id().name(),
+            None => *self.node_info.full_id.public_id().name(),
         };
 
         debug!("Sending BootstrapRequest to {}.", dst);
         self.comm
-            .send_direct_message(&self.full_id, &dst, Variant::BootstrapRequest(xorname))
+            .send_direct_message(
+                &self.node_info.full_id,
+                &dst,
+                Variant::BootstrapRequest(xorname),
+            )
             .await
     }
 
@@ -201,12 +195,17 @@ impl Bootstrapping {
             *relocate_details.destination(),
         );
 
-        let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
-        let relocate_payload =
-            RelocatePayload::new(relocate_details, new_full_id.public_id(), &self.full_id)?;
+        // FIXME: do we need to reuse MainRng everywhere really??
+        let mut rng = crate::rng::MainRng::default();
+        let new_full_id = FullId::within_range(&mut rng, &name_prefix.range_inclusive());
+        let relocate_payload = RelocatePayload::new(
+            relocate_details,
+            new_full_id.public_id(),
+            &self.node_info.full_id,
+        )?;
 
         info!("Changing name to {}.", new_full_id.public_id().name());
-        self.full_id = new_full_id;
+        self.node_info.full_id = new_full_id;
 
         Ok(Some(relocate_payload))
     }

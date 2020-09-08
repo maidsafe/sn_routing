@@ -6,18 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::approved::Approved;
+use super::{approved::Approved, NodeInfo};
 use crate::{
     comm::Comm,
     error::{Error, Result},
     event::{Connected, Event},
-    id::{FullId, P2pNode},
+    id::P2pNode,
     messages::{
         self, BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus,
     },
-    network_params::NetworkParams,
     relocation::RelocatePayload,
-    rng::MainRng,
     section::{EldersInfo, SharedState},
 };
 use std::net::SocketAddr;
@@ -36,10 +34,8 @@ pub(crate) struct Joining {
     section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
-    full_id: FullId,
     comm: Comm,
-    network_params: NetworkParams,
-    rng: MainRng,
+    node_info: NodeInfo,
 }
 
 impl Joining {
@@ -48,9 +44,7 @@ impl Joining {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
-        full_id: FullId,
-        network_params: NetworkParams,
-        rng: MainRng,
+        node_info: NodeInfo,
     ) -> Result<Self> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
@@ -61,10 +55,8 @@ impl Joining {
             elders_info,
             section_key,
             join_type,
-            full_id,
             comm,
-            network_params,
-            rng,
+            node_info,
         };
         stage.send_join_requests().await?;
 
@@ -106,9 +98,7 @@ impl Joining {
                         self.comm.clone(),
                         shared_state,
                         None,
-                        self.full_id.clone(),
-                        self.network_params,
-                        self.rng,
+                        self.node_info.clone(),
                     )?;
 
                     if let Err(err) = events_tx.send(Event::Connected(connect_type)).await {
@@ -192,7 +182,7 @@ impl Joining {
 
         if new_elders_info
             .prefix
-            .matches(self.full_id.public_id().name())
+            .matches(self.node_info.full_id.public_id().name())
         {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
@@ -243,7 +233,7 @@ impl Joining {
             info!("Sending {:?} to {}", join_request, dst);
             let variant = Variant::JoinRequest(Box::new(join_request));
             self.comm
-                .send_direct_message(&self.full_id, dst.peer_addr(), variant)
+                .send_direct_message(&self.node_info.full_id, dst.peer_addr(), variant)
                 .await?;
         }
 

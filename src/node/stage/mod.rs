@@ -27,14 +27,14 @@ use crate::{
 use bytes::Bytes;
 use qp2p::IncomingConnections;
 use serde::Serialize;
-use std::{iter, net::SocketAddr};
+use std::{boxed::Box, iter, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 #[cfg(feature = "mock")]
 pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
-// Type to represent the various stages a node goes through during its lifetime.
+// Type to hold the various states a node goes through during its lifetime.
 #[allow(clippy::large_enum_variant)]
 enum State {
     Bootstrapping(Bootstrapping),
@@ -42,10 +42,20 @@ enum State {
     Approved(Approved),
 }
 
+// Node's information.
+#[derive(Clone)]
+pub(crate) struct NodeInfo {
+    pub full_id: FullId,
+    pub network_params: Arc<Box<NetworkParams>>,
+    pub rng: Arc<Box<MainRng>>,
+}
+
+// Node's current stage whcich is responsible
+// for accessing current info and trigger operations.
 pub(crate) struct Stage {
     state: State,
     comm: Comm,
-    full_id: FullId,
+    node_info: NodeInfo,
 }
 
 impl Stage {
@@ -76,19 +86,23 @@ impl Stage {
             secret_key_share,
         };
 
+        let node_info = NodeInfo {
+            full_id,
+            network_params: Arc::new(Box::new(network_params)),
+            rng: Arc::new(Box::new(rng)),
+        };
+
         let state = Approved::new(
             comm.clone(),
             shared_state,
             Some(section_key_share),
-            full_id.clone(),
-            network_params,
-            rng,
+            node_info.clone(),
         )?;
 
         Ok(Self {
             state: State::Approved(state),
             comm,
-            full_id,
+            node_info,
         })
     }
 
@@ -111,12 +125,18 @@ impl Stage {
         )
         .await?;
 
-        let state = Bootstrapping::new(None, full_id.clone(), rng, comm.clone(), network_params);
+        let node_info = NodeInfo {
+            full_id,
+            network_params: Arc::new(Box::new(network_params)),
+            rng: Arc::new(Box::new(rng)),
+        };
+
+        let state = Bootstrapping::new(None, comm.clone(), node_info.clone());
 
         Ok(Self {
             state: State::Bootstrapping(state),
             comm,
-            full_id,
+            node_info,
         })
     }
 
@@ -129,7 +149,7 @@ impl Stage {
 
     /// Returns current FullId of the node
     pub fn full_id(&self) -> &FullId {
-        &self.full_id
+        &self.node_info.full_id
     }
 
     /// Returns connection info of this node.
@@ -210,13 +230,13 @@ impl Stage {
     async fn in_dst_location(&mut self, msg: &Message) -> Result<bool> {
         let in_dst = match &mut self.state {
             State::Bootstrapping(_) | State::Joining(_) => match msg.dst() {
-                DstLocation::Node(name) => name == self.full_id.public_id().name(),
+                DstLocation::Node(name) => name == self.node_info.full_id.public_id().name(),
                 DstLocation::Section(_) => false,
                 DstLocation::Direct => true,
             },
             State::Approved(stage) => {
                 let is_dst_location = msg.dst().contains(
-                    self.full_id.public_id().name(),
+                    self.node_info.full_id.public_id().name(),
                     stage.shared_state.our_prefix(),
                 );
 
@@ -244,7 +264,7 @@ impl Stage {
     }
 
     pub fn name_and_prefix(&self) -> String {
-        let name = self.full_id.public_id().name();
+        let name = self.node_info.full_id.public_id().name();
         match &self.state {
             State::Bootstrapping(_) => format!("{}(?) ", name),
             State::Joining(stage) => format!(
@@ -253,7 +273,7 @@ impl Stage {
                 stage.target_section_elders_info().prefix,
             ),
             State::Approved(stage) => {
-                if stage.is_our_elder(self.full_id.public_id()) {
+                if stage.is_our_elder(self.node_info.full_id.public_id()) {
                     format!(
                         "{}({:b}v{}!) ",
                         name,
