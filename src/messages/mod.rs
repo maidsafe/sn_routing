@@ -28,10 +28,7 @@ use crate::{
 use bytes::Bytes;
 use err_derive::Error;
 use itertools::Itertools;
-use std::{
-    fmt::{self, Debug, Formatter},
-    net::SocketAddr,
-};
+use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 
 /// Message sent over the network.
@@ -213,13 +210,6 @@ impl Message {
         }
     }
 
-    pub(crate) fn into_queued(self, sender: Option<SocketAddr>) -> QueuedMessage {
-        QueuedMessage {
-            message: self,
-            sender,
-        }
-    }
-
     /// Getter
     pub fn dst(&self) -> &DstLocation {
         &self.dst
@@ -306,11 +296,6 @@ impl VerifyStatus {
             Self::Unknown => Err(Error::UntrustedMessage),
         }
     }
-}
-
-pub(crate) struct QueuedMessage {
-    pub message: Message,
-    pub sender: Option<SocketAddr>,
 }
 
 pub fn log_verify_failure<'a, T, I>(msg: &T, error: &Error, their_keys: I)

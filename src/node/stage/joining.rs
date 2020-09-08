@@ -6,20 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::approved::Approved;
 use crate::{
-    core::Core,
+    comm::Comm,
     error::{Error, Result},
-    event::Connected,
-    id::P2pNode,
+    event::{Connected, Event},
+    id::{FullId, P2pNode},
     messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageStatus, QueuedMessage, Variant,
-        VerifyStatus,
+        self, BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus,
     },
+    network_params::NetworkParams,
     relocation::RelocatePayload,
-    section::EldersInfo,
+    rng::MainRng,
+    section::{EldersInfo, SharedState},
 };
-
-use std::{mem, net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
+use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
@@ -33,47 +35,113 @@ pub(crate) struct Joining {
     section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
-    // Token for the join request timeout.
-    timer_token: u64,
-    // Message we can't handle until we are joined.
-    msg_backlog: Vec<QueuedMessage>,
+    full_id: FullId,
+    comm: Comm,
+    network_params: NetworkParams,
+    rng: MainRng,
 }
 
 impl Joining {
-    pub fn new(
-        core: &mut Core,
+    pub async fn new(
+        comm: Comm,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
-        msg_backlog: Vec<QueuedMessage>,
-    ) -> Self {
+        full_id: FullId,
+        network_params: NetworkParams,
+        rng: MainRng,
+    ) -> Result<Self> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
             None => JoinType::First,
         };
-        let timer_token = core.timer.schedule(JOIN_TIMEOUT);
 
-        let stage = Self {
+        let mut stage = Self {
             elders_info,
             section_key,
             join_type,
-            timer_token,
-            msg_backlog,
+            full_id,
+            comm,
+            network_params,
+            rng,
         };
-        stage.send_join_requests(core);
-        stage
+        stage.send_join_requests().await?;
+
+        Ok(stage)
     }
 
-    pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        if token == self.timer_token {
-            debug!("Timeout when trying to join a section");
-            // Try again
-            self.send_join_requests(core);
-            self.timer_token = core.timer.schedule(JOIN_TIMEOUT);
+    pub async fn process_message(
+        &mut self,
+        sender: SocketAddr,
+        msg: Message,
+        events_tx: &mut mpsc::Sender<Event>,
+    ) -> Result<Option<Approved>> {
+        trace!("Got {:?}", msg);
+        match self.decide_message_status(&msg)? {
+            MessageStatus::Useful => match msg.variant() {
+                Variant::BootstrapResponse(BootstrapResponse::Join {
+                    elders_info,
+                    section_key,
+                }) => {
+                    self.handle_bootstrap_response(
+                        msg.src().to_sender_node(Some(sender))?,
+                        elders_info.clone(),
+                        *section_key,
+                    )
+                    .await?;
+
+                    Ok(None)
+                }
+                Variant::NodeApproval(payload) => {
+                    let connect_type = self.connect_type();
+                    let section_chain = msg.proof_chain()?.clone();
+                    // Transition from Joining to Approved
+                    info!(
+                        "This node has been approved to join the network at {:?}!",
+                        payload.value.prefix,
+                    );
+                    let shared_state = SharedState::new(section_chain, payload.clone());
+                    let new_stage = Approved::new(
+                        self.comm.clone(),
+                        shared_state,
+                        None,
+                        self.full_id.clone(),
+                        self.network_params,
+                        self.rng,
+                    )?;
+
+                    if let Err(err) = events_tx.send(Event::Connected(connect_type)).await {
+                        error!("Error reporting new Event: {:?}", err);
+                    }
+
+                    Ok(Some(new_stage))
+                }
+                _ => unreachable!(),
+            },
+            MessageStatus::Untrusted => unreachable!(),
+            MessageStatus::Unknown => {
+                debug!("Unknown message from {}: {:?} ", sender, msg);
+                Ok(None)
+            }
+            MessageStatus::Useless => {
+                debug!("Useless message from {}: {:?}", sender, msg);
+                Ok(None)
+            }
         }
     }
 
-    pub fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
+    /*async fn handle_timeout(&mut self, comm: &mut Comm, token: u64) -> Result<()> {
+        if token == self.timer_token {
+            debug!("Timeout when trying to join a section");
+            // Try again
+            self.send_join_requests().await?;
+            self.timer_token = comm.timer.schedule(JOIN_TIMEOUT);
+        }
+        Ok(())
+    }*/
+
+    fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
+        trace!("Deciding message status: {:?}", msg);
         match msg.variant() {
             Variant::NodeApproval(_) => {
                 let trusted_key = match &self.join_type {
@@ -111,13 +179,8 @@ impl Joining {
         }
     }
 
-    pub fn handle_unknown_message(&mut self, sender: SocketAddr, msg: Message) {
-        self.msg_backlog.push(msg.into_queued(Some(sender)));
-    }
-
-    pub fn handle_bootstrap_response(
+    async fn handle_bootstrap_response(
         &mut self,
-        core: &mut Core,
         sender: P2pNode,
         new_elders_info: EldersInfo,
         new_section_key: bls::PublicKey,
@@ -126,14 +189,17 @@ impl Joining {
             return Ok(());
         }
 
-        if new_elders_info.prefix.matches(core.name()) {
+        if new_elders_info
+            .prefix
+            .matches(self.full_id.public_id().name())
+        {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
                 new_elders_info, sender
             );
             self.elders_info = new_elders_info;
             self.section_key = new_section_key;
-            self.send_join_requests(core);
+            self.send_join_requests().await?;
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -152,7 +218,7 @@ impl Joining {
     }
 
     // Are we relocating or joining for the first time?
-    pub fn connect_type(&self) -> Connected {
+    fn connect_type(&self) -> Connected {
         match &self.join_type {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(payload) => Connected::Relocate {
@@ -161,12 +227,7 @@ impl Joining {
         }
     }
 
-    // Remove and return the message backlog.
-    pub fn take_message_backlog(&mut self) -> Vec<QueuedMessage> {
-        mem::take(&mut self.msg_backlog)
-    }
-
-    fn send_join_requests(&self, core: &mut Core) {
+    async fn send_join_requests(&mut self) -> Result<()> {
         let relocate_payload = match &self.join_type {
             JoinType::First { .. } => None,
             JoinType::Relocate(payload) => Some(payload),
@@ -180,8 +241,12 @@ impl Joining {
 
             info!("Sending {:?} to {}", join_request, dst);
             let variant = Variant::JoinRequest(Box::new(join_request));
-            core.send_direct_message(dst.peer_addr(), variant);
+            self.comm
+                .send_direct_message(&self.full_id, dst.peer_addr(), variant)
+                .await?;
         }
+
+        Ok(())
     }
 }
 

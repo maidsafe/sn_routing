@@ -18,7 +18,7 @@ use crate::{
     error::Result,
     messages::{AccumulatingMessage, Message, MessageAccumulator},
     node::Node,
-    quic_p2p::{EventSenders, Peer, QuicP2p},
+    qp2p::{EventSenders, Peer, QuicP2p},
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;

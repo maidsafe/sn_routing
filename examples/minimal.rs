@@ -33,9 +33,8 @@
 //! command-line option for more details.
 //!
 
-use crossbeam_channel::{Receiver, Select, Sender};
 use hex_fmt::HexFmt;
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use sn_routing::{
     event::{Connected, Event},
     Node, NodeConfig, TransportConfig,
@@ -44,7 +43,6 @@ use std::{
     collections::HashSet,
     convert::TryInto,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    thread::{self, JoinHandle},
 };
 use structopt::StructOpt;
 
@@ -91,7 +89,8 @@ struct Options {
     verbosity: u8,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     if cfg!(feature = "mock") {
         panic!("This example must be built without the `mock` feature");
     }
@@ -100,7 +99,7 @@ fn main() {
     init_log(opts.verbosity);
 
     if opts.count <= 1 {
-        start_single_node(opts.first, opts.bootstrap_contacts, opts.ip, opts.port)
+        start_single_node(opts.first, opts.bootstrap_contacts, opts.ip, opts.port).await
     } else {
         start_multiple_nodes(
             opts.count,
@@ -109,84 +108,69 @@ fn main() {
             opts.ip,
             opts.port,
         )
+        .await
     }
 }
 
 // Starts a single node and block until it terminates.
-fn start_single_node(
+async fn start_single_node(
     first: bool,
     contacts: Vec<SocketAddr>,
     ip: Option<IpAddr>,
     port: Option<u16>,
 ) {
-    start_node(0, first, contacts.into_iter().collect(), ip, port, None)
+    let _contact = start_node(0, first, contacts.into_iter().collect(), ip, port).await;
 }
 
 // Starts `count` nodes and blocks until all of them terminate.
 //
 // If `first` is true, the first spawned node will start as the first (genesis) node. The rest will
 // always start as regular nodes.
-fn start_multiple_nodes(
+async fn start_multiple_nodes(
     count: usize,
     first: bool,
-    contacts: Vec<SocketAddr>,
+    mut contacts: Vec<SocketAddr>,
     ip: Option<IpAddr>,
     base_port: Option<u16>,
 ) {
-    let mut join_handles = Vec::with_capacity(count);
-
-    let (first_index, first_contact) = if first {
-        let (join_handle, first_contact) = spawn_first_node(ip, base_port);
-        join_handles.push(join_handle);
-        (1, Some(first_contact))
+    let first_index = if first {
+        let first_contact = spawn_first_node(ip, base_port).await;
+        contacts.push(first_contact);
+        1
     } else {
-        (0, None)
+        0
     };
 
-    let contacts: HashSet<_> = contacts.into_iter().chain(first_contact).collect();
-
     for index in first_index..count {
-        let join_handle = spawn_other_node(index, contacts.clone(), ip, base_port);
-        join_handles.push(join_handle);
+        spawn_other_node(index, contacts.clone(), ip, base_port).await;
     }
 }
 
-// Spawns the first (genesis) node in its own thread and blocks until its contact info becomes
-// available.
-fn spawn_first_node(ip: Option<IpAddr>, base_port: Option<u16>) -> (ScopedJoinHandle, SocketAddr) {
-    let (contact_tx, contact_rx) = crossbeam_channel::bounded(0);
-    let join_handle = thread::spawn(move || {
-        start_node(0, true, HashSet::default(), ip, base_port, Some(contact_tx))
-    })
-    .into();
-    let contact = contact_rx
-        .recv()
-        .expect("failed to receive contact info of the first node");
-
-    (join_handle, contact)
+// Spawns the first (genesis) node in its own thread
+async fn spawn_first_node(ip: Option<IpAddr>, base_port: Option<u16>) -> SocketAddr {
+    start_node(0, true, Vec::default(), ip, base_port).await
 }
 
 // Spawns regular (non-first) node in its own thread.
 //
 // `index` is used to differentiate the nodes in the log output. Should be unique.
-fn spawn_other_node(
+async fn spawn_other_node(
     index: usize,
-    contacts: HashSet<SocketAddr>,
+    contacts: Vec<SocketAddr>,
     ip: Option<IpAddr>,
     base_port: Option<u16>,
-) -> ScopedJoinHandle {
-    thread::spawn(move || start_node(index, false, contacts, ip, base_port, None)).into()
+) {
+    let _contact_info = start_node(index, false, contacts, ip, base_port).await;
 }
 
 // Starts a single node and blocks until it terminates.
-fn start_node(
+async fn start_node(
     index: usize,
     first: bool,
-    contacts: HashSet<SocketAddr>,
+    contacts: Vec<SocketAddr>,
     ip: Option<IpAddr>,
     base_port: Option<u16>,
-    contact_tx: Option<Sender<SocketAddr>>,
-) {
+) -> SocketAddr {
     let ip = ip.unwrap_or_else(|| Ipv4Addr::LOCALHOST.into());
     let port = base_port.map(|base_port| {
         index
@@ -196,6 +180,7 @@ fn start_node(
             .expect("port out of range")
     });
 
+    let contacts: HashSet<_> = contacts.into_iter().collect();
     let transport_config = TransportConfig {
         hard_coded_contacts: contacts,
         ip: Some(ip),
@@ -203,102 +188,48 @@ fn start_node(
         ..Default::default()
     };
 
-    log::info!("Node #{} starting...", index);
+    info!("Node #{} starting...", index);
 
-    // The returned triple is:
-    // - The sn_routing node itself.
-    // - The receiver for events that the node notifies the application about.
-    // - The receiver for client network events. We don't support clients in this example, so we
-    //   can ignore it
-    let (node, event_rx, _client_event_rx) = Node::new(NodeConfig {
+    let config = NodeConfig {
         first,
         transport_config,
         ..Default::default()
-    });
+    };
+    let mut node = Node::new(config)
+        .await
+        .expect("Failed to instantiate a Node");
 
-    run_node(index, node, event_rx, contact_tx)
+    let contact_info = node
+        .our_connection_info()
+        .expect("Failed to obtain node's contact info.");
+    run_node(index, node);
+
+    contact_info
 }
 
 // Runs the nodes event loop. Blocks until terminated.
-fn run_node(
-    index: usize,
-    mut node: Node,
-    event_rx: Receiver<Event>,
-    contact_tx: Option<Sender<SocketAddr>>,
-) {
-    loop {
-        // We need receive from multiple channels. As a minimum, we need to receive from the
-        // channels used internally by `Node` and from the node event channel. Additionally we might
-        // want to receive from the client network event channel (not used in this example) or from
-        // any other channel used by the application. To achieve this, we use the `Select`
-        // mechanism of `crossbeam-channel`.
+fn run_node(index: usize, node: Node) {
+    let mut event_stream = node
+        .listen_events()
+        .expect("Failed to start listening for events from node.");
 
-        // First create an instance of `Select`.
-        let mut select = Select::new();
-
-        // Pass it to node to let it register its own internal channels.
-        node.register(&mut select);
-
-        // Then register the event channel.
-        let event_rx_idx = select.recv(&event_rx);
-
-        // Block until one (or more) of the channels receive something.
-        let selected_operation = select.ready();
-
-        if selected_operation == event_rx_idx {
-            // If the receiving channel is the event channel, receive the event and handle it.
-            let event = match event_rx.recv() {
-                Ok(event) => event,
-                Err(error) => panic!("Node #{} failed to receive event: {}", index, error),
-            };
-
-            if !handle_event(index, &mut node, event, contact_tx.as_ref()) {
-                break;
-            }
-        } else {
-            // Otherwise the receiving channel is internal to node, so let it handle it.
-            if let Err(error) = node.handle_selected_operation(selected_operation) {
-                log::error!(
-                    "Node #{} failed to handle selected operation: {}",
-                    index,
-                    error
-                );
+    tokio::spawn(async move {
+        while let Some(event) = event_stream.next().await {
+            if !handle_event(index, event) {
                 break;
             }
         }
-    }
+    });
 }
 
 // Handles the event emitted by the node.
-//
-// If `contact_tx` is `Some`, it will be used to send the contact info of the node once it becomes
-// available.
-fn handle_event(
-    index: usize,
-    node: &mut Node,
-    event: Event,
-    contact_tx: Option<&Sender<SocketAddr>>,
-) -> bool {
+fn handle_event(index: usize, event: Event) -> bool {
     match event {
         Event::Connected(Connected::First) => {
-            let contact_info = node
-                .our_connection_info()
-                .expect("failed to retrieve node contact info");
-            log::info!(
-                "Node #{} connected - name: {}, contact: {}",
-                index,
-                node.name(),
-                contact_info
-            );
-
-            if let Some(contact_tx) = contact_tx {
-                contact_tx
-                    .send(contact_info)
-                    .expect("failed to send contact info")
-            }
+            info!("Node #{} connected", index,);
         }
         Event::Connected(Connected::Relocate { previous_name }) => {
-            log::info!(
+            info!(
                 "Node #{} relocated - old name: {}, new name: {}",
                 index,
                 previous_name,
@@ -306,69 +237,60 @@ fn handle_event(
             );
         }
         Event::PromotedToElder => {
-            log::info!("Node #{} promoted to Elder", index);
+            info!("Node #{} promoted to Elder", index);
         }
         Event::PromotedToAdult => {
-            log::info!("Node #{} promoted to Adult", index);
+            info!("Node #{} promoted to Adult", index);
         }
         Event::Demoted => {
-            log::info!("Node #{} demoted", index);
+            info!("Node #{} demoted", index);
         }
         Event::MemberJoined {
             name,
             previous_name,
             age,
         } => {
-            log::info!(
+            info!(
                 "Node #{} member joined - name: {}, previous_name: {}, age: {}",
-                index,
-                name,
-                previous_name,
-                age
+                index, name, previous_name, age
             );
         }
         Event::InfantJoined { name, age } => {
-            log::info!(
+            info!(
                 "Node #{} infant joined - name: {}, age: {}",
-                index,
-                name,
-                age
+                index, name, age
             );
         }
         Event::MemberLeft { name, age } => {
-            log::info!("Node #{} member left - name: {}, age: {}", index, name, age);
+            info!("Node #{} member left - name: {}, age: {}", index, name, age);
         }
         Event::EldersChanged {
             prefix,
             key,
             elders,
         } => {
-            log::info!(
+            info!(
                 "Node #{} elders changed - prefix: {:b}, key: {:?}, elders: {:?}",
-                index,
-                prefix,
-                key,
-                elders
+                index, prefix, key, elders
             );
         }
-        Event::MessageReceived { content, src, dst } => log::info!(
+        Event::MessageReceived { content, src, dst } => info!(
             "Node #{} received message - src: {:?}, dst: {:?}, content: {}",
             index,
             src,
             dst,
             HexFmt(content)
         ),
-        Event::RelocationStarted { previous_name } => log::info!(
+        Event::RelocationStarted { previous_name } => info!(
             "Node #{} relocation started - previous_name: {}",
-            index,
-            previous_name
+            index, previous_name
         ),
         Event::Terminated => {
-            log::info!("Node #{} terminated", index);
+            info!("Node #{} terminated", index);
             return false;
         }
         Event::RestartRequired => {
-            log::info!("Node #{} requires restart", index);
+            info!("Node #{} requires restart", index);
             return false;
         }
     }
@@ -405,21 +327,4 @@ fn init_log(verbosity: u8) {
     }
 
     builder.init()
-}
-
-// RAII-like wrapper for `std::thread::JoinHandle` which joins the thread when dropped.
-struct ScopedJoinHandle(Option<JoinHandle<()>>);
-
-impl From<JoinHandle<()>> for ScopedJoinHandle {
-    fn from(inner: JoinHandle<()>) -> Self {
-        Self(Some(inner))
-    }
-}
-
-impl Drop for ScopedJoinHandle {
-    fn drop(&mut self) {
-        if let Some(inner) = self.0.take() {
-            inner.join().expect("failed to join - thread panicked")
-        }
-    }
 }

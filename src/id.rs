@@ -12,12 +12,13 @@ use crate::{
 };
 use serde::{de::Deserialize, Deserializer, Serialize, Serializer};
 use std::{
+    boxed::Box,
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     net::{Ipv6Addr, SocketAddr},
     ops::RangeInclusive,
-    rc::Rc,
+    sync::Arc,
 };
 use xor_name::XorName;
 
@@ -27,7 +28,7 @@ pub struct FullId {
     public_id: PublicId,
     // Keep the secret key in Rc to allow Clone while also preventing multiple copies to exist in
     // memory which might be insecure.
-    secret_key: Rc<SecretKey>,
+    secret_key: Arc<Box<SecretKey>>,
 }
 
 impl FullId {
@@ -40,7 +41,7 @@ impl FullId {
 
         Self {
             public_id,
-            secret_key: Rc::new(secret_key),
+            secret_key: Arc::new(Box::new(secret_key)),
         }
     }
 
@@ -54,7 +55,7 @@ impl FullId {
             if range.contains(&name) {
                 return Self {
                     public_id: PublicId::new(public_key),
-                    secret_key: Rc::new(secret_key),
+                    secret_key: Arc::new(Box::new(secret_key)),
                 };
             }
         }

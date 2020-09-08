@@ -11,7 +11,7 @@ use crate::{
     messages::{Message, Variant},
     mock::Environment,
     node::{Node, NodeConfig, BOOTSTRAP_TIMEOUT},
-    quic_p2p::{EventSenders, Peer},
+    qp2p::{EventSenders, Peer},
     transport::Transport,
     TransportConfig, TransportEvent,
 };
