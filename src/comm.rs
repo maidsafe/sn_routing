@@ -13,15 +13,21 @@ use crate::{
     messages::{Message, Variant},
 };
 use bytes::Bytes;
+use futures::lock::Mutex;
 use hex_fmt::HexFmt;
+use lru_time_cache::LruCache;
 use qp2p::{Config, Connection, Endpoint, IncomingConnections, QuicP2p};
 use std::{boxed::Box, net::SocketAddr, sync::Arc};
+
+// Number of Connections to maintain in the cache
+const CONNECTIONS_CACHE_SIZE: usize = 1024;
 
 // Communication component of the node to interact with other nodes.
 #[derive(Clone)]
 pub(crate) struct Comm {
     quic_p2p: Arc<Box<QuicP2p>>,
     endpoint: Arc<Box<Endpoint>>,
+    node_conns: Arc<Mutex<LruCache<SocketAddr, Connection>>>,
 }
 
 impl Comm {
@@ -36,7 +42,13 @@ impl Comm {
         // the incoming messages from other nodes.
         let endpoint = Arc::new(Box::new(quic_p2p.new_endpoint()?));
 
-        Ok(Self { quic_p2p, endpoint })
+        let node_conns = Arc::new(Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE)));
+
+        Ok(Self {
+            quic_p2p,
+            endpoint,
+            node_conns,
+        })
     }
 
     pub async fn from_bootstrapping(transport_config: Config) -> Result<(Self, Connection)> {
@@ -50,8 +62,16 @@ impl Comm {
 
         let quic_p2p = Arc::new(Box::new(quic_p2p));
         let endpoint = Arc::new(Box::new(endpoint));
+        let node_conns = Arc::new(Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE)));
 
-        Ok((Self { quic_p2p, endpoint }, connection))
+        Ok((
+            Self {
+                quic_p2p,
+                endpoint,
+                node_conns,
+            },
+            connection,
+        ))
     }
 
     /// Starts listening for events returning a stream where to read them from.
@@ -103,8 +123,11 @@ impl Comm {
         msg: Bytes,
     ) -> Result<()> {
         trace!("Sending message to target {:?}", recipient);
-        // TODO: can we cache the Connections to nodes to make this more efficient??
-        let conn = self.endpoint.connect_to(recipient).await?;
+        // Cache the Connection to the node or obtain the already cached one
+        let mut node_conns = self.node_conns.lock().await;
+        let conn = node_conns
+            .entry(*recipient)
+            .or_insert(self.endpoint.connect_to(recipient).await?);
         conn.send_uni(msg).await.map_err(Error::Network)
     }
 
