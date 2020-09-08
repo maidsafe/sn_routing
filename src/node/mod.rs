@@ -74,7 +74,6 @@ impl Default for NodeConfig {
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
     stage: Arc<Mutex<Stage>>,
-    full_id: FullId,
     is_genesis: bool,
 }
 
@@ -93,7 +92,7 @@ impl Node {
         let is_genesis = config.first;
 
         let stage = if is_genesis {
-            match Stage::first_node(transport_config, full_id.clone(), network_params, rng).await {
+            match Stage::first_node(transport_config, full_id, network_params, rng).await {
                 Ok(stage) => {
                     info!("{} Started a new network as a seed node.", node_name);
                     stage
@@ -106,25 +105,23 @@ impl Node {
             }
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(transport_config, full_id.clone(), network_params, rng).await?
+            Stage::bootstrap(transport_config, full_id, network_params, rng).await?
         };
 
         Ok(Self {
             stage: Arc::new(Mutex::new(stage)),
-            full_id,
             is_genesis,
         })
     }
 
     /// Obtain an Event stream to read all reported events from
     pub async fn listen_events(&self) -> Result<EventStream> {
-        let incoming_conns = self.stage.lock().await.listen_events()?;
-        Ok(EventStream::new(
+        EventStream::new(
             Arc::clone(&self.stage),
-            incoming_conns,
-            *self.full_id.public_id().name(),
+            *self.id().await.name(),
             self.is_genesis,
-        ))
+        )
+        .await
     }
 
     /// Is this the genesis node or not
@@ -133,13 +130,13 @@ impl Node {
     }
 
     /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> &PublicId {
-        self.full_id.public_id()
+    pub async fn id(&self) -> PublicId {
+        self.stage.lock().await.full_id().public_id().clone()
     }
 
     /// The name of this node.
-    pub fn name(&self) -> &XorName {
-        self.id().name()
+    pub async fn name(&self) -> XorName {
+        *self.id().await.name()
     }
 
     /// Returns connection info of this node.
@@ -164,19 +161,15 @@ impl Node {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.stage
-            .lock()
-            .await
-            .approved()
-            .map(|stage| {
-                stage
-                    .shared_state
-                    .sections
-                    .our()
-                    .elders
-                    .contains_key(self.name())
-            })
-            .unwrap_or(false)
+        match self.stage.lock().await.approved() {
+            None => false,
+            Some(stage) => stage
+                .shared_state
+                .sections
+                .our()
+                .elders
+                .contains_key(&self.name().await),
+        }
     }
 
     /// Returns the information of all the current section elders.

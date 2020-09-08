@@ -127,11 +127,17 @@ impl Stage {
         }
     }
 
+    /// Returns current FullId of the node
+    pub fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
+
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.comm.our_connection_info()
     }
 
+    /// Resturns a stream to obtain incoming connections from
     pub fn listen_events(&mut self) -> Result<IncomingConnections> {
         self.comm.listen_events()
     }
