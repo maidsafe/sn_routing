@@ -16,19 +16,18 @@ use crate::{
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
     section::EldersInfo,
-    time::Duration,
 };
-use fxhash::FxHashSet;
 use std::{iter, net::SocketAddr};
 use xor_name::Prefix;
 
+// TODO: review if we still need to set a timeout for joining
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
+// pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {
     // Using `FxHashSet` for deterministic iteration order.
-    pending_requests: FxHashSet<SocketAddr>,
+    // TODO - we may not need it anymore: pending_requests: FxHashSet<SocketAddr>,
     relocate_details: Option<SignedRelocateDetails>,
     full_id: FullId,
     rng: MainRng,
@@ -45,7 +44,6 @@ impl Bootstrapping {
         network_params: NetworkParams,
     ) -> Self {
         Self {
-            pending_requests: Default::default(),
             relocate_details,
             full_id,
             rng,

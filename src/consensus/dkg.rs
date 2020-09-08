@@ -129,7 +129,8 @@ impl DkgVoter {
                     dkg_key,
                     key_gen,
                     elders_info: Some(elders_info),
-                    timer_token: 0,
+                    // TODO: review if we still need this
+                    //timer_token: 0,
                 });
 
                 Some(message)
@@ -214,6 +215,8 @@ impl DkgVoter {
     // - `Some((dkg_key, Err(())))` if the DKG failed. The result should be sent to the DKG observers
     //   for accumulation.
     // - `None` if there is no active DKG session.
+    // TODO: review if we still need this function
+    /*
     pub fn progress_dkg(
         &mut self,
         rng: &mut MainRng,
@@ -235,6 +238,7 @@ impl DkgVoter {
             }
         }
     }
+    */
 
     /// Returns the participants of the DKG session, if there is one.
     pub fn participants(&self) -> impl Iterator<Item = &P2pNode> {
@@ -348,17 +352,23 @@ impl DkgVoter {
 
     // Returns the timer token of the active DKG session if there is one. If this timer fires, we
     // should call `progress_dkg`.
+    // TODO: review if we still need this function
+    /*
     pub fn timer_token(&self) -> Option<u64> {
         self.participant.as_ref().map(|session| session.timer_token)
     }
+    */
 
     // Sets the timer token for the active DKG session. This should be set after a successful DKG
     // initialization, or after handling a DKG message that produced at least one response.
+    // TODO: review if we still need this function
+    /*
     pub fn set_timer_token(&mut self, token: u64) {
         if let Some(session) = &mut self.participant {
             session.timer_token = token;
         }
     }
+    */
 }
 
 // Data for a DKG participant.
@@ -367,7 +377,8 @@ struct Participant {
     elders_info: Option<EldersInfo>,
     dkg_key: DkgKey,
     key_gen: KeyGen<FullId>,
-    timer_token: u64,
+    // TODO: review if we still need this
+    //timer_token: u64,
 }
 
 // Data for a DKG observer.

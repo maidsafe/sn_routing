@@ -29,7 +29,6 @@ use crate::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
         SectionUpdateBarrier, SharedState, MIN_AGE,
     },
-    time::Duration,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -38,8 +37,9 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
+// TODO: review if we still need to set a timer for DKG
 // Interval to progress DKG timed phase
-const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+// const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
@@ -222,6 +222,9 @@ impl Approved {
         Ok(())
     }
 
+    // TODO: review if we still need to invoke this function which used to
+    // be called when couldn't connect to a peer.
+    /*
     async fn handle_connection_failure(&mut self, addr: SocketAddr) -> Result<()> {
         let node = self
             .shared_state
@@ -244,7 +247,11 @@ impl Approved {
 
         Ok(())
     }
+    */
 
+    // TODO: review if we still need to call this function which used to be
+    // called when a message to a peer wasn't not sent even after retrying.
+    /*
     async fn handle_peer_lost(&mut self, peer_addr: SocketAddr) -> Result<()> {
         let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
@@ -265,7 +272,10 @@ impl Approved {
 
         Ok(())
     }
+    */
 
+    // TODO: review if we still need this function
+    /*
     async fn handle_timeout(&mut self, token: u64) {
         if self.dkg_voter.timer_token() == Some(token) {
             // TODO ??
@@ -277,6 +287,7 @@ impl Approved {
             }
         }
     }
+    */
 
     async fn check_dkg(&mut self, dkg_key: DkgKey) -> Result<()> {
         match self.dkg_voter.check_dkg() {
@@ -298,6 +309,8 @@ impl Approved {
         }
     }
 
+    // TODO: review if we still need this function
+    /*
     async fn progress_dkg(&mut self) -> Result<()> {
         match self.dkg_voter.progress_dkg(&mut self.rng) {
             Some((dkg_key, Ok(messages))) => {
@@ -313,6 +326,7 @@ impl Approved {
             None => Ok(()),
         }
     }
+    */
 
     /// Is the node with the given id an elder in our section?
     pub fn is_our_elder(&self, id: &PublicId) -> bool {

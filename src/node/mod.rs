@@ -87,7 +87,7 @@ impl Node {
     pub async fn new(config: NodeConfig) -> Result<Self> {
         let mut rng = config.rng;
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
-        let node_name = full_id.public_id().name().clone();
+        let node_name = *full_id.public_id().name();
         let transport_config = config.transport_config;
         let network_params = config.network_params;
         let is_genesis = config.first;
@@ -237,7 +237,7 @@ impl Node {
         // Set log identifier
         let str = self.stage.lock().await.name_and_prefix();
         use std::fmt::Write;
-        log_utils::set_ident(|buffer| write!(buffer, "{}", str));
+        let _log_ident = log_utils::set_ident(|buffer| write!(buffer, "{}", str));
 
         self.stage
             .lock()

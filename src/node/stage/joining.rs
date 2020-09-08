@@ -20,12 +20,13 @@ use crate::{
     rng::MainRng,
     section::{EldersInfo, SharedState},
 };
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
+// TODO: review if we still need to set a timeout for joining
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
+//pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
 pub(crate) struct Joining {
