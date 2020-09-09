@@ -15,7 +15,7 @@ use serde::{Serialize, Serializer};
 
 /// Accumulator for section-source messages.
 #[derive(Default)]
-pub(crate) struct MessageAccumulator(SignatureAggregator<Payload>);
+pub(crate) struct MessageAccumulator(SignatureAggregator);
 
 impl MessageAccumulator {
     /// Add `AccumulatingMessage` to the accumulator. Returns the full `Message` if we have enough
@@ -50,8 +50,7 @@ impl MessageAccumulator {
                     }
                 }
             }
-            Err(AccumulationError::NotEnoughShares)
-            | Err(AccumulationError::AlreadyAccumulated) => None,
+            Err(AccumulationError::NotEnoughShares) => None,
             Err(error) => {
                 error!("Failed to add accumulating message: {}", error);
                 None

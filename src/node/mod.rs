@@ -40,10 +40,7 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{
-    consensus::{DkgKey, DkgResult},
-    section::SectionKeyShare,
-};
+use crate::section::SectionKeyShare;
 #[cfg(feature = "mock")]
 use std::collections::BTreeSet;
 
@@ -693,24 +690,23 @@ impl Node {
                         message.clone(),
                         src_key,
                     ),
+                Variant::DKGStart(info) => stage.handle_dkg_start(&mut self.core, info.clone())?,
                 Variant::DKGMessage { dkg_key, message } => {
                     stage.handle_dkg_message(
                         &mut self.core,
-                        dkg_key,
+                        *dkg_key,
                         message.clone(),
                         *msg.src().as_node()?,
                     )?;
                 }
-                Variant::DKGOldElders {
-                    dkg_key,
-                    participants,
-                    public_key_set,
+                Variant::DKGResult {
+                    elders_info,
+                    result,
                 } => {
-                    stage.handle_dkg_old_elders(
+                    stage.handle_dkg_result(
                         &mut self.core,
-                        dkg_key,
-                        participants.clone(),
-                        public_key_set.clone(),
+                        elders_info.clone(),
+                        *result,
                         *msg.src().as_node()?,
                     )?;
                 }
@@ -1009,13 +1005,19 @@ impl Node {
     }
 
     // Simulate DKG completion
-    pub(crate) fn handle_dkg_result_event(
+    pub(crate) fn complete_dkg(
         &mut self,
-        dkg_key: &DkgKey,
-        dkg_result: &DkgResult,
+        elders_info: EldersInfo,
+        public_key_set: bls::PublicKeySet,
+        secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Result<()> {
         if let Some(stage) = self.stage.approved_mut() {
-            stage.handle_dkg_result_event(&mut self.core, dkg_key, dkg_result)
+            stage.complete_dkg(
+                &mut self.core,
+                elders_info,
+                public_key_set,
+                secret_key_share,
+            )
         } else {
             Err(Error::InvalidState)
         }

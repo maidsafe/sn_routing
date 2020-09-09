@@ -165,15 +165,6 @@ impl SharedState {
             .map(|info| &info.p2p_node)
     }
 
-    /// Returns a section member `P2pNode`
-    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.sections
-            .our()
-            .elders
-            .get(name)
-            .or_else(|| self.our_members.get(name).map(|info| &info.p2p_node))
-    }
-
     /// Returns whether we know the given peer.
     pub fn is_known_peer(&self, name: &XorName) -> bool {
         self.our_members.is_joined(name) || self.sections.is_elder(name)
@@ -239,17 +230,17 @@ impl SharedState {
         &self,
         network_params: &NetworkParams,
         our_name: &XorName,
-    ) -> Option<Vec<EldersInfo>> {
+    ) -> Vec<EldersInfo> {
         if let Some((our_info, other_info)) = self.try_split(network_params, our_name) {
-            return Some(vec![our_info, other_info]);
+            return vec![our_info, other_info];
         }
 
         let expected_elders_map = self.elder_candidates(network_params.elder_size);
-        let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
-        let current_elders: BTreeSet<_> = self.our_info().elders.values().cloned().collect();
+        let expected_elders: BTreeSet<_> = expected_elders_map.keys().collect();
+        let current_elders: BTreeSet<_> = self.our_info().elders.keys().collect();
 
         if expected_elders == current_elders {
-            None
+            vec![]
         } else {
             let new_info = EldersInfo::new(expected_elders_map, self.our_info().prefix);
 
@@ -264,7 +255,7 @@ impl SharedState {
                 );
             }
 
-            Some(vec![new_info])
+            vec![new_info]
         }
     }
 
@@ -459,7 +450,7 @@ impl SharedState {
     }
 }
 
-#[allow(clippy::enum_variant_names)]
+#[derive(Debug)]
 pub(crate) enum UpdateSectionKnowledgeAction {
     VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
     VoteTheirKnowledge { prefix: Prefix, key_index: u64 },

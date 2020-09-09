@@ -8,7 +8,7 @@
 
 use super::utils::{self as test_utils, MockTransport};
 use crate::{
-    consensus::{self, DkgResult, Vote},
+    consensus::{self, Vote},
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
@@ -33,7 +33,7 @@ struct DkgToSectionInfo {
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elders_info: EldersInfo,
-    dkg_result: DkgResult,
+    secret_key_share: Option<bls::SecretKeyShare>,
 }
 
 struct Env {
@@ -194,35 +194,23 @@ impl Env {
             })
             .collect();
 
-        let dkg_result = DkgResult {
-            participants: new_elders_info.elder_ids().copied().collect(),
-            public_key_set: new_pk_set.clone(),
-            secret_key_share: new_elders_info
-                .position(self.subject.name())
-                .map(|index| new_sk_set.secret_key_share(index)),
-        };
+        let secret_key_share = new_elders_info
+            .position(self.subject.name())
+            .map(|index| new_sk_set.secret_key_share(index));
 
         DkgToSectionInfo {
             new_pk_set,
             new_other_ids,
             new_elders_info,
-            dkg_result,
+            secret_key_share,
         }
     }
 
     fn simulate_dkg(&mut self, new_info: &DkgToSectionInfo) -> Result<()> {
-        let section_key_index = if let Some(proof_chain) = self.subject.our_history() {
-            proof_chain.last_key_index()
-        } else {
-            0
-        };
-        // TODO: verify that `subject` actually participated in the DKG
-        self.subject.handle_dkg_result_event(
-            &(
-                new_info.new_elders_info.elder_ids().copied().collect(),
-                section_key_index,
-            ),
-            &new_info.dkg_result,
+        self.subject.complete_dkg(
+            new_info.new_elders_info.clone(),
+            new_info.new_pk_set.clone(),
+            new_info.secret_key_share.clone(),
         )
     }
 

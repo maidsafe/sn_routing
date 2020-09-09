@@ -9,8 +9,8 @@
 use super::utils::*;
 use rand::Rng;
 use sn_routing::{
-    event::Event, mock::Environment, threshold_count, DstLocation, NetworkParams, Prefix,
-    SrcLocation, XorName,
+    event::Event, mock::Environment, quorum_count, DstLocation, NetworkParams, Prefix, SrcLocation,
+    XorName,
 };
 
 #[test]
@@ -46,9 +46,7 @@ fn messages_accumulate_with_quorum() {
 
     // The BLS scheme will require more than threshold
     // shares in order to construct a full key or signature.
-    // The smallest number such that `quorum > threshold`:
-    let threshold = threshold_count(elder_size);
-    let quorum = 1 + threshold;
+    let quorum = quorum_count(elder_size);
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a

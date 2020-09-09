@@ -14,7 +14,7 @@ pub mod test_utils;
 mod vote;
 
 pub use self::{
-    dkg::{generate_secret_key_set, threshold_count, DkgKey, DkgResult, DkgVoter},
+    dkg::{generate_secret_key_set, DkgKey, DkgVoter},
     proven::Proven,
     vote::{Vote, VoteAccumulator},
 };

@@ -10,7 +10,6 @@ use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
     error::{Error, Result},
-    id::PublicId,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
 };
@@ -18,7 +17,6 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
@@ -75,6 +73,8 @@ pub(crate) enum Variant {
         /// The serialized original message.
         message: Bytes,
     },
+    /// Sent to the new elder candidates to start the DKG process.
+    DKGStart(EldersInfo),
     /// Message exchanged for DKG process.
     DKGMessage {
         /// The identifier of the key_gen instance this message is about.
@@ -82,14 +82,12 @@ pub(crate) enum Variant {
         /// The serialized DKG message.
         message: Bytes,
     },
-    /// Message of notify old elders that DKG completed. Mainly used during split or demote.
-    DKGOldElders {
-        /// The identifier of the key_gen instance this message is about.
-        dkg_key: DkgKey,
-        /// The actual DKG participants.
-        participants: BTreeSet<PublicId>,
-        /// Public key set that got consensused
-        public_key_set: bls::PublicKeySet,
+    /// Message to notify current elders about the DKG result.
+    DKGResult {
+        /// The `EldersInfo` the DKG is for.
+        elders_info: EldersInfo,
+        /// The result of the DKG.
+        result: Result<bls::PublicKey, ()>,
     },
     /// Message containing a single `Vote` to be accumulated in the vote accumulator.
     Vote {
@@ -170,20 +168,19 @@ impl Debug for Variant {
                 .field("src_key", src_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
+            Self::DKGStart(info) => f.debug_tuple("DKGStart").field(info).finish(),
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
                 .field("dkg_key", &dkg_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGOldElders {
-                dkg_key,
-                participants,
-                public_key_set,
+            Self::DKGResult {
+                elders_info,
+                result,
             } => f
-                .debug_struct("DKGOldElders")
-                .field("dkg_key", &dkg_key)
-                .field("participants", &participants)
-                .field("public_key", &public_key_set.public_key())
+                .debug_struct("DKGResult")
+                .field("elders_info", elders_info)
+                .field("result", result)
                 .finish(),
             Self::Vote {
                 content,

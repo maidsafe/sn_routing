@@ -6,11 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    consensus::DkgResult,
-    error::{Error, Result},
-};
-use std::{collections::BTreeMap, mem};
+use super::EldersInfo;
+use crate::error::{Error, Result};
+use bls_dkg::key_gen::outcome::Outcome;
 use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
@@ -30,22 +28,14 @@ pub struct SectionKeysProvider {
     /// Our current section BLS keys.
     current: Option<SectionKeyShare>,
     /// The new keys to use when section update completes.
-    pending: BTreeMap<u64, DkgResult>,
+    pending: Option<SectionKeyShare>,
 }
 
 impl SectionKeysProvider {
     pub fn new(current: Option<SectionKeyShare>) -> Self {
         Self {
             current,
-            pending: Default::default(),
-        }
-    }
-
-    pub fn public_key(&self) -> Option<bls::PublicKey> {
-        if let Some(current) = &self.current {
-            Some(current.public_key_set.public_key())
-        } else {
-            None
+            pending: None,
         }
     }
 
@@ -53,58 +43,26 @@ impl SectionKeysProvider {
         self.current.as_ref().ok_or(Error::InvalidElderDkgResult)
     }
 
-    /// Handles a completed DKG
-    pub fn handle_dkg_result_event(&mut self, section_key_index: u64, dkg_result: DkgResult) {
-        let _ = self.pending.entry(section_key_index).or_insert_with(|| {
-            trace!(
-                "insert pending DKG result #{}: {:?}",
-                section_key_index,
-                dkg_result.public_key_set.public_key()
-            );
-            dkg_result
-        });
-    }
-
-    pub fn finalise_dkg(&mut self, section_key_index: u64, our_name: &XorName) {
-        let dkg_result = if let Some(result) = self.pending.remove(&section_key_index) {
-            result
-        } else {
-            trace!("missing pending DKG result #{}", section_key_index);
-            return;
-        };
-
-        let DkgResult {
-            participants,
-            public_key_set,
-            secret_key_share,
-        } = dkg_result;
-
-        trace!(
-            "finalise DKG result #{}: {:?}",
-            section_key_index,
-            public_key_set.public_key()
-        );
-
-        self.current = secret_key_share
-            .and_then(|secret_key_share| {
-                participants
-                    .iter()
-                    .position(|id| id.name() == our_name)
-                    .map(|index| (index, secret_key_share))
-            })
-            .map(|(index, secret_key_share)| SectionKeyShare {
-                public_key_set,
+    pub fn insert_dkg_outcome(
+        &mut self,
+        our_name: &XorName,
+        elders_info: &EldersInfo,
+        dkg_outcome: Outcome,
+    ) {
+        if let Some(index) = elders_info.position(our_name) {
+            let share = SectionKeyShare {
+                public_key_set: dkg_outcome.public_key_set,
                 index,
-                secret_key_share,
-            });
-
-        self.pending = mem::take(&mut self.pending)
-            .into_iter()
-            .filter(|(index, _)| *index > section_key_index)
-            .collect();
+                secret_key_share: dkg_outcome.secret_key_share,
+            };
+            self.pending = Some(share);
+        }
     }
 
-    pub fn has_pending(&self, section_key_index: u64) -> bool {
-        self.pending.contains_key(&section_key_index)
+    pub fn finalise_dkg(&mut self) {
+        if let Some(share) = self.pending.take() {
+            trace!("finalise DKG: {:?}", share.public_key_set.public_key());
+            self.current = Some(share);
+        }
     }
 }
