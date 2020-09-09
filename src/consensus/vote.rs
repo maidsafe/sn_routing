@@ -75,7 +75,7 @@ impl Vote {
 
 // Accumulator of `Vote`s.
 #[derive(Default)]
-pub struct VoteAccumulator(SignatureAggregator<SignableWrapper>);
+pub struct VoteAccumulator(SignatureAggregator);
 
 impl VoteAccumulator {
     pub fn add(

@@ -19,10 +19,8 @@ mod shared_state;
 
 #[cfg(test)]
 pub(crate) use self::elders_info::gen_elders_info;
-#[cfg(feature = "mock")]
-pub use self::elders_info::quorum_count;
 pub use self::{
-    elders_info::EldersInfo,
+    elders_info::{quorum_count, EldersInfo},
     member_info::{MemberInfo, MemberState, MIN_AGE},
     network_stats::NetworkStats,
     section_keys::{SectionKeyShare, SectionKeysProvider},

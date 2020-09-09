@@ -52,3 +52,6 @@ mock = [
     "env_logger",
     "bls_signature_aggregator/mock_timer"
 ]
+
+[patch.crates-io]
+bls_signature_aggregator = { git = "https://github.com/madadam/bls_signature_aggregator.git", branch = "repetition" }

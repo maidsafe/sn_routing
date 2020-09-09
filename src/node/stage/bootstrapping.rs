@@ -72,9 +72,7 @@ impl Bootstrapping {
 
             Variant::NeighbourInfo { .. }
             | Variant::UserMessage(_)
-            | Variant::BouncedUntrustedMessage(_)
-            | Variant::DKGMessage { .. }
-            | Variant::DKGOldElders { .. } => Ok(MessageStatus::Unknown),
+            | Variant::BouncedUntrustedMessage(_) => Ok(MessageStatus::Unknown),
 
             Variant::NodeApproval(_)
             | Variant::Sync { .. }
@@ -85,7 +83,10 @@ impl Bootstrapping {
             | Variant::JoinRequest(_)
             | Variant::Ping
             | Variant::BouncedUnknownMessage { .. }
-            | Variant::Vote { .. } => Ok(MessageStatus::Useless),
+            | Variant::Vote { .. }
+            | Variant::DKGResult { .. }
+            | Variant::DKGStart(_)
+            | Variant::DKGMessage { .. } => Ok(MessageStatus::Useless),
         }
     }
 

@@ -107,10 +107,7 @@ pub mod rng;
 
 /// Mock network
 #[cfg(feature = "mock")]
-pub use self::{
-    consensus::threshold_count,
-    section::{quorum_count, MIN_AGE},
-};
+pub use self::section::{quorum_count, MIN_AGE};
 
 #[cfg(feature = "mock")]
 #[doc(hidden)]

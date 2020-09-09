@@ -47,7 +47,8 @@ impl SectionProofChain {
             true
         } else {
             error!(
-                "invalid SectionProofChain block signature (last key: {:?})",
+                "invalid SectionProofChain block signature (new key: {:?}, last key: {:?})",
+                key,
                 self.last_key()
             );
             false

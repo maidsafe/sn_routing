@@ -6,18 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::{crypto::Digest256, id::P2pNode, Prefix, XorName};
 #[cfg(test)]
 use crate::{id::FullId, rng::MainRng};
-use crate::{
-    id::{P2pNode, PublicId},
-    Prefix, XorName,
-};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     collections::BTreeMap,
-    fmt::{self, Debug, Formatter},
+    fmt::{self, Debug, Display, Formatter},
 };
 
 /// The information about all elders of a section at one point in time. Each elder is always a
@@ -37,16 +34,30 @@ impl EldersInfo {
         Self { elders, prefix }
     }
 
-    pub(crate) fn elder_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.elders.values().map(P2pNode::public_id)
-    }
-
     /// Returns the index of the elder with `name` in this set of elders.
     /// This is useful for BLS signatures where the signature share needs to be mapped to a
     /// "field element" which is typically a numeric index.
-    #[cfg(all(test, feature = "mock"))]
     pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
         self.elders.keys().position(|other_name| other_name == name)
+    }
+
+    /// Calculate cryptographic hash of this EldersInfo.
+    pub(crate) fn hash(&self) -> Digest256 {
+        use tiny_keccak::{Hasher, Sha3};
+
+        // Calculate the hash without involving serialization to avoid having to return `Result`.
+        let mut hasher = Sha3::v256();
+
+        for name in self.elders.keys() {
+            hasher.update(&name.0);
+        }
+
+        hasher.update(&self.prefix.name().0);
+        hasher.update(&self.prefix.bit_count().to_le_bytes());
+
+        let mut output = Digest256::default();
+        hasher.finalize(&mut output);
+        output
     }
 }
 
@@ -67,13 +78,22 @@ impl Debug for EldersInfo {
     }
 }
 
+impl Display for EldersInfo {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{{{}}}/({:b})",
+            self.elders.keys().format(", "),
+            self.prefix,
+        )
+    }
+}
+
 /// Returns the number of vote for a quorum of this section such that:
 /// quorum_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR
-#[cfg(feature = "mock")]
 #[inline]
 pub const fn quorum_count(elder_size: usize) -> usize {
     use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-
     1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
 }
 
