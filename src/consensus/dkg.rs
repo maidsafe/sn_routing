@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{vote::Vote, Proof};
 use crate::{
     id::{FullId, PublicId},
     rng::MainRng,
@@ -17,9 +16,8 @@ use bls::{PublicKeySet, SecretKeyShare};
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use lru_time_cache::LruCache;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
-    mem,
     time::Duration,
 };
 
@@ -71,8 +69,6 @@ pub struct DkgVoter {
     dkg_cache: BTreeMap<DkgKey, EldersInfo>,
     // Holds the key generator that carries out the DKG voting procedure.
     key_gen_map: HashMap<DkgKey, KeyGen<FullId>>,
-    // Holds the accumulated votes that sent to us BEFORE the completion of the DKG process.
-    pending_accumulated_votes: VecDeque<(Vote, Proof)>,
     // Cache of notified dkg_result. During split or demote,
     // old elders will be notified by the new elders.
     dkg_result_cache: BTreeMap<DkgKey, DkgResult>,
@@ -88,7 +84,6 @@ impl Default for DkgVoter {
         Self {
             dkg_cache: Default::default(),
             key_gen_map: Default::default(),
-            pending_accumulated_votes: Default::default(),
             dkg_result_cache: Default::default(),
             current_section_key_index: 0,
             old_elders_notifications: LruCache::with_expiry_duration(OLD_ELDERS_EXPIRY_DURATION),
@@ -98,9 +93,8 @@ impl Default for DkgVoter {
 }
 
 impl DkgVoter {
-    // Check whether a key generator is finalized to give a DKG. Once a DKG is generated, the cached
-    // accumulated events shall be taken for sn_routing (updated with new DKG) to process.
-    pub fn check_dkg(&mut self) -> (BTreeMap<DkgKey, DkgResult>, VecDeque<(Vote, Proof)>) {
+    // Check whether a key generator is finalized to give a DKG.
+    pub fn check_dkg(&mut self) -> BTreeMap<DkgKey, DkgResult> {
         let mut completed = BTreeMap::new();
         for (key, key_gen) in self.key_gen_map.iter_mut() {
             if key_gen.is_finalized() {
@@ -116,14 +110,7 @@ impl DkgVoter {
             }
         }
 
-        // Only handle cached accumulated votes after DKG completion, if has.
-        let backlog_votes = if !completed.is_empty() {
-            mem::replace(&mut self.pending_accumulated_votes, VecDeque::new())
-        } else {
-            VecDeque::new()
-        };
-
-        (completed, backlog_votes)
+        completed
     }
 
     // Free key generators not newer than the current one.
@@ -264,12 +251,6 @@ impl DkgVoter {
 
     pub fn set_timer_token(&mut self, token: u64) {
         self.timer_token = token;
-    }
-
-    // Cache the accumulated vote that currently cannot be handled properly, mainly due to the DKG
-    // process is not completed yet.
-    pub fn push_vote(&mut self, vote: Vote, proof: Proof) {
-        self.pending_accumulated_votes.push_front((vote, proof));
     }
 
     // Return with true only when accumulated quorum valid notifications first time.

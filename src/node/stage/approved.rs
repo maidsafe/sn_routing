@@ -263,7 +263,7 @@ impl Approved {
     }
 
     fn check_dkg(&mut self, core: &mut Core) -> bool {
-        let (completed, mut backlog_votes) = self.dkg_voter.check_dkg();
+        let completed = self.dkg_voter.check_dkg();
         let mut handled = false;
 
         for (dkg_key, dkg_result) in completed {
@@ -283,15 +283,6 @@ impl Approved {
                 Err(err) => {
                     debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
                 }
-            }
-        }
-
-        // To avoid the case that DKG was completed after received certain accumulated votes.
-        while let Some((vote, proof)) = backlog_votes.pop_back() {
-            trace!("handle cached accumulated vote {:?}", vote);
-            // In case of error, vote got cached inside `handle_unordered_consensus`.
-            if let Err(err) = self.handle_unordered_consensus(core, vote.clone(), proof) {
-                debug!("Failed ({:?}) handle cached event {:?}", err, vote);
             }
         }
 
@@ -1193,53 +1184,10 @@ impl Approved {
             } => self.handle_online_event(core, member_info, previous_name, their_knowledge, proof),
             Vote::Offline(member_info) => self.handle_offline_event(core, member_info, proof),
             Vote::SectionInfo(elders_info) => {
-                match self.handle_section_info_event(core, elders_info.clone(), proof.clone()) {
-                    Ok(()) => Ok(()),
-                    // Could receive the accumulated SectionInfo before complete the DKG process.
-                    Err(Error::InvalidElderDkgResult) => {
-                        trace!(
-                            "caching SectionInfo({:?}) as invalid DKG result",
-                            elders_info
-                        );
-                        self.dkg_voter
-                            .push_vote(Vote::SectionInfo(elders_info), proof);
-                        Ok(())
-                    }
-                    Err(error) => Err(error),
-                }
+                self.handle_section_info_event(core, elders_info, proof)
             }
-            Vote::OurKey { prefix, key } => {
-                match self.handle_our_key_event(core, prefix, key, proof.clone()) {
-                    Ok(()) => Ok(()),
-                    Err(Error::InvalidElderDkgResult) => {
-                        trace!(
-                            "caching OurKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
-                            prefix,
-                            key
-                        );
-                        self.dkg_voter
-                            .push_vote(Vote::OurKey { prefix, key }, proof);
-                        Ok(())
-                    }
-                    Err(error) => Err(error),
-                }
-            }
-            Vote::TheirKey { prefix, key } => {
-                match self.handle_their_key_event(core, prefix, key, proof.clone()) {
-                    Ok(()) => Ok(()),
-                    Err(Error::InvalidElderDkgResult) => {
-                        trace!(
-                            "caching TheirKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
-                            prefix,
-                            key
-                        );
-                        self.dkg_voter
-                            .push_vote(Vote::TheirKey { prefix, key }, proof);
-                        Ok(())
-                    }
-                    Err(error) => Err(error),
-                }
-            }
+            Vote::OurKey { prefix, key } => self.handle_our_key_event(core, prefix, key, proof),
+            Vote::TheirKey { prefix, key } => self.handle_their_key_event(core, prefix, key, proof),
             Vote::TheirKnowledge { prefix, key_index } => {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
                 Ok(())
