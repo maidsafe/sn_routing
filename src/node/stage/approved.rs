@@ -262,8 +262,9 @@ impl Approved {
         }
     }
 
-    fn check_dkg(&mut self, core: &mut Core) {
+    fn check_dkg(&mut self, core: &mut Core) -> bool {
         let (completed, mut backlog_votes) = self.dkg_voter.check_dkg();
+        let mut handled = false;
 
         for (dkg_key, dkg_result) in completed {
             debug!("Completed DKG {:?}", dkg_key);
@@ -274,10 +275,14 @@ impl Approved {
                 &dkg_result.public_key_set,
             );
 
-            if let Err(err) = self.handle_dkg_result_event(core, &dkg_key, &dkg_result) {
-                debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
-            } else {
-                self.dkg_voter.remove_voter(dkg_key.1);
+            match self.handle_dkg_result_event(core, &dkg_key, &dkg_result) {
+                Ok(()) => {
+                    self.dkg_voter.remove_voter(dkg_key.1);
+                    handled = true;
+                }
+                Err(err) => {
+                    debug!("Failed handle DKG result of {:?} - {:?}", dkg_key, err);
+                }
             }
         }
 
@@ -289,6 +294,8 @@ impl Approved {
                 debug!("Failed ({:?}) handle cached event {:?}", err, vote);
             }
         }
+
+        handled
     }
 
     fn progress_dkg(&mut self, core: &mut Core) {
@@ -297,7 +304,9 @@ impl Approved {
             let _ = self.broadcast_dkg_message(core, &dkg_key, message);
         }
 
-        self.check_dkg(core);
+        if self.check_dkg(core) {
+            return;
+        }
 
         if prev_has_dkg_voter && !self.dkg_voter.has_live_dkg_voter() {
             self.churn_in_progress = false;
@@ -899,7 +908,7 @@ impl Approved {
             let _ = self.broadcast_dkg_message(core, dkg_key, response);
         }
 
-        self.check_dkg(core);
+        let _ = self.check_dkg(core);
 
         Ok(())
     }
@@ -1350,6 +1359,16 @@ impl Approved {
         dkg_key: &DkgKey,
         dkg_result: &DkgResult,
     ) -> Result<()> {
+        if dkg_key.0 != dkg_result.participants {
+            warn!(
+                "ignore DKG result due to participants mismatch - expected: {:?}, actual: {:?}",
+                dkg_key.0, dkg_result.participants
+            );
+            self.churn_in_progress = false;
+            self.promote_and_demote_elders(core);
+            return Ok(());
+        }
+
         let public_key = dkg_result.public_key_set.public_key();
 
         info!("handle DKG result {:?} for {:?}", public_key, dkg_key);
@@ -1733,6 +1752,7 @@ impl Approved {
     }
 
     fn return_relocate_promise(&mut self, core: &mut Core) {
+        // TODO: keep sending this periodically until we get relocated.
         if let Some(bytes) = self.relocate_promise.take() {
             self.send_message_to_our_elders(core, bytes)
         }
