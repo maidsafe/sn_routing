@@ -165,12 +165,21 @@ impl Approved {
         let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
             &core.full_id,
-            DstLocation::Section(*core.name()),
+            DstLocation::Direct,
             variant,
             Some(proof_chain),
             Some(*self.shared_state.our_history.last_key()),
         )?;
-        self.relay_message(core, &message)?;
+        let recipients: Vec<_> = self
+            .shared_state
+            .our_info()
+            .elders
+            .values()
+            .filter(|p2p_node| p2p_node.name() != core.name())
+            .map(P2pNode::peer_addr)
+            .copied()
+            .collect();
+        core.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
 
         self.handle_unordered_vote(core, vote, proof_share)
     }
