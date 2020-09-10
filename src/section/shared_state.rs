@@ -149,7 +149,7 @@ impl SharedState {
     /// Returns all nodes we know (our members + neighbour elders).
     pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
-            .active()
+            .joined()
             .map(|info| &info.p2p_node)
             .chain(self.sections.neighbour_elders())
     }

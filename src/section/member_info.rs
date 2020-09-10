@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::id::P2pNode;
+use xor_name::XorName;
 
 /// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
 /// relocations during the beginning of a node's lifetime.
@@ -42,6 +43,14 @@ impl MemberInfo {
         }
     }
 
+    // Convert this info into one with the state changed to `Relocated`.
+    pub fn relocate(self, destination: XorName) -> Self {
+        Self {
+            state: MemberState::Relocated(destination),
+            ..self
+        }
+    }
+
     // Converts this info into one with the age increased by one.
     pub fn increment_age(self) -> Self {
         Self {
@@ -53,9 +62,10 @@ impl MemberInfo {
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberState {
+    // Node is active member of the section.
     Joined,
-    Relocating,
-    // TODO: we should track how long the node has been away. If longer than some limit, remove it
-    // from the list. Otherwise we allow it to return.
+    // Node went offline.
     Left,
+    // Node was relocated to a different section.
+    Relocated(XorName),
 }
