@@ -37,14 +37,6 @@ impl SectionMembers {
         self.members.values().map(|info| &info.value)
     }
 
-    /// Returns an iterator over the members that are not in the `Left` state.
-    pub fn active(&self) -> impl Iterator<Item = &MemberInfo> {
-        self.members
-            .values()
-            .map(|info| &info.value)
-            .filter(|member| member.state != MemberState::Left)
-    }
-
     /// Returns an iterator over the members that have state == `Joined`.
     pub fn joined(&self) -> impl Iterator<Item = &MemberInfo> {
         self.members
@@ -143,11 +135,20 @@ impl SectionMembers {
                     false
                 }
             }
-            Entry::Occupied(mut entry) if entry.get().value.state == MemberState::Joined => {
-                // To maintain commutativity, only allow the age to increase.
-                if new_info.state == MemberState::Joined && new_info.age <= entry.get().value.age {
-                    return false;
-                }
+            Entry::Occupied(mut entry) => {
+                // To maintain commutativity, the only allowed transitions are:
+                // - Joined -> Joined if the new age is greater than the old age
+                // - Joined -> Left
+                // - Joined -> Relocated
+                // - Relocated -> Left (should not happen, but needed for consistency)
+                match (entry.get().value.state, new_info.state) {
+                    (MemberState::Joined, MemberState::Joined)
+                        if new_info.age > entry.get().value.age => {}
+                    (MemberState::Joined, MemberState::Left)
+                    | (MemberState::Joined, MemberState::Relocated(_))
+                    | (MemberState::Relocated(_), MemberState::Left) => {}
+                    _ => return false,
+                };
 
                 let new_info = Proven::new(new_info, proof);
                 if new_info.verify(section_chain) {
@@ -157,7 +158,6 @@ impl SectionMembers {
                     false
                 }
             }
-            Entry::Occupied(_) => false,
         }
     }
 

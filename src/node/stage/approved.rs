@@ -221,7 +221,7 @@ impl Approved {
         let node = self
             .shared_state
             .our_members
-            .active()
+            .joined()
             .map(|info| &info.p2p_node)
             .find(|node| *node.peer_addr() == addr);
 
@@ -1044,7 +1044,7 @@ impl Approved {
 
             let addr = *info.p2p_node.peer_addr();
 
-            self.cast_unordered_vote(core, Vote::Offline(info.leave()))?;
+            self.cast_unordered_vote(core, Vote::Offline(info.relocate(*action.destination())))?;
 
             match action {
                 RelocateAction::Instant(details) => self.send_relocate(core, addr, details)?,
