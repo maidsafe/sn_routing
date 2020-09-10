@@ -639,12 +639,12 @@ pub fn poll_until_all_relocations_complete(
         for node in nodes.iter_mut() {
             let relocating_nodes =
                 iter::from_fn(|| node.try_recv_event()).filter_map(|event| match event {
-                    Event::RelocationInitiated { name, .. } => Some(name),
+                    Event::RelocationInitiated { name, destination } => Some((name, destination)),
                     _ => None,
                 });
-            for relocating_node in relocating_nodes {
+            for (name, destination) in relocating_nodes {
                 pending
-                    .entry(relocating_node)
+                    .entry((name, destination))
                     .or_default()
                     .push(*node.name());
             }
@@ -653,7 +653,7 @@ pub fn poll_until_all_relocations_complete(
         let pending: BTreeSet<_> = pending
             .into_iter()
             .filter(|(_, voters)| voters.len() >= quorum_count(env.elder_size()))
-            .map(|(name, _)| name)
+            .map(|((name, _), _)| name)
             .collect();
 
         if pending.is_empty() {
