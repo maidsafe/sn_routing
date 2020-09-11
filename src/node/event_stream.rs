@@ -153,10 +153,13 @@ fn spawn_node_message_handler(
                 if let Err(err) = stage
                     .lock()
                     .await
-                    .process_message(sender, msg, &mut events_tx)
+                    .process_message(sender, msg.clone(), &mut events_tx)
                     .await
                 {
-                    error!("Error encountered when processing message: {}", err);
+                    error!(
+                        "Error encountered when processing message {:?}: {}",
+                        msg, err
+                    );
                 }
             }
         }

@@ -6,9 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{joining::Joining, NodeInfo};
+use super::{comm::Comm, joining::Joining, NodeInfo};
 use crate::{
-    comm::Comm,
     error::Result,
     id::{FullId, P2pNode},
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},

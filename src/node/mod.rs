@@ -100,7 +100,7 @@ impl Node {
                 Err(error) => {
                     let msg = format!("{} Failed to start the first node: {:?}", node_name, error);
                     error!("{}", msg);
-                    return Err(Error::ToBeDefined(msg));
+                    return Err(Error::Unexpected(msg));
                 }
             }
         } else {
@@ -140,7 +140,7 @@ impl Node {
     }
 
     /// Returns connection info of this node.
-    pub async fn our_connection_info(&mut self) -> Result<SocketAddr> {
+    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
         self.stage.lock().await.our_connection_info()
     }
 

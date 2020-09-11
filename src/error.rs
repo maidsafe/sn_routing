@@ -38,6 +38,6 @@ pub enum Error {
     InvalidSignatureShare,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
-    #[error(display = "TODO: error type to be defined: {}", 0)]
-    ToBeDefined(String),
+    #[error(display = "Unexpected: {}", 0)]
+    Unexpected(String),
 }

@@ -8,11 +8,11 @@
 
 mod approved;
 mod bootstrapping;
+mod comm;
 mod joining;
 
-use self::{approved::Approved, bootstrapping::Bootstrapping, joining::Joining};
+use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
 use crate::{
-    comm::Comm,
     consensus::{self, Proof, Proven},
     error::{Error, Result},
     event::Event,
