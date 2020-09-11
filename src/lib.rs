@@ -77,7 +77,7 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    error::Error,
+    error::{Error, Result},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
@@ -89,6 +89,8 @@ pub use self::{
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// sn_routing events.
 pub mod event;
+/// Random number generation
+pub mod rng;
 
 // ############################################################################
 // Mock and test API
@@ -97,9 +99,6 @@ pub mod event;
 /// Mocking utilities.
 #[cfg(feature = "mock")]
 pub mod mock;
-/// Random number generation
-#[cfg(feature = "mock")]
-pub mod rng;
 
 /// Mock network
 #[cfg(feature = "mock")]
@@ -119,7 +118,6 @@ pub mod test_consts {
 // Private
 // ############################################################################
 
-mod comm;
 mod consensus;
 mod delivery_group;
 mod error;
@@ -130,8 +128,6 @@ mod messages;
 mod network_params;
 mod node;
 mod relocation;
-#[cfg(not(feature = "mock"))]
-mod rng;
 mod section;
 mod time;
 

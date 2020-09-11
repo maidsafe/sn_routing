@@ -6,9 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bootstrapping::Bootstrapping, NodeInfo};
+use super::{bootstrapping::Bootstrapping, comm::Comm, NodeInfo};
 use crate::{
-    comm::Comm,
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
     },
@@ -671,7 +670,7 @@ impl Approved {
             let resend_msg = bounced_msg
                 .extend_proof_chain(&dst_key, &self.shared_state.our_history)
                 .map_err(|err| {
-                    Error::ToBeDefined(format!("...extending proof failed, discarding: {:?}", err))
+                    Error::Unexpected(format!("...extending proof failed, discarding: {:?}", err))
                 })?;
 
             trace!("    ...resending with extended proof");

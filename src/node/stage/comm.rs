@@ -55,10 +55,7 @@ impl Comm {
         let mut quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
-        let (endpoint, connection) = quic_p2p
-            .bootstrap()
-            .await
-            .map_err(|err| Error::ToBeDefined(format!("{}", err)))?;
+        let (endpoint, connection) = quic_p2p.bootstrap().await?;
 
         let quic_p2p = Arc::new(Box::new(quic_p2p));
         let endpoint = Arc::new(Box::new(endpoint));
@@ -77,7 +74,7 @@ impl Comm {
     /// Starts listening for events returning a stream where to read them from.
     pub fn listen_events(&mut self) -> Result<IncomingConnections> {
         self.endpoint.listen().map_err(|err| {
-            Error::ToBeDefined(format!("Failed to start listening for messages: {}", err))
+            Error::Unexpected(format!("Failed to start listening for messages: {}", err))
         })
     }
 
