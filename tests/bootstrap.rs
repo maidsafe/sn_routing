@@ -12,7 +12,6 @@ use routing::{
     event::{Connected, Event},
     Error, Result,
 };
-use tokio::sync::mpsc;
 use utils::*;
 
 #[tokio::test]
@@ -28,18 +27,14 @@ async fn test_genesis_node() -> Result<()> {
 #[tokio::test]
 async fn test_node_bootstrapping() -> Result<()> {
     let mut genesis_node = TestNode::builder(None).first().create().await?;
-    let genesis_contact = genesis_node.endpoint().await?;
-    let (mut tx, mut rx) = mpsc::channel(1);
+    let genesis_contact = genesis_node.our_connection_info().await?;
 
     // spawn genesis node events listener
-    tokio::spawn(async move {
+    let genesis_handler = tokio::spawn(async move {
         expect_next_event!(genesis_node, Event::Connected(Connected::First))?;
         expect_next_event!(genesis_node, Event::PromotedToElder)?;
         expect_next_event!(genesis_node, Event::InfantJoined { .. })?;
-        // just notify that it received the expected events
-        tx.send(())
-            .await
-            .map_err(|err| Error::Unexpected(format!("{}", err)))
+        Ok::<(), Error>(())
     });
 
     // bootstrap a second node with genesis
@@ -50,11 +45,8 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     expect_next_event!(bootstrapping_node, Event::Connected(Connected::First))?;
 
-    // just await for genesis node to confirm that received all events
-    match rx.recv().await {
-        Some(()) => Ok(()),
-        None => Err(Error::Unexpected(
-            "First node didn't received all events".to_string(),
-        )),
-    }
+    // just await for genesis node to finish receiving all events
+    genesis_handler
+        .await
+        .map_err(|err| Error::Unexpected(format!("{}", err)))?
 }

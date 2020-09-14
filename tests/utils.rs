@@ -46,11 +46,8 @@ impl TestNode {
         self.event_stream.next().await
     }
 
-    pub async fn endpoint(&self) -> Result<SocketAddr> {
-        let mut local_addr = self.node.our_connection_info().await?;
-        // FIXME: we are currently getting an IP == 0.0.0.0
-        local_addr.set_ip(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)));
-        Ok(local_addr)
+    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
+        self.node.our_connection_info().await
     }
 
     pub async fn name(&self) -> XorName {
