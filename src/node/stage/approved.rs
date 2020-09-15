@@ -608,6 +608,10 @@ impl Approved {
             signed_msg.relocate_details().destination
         );
 
+        if self.relocate_promise.is_none() {
+            core.send_event(Event::RelocationStarted);
+        }
+
         let conn_infos: Vec<_> = self
             .shared_state
             .sections
@@ -637,11 +641,17 @@ impl Approved {
         msg_bytes: Bytes,
     ) -> Result<()> {
         if promise.name == *core.name() {
-            // We are the node to be relocated. If we are still elder, store the `RelocatePromise`
-            // message and send it back after we are demoted. Otherwise send it already.
-            if self.is_our_elder(core.id()) {
-                self.relocate_promise = Some(msg_bytes);
+            // Store the `RelocatePromise` message and send it back after we are demoted.
+            // Keep it around even if we are not elder anymore, in case we need to resend it.
+            if self.relocate_promise.is_none() {
+                self.relocate_promise = Some(msg_bytes.clone());
+                core.send_event(Event::RelocationStarted);
             } else {
+                trace!("ignore RelocatePromise - already have one");
+            }
+
+            // We are no longer elder. Send the promise back already.
+            if !self.is_our_elder(core.id()) {
                 self.send_message_to_our_elders(core, msg_bytes);
             }
 
@@ -1036,11 +1046,6 @@ impl Approved {
                 action.destination(),
                 churn_name
             );
-
-            core.send_event(Event::RelocationInitiated {
-                name: *info.p2p_node.name(),
-                destination: *action.destination(),
-            });
 
             let addr = *info.p2p_node.peer_addr();
 
@@ -1527,7 +1532,7 @@ impl Approved {
 
     fn return_relocate_promise(&mut self, core: &mut Core) {
         // TODO: keep sending this periodically until we get relocated.
-        if let Some(bytes) = self.relocate_promise.take() {
+        if let Some(bytes) = self.relocate_promise.as_ref().cloned() {
             self.send_message_to_our_elders(core, bytes)
         }
     }
