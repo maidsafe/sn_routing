@@ -16,34 +16,74 @@ use utils::*;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
-    let mut node = TestNode::builder(None).first().create().await?;
+    let (node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
 
-    expect_next_event!(node, Event::Connected(Connected::First))?;
-    expect_next_event!(node, Event::PromotedToElder)?;
+    expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+    expect_next_event!(event_stream, Event::PromotedToElder)?;
+    assert!(node.is_genesis());
+    assert!(node.is_elder().await);
 
     Ok(())
 }
 
 #[tokio::test]
 async fn test_node_bootstrapping() -> Result<()> {
-    let mut genesis_node = TestNode::builder(None).first().create().await?;
-    let genesis_contact = genesis_node.our_connection_info().await?;
+    let (genesis_node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        expect_next_event!(genesis_node, Event::Connected(Connected::First))?;
-        expect_next_event!(genesis_node, Event::PromotedToElder)?;
-        expect_next_event!(genesis_node, Event::InfantJoined { .. })?;
+        expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+        expect_next_event!(event_stream, Event::PromotedToElder)?;
+        expect_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ })?;
+        expect_next_event!(event_stream, Event::EldersChanged { .. })?;
         Ok::<(), Error>(())
     });
 
     // bootstrap a second node with genesis
-    let mut bootstrapping_node = TestNode::builder(None)
+    let genesis_contact = genesis_node.our_connection_info().await?;
+    let (node1, mut event_stream) = TestNodeBuilder::new(None)
         .with_contact(genesis_contact)
         .create()
         .await?;
 
-    expect_next_event!(bootstrapping_node, Event::Connected(Connected::First))?;
+    assert!(!node1.is_genesis());
+    expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+
+    // just await for genesis node to finish receiving all events
+    genesis_handler
+        .await
+        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+
+    let elder_size = 2;
+    verify_invariants_for_node(&genesis_node, elder_size).await?;
+    verify_invariants_for_node(&node1, elder_size).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_section_bootstrapping() -> Result<()> {
+    let (genesis_node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
+    let num_of_nodes = 5;
+
+    // spawn genesis node events listener
+    let genesis_handler = tokio::spawn(async move {
+        // TODO: expect events for all nodes
+        expect_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ })?;
+        //expect_next_event!(event_stream, Event::EldersChanged { .. })?;
+        Ok(())
+    });
+
+    let genesis_contact = genesis_node.our_connection_info().await?;
+    // bootstrap several nodes with genesis to form a section
+    for _ in 0..num_of_nodes {
+        let (_, mut event_stream) = TestNodeBuilder::new(None)
+            .with_contact(genesis_contact)
+            .create()
+            .await?;
+
+        expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+    }
 
     // just await for genesis node to finish receiving all events
     genesis_handler

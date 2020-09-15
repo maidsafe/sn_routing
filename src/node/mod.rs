@@ -24,7 +24,7 @@ use crate::{
     log_utils,
     network_params::NetworkParams,
     rng::{self, MainRng},
-    section::SectionProofChain,
+    section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
 use bytes::Bytes;
@@ -161,14 +161,10 @@ impl Node {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
+        let name = self.name().await;
         match self.stage.lock().await.approved() {
             None => false,
-            Some(stage) => stage
-                .shared_state
-                .sections
-                .our()
-                .elders
-                .contains_key(&self.name().await),
+            Some(stage) => stage.shared_state.sections.our().elders.contains_key(&name),
         }
     }
 
@@ -213,6 +209,14 @@ impl Node {
                 .cloned()
                 .collect(),
             None => vec![],
+        }
+    }
+
+    /// Returns the info about our section or `None` if we are not joined yet.
+    pub async fn our_section(&self) -> Option<EldersInfo> {
+        match self.stage.lock().await.approved() {
+            Some(stage) => Some(stage.shared_state.sections.our().clone()),
+            None => None,
         }
     }
 
