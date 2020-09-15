@@ -6,21 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use routing::{event::Event, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
-use std::{collections::HashSet, io::Write, net::SocketAddr, sync::Once};
-use xor_name::XorName;
+use routing::{Error, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
+use std::{
+    collections::{BTreeSet, HashSet},
+    io::Write,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Once,
+};
 
 static LOG_INIT: Once = Once::new();
 
 // -----  TestNode and builder  -----
 
-pub struct TestNode {
-    node: Node,
-    event_stream: EventStream,
+pub struct TestNodeBuilder {
+    config: NodeConfig,
 }
 
-impl TestNode {
-    pub fn builder(config: Option<NodeConfig>) -> TestNodeBuilder {
+impl<'a> TestNodeBuilder {
+    pub fn new(config: Option<NodeConfig>) -> Self {
         // We initialise the logger but only once for all tests
         LOG_INIT.call_once(|| {
             env_logger::builder()
@@ -39,28 +42,9 @@ impl TestNode {
                 })
                 .init()
         });
-        TestNodeBuilder::new(config.unwrap_or_else(|| NodeConfig::default()))
-    }
 
-    pub async fn next_event(&mut self) -> Option<Event> {
-        self.event_stream.next().await
-    }
+        let config = config.unwrap_or_else(|| NodeConfig::default());
 
-    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.node.our_connection_info().await
-    }
-
-    pub async fn name(&self) -> XorName {
-        self.node.name().await
-    }
-}
-
-pub struct TestNodeBuilder {
-    config: NodeConfig,
-}
-
-impl<'a> TestNodeBuilder {
-    pub(crate) fn new(config: NodeConfig) -> Self {
         Self { config }
     }
 
@@ -96,11 +80,19 @@ impl<'a> TestNodeBuilder {
         self
     }
 
-    pub async fn create(self) -> Result<TestNode> {
-        let node = Node::new(self.config).await?;
+    pub async fn create(self) -> Result<(Node, EventStream)> {
+        // make sure we set 127.0.0.1 as the IP if was not set
+        let config = if self.config.transport_config.ip.is_none() {
+            let mut config = self.config;
+            config.transport_config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+            config
+        } else {
+            self.config
+        };
+        let node = Node::new(config).await?;
         let event_stream = node.listen_events().await?;
 
-        Ok(TestNode { node, event_stream })
+        Ok((node, event_stream))
     }
 }
 
@@ -109,14 +101,130 @@ impl<'a> TestNodeBuilder {
 #[macro_export]
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
-        match $node.next_event().await {
+        match $node.next().await {
             Some($pattern) => Ok(()),
             other => Err(Error::Unexpected(format!(
-                "Expecting {} at {}, got {:?}",
+                "Expecting {}, got {:?}",
                 stringify!($pattern),
-                $node.name().await,
                 other
             ))),
         }
     };
+}
+
+pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Result<()> {
+    let our_name = node.name().await;
+    assert!(node.matches_our_prefix(&our_name).await?);
+
+    let our_prefix = node
+        .our_prefix()
+        .await
+        .ok_or(Error::Unexpected("Failed to get node's prefix".to_string()))?;
+
+    let our_section_elders: BTreeSet<_> = node
+        .our_section()
+        .await
+        .ok_or(Error::Unexpected("Failed to get node's prefix".to_string()))?
+        .elders
+        .keys()
+        .copied()
+        .collect();
+
+    if !our_prefix.is_empty() {
+        assert!(
+            our_section_elders.len() >= elder_size,
+            "{}({:b}) Our section is below the minimum size ({}/{})",
+            our_name,
+            our_prefix,
+            our_section_elders.len(),
+            elder_size,
+        );
+    }
+
+    if let Some(name) = our_section_elders
+        .iter()
+        .find(|name| !our_prefix.matches(name))
+    {
+        panic!(
+            "{}({:b}) A name in our section doesn't match its prefix: {}",
+            our_name, our_prefix, name,
+        );
+    }
+
+    if !node.is_elder().await {
+        return Ok(());
+    }
+
+    Ok(())
+    /*
+    let neighbour_sections: BTreeSet<_> = node.inner.neighbour_sections().collect();
+
+    if let Some(compatible_prefix) = neighbour_sections
+        .iter()
+        .map(|info| &info.prefix)
+        .find(|prefix| prefix.is_compatible(our_prefix))
+    {
+        panic!(
+            "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_sections: {:?})",
+            our_name,
+            our_prefix,
+            compatible_prefix,
+            neighbour_sections,
+        );
+    }
+
+    if let Some(info) = neighbour_sections
+        .iter()
+        .find(|info| info.elders.len() < env.elder_size())
+    {
+        panic!(
+            "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_sections: {:?})",
+            our_name,
+            our_prefix,
+            info.prefix,
+            info.elders.len(),
+            env.elder_size(),
+            neighbour_sections,
+        );
+    }
+
+    for info in &neighbour_sections {
+        if let Some(name) = info.elders.keys().find(|name| !info.prefix.matches(name)) {
+            panic!(
+                "{}({:b}) A name in a section doesn't match its prefix: {:?}, {:?}",
+                our_name, our_prefix, name, info.prefix,
+            );
+        }
+    }
+
+    let non_neighbours: Vec<_> = neighbour_sections
+        .iter()
+        .map(|info| &info.prefix)
+        .filter(|prefix| !our_prefix.is_neighbour(prefix))
+        .collect();
+    if !non_neighbours.is_empty() {
+        panic!(
+            "{}({:b}) Some of our known sections aren't neighbours of our section: {:?}",
+            our_name, our_prefix, non_neighbours,
+        );
+    }
+
+    let all_neighbours_covered = {
+        (0..our_prefix.bit_count()).all(|i| {
+            our_prefix
+                .with_flipped_bit(i as u8)
+                .is_covered_by(neighbour_sections.iter().map(|info| &info.prefix))
+        })
+    };
+    if !all_neighbours_covered {
+        panic!(
+            "{}({:b}) Some neighbours aren't fully covered by our known sections: {:?}",
+            our_name,
+            our_prefix,
+            iter::once(*our_prefix)
+                .chain(neighbour_sections.iter().map(|info| info.prefix))
+                .format(", ")
+        );
+    }
+    */
 }
