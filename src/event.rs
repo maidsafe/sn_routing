@@ -21,7 +21,10 @@ pub enum Connected {
     /// Node first joining the network
     First,
     /// Node relocating from one section to another
-    Relocate,
+    Relocate {
+        /// Previous name before relocation.
+        previous_name: XorName,
+    },
 }
 
 /// An Event raised by a `Node` or `Client` via its event sender.

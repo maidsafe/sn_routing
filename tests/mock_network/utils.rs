@@ -105,6 +105,7 @@ impl TestNode {
         self.inner.close_names(&self.name()).unwrap()
     }
 
+    #[track_caller]
     pub fn our_prefix(&self) -> &Prefix {
         self.inner.our_prefix().unwrap()
     }
@@ -293,8 +294,8 @@ pub fn section_split(nodes: &[TestNode], prefix: &Prefix) -> bool {
         .iter()
         .filter(|node| {
             if prefix.matches(node.name())
-                && *node.our_prefix() != sub_prefix0
-                && *node.our_prefix() != sub_prefix1
+                && node.inner.our_prefix() != Some(&sub_prefix0)
+                && node.inner.our_prefix() != Some(&sub_prefix1)
             {
                 // The node hasn't progressed through the split of its own section yet.
                 return true;
@@ -383,7 +384,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
             match event {
                 Event::EldersChanged { .. }
                 | Event::RestartRequired
-                | Event::Connected(Connected::Relocate)
+                | Event::Connected(Connected::Relocate { .. })
                 | Event::PromotedToElder
                 | Event::PromotedToAdult
                 | Event::Demoted
@@ -610,35 +611,29 @@ pub fn add_mature_nodes(
         );
         let remove_name = *nodes.remove(remove_index).name();
 
-        let mut index_cache = create_node_index_cache(nodes);
-
         // Let the remove settle.
         poll_until(env, nodes, |nodes| node_left(nodes, &remove_name));
         update_neighbours_and_poll(env, nodes, 2);
 
         // Poll until all triggered relocations complete (if any).
-        poll_until_all_relocations_complete(env, nodes, &mut index_cache);
+        poll_until_all_relocations_complete(env, nodes);
     }
 }
 
 /// Poll until all relocations complete, including secondary relocations triggered by previous
 /// relocations.
 /// `index_cache` is a map from names to indices from the time before the event that caused
-pub fn poll_until_all_relocations_complete(
-    env: &Environment,
-    nodes: &mut [TestNode],
-    index_cache: &mut HashMap<XorName, usize>,
-) {
+pub fn poll_until_all_relocations_complete(env: &Environment, nodes: &mut [TestNode]) {
     const MAX_ITERATIONS: usize = 100;
 
     for _ in 0..MAX_ITERATIONS {
-        // Detect all started relocations.
+        // Detect all ongoing relocations.
         let mut pending = BTreeSet::new();
 
-        for node in nodes.iter_mut() {
+        for (index, node) in nodes.iter_mut().enumerate() {
             while let Some(event) = node.try_recv_event() {
                 if matches!(event, Event::RelocationStarted) {
-                    let _ = pending.insert(*node.name());
+                    let _ = pending.insert(index);
                     break;
                 }
             }
@@ -648,8 +643,14 @@ pub fn poll_until_all_relocations_complete(
             return;
         }
 
-        trace!("pending relocations: {:?}", pending);
-        poll_until_relocations_complete(env, nodes, &pending, index_cache);
+        trace!(
+            "pending relocations: {}",
+            pending
+                .iter()
+                .map(|&index| nodes[index].name())
+                .format(", ")
+        );
+        poll_until_relocations_complete(env, nodes, pending);
     }
 
     panic!(
@@ -663,28 +664,36 @@ pub fn poll_until_all_relocations_complete(
 fn poll_until_relocations_complete(
     env: &Environment,
     nodes: &mut [TestNode],
-    relocations: &BTreeSet<XorName>,
-    index_cache: &mut HashMap<XorName, usize>,
+    mut pending_relocations: BTreeSet<usize>,
 ) {
-    poll_until(env, nodes, |nodes| {
-        for old_name in relocations {
-            let index = if let Some(&index) = index_cache.get(old_name) {
-                index
-            } else {
-                // `old_name` is already relocated.
-                continue;
-            };
+    let mut old_names = HashMap::new();
 
-            if nodes[index].name() == old_name {
-                trace!("pending relocation: {} still has old name", old_name);
-                return false;
+    poll_until(env, nodes, |nodes| {
+        for index in pending_relocations.clone() {
+            if !old_names.contains_key(&index) {
+                while let Some(event) = nodes[index].try_recv_event() {
+                    if let Event::Connected(Connected::Relocate { previous_name }) = event {
+                        let _ = old_names.insert(index, previous_name);
+                        break;
+                    }
+                }
             }
+
+            let old_name = if let Some(name) = old_names.get(&index) {
+                name
+            } else {
+                trace!(
+                    "pending relocation: {} not reconnected",
+                    nodes[index].name()
+                );
+                return false;
+            };
 
             let new_name = nodes[index].name();
 
             if !node_left(nodes, old_name) {
                 trace!(
-                    "pending relocation: {} (was {}) hasn't yet left the source section",
+                    "pending relocation: {} (was {}) have not left the source section according to some nodes",
                     new_name,
                     old_name
                 );
@@ -693,7 +702,7 @@ fn poll_until_relocations_complete(
 
             if !node_joined(nodes, index) {
                 trace!(
-                    "pending relocation: {} (was {}) hasn't yet re-joined the network",
+                    "pending relocation: {} (was {}) have not joined the target section according to some nodes",
                     new_name,
                     old_name,
                 );
@@ -701,23 +710,11 @@ fn poll_until_relocations_complete(
             }
 
             trace!("relocation complete: {} -> {}", old_name, new_name);
-
-            // Update the index cache
-            let _ = index_cache.remove(old_name);
-            let _ = index_cache.insert(*new_name, index);
+            let _ = pending_relocations.remove(&index);
         }
 
         true
     })
-}
-
-// Create map from node name to its index.
-fn create_node_index_cache(nodes: &[TestNode]) -> HashMap<XorName, usize> {
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(index, node)| (*node.name(), index))
-        .collect()
 }
 
 // Add `count0` nodes to the sub-prefix of `prefix` ending in 0 and `count1` nodes to the subprefix

@@ -297,8 +297,13 @@ fn handle_event(
                     .expect("failed to send contact info")
             }
         }
-        Event::Connected(Connected::Relocate) => {
-            log::info!("Node #{} relocated - new name: {}", index, node.name());
+        Event::Connected(Connected::Relocate { previous_name }) => {
+            log::info!(
+                "Node #{} relocated - old name: {}, new name: {}",
+                index,
+                previous_name,
+                node.name()
+            );
         }
         Event::PromotedToElder => {
             log::info!("Node #{} promoted to Elder", index);

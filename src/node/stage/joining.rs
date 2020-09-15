@@ -153,9 +153,11 @@ impl Joining {
 
     // Are we relocating or joining for the first time?
     pub fn connect_type(&self) -> Connected {
-        match self.join_type {
+        match &self.join_type {
             JoinType::First { .. } => Connected::First,
-            JoinType::Relocate(_) => Connected::Relocate,
+            JoinType::Relocate(payload) => Connected::Relocate {
+                previous_name: *payload.relocate_details().pub_id.name(),
+            },
         }
     }
 
