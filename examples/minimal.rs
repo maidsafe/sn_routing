@@ -195,7 +195,7 @@ async fn start_node(
         transport_config,
         ..Default::default()
     };
-    let mut node = Node::new(config)
+    let node = Node::new(config)
         .await
         .expect("Failed to instantiate a Node");
 
