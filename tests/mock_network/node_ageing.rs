@@ -8,7 +8,7 @@
 
 use super::utils::*;
 use itertools::Itertools;
-use routing::{mock::Environment, NetworkParams, MIN_AGE};
+use sn_routing::{mock::Environment, NetworkParams, MIN_AGE};
 use xor_name::Prefix;
 
 // These params are selected such that there can be a section size which allows relocation and at the same time

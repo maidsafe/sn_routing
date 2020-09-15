@@ -26,7 +26,7 @@ pub enum Connected {
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
-/// These are sent by routing to the library's user. It allows the user to handle requests and
+/// These are sent by sn_routing to the library's user. It allows the user to handle requests and
 /// responses, and to react to changes in the network.
 ///
 /// `Request` and `Response` events from section locations are only raised once the quorum has

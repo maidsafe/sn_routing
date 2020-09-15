@@ -79,7 +79,7 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    error::RoutingError,
+    error::SNRoutingError,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
@@ -91,7 +91,7 @@ pub use self::{
 };
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
-/// Routing events.
+/// sn_routing events.
 pub mod event;
 
 // ############################################################################
@@ -155,7 +155,7 @@ const QUORUM_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
 const QUORUM_DENOMINATOR: usize = 3;
 
-/// Recommended section size. Routing will keep adding nodes until the section reaches this size.
+/// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.

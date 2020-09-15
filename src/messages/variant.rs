@@ -9,7 +9,7 @@
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
-    error::{Result, RoutingError},
+    error::{Result, SNRoutingError},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
@@ -109,29 +109,29 @@ impl Variant {
     {
         match self {
             Self::NodeApproval(elders_info) => {
-                let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(SNRoutingError::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(RoutingError::UntrustedMessage);
+                    return Err(SNRoutingError::UntrustedMessage);
                 }
 
                 match proof_chain.check_trust(trusted_keys) {
                     TrustStatus::Trusted => Ok(VerifyStatus::Full),
                     TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                    TrustStatus::Invalid => Err(SNRoutingError::UntrustedMessage),
                 }
             }
             Self::NeighbourInfo { elders_info, .. } => {
-                let proof_chain = proof_chain.ok_or(RoutingError::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(SNRoutingError::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(RoutingError::UntrustedMessage);
+                    return Err(SNRoutingError::UntrustedMessage);
                 }
 
                 match proof_chain.check_trust(trusted_keys) {
                     TrustStatus::Trusted => Ok(VerifyStatus::Full),
                     TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                    TrustStatus::Invalid => Err(SNRoutingError::UntrustedMessage),
                 }
             }
             _ => Ok(VerifyStatus::Full),

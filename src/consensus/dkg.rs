@@ -65,7 +65,7 @@ impl Debug for DkgResult {
 }
 
 /// DKG voter carries out the work of voting for a DKG. Also contains the facility caches that
-/// allows routing utilize the result properly within its churning process.
+/// allows sn_routing utilize the result properly within its churning process.
 pub struct DkgVoter {
     // Holds the info of the expected new elders.
     dkg_cache: BTreeMap<DkgKey, EldersInfo>,
@@ -99,7 +99,7 @@ impl Default for DkgVoter {
 
 impl DkgVoter {
     // Check whether a key generator is finalized to give a DKG. Once a DKG is generated, the cached
-    // accumulated events shall be taken for routing (updated with new DKG) to process.
+    // accumulated events shall be taken for sn_routing (updated with new DKG) to process.
     pub fn check_dkg(&mut self) -> (BTreeMap<DkgKey, DkgResult>, VecDeque<(Vote, Proof)>) {
         let mut completed = BTreeMap::new();
         for (key, key_gen) in self.key_gen_map.iter_mut() {
@@ -127,9 +127,9 @@ impl DkgVoter {
     }
 
     // Free key generators not newer than the current one.
-    // After a DKG completion, routing will carry out votes of OurKey and SectionInfo.
+    // After a DKG completion, sn_routing will carry out votes of OurKey and SectionInfo.
     // Only after these votes got consensused, will then the section_key_index got updated.
-    // So, a routing level check of section_index will not be enough within the gap.
+    // So, a sn_routing level check of section_index will not be enough within the gap.
     // i.e. any DKG message received during the gap will cause a new round of DKG for the same.
     // Hence here the info of completed highest section_key_index shall be recorded and checked
     // against to cover the gap.
@@ -221,7 +221,7 @@ impl DkgVoter {
 
     // When a churn is noticed, the new EdlersInfo that calculated shall be recorded.
     // In case we already have the correspondent DkgResult, the dkg_result shall be returned for
-    // routing to carry out further process.
+    // sn_routing to carry out further process.
     pub fn push_info(&mut self, dkg_key: &DkgKey, info: EldersInfo) -> Option<DkgResult> {
         let _ = self.dkg_cache.insert(dkg_key.clone(), info);
 
@@ -232,7 +232,7 @@ impl DkgVoter {
         }
     }
 
-    // Give the cached new EldersInfo to routing for its further process.
+    // Give the cached new EldersInfo to sn_routing for its further process.
     pub fn take_info(&mut self, dkg_key: &DkgKey) -> Option<EldersInfo> {
         self.dkg_cache.remove(dkg_key)
     }

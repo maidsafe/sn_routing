@@ -6,10 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//! Utilities for routing messages through the network.
+//! Utilities for sn_routing messages through the network.
 
 use crate::{
-    error::{Result, RoutingError},
+    error::{Result, SNRoutingError},
     id::{P2pNode, PublicId},
     location::DstLocation,
     section::{SectionMap, SectionMembers},
@@ -84,7 +84,7 @@ pub fn delivery_targets(
 
             candidates(target_name, our_id, sections)?
         }
-        DstLocation::Direct => return Err(RoutingError::CannotRoute),
+        DstLocation::Direct => return Err(SNRoutingError::CannotRoute),
     };
 
     Ok((best_section, dg_size))
@@ -123,7 +123,7 @@ fn candidates(
     if dg_size > 0 && nodes_to_send.len() >= dg_size {
         Ok((nodes_to_send, dg_size))
     } else {
-        Err(RoutingError::CannotRoute)
+        Err(SNRoutingError::CannotRoute)
     }
 }
 

@@ -16,11 +16,11 @@ pub mod utils;
 use self::utils::*;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
-use routing::{
+use sn_fake_clock::FakeClock;
+use sn_routing::{
     event::Event, mock::Environment, test_consts, NetworkParams, PausedState, Prefix,
     TransportConfig,
 };
-use sn_fake_clock::FakeClock;
 use std::collections::BTreeMap;
 
 // -----  Miscellaneous tests below  -----

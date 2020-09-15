@@ -8,7 +8,7 @@
 
 use super::utils::*;
 use rand::Rng;
-use routing::{
+use sn_routing::{
     event::Event, mock::Environment, threshold_count, DstLocation, NetworkParams, Prefix,
     SrcLocation, XorName,
 };

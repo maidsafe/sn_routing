@@ -13,7 +13,8 @@ use rand::{
     seq::IteratorRandom,
     Rng,
 };
-use routing::{
+use sn_fake_clock::FakeClock;
+use sn_routing::{
     event::{Connected, Event},
     mock::Environment,
     quorum_count,
@@ -21,7 +22,6 @@ use routing::{
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, SrcLocation,
     TransportConfig, MIN_AGE,
 };
-use sn_fake_clock::FakeClock;
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashMap},

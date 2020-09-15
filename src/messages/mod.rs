@@ -19,7 +19,7 @@ pub(crate) use self::{
 };
 pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
-    error::{Result, RoutingError},
+    error::{Result, SNRoutingError},
     id::FullId,
     location::DstLocation,
     section::{ExtendError, SectionProofChain, TrustStatus},
@@ -177,7 +177,7 @@ impl Message {
                 signature,
             } => {
                 if !public_id.verify(&bytes, signature) {
-                    return Err(RoutingError::FailedSignature);
+                    return Err(SNRoutingError::FailedSignature);
                 }
 
                 // Variant-specific verification.
@@ -192,11 +192,11 @@ impl Message {
                 let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
                     proof_chain
                 } else {
-                    return Err(RoutingError::InvalidMessage);
+                    return Err(SNRoutingError::InvalidMessage);
                 };
 
                 if !proof_chain.last_key().verify(signature, &bytes) {
-                    return Err(RoutingError::FailedSignature);
+                    return Err(SNRoutingError::FailedSignature);
                 }
 
                 let trusted_keys = trusted_keys
@@ -207,7 +207,7 @@ impl Message {
                 match proof_chain.check_trust(trusted_keys) {
                     TrustStatus::Trusted => Ok(VerifyStatus::Full),
                     TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(RoutingError::UntrustedMessage),
+                    TrustStatus::Invalid => Err(SNRoutingError::UntrustedMessage),
                 }
             }
         }
@@ -248,7 +248,7 @@ impl Message {
     pub(crate) fn proof_chain(&self) -> Result<&SectionProofChain> {
         self.proof_chain
             .as_ref()
-            .ok_or(RoutingError::InvalidMessage)
+            .ok_or(SNRoutingError::InvalidMessage)
     }
 
     /// Returns the last key of the attached the proof chain, if any.
@@ -302,10 +302,10 @@ pub enum VerifyStatus {
 }
 
 impl VerifyStatus {
-    pub fn require_full(self) -> Result<(), RoutingError> {
+    pub fn require_full(self) -> Result<(), SNRoutingError> {
         match self {
             Self::Full => Ok(()),
-            Self::Unknown => Err(RoutingError::UntrustedMessage),
+            Self::Unknown => Err(SNRoutingError::UntrustedMessage),
         }
     }
 }
@@ -315,7 +315,7 @@ pub(crate) struct QueuedMessage {
     pub sender: Option<SocketAddr>,
 }
 
-pub fn log_verify_failure<'a, T, I>(msg: &T, error: &RoutingError, their_keys: I)
+pub fn log_verify_failure<'a, T, I>(msg: &T, error: &SNRoutingError, their_keys: I)
 where
     T: Debug,
     I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
@@ -350,7 +350,7 @@ pub enum CreateError {
     FailedSignature,
 }
 
-impl From<CreateError> for RoutingError {
+impl From<CreateError> for SNRoutingError {
     fn from(src: CreateError) -> Self {
         match src {
             CreateError::Bincode(inner) => Self::Bincode(inner),
