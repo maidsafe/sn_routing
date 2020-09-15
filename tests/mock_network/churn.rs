@@ -13,7 +13,7 @@ use rand::{
     seq::{IteratorRandom, SliceRandom},
     Rng,
 };
-use routing::{
+use sn_routing::{
     event::Event, mock::Environment, quorum_count, rng::MainRng, DstLocation, FullId,
     NetworkParams, Prefix, SrcLocation, TransportConfig,
 };

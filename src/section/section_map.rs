@@ -308,10 +308,10 @@ impl SectionMap {
     }
 
     /// Compute an estimate of the total number of elders in the network from the size of our
-    /// routing table.
+    /// sn_routing table.
     ///
     /// Return (estimate, exact), with exact = true iff we have the whole network in our
-    /// routing table.
+    /// sn_routing table.
     pub fn network_elder_count_estimate(&self) -> (u64, bool) {
         let known_prefixes = self.prefixes();
         let is_exact = Prefix::default().is_covered_by(known_prefixes.clone());

@@ -10,7 +10,7 @@
 
 use crate::{
     crypto::{self, Signature},
-    error::RoutingError,
+    error::SNRoutingError,
     id::{FullId, PublicId},
     messages::{Message, Variant},
 };
@@ -75,7 +75,7 @@ pub struct RelocateDetails {
     pub age: u8,
 }
 
-/// SignedRoutingMessage with Relocate message content.
+/// SignedSNRoutingMessage with Relocate message content.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
@@ -83,11 +83,11 @@ pub(crate) struct SignedRelocateDetails {
 }
 
 impl SignedRelocateDetails {
-    pub fn new(signed_msg: Message) -> Result<Self, RoutingError> {
+    pub fn new(signed_msg: Message) -> Result<Self, SNRoutingError> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
-            Err(RoutingError::InvalidMessage)
+            Err(SNRoutingError::InvalidMessage)
         }
     }
 
@@ -141,7 +141,7 @@ impl RelocatePayload {
         details: SignedRelocateDetails,
         new_pub_id: &PublicId,
         old_full_id: &FullId,
-    ) -> Result<Self, RoutingError> {
+    ) -> Result<Self, SNRoutingError> {
         let new_id_serialised = serialize(new_pub_id)?;
         let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
 

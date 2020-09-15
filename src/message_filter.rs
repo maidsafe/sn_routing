@@ -62,7 +62,7 @@ impl MessageFilter {
         let _ = self.incoming.insert(*msg.hash(), ());
     }
 
-    // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
+    // Filter outgoing `SNRoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
     pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &PublicId) -> FilteringResult {

@@ -9,7 +9,7 @@
 use super::{EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::{Proof, Proven},
-    error::RoutingError,
+    error::SNRoutingError,
     id::P2pNode,
     location::DstLocation,
     messages::MessageHash,
@@ -55,14 +55,14 @@ impl SharedState {
 
     // Merge two `SharedState`s into one.
     // TODO: return `bool` indicating whether anything changed.
-    pub fn merge(&mut self, other: Self) -> Result<(), RoutingError> {
+    pub fn merge(&mut self, other: Self) -> Result<(), SNRoutingError> {
         if !other.our_history.self_verify() {
-            return Err(RoutingError::InvalidMessage);
+            return Err(SNRoutingError::InvalidMessage);
         }
 
         self.our_history
             .merge(other.our_history)
-            .map_err(|_| RoutingError::UntrustedMessage)?;
+            .map_err(|_| SNRoutingError::UntrustedMessage)?;
 
         self.sections.merge(other.sections, &self.our_history);
 

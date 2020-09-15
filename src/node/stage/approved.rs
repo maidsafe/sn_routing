@@ -13,7 +13,7 @@ use crate::{
     },
     core::Core,
     delivery_group,
-    error::{Result, RoutingError},
+    error::{Result, SNRoutingError},
     event::Event,
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
@@ -193,7 +193,7 @@ impl Approved {
             | Err(AccumulationError::AlreadyAccumulated) => Ok(()),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
-                Err(RoutingError::InvalidSignatureShare)
+                Err(SNRoutingError::InvalidSignatureShare)
             }
         }
     }
@@ -1180,7 +1180,7 @@ impl Approved {
                 match self.handle_section_info_event(core, elders_info.clone(), proof.clone()) {
                     Ok(()) => Ok(()),
                     // Could receive the accumulated SectionInfo before complete the DKG process.
-                    Err(RoutingError::InvalidElderDkgResult) => {
+                    Err(SNRoutingError::InvalidElderDkgResult) => {
                         trace!(
                             "caching SectionInfo({:?}) as invalid DKG result",
                             elders_info
@@ -1195,7 +1195,7 @@ impl Approved {
             Vote::OurKey { prefix, key } => {
                 match self.handle_our_key_event(core, prefix, key, proof.clone()) {
                     Ok(()) => Ok(()),
-                    Err(RoutingError::InvalidElderDkgResult) => {
+                    Err(SNRoutingError::InvalidElderDkgResult) => {
                         trace!(
                             "caching OurKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
                             prefix,
@@ -1211,7 +1211,7 @@ impl Approved {
             Vote::TheirKey { prefix, key } => {
                 match self.handle_their_key_event(core, prefix, key, proof.clone()) {
                     Ok(()) => Ok(()),
-                    Err(RoutingError::InvalidElderDkgResult) => {
+                    Err(SNRoutingError::InvalidElderDkgResult) => {
                         trace!(
                             "caching TheirKey {{ prefix: {:?}, key: {:?} }} as invalid DKG result",
                             prefix,
@@ -1389,7 +1389,7 @@ impl Approved {
                 dkg_key,
                 self.dkg_voter.info_keys().format(", ")
             );
-            Err(RoutingError::InvalidState)
+            Err(SNRoutingError::InvalidState)
         }
     }
 
@@ -1767,7 +1767,7 @@ impl Approved {
     //
     // If `proof_start_index_override` is set it will be used as the starting index of the proof.
     // Otherwise the index is calculated using the knowledge stored in the section map.
-    pub fn send_routing_message(
+    pub fn send_sn_routing_message(
         &mut self,
         core: &mut Core,
         src: SrcLocation,
@@ -2045,7 +2045,7 @@ fn create_first_proof<T: Serialize>(
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
-        .map_err(|_| RoutingError::InvalidSignatureShare)?;
+        .map_err(|_| SNRoutingError::InvalidSignatureShare)?;
 
     Ok(Proof {
         public_key: pk_set.public_key(),

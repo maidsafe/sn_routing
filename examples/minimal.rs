@@ -36,7 +36,7 @@
 use crossbeam_channel::{Receiver, Select, Sender};
 use hex_fmt::HexFmt;
 use log::LevelFilter;
-use routing::{
+use sn_routing::{
     event::{Connected, Event},
     Node, NodeConfig, TransportConfig,
 };
@@ -206,7 +206,7 @@ fn start_node(
     log::info!("Node #{} starting...", index);
 
     // The returned triple is:
-    // - The routing node itself.
+    // - The sn_routing node itself.
     // - The receiver for events that the node notifies the application about.
     // - The receiver for client network events. We don't support clients in this example, so we
     //   can ignore it
@@ -373,7 +373,7 @@ fn handle_event(
 }
 
 const TARGET_SELF: &str = "minimal";
-const TARGET_ROUTING: &str = "routing";
+const TARGET_ROUTING: &str = "sn_routing";
 
 fn init_log(verbosity: u8) {
     let mut builder = env_logger::builder();
@@ -384,15 +384,15 @@ fn init_log(verbosity: u8) {
         .filter(Some(TARGET_SELF), LevelFilter::Info);
 
     if verbosity > 0 {
-        // Enable info logs from routing.
+        // Enable info logs from sn_routing.
         builder.filter(Some(TARGET_ROUTING), LevelFilter::Info);
     }
     if verbosity > 1 {
-        // Enable debug logs from routing
+        // Enable debug logs from sn_routing
         builder.filter(Some(TARGET_ROUTING), LevelFilter::Debug);
     }
     if verbosity > 2 {
-        // Enable trace logs from routing
+        // Enable trace logs from sn_routing
         builder.filter(Some(TARGET_ROUTING), LevelFilter::Trace);
     }
     if verbosity > 3 {

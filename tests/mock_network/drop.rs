@@ -8,7 +8,7 @@
 
 use super::utils::*;
 use rand::Rng;
-use routing::{mock::Environment, NetworkParams};
+use sn_routing::{mock::Environment, NetworkParams};
 
 #[test]
 fn node_drops() {
