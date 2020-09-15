@@ -340,7 +340,6 @@ impl SectionMap {
     }
 
     /// Returns iterator over all neighbours sections.
-    #[cfg(any(test, feature = "mock"))]
     pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
         self.neighbours.iter().map(|info| &info.value)
     }

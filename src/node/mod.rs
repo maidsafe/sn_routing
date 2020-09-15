@@ -72,6 +72,7 @@ impl Default for NodeConfig {
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
+#[derive(Clone)]
 pub struct Node {
     stage: Arc<Mutex<Stage>>,
     is_genesis: bool,
@@ -217,6 +218,14 @@ impl Node {
         match self.stage.lock().await.approved() {
             Some(stage) => Some(stage.shared_state.sections.our().clone()),
             None => None,
+        }
+    }
+
+    /// Returns the info about our neighbour sections.
+    pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
+        match self.stage.lock().await.approved() {
+            Some(stage) => stage.shared_state.sections.neighbours().cloned().collect(),
+            None => vec![],
         }
     }
 

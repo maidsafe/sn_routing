@@ -338,7 +338,7 @@ impl Approved {
 
     async fn send_event(&self, events_tx: &mut mpsc::Sender<Event>, event: Event) {
         if let Err(err) = events_tx.send(event).await {
-            error!("Error reporting new Event: {:?}", err);
+            error!("Error reporting new Event: {} - {:?}", err, err);
         }
     }
 

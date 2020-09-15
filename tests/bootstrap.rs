@@ -8,11 +8,13 @@
 
 mod utils;
 
+use futures::future::join_all;
 use routing::{
     event::{Connected, Event},
-    Error, Result,
+    Error, Node, Result,
 };
 use utils::*;
+use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
@@ -63,30 +65,69 @@ async fn test_node_bootstrapping() -> Result<()> {
 
 #[tokio::test]
 async fn test_section_bootstrapping() -> Result<()> {
-    let (genesis_node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
-    let num_of_nodes = 5;
+    let num_of_nodes = 7;
+    let (genesis_node, mut event_stream) = TestNodeBuilder::new(None)
+        .elder_size(num_of_nodes)
+        .first()
+        .create()
+        .await?;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        // TODO: expect events for all nodes
-        expect_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ })?;
-        //expect_next_event!(event_stream, Event::EldersChanged { .. })?;
-        Ok(())
+        // expect events for all nodes
+        let mut joined_nodes = Vec::default();
+        while let Some(event) = event_stream.next().await {
+            match event {
+                Event::InfantJoined { age, name } => {
+                    assert_eq!(age, 4);
+                    joined_nodes.push(name);
+                }
+                _other => {}
+            }
+
+            if joined_nodes.len() == num_of_nodes {
+                break;
+            }
+        }
+
+        Ok::<Vec<XorName>, Error>(joined_nodes)
     });
 
-    let genesis_contact = genesis_node.our_connection_info().await?;
     // bootstrap several nodes with genesis to form a section
+    let genesis_contact = genesis_node.our_connection_info().await?;
+    let mut nodes_joining_tasks = Vec::with_capacity(num_of_nodes);
     for _ in 0..num_of_nodes {
-        let (_, mut event_stream) = TestNodeBuilder::new(None)
-            .with_contact(genesis_contact)
-            .create()
-            .await?;
+        nodes_joining_tasks.push(async {
+            let (node, mut event_stream) = TestNodeBuilder::new(None)
+                .with_contact(genesis_contact)
+                .create()
+                .await?;
 
-        expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+            expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+
+            Ok::<Node, Error>(node)
+        });
     }
 
+    let nodes = join_all(nodes_joining_tasks).await;
+
     // just await for genesis node to finish receiving all events
-    genesis_handler
+    let joined_nodes = genesis_handler
         .await
-        .map_err(|err| Error::Unexpected(format!("{}", err)))?
+        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+
+    for result in nodes.iter() {
+        let node = result
+            .as_ref()
+            .map_err(|err| Error::Unexpected(format!("{}", err)))?;
+        let name = node.name().await;
+
+        // assert names of nodes joined match
+        let found = joined_nodes.iter().find(|n| **n == name);
+        assert!(found.is_some());
+
+        verify_invariants_for_node(&node, num_of_nodes).await?;
+    }
+
+    Ok(())
 }

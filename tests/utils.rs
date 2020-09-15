@@ -6,10 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
 use routing::{Error, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
 use std::{
     collections::{BTreeSet, HashSet},
     io::Write,
+    iter,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Once,
 };
@@ -60,12 +62,12 @@ impl<'a> TestNodeBuilder {
         self
     }
 
-    pub fn elder_size(&mut self, size: usize) -> &mut Self {
+    pub fn elder_size(mut self, size: usize) -> Self {
         self.config.network_params.elder_size = size;
         self
     }
 
-    pub fn recommended_section_size(&mut self, size: usize) -> &mut Self {
+    pub fn recommended_section_size(mut self, size: usize) -> Self {
         self.config.network_params.recommended_section_size = size;
         self
     }
@@ -155,14 +157,12 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         return Ok(());
     }
 
-    Ok(())
-    /*
-    let neighbour_sections: BTreeSet<_> = node.inner.neighbour_sections().collect();
+    let neighbour_sections = node.neighbour_sections().await;
 
     if let Some(compatible_prefix) = neighbour_sections
         .iter()
         .map(|info| &info.prefix)
-        .find(|prefix| prefix.is_compatible(our_prefix))
+        .find(|prefix| prefix.is_compatible(&our_prefix))
     {
         panic!(
             "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_sections: {:?})",
@@ -175,7 +175,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
 
     if let Some(info) = neighbour_sections
         .iter()
-        .find(|info| info.elders.len() < env.elder_size())
+        .find(|info| info.elders.len() < elder_size)
     {
         panic!(
             "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_sections: {:?})",
@@ -183,7 +183,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
             our_prefix,
             info.prefix,
             info.elders.len(),
-            env.elder_size(),
+            elder_size,
             neighbour_sections,
         );
     }
@@ -221,10 +221,11 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
             "{}({:b}) Some neighbours aren't fully covered by our known sections: {:?}",
             our_name,
             our_prefix,
-            iter::once(*our_prefix)
+            iter::once(our_prefix)
                 .chain(neighbour_sections.iter().map(|info| info.prefix))
                 .format(", ")
         );
     }
-    */
+
+    Ok(())
 }
