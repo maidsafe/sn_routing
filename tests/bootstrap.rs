@@ -9,7 +9,7 @@
 mod utils;
 
 use futures::future::join_all;
-use routing::{
+use sn_routing::{
     event::{Connected, Event},
     Error, Node, Result,
 };
