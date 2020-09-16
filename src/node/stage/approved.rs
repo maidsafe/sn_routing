@@ -1250,6 +1250,14 @@ impl Approved {
             return Ok(());
         }
 
+        if !self.section_update_barrier.start_update(elders_info.prefix) {
+            trace!(
+                "section update of {:?} already in progress",
+                elders_info.prefix
+            );
+            return Ok(());
+        }
+
         // Casting unordered_votes will check consensus and handle accumulated immediately.
         self.cast_unordered_vote(
             core,
@@ -1351,6 +1359,7 @@ impl Approved {
                     self.shared_state.our_info().elders.values().format(", ")
                 );
 
+                self.promote_and_demote_elders(core)?;
                 self.print_network_stats();
             }
 

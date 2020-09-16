@@ -8,6 +8,7 @@
 
 use super::{EldersInfo, SharedState};
 use crate::consensus::Proven;
+use std::collections::HashSet;
 use xor_name::{Prefix, XorName};
 
 /// Helper structure to synchronize updates to `SharedState` in order to keep certain useful
@@ -27,9 +28,23 @@ use xor_name::{Prefix, XorName};
 pub(crate) struct SectionUpdateBarrier {
     our: Option<SharedState>,
     sibling: Option<SharedState>,
+    pending_updates: HashSet<Prefix>,
 }
 
 impl SectionUpdateBarrier {
+    // Mark the section update for the given prefix as started. This prevents starting another
+    // update while one is still in progress.
+    //
+    // FIXME: this is not bullet-proof. In case of a heavy churn, it can happen that we get two or
+    // more successful DKG results around the same time, but they will not necessary be received in
+    // the same order by everyone. So it can happen that some nodes will start the section update
+    // based on one DKG result while others will use another one and neither one will reach
+    // consensus which would currently stall the section. Even though this situation might be
+    // unlikely, we should still find a solution to this problem.
+    pub fn start_update(&mut self, prefix: Prefix) -> bool {
+        self.pending_updates.insert(prefix)
+    }
+
     pub fn handle_section_info(
         &mut self,
         current: &SharedState,
@@ -114,6 +129,8 @@ impl SectionUpdateBarrier {
                     return (None, None);
                 }
             } else {
+                self.pending_updates.clear();
+
                 return (self.our.take(), None);
             }
         }
@@ -143,6 +160,8 @@ impl SectionUpdateBarrier {
         if sibling.sections.get(our.our_prefix()) != Some(our.our_info()) {
             return (None, None);
         }
+
+        self.pending_updates.clear();
 
         (self.our.take(), self.sibling.take())
     }
