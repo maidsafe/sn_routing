@@ -8,7 +8,7 @@
 
 use crate::{
     consensus::DkgResult,
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
 };
 use std::{collections::BTreeMap, mem};
 use xor_name::XorName;
@@ -50,9 +50,7 @@ impl SectionKeysProvider {
     }
 
     pub fn key_share(&self) -> Result<&SectionKeyShare> {
-        self.current
-            .as_ref()
-            .ok_or(SNRoutingError::InvalidElderDkgResult)
+        self.current.as_ref().ok_or(Error::InvalidElderDkgResult)
     }
 
     /// Handles a completed DKG

@@ -10,12 +10,12 @@ use crate::quic_p2p::QuicP2pError;
 use err_derive::Error;
 
 /// The type returned by the sn_routing message handling methods.
-pub type Result<T, E = SNRoutingError> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Internal error.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
-pub enum SNRoutingError {
+pub enum Error {
     #[error(display = "Invalid requester or handler locations.")]
     BadLocation,
     #[error(display = "Failed signature check.")]

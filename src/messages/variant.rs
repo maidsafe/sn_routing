@@ -9,7 +9,7 @@
 use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
     id::PublicId,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
@@ -109,29 +109,29 @@ impl Variant {
     {
         match self {
             Self::NodeApproval(elders_info) => {
-                let proof_chain = proof_chain.ok_or(SNRoutingError::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(SNRoutingError::UntrustedMessage);
+                    return Err(Error::UntrustedMessage);
                 }
 
                 match proof_chain.check_trust(trusted_keys) {
                     TrustStatus::Trusted => Ok(VerifyStatus::Full),
                     TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(SNRoutingError::UntrustedMessage),
+                    TrustStatus::Invalid => Err(Error::UntrustedMessage),
                 }
             }
             Self::NeighbourInfo { elders_info, .. } => {
-                let proof_chain = proof_chain.ok_or(SNRoutingError::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(SNRoutingError::UntrustedMessage);
+                    return Err(Error::UntrustedMessage);
                 }
 
                 match proof_chain.check_trust(trusted_keys) {
                     TrustStatus::Trusted => Ok(VerifyStatus::Full),
                     TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(SNRoutingError::UntrustedMessage),
+                    TrustStatus::Invalid => Err(Error::UntrustedMessage),
                 }
             }
             _ => Ok(VerifyStatus::Full),

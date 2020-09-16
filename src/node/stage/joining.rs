@@ -8,7 +8,7 @@
 
 use crate::{
     core::Core,
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
     event::Connected,
     id::P2pNode,
     messages::{
@@ -198,7 +198,7 @@ fn verify_message(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> Result
     msg.verify(trusted_key.map(|key| (&prefix, key)))
         .and_then(|status| match (status, trusted_key) {
             (VerifyStatus::Full, _) | (VerifyStatus::Unknown, None) => Ok(()),
-            (VerifyStatus::Unknown, Some(_)) => Err(SNRoutingError::UntrustedMessage),
+            (VerifyStatus::Unknown, Some(_)) => Err(Error::UntrustedMessage),
         })
         .map_err(|error| {
             messages::log_verify_failure(msg, &error, trusted_key.map(|key| (&prefix, key)));
