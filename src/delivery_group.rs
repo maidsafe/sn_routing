@@ -9,7 +9,7 @@
 //! Utilities for sn_routing messages through the network.
 
 use crate::{
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
     id::{P2pNode, PublicId},
     location::DstLocation,
     section::{SectionMap, SectionMembers},
@@ -84,7 +84,7 @@ pub fn delivery_targets(
 
             candidates(target_name, our_id, sections)?
         }
-        DstLocation::Direct => return Err(SNRoutingError::CannotRoute),
+        DstLocation::Direct => return Err(Error::CannotRoute),
     };
 
     Ok((best_section, dg_size))
@@ -123,7 +123,7 @@ fn candidates(
     if dg_size > 0 && nodes_to_send.len() >= dg_size {
         Ok((nodes_to_send, dg_size))
     } else {
-        Err(SNRoutingError::CannotRoute)
+        Err(Error::CannotRoute)
     }
 }
 

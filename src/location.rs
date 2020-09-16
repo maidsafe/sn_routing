@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::error::{Result, SNRoutingError};
+use crate::error::{Error, Result};
 use xor_name::{Prefix, XorName};
 
 /// Message source location.
@@ -69,7 +69,7 @@ impl DstLocation {
     pub(crate) fn as_node(&self) -> Result<&XorName> {
         match self {
             Self::Node(name) => Ok(name),
-            Self::Section(_) | Self::Direct => Err(SNRoutingError::BadLocation),
+            Self::Section(_) | Self::Direct => Err(Error::BadLocation),
         }
     }
 
@@ -77,7 +77,7 @@ impl DstLocation {
     pub(crate) fn check_is_section(&self) -> Result<()> {
         match self {
             Self::Section(_) => Ok(()),
-            Self::Node(_) | Self::Direct => Err(SNRoutingError::BadLocation),
+            Self::Node(_) | Self::Direct => Err(Error::BadLocation),
         }
     }
 

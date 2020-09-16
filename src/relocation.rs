@@ -10,7 +10,7 @@
 
 use crate::{
     crypto::{self, Signature},
-    error::SNRoutingError,
+    error::Error,
     id::{FullId, PublicId},
     messages::{Message, Variant},
 };
@@ -83,11 +83,11 @@ pub(crate) struct SignedRelocateDetails {
 }
 
 impl SignedRelocateDetails {
-    pub fn new(signed_msg: Message) -> Result<Self, SNRoutingError> {
+    pub fn new(signed_msg: Message) -> Result<Self, Error> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
-            Err(SNRoutingError::InvalidMessage)
+            Err(Error::InvalidMessage)
         }
     }
 
@@ -141,7 +141,7 @@ impl RelocatePayload {
         details: SignedRelocateDetails,
         new_pub_id: &PublicId,
         old_full_id: &FullId,
-    ) -> Result<Self, SNRoutingError> {
+    ) -> Result<Self, Error> {
         let new_id_serialised = serialize(new_pub_id)?;
         let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
 

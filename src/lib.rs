@@ -79,7 +79,7 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    error::SNRoutingError,
+    error::Error,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,

@@ -17,7 +17,7 @@ use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, 
 use crate::{
     consensus::Proven,
     core::Core,
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
@@ -154,7 +154,7 @@ impl Node {
 
             Ok(state)
         } else {
-            Err(SNRoutingError::InvalidState)
+            Err(Error::InvalidState)
         }
     }
 
@@ -262,7 +262,7 @@ impl Node {
         if let Some(prefix) = self.our_prefix() {
             Ok(prefix.matches(name))
         } else {
-            Err(SNRoutingError::InvalidState)
+            Err(Error::InvalidState)
         }
     }
 
@@ -326,18 +326,18 @@ impl Node {
         src: SrcLocation,
         dst: DstLocation,
         content: Vec<u8>,
-    ) -> Result<(), SNRoutingError> {
+    ) -> Result<(), Error> {
         if let DstLocation::Direct = dst {
-            return Err(SNRoutingError::BadLocation);
+            return Err(Error::BadLocation);
         }
 
         let _log_ident = self.set_log_ident();
 
         match &mut self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => {
-                Err(SNRoutingError::InvalidState)
+                Err(Error::InvalidState)
             }
-            Stage::Approved(stage) => stage.send_sn_routing_message(
+            Stage::Approved(stage) => stage.send_routing_message(
                 &mut self.core,
                 src,
                 dst,
@@ -366,24 +366,24 @@ impl Node {
         Ok(())
     }
 
-    /// Returns the current BLS public key set or `SNRoutingError::InvalidState` if we are not joined
+    /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
     /// yet.
     pub fn public_key_set(&self) -> Result<&bls::PublicKeySet> {
         self.stage
             .approved()
             .and_then(|stage| stage.section_key_share())
             .map(|share| &share.public_key_set)
-            .ok_or(SNRoutingError::InvalidState)
+            .ok_or(Error::InvalidState)
     }
 
-    /// Returns the current BLS secret key share or `SNRoutingError::InvalidState` if we are not
+    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
     /// elder.
     pub fn secret_key_share(&self) -> Result<&bls::SecretKeyShare> {
         self.stage
             .approved()
             .and_then(|stage| stage.section_key_share())
             .map(|share| &share.secret_key_share)
-            .ok_or(SNRoutingError::InvalidState)
+            .ok_or(Error::InvalidState)
     }
 
     /// Returns our section proof chain, or `None` if we are not joined yet.
@@ -393,14 +393,14 @@ impl Node {
             .map(|stage| &stage.shared_state.our_history)
     }
 
-    /// Returns our index in the current BLS group or `SNRoutingError::InvalidState` if section key was
+    /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
     /// not generated yet.
     pub fn our_index(&self) -> Result<usize> {
         self.stage
             .approved()
             .and_then(|stage| stage.section_key_share())
             .map(|share| share.index)
-            .ok_or(SNRoutingError::InvalidState)
+            .ok_or(Error::InvalidState)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1017,7 +1017,7 @@ impl Node {
         if let Some(stage) = self.stage.approved_mut() {
             stage.handle_dkg_result_event(&mut self.core, dkg_key, dkg_result)
         } else {
-            Err(SNRoutingError::InvalidState)
+            Err(Error::InvalidState)
         }
     }
 }

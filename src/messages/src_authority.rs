@@ -8,7 +8,7 @@
 
 use crate::{
     crypto::Signature as SimpleSignature,
-    error::{Result, SNRoutingError},
+    error::{Error, Result},
     id::{P2pNode, PublicId},
     location::SrcLocation,
 };
@@ -51,7 +51,7 @@ impl SrcAuthority {
         if self.is_section() {
             Ok(())
         } else {
-            Err(SNRoutingError::BadLocation)
+            Err(Error::BadLocation)
         }
     }
 
@@ -62,7 +62,7 @@ impl SrcAuthority {
     pub(crate) fn as_node(&self) -> Result<&PublicId> {
         match self {
             Self::Node { public_id, .. } => Ok(public_id),
-            Self::Section { .. } => Err(SNRoutingError::BadLocation),
+            Self::Section { .. } => Err(Error::BadLocation),
         }
     }
 
@@ -70,13 +70,13 @@ impl SrcAuthority {
     pub(crate) fn as_section_prefix(&self) -> Result<&Prefix> {
         match self {
             Self::Section { prefix, .. } => Ok(prefix),
-            Self::Node { .. } => Err(SNRoutingError::BadLocation),
+            Self::Node { .. } => Err(Error::BadLocation),
         }
     }
 
     pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
         let pub_id = *self.as_node()?;
-        let conn_info = sender.ok_or(SNRoutingError::InvalidSource)?;
+        let conn_info = sender.ok_or(Error::InvalidSource)?;
         Ok(P2pNode::new(pub_id, conn_info))
     }
 }
