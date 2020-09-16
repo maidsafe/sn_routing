@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use itertools::Itertools;
-use routing::{Error, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
+use sn_routing::{Error, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
 use std::{
     collections::{BTreeSet, HashSet},
     io::Write,
