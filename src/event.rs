@@ -10,7 +10,7 @@ use crate::location::{DstLocation, SrcLocation};
 
 use bytes::Bytes;
 use hex_fmt::HexFmt;
-use qp2p::{RecvStream, SendStream};
+pub use qp2p::{RecvStream, SendStream};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
