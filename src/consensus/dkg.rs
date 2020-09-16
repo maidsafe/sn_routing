@@ -25,7 +25,7 @@ use std::{
 // more than two DKG sessions at the time (one during normal section update, two during split), but
 // in the case of heavy churn there can be more. Note also that this applies to DKG observers only.
 // A DKG participant has always at most one active session.
-const MAX_OBSERVERS: usize = 10;
+const MAX_OBSERVERS: usize = 20;
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
@@ -59,16 +59,15 @@ pub type DkgStatus<T> = Option<Result<T, EldersInfo>>;
 /// 1. First the current elders propose the new elder candidates in the form of `EldersInfo`
 ///    structure.
 /// 2. They send an accumulating message `DKGStart` containing this proposed `EldersInfo` to the
-///    other elders (DKG observers) and also to the candidates (DKG participants).
-/// 3. When it accumulates, a participant calls `start_participating`. An observer calls
-///    `start_observing`. Note a node can sometimes be both participant and observer at the same
-///    time.
+///    new elders candidates (DKG participants) and also call `start_observing` to initialize the
+///    DKG result accumulator.
+/// 3. When the `DKGStart` message accumulates, the participants call `start_participating`.
 /// 4. The participants keep exchanging the DKG messages and calling `process_dkg_message`.
 /// 5. The participants call `check_dkg` to check whether the DKG session completed or failed.
 /// 6. They should also run a timer in case of inactivity and call `progress_dkg` when it fires.
 /// 7. On DKG completion or failure, the participants send `DKGResult` message to the current
 ///    elders (observers)
-/// 8. The observers observer the result by calling `observe_result`.
+/// 8. The observers call `observe_result` with each received `DKGResult`.
 /// 9. When it returns success, that means we accumulated at least quorum of successful DKG results
 ///    and can proceed with voting for the section update.
 /// 10. When it fails, the observers restart the process from step 1.
