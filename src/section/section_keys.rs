@@ -59,10 +59,14 @@ impl SectionKeysProvider {
         }
     }
 
-    pub fn finalise_dkg(&mut self) {
-        if let Some(share) = self.pending.take() {
-            trace!("finalise DKG: {:?}", share.public_key_set.public_key());
-            self.current = Some(share);
+    pub fn finalise_dkg(&mut self, public_key: &bls::PublicKey) {
+        if let Some(share) = &self.pending {
+            let pending_public_key = share.public_key_set.public_key();
+
+            if pending_public_key == *public_key {
+                trace!("finalise DKG: {:?}", pending_public_key);
+                self.current = self.pending.take();
+            }
         }
     }
 }
