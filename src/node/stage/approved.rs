@@ -148,9 +148,14 @@ impl Approved {
 
     // Cast a vote that doesn't need total order, only section consensus.
     pub fn cast_unordered_vote(&mut self, core: &mut Core, vote: Vote) -> Result<()> {
-        trace!("Vote for {:?}", vote);
-
         let key_share = self.section_keys_provider.key_share()?;
+
+        trace!(
+            "Vote for {:?} (using {:?})",
+            vote,
+            key_share.public_key_set.public_key()
+        );
+
         let proof_share = vote.prove(
             key_share.public_key_set.clone(),
             key_share.index,
@@ -338,6 +343,11 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
+            Variant::DKGStart(elders_info) => {
+                if !elders_info.elders.contains_key(our_id.name()) {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::DKGResult { .. } => {
                 if !self.is_our_elder(our_id) {
                     return Ok(MessageStatus::Unknown);
@@ -376,7 +386,6 @@ impl Approved {
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGStart(_)
             | Variant::DKGMessage { .. } => (),
         }
 
@@ -835,21 +844,13 @@ impl Approved {
     pub fn handle_dkg_start(&mut self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
         trace!("Received DKGStart({:?})", new_elders_info);
 
-        if new_elders_info.elders.contains_key(core.name()) {
-            // Participant
-            if let Some((dkg_key, message)) = self
-                .dkg_voter
-                .start_participating(&core.full_id, new_elders_info.clone())
-            {
-                self.dkg_voter
-                    .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
-                self.broadcast_dkg_message(core, dkg_key, message)?
-            }
-        }
-
-        if self.is_our_elder(core.id()) {
-            // Observer
-            self.dkg_voter.start_observing(new_elders_info);
+        if let Some((dkg_key, message)) = self
+            .dkg_voter
+            .start_participating(&core.full_id, new_elders_info)
+        {
+            self.dkg_voter
+                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+            self.broadcast_dkg_message(core, dkg_key, message)?
         }
 
         Ok(())
@@ -1546,19 +1547,18 @@ impl Approved {
         }
     }
 
-    fn send_dkg_start(&self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
+    fn send_dkg_start(&mut self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
         trace!("Send DKGStart({:?})", new_elders_info);
 
-        // Send to all participants and observers.
+        // Send to all participants.
         let recipients: Vec<_> = new_elders_info
             .elders
             .values()
-            .chain(self.shared_state.our_info().elders.values())
-            .map(|p2p_node| *p2p_node.peer_addr())
-            .unique()
+            .map(P2pNode::peer_addr)
+            .copied()
             .collect();
 
-        let variant = Variant::DKGStart(new_elders_info);
+        let variant = Variant::DKGStart(new_elders_info.clone());
         let message = self.to_accumulating_message(DstLocation::Direct, variant, None)?;
         let message = Message::single_src(
             &core.full_id,
@@ -1569,6 +1569,8 @@ impl Approved {
         )?;
 
         core.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
+
+        self.dkg_voter.start_observing(new_elders_info);
 
         Ok(())
     }
