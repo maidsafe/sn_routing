@@ -142,6 +142,8 @@ impl DkgVoter {
 
     // Start a new DKG session as an observer.
     pub fn start_observing(&mut self, elders_info: EldersInfo) {
+        trace!("DKG for {} observing", elders_info);
+
         let _ = self
             .observers
             .entry(elders_info)
