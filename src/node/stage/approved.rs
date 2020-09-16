@@ -1247,7 +1247,7 @@ impl Approved {
         if self.shared_state.our_history.has_key(&public_key) {
             // Our shared state is already up to date, so no need to vote. Just finalize the DKG so
             // we can start using the new secret key share.
-            self.section_keys_provider.finalise_dkg();
+            self.section_keys_provider.finalise_dkg(&public_key);
             return Ok(());
         }
 
@@ -1326,7 +1326,8 @@ impl Approved {
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
         self.prune_neighbour_connections(core, &neighbour_elders_removed);
 
-        self.section_keys_provider.finalise_dkg();
+        self.section_keys_provider
+            .finalise_dkg(self.shared_state.our_history.last_key());
 
         let new_is_elder = self.is_our_elder(core.id());
         let new_last_key_index = self.shared_state.our_history.last_key_index();
