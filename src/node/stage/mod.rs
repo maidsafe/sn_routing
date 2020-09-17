@@ -59,13 +59,29 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
+    // Private constructor
+    fn new(
+        state: State,
+        mut comm: Comm,
+        node_info: NodeInfo,
+    ) -> Result<(Self, IncomingConnections)> {
+        let incoming_conns = comm.listen()?;
+        let stage = Self {
+            state,
+            comm,
+            node_info,
+        };
+
+        Ok((stage, incoming_conns))
+    }
+
     // Create the approved stage for the first node in the network.
     pub async fn first_node(
         transport_config: TransportConfig,
         full_id: FullId,
         network_params: NetworkParams,
         mut rng: MainRng,
-    ) -> Result<Self> {
+    ) -> Result<(Self, IncomingConnections)> {
         let comm = Comm::new(transport_config).await?;
         let connection_info = comm.our_connection_info()?;
         let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
@@ -99,11 +115,7 @@ impl Stage {
             node_info.clone(),
         )?;
 
-        Ok(Self {
-            state: State::Approved(state),
-            comm,
-            node_info,
-        })
+        Self::new(State::Approved(state), comm, node_info)
     }
 
     pub async fn bootstrap(
@@ -111,7 +123,7 @@ impl Stage {
         full_id: FullId,
         network_params: NetworkParams,
         rng: MainRng,
-    ) -> Result<Self> {
+    ) -> Result<(Self, IncomingConnections)> {
         let (mut comm, mut connection) = Comm::from_bootstrapping(transport_config).await?;
 
         debug!(
@@ -133,11 +145,7 @@ impl Stage {
 
         let state = Bootstrapping::new(None, comm.clone(), node_info.clone());
 
-        Ok(Self {
-            state: State::Bootstrapping(state),
-            comm,
-            node_info,
-        })
+        Self::new(State::Bootstrapping(state), comm, node_info)
     }
 
     pub fn approved(&self) -> Option<&Approved> {
@@ -155,11 +163,6 @@ impl Stage {
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.comm.our_connection_info()
-    }
-
-    /// Resturns a stream to obtain incoming connections from
-    pub fn listen_events(&mut self) -> Result<IncomingConnections> {
-        self.comm.listen_events()
     }
 
     /// Send a message.

@@ -84,7 +84,7 @@ impl Node {
     ////////////////////////////////////////////////////////////////////////////
 
     /// Create new node using the given config.
-    pub async fn new(config: NodeConfig) -> Result<Self> {
+    pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
         let mut rng = config.rng;
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let node_name = *full_id.public_id().name();
@@ -92,11 +92,11 @@ impl Node {
         let network_params = config.network_params;
         let is_genesis = config.first;
 
-        let stage = if is_genesis {
+        let (stage, incoming_conns) = if is_genesis {
             match Stage::first_node(transport_config, full_id, network_params, rng).await {
-                Ok(stage) => {
+                Ok(stage_and_conns_stream) => {
                     info!("{} Started a new network as a seed node.", node_name);
-                    stage
+                    stage_and_conns_stream
                 }
                 Err(error) => {
                     let msg = format!("{} Failed to start the first node: {:?}", node_name, error);
@@ -109,20 +109,12 @@ impl Node {
             Stage::bootstrap(transport_config, full_id, network_params, rng).await?
         };
 
-        Ok(Self {
-            stage: Arc::new(Mutex::new(stage)),
-            is_genesis,
-        })
-    }
+        let stage = Arc::new(Mutex::new(stage));
 
-    /// Obtain an Event stream to read all reported events from
-    pub async fn listen_events(&self) -> Result<EventStream> {
-        EventStream::new(
-            Arc::clone(&self.stage),
-            *self.id().await.name(),
-            self.is_genesis,
-        )
-        .await
+        let event_stream =
+            EventStream::new(Arc::clone(&stage), node_name, incoming_conns, is_genesis).await?;
+
+        Ok((Self { stage, is_genesis }, event_stream))
     }
 
     /// Is this the genesis node or not

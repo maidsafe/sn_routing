@@ -91,10 +91,8 @@ impl<'a> TestNodeBuilder {
         } else {
             self.config
         };
-        let node = Node::new(config).await?;
-        let event_stream = node.listen_events().await?;
 
-        Ok((node, event_stream))
+        Node::new(config).await
     }
 }
 
