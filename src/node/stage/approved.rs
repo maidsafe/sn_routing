@@ -614,7 +614,9 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            core.send_event(Event::RelocationStarted);
+            core.send_event(Event::RelocationStarted {
+                previous_name: *core.name(),
+            });
         }
 
         let conn_infos: Vec<_> = self
@@ -650,7 +652,9 @@ impl Approved {
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                core.send_event(Event::RelocationStarted);
+                core.send_event(Event::RelocationStarted {
+                    previous_name: *core.name(),
+                });
             } else {
                 trace!("ignore RelocatePromise - already have one");
             }

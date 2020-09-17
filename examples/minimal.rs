@@ -358,7 +358,11 @@ fn handle_event(
             dst,
             HexFmt(content)
         ),
-        Event::RelocationStarted => log::info!("Node #{} relocation started", index,),
+        Event::RelocationStarted { previous_name } => log::info!(
+            "Node #{} relocation started - previous_name: {}",
+            index,
+            previous_name
+        ),
         Event::Terminated => {
             log::info!("Node #{} terminated", index);
             return false;
