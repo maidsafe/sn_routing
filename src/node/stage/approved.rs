@@ -843,7 +843,7 @@ impl Approved {
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
     ) -> Result<()> {
-        trace!("Received DKGStart({:?})", new_elders_info);
+        trace!("Received DKGStart for {}", new_elders_info);
 
         if let Some(message) =
             self.dkg_voter
@@ -1329,6 +1329,8 @@ impl Approved {
 
         self.section_keys_provider
             .finalise_dkg(self.shared_state.our_history.last_key());
+        self.dkg_voter
+            .stop_observing(self.shared_state.our_history.last_key_index());
 
         let new_is_elder = self.is_our_elder(core.id());
         let new_last_key_index = self.shared_state.our_history.last_key_index();
@@ -1550,7 +1552,7 @@ impl Approved {
     }
 
     fn send_dkg_start(&mut self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
-        trace!("Send DKGStart({:?})", new_elders_info);
+        trace!("Send DKGStart for {}", new_elders_info);
 
         let dkg_key = DkgKey::new(&new_elders_info);
 
@@ -1577,7 +1579,11 @@ impl Approved {
 
         core.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
 
-        self.dkg_voter.start_observing(dkg_key, new_elders_info);
+        self.dkg_voter.start_observing(
+            dkg_key,
+            new_elders_info,
+            self.shared_state.our_history.last_key_index(),
+        );
 
         Ok(())
     }

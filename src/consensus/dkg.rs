@@ -15,19 +15,12 @@ use crate::{
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
-use lru_time_cache::LruCache;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug, Formatter},
 };
 
 pub type DkgMessage = bls_dkg::key_gen::message::Message<PublicId>;
-
-// Maximum number of DKG sessions we can observe at the same time. Normally there should be no
-// more than two DKG sessions at the time (one during normal section update, two during split), but
-// in the case of heavy churn there can be more. Note also that this applies to DKG observers only.
-// A DKG participant has always at most one active session.
-const MAX_OBSERVERS: usize = 20;
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
@@ -92,14 +85,14 @@ impl Debug for DkgKey {
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
     participant: Option<Participant>,
-    observers: LruCache<DkgKey, Observer>,
+    observers: HashMap<DkgKey, Observer>,
 }
 
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
             participant: None,
-            observers: LruCache::with_capacity(MAX_OBSERVERS),
+            observers: HashMap::new(),
         }
     }
 }
@@ -150,11 +143,17 @@ impl DkgVoter {
     }
 
     // Start a new DKG session as an observer.
-    pub fn start_observing(&mut self, dkg_key: DkgKey, elders_info: EldersInfo) {
+    pub fn start_observing(
+        &mut self,
+        dkg_key: DkgKey,
+        elders_info: EldersInfo,
+        section_key_index: u64,
+    ) {
         trace!("DKG for {} observing", elders_info);
 
         let _ = self.observers.entry(dkg_key).or_insert_with(|| Observer {
             elders_info,
+            section_key_index,
             accumulator: Default::default(),
         });
     }
@@ -281,29 +280,20 @@ impl DkgVoter {
         result: Result<bls::PublicKey, ()>,
         sender: PublicId,
     ) -> Option<(EldersInfo, Result<bls::PublicKey, ()>)> {
-        // Avoid updating the LRU list if the entry already exists or the sender is invalid.
-        if let Some(session) = self.observers.peek(dkg_key) {
-            if !session.elders_info.elders.contains_key(sender.name()) {
-                return None;
-            }
-
-            if session
-                .accumulator
-                .get(&result)
-                .map(|ids| ids.contains(&sender))
-                .unwrap_or(false)
-            {
-                return None;
-            }
-        }
-
         let session = self.observers.get_mut(dkg_key)?;
 
-        let _ = session
+        if !session.elders_info.elders.contains_key(sender.name()) {
+            return None;
+        }
+
+        if !session
             .accumulator
             .entry(result)
             .or_default()
-            .insert(sender);
+            .insert(sender)
+        {
+            return None;
+        }
 
         let total: usize = session.accumulator.values().map(|ids| ids.len()).sum();
         let missing = session.elders_info.elders.len() - total;
@@ -339,10 +329,19 @@ impl DkgVoter {
             }
         };
 
-        // Ok to `unwrap` because we already checked the entry exists.
-        let elders_info = self.observers.remove(dkg_key).unwrap().elders_info;
+        let elders_info = if result.is_ok() {
+            self.observers.remove(dkg_key).unwrap().elders_info
+        } else {
+            session.accumulator.clear();
+            session.elders_info.clone()
+        };
 
         Some((elders_info, result))
+    }
+
+    pub fn stop_observing(&mut self, section_key_index: u64) {
+        self.observers
+            .retain(|_, session| session.section_key_index >= section_key_index);
     }
 
     // Returns the timer token of the active DKG session if there is one. If this timer fires, we
@@ -373,5 +372,6 @@ struct Participant {
 #[derive(Default)]
 struct Observer {
     elders_info: EldersInfo,
+    section_key_index: u64,
     accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<PublicId>>,
 }
