@@ -85,7 +85,7 @@ impl Bootstrapping {
             | Variant::BouncedUnknownMessage { .. }
             | Variant::Vote { .. }
             | Variant::DKGResult { .. }
-            | Variant::DKGStart(_)
+            | Variant::DKGStart { .. }
             | Variant::DKGMessage { .. } => Ok(MessageStatus::Useless),
         }
     }

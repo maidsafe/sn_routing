@@ -99,7 +99,7 @@ impl Joining {
             | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGStart(_)
+            | Variant::DKGStart { .. }
             | Variant::DKGMessage { .. }
             | Variant::DKGResult { .. }
             | Variant::Vote { .. } => Ok(MessageStatus::Unknown),

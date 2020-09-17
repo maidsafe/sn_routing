@@ -273,32 +273,28 @@ impl Approved {
         }
     }
 
-    fn check_dkg(&mut self, core: &mut Core) -> Result<()> {
+    fn check_dkg(&mut self, core: &mut Core, dkg_key: DkgKey) -> Result<()> {
         match self.dkg_voter.check_dkg() {
             Some(Ok((elders_info, outcome))) => {
                 let public_key = outcome.public_key_set.public_key();
                 self.section_keys_provider
                     .insert_dkg_outcome(core.name(), &elders_info, outcome);
-                self.handle_dkg_result(core, elders_info, Ok(public_key), *core.id())
+                self.handle_dkg_result(core, dkg_key, Ok(public_key), *core.id())
             }
-            Some(Err(elders_info)) => {
-                self.handle_dkg_result(core, elders_info, Err(()), *core.id())
-            }
+            Some(Err(())) => self.handle_dkg_result(core, dkg_key, Err(()), *core.id()),
             None => Ok(()),
         }
     }
 
     fn progress_dkg(&mut self, core: &mut Core) -> Result<()> {
         match self.dkg_voter.progress_dkg(&mut core.rng) {
-            Some(Ok((dkg_key, messages))) => {
+            Some((dkg_key, Ok(messages))) => {
                 for message in messages {
                     self.broadcast_dkg_message(core, dkg_key, message)?;
                 }
-                self.check_dkg(core)
+                self.check_dkg(core, dkg_key)
             }
-            Some(Err(elders_info)) => {
-                self.handle_dkg_result(core, elders_info, Err(()), *core.id())
-            }
+            Some((dkg_key, Err(()))) => self.handle_dkg_result(core, dkg_key, Err(()), *core.id()),
             None => Ok(()),
         }
     }
@@ -343,7 +339,7 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DKGStart(elders_info) => {
+            Variant::DKGStart { elders_info, .. } => {
                 if !elders_info.elders.contains_key(our_id.name()) {
                     return Ok(MessageStatus::Useless);
                 }
@@ -841,12 +837,17 @@ impl Approved {
         )
     }
 
-    pub fn handle_dkg_start(&mut self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
+    pub fn handle_dkg_start(
+        &mut self,
+        core: &mut Core,
+        dkg_key: DkgKey,
+        new_elders_info: EldersInfo,
+    ) -> Result<()> {
         trace!("Received DKGStart({:?})", new_elders_info);
 
-        if let Some((dkg_key, message)) = self
-            .dkg_voter
-            .start_participating(&core.full_id, new_elders_info)
+        if let Some(message) =
+            self.dkg_voter
+                .start_participating(&core.full_id, dkg_key, new_elders_info)
         {
             self.dkg_voter
                 .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
@@ -859,21 +860,21 @@ impl Approved {
     pub fn handle_dkg_result(
         &mut self,
         core: &mut Core,
-        elders_info: EldersInfo,
+        dkg_key: DkgKey,
         result: Result<bls::PublicKey, ()>,
         sender: PublicId,
     ) -> Result<()> {
         if sender == *core.id() {
-            self.send_dkg_result(core, elders_info.clone(), result)?;
+            self.send_dkg_result(core, dkg_key, result)?;
         }
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
-        let result =
-            if let Some(result) = self.dkg_voter.observe_result(&elders_info, result, sender) {
-                result
+        let (elders_info, result) =
+            if let Some(output) = self.dkg_voter.observe_result(&dkg_key, result, sender) {
+                output
             } else {
                 return Ok(());
             };
@@ -933,7 +934,7 @@ impl Approved {
             let _ = self.broadcast_dkg_message(core, dkg_key, response);
         }
 
-        self.check_dkg(core)
+        self.check_dkg(core, dkg_key)
     }
 
     fn try_relay_message(&mut self, core: &mut Core, msg: &Message) -> Result<()> {
@@ -1551,6 +1552,8 @@ impl Approved {
     fn send_dkg_start(&mut self, core: &mut Core, new_elders_info: EldersInfo) -> Result<()> {
         trace!("Send DKGStart({:?})", new_elders_info);
 
+        let dkg_key = DkgKey::new(&new_elders_info);
+
         // Send to all participants.
         let recipients: Vec<_> = new_elders_info
             .elders
@@ -1559,7 +1562,10 @@ impl Approved {
             .copied()
             .collect();
 
-        let variant = Variant::DKGStart(new_elders_info.clone());
+        let variant = Variant::DKGStart {
+            dkg_key,
+            elders_info: new_elders_info.clone(),
+        };
         let message = self.to_accumulating_message(DstLocation::Direct, variant, None)?;
         let message = Message::single_src(
             &core.full_id,
@@ -1571,7 +1577,7 @@ impl Approved {
 
         core.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
 
-        self.dkg_voter.start_observing(new_elders_info);
+        self.dkg_voter.start_observing(dkg_key, new_elders_info);
 
         Ok(())
     }
@@ -1579,13 +1585,10 @@ impl Approved {
     fn send_dkg_result(
         &self,
         core: &mut Core,
-        elders_info: EldersInfo,
+        dkg_key: DkgKey,
         result: Result<bls::PublicKey, ()>,
     ) -> Result<()> {
-        let variant = Variant::DKGResult {
-            elders_info,
-            result,
-        };
+        let variant = Variant::DKGResult { dkg_key, result };
 
         let recipients = self
             .shared_state
@@ -1900,7 +1903,7 @@ impl Approved {
     pub(crate) fn complete_dkg(
         &mut self,
         core: &mut Core,
-        elders_info: EldersInfo,
+        elders_info: &EldersInfo,
         public_key_set: bls::PublicKeySet,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Result<()> {
@@ -1911,15 +1914,15 @@ impl Approved {
         if let Some(secret_key_share) = secret_key_share {
             self.section_keys_provider.insert_dkg_outcome(
                 core.name(),
-                &elders_info,
+                elders_info,
                 Outcome {
                     public_key_set,
                     secret_key_share,
                 },
             )
         }
-
-        self.handle_dkg_result(core, elders_info, Ok(public_key), *core.id())?;
+        let dkg_key = DkgKey::new(elders_info);
+        self.handle_dkg_result(core, dkg_key, Ok(public_key), *core.id())?;
 
         Ok(())
     }

@@ -208,7 +208,7 @@ impl Env {
 
     fn simulate_dkg(&mut self, new_info: &DkgToSectionInfo) -> Result<()> {
         self.subject.complete_dkg(
-            new_info.new_elders_info.clone(),
+            &new_info.new_elders_info,
             new_info.new_pk_set.clone(),
             new_info.secret_key_share.clone(),
         )

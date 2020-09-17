@@ -690,7 +690,10 @@ impl Node {
                         message.clone(),
                         src_key,
                     ),
-                Variant::DKGStart(info) => stage.handle_dkg_start(&mut self.core, info.clone())?,
+                Variant::DKGStart {
+                    dkg_key,
+                    elders_info,
+                } => stage.handle_dkg_start(&mut self.core, *dkg_key, elders_info.clone())?,
                 Variant::DKGMessage { dkg_key, message } => {
                     stage.handle_dkg_message(
                         &mut self.core,
@@ -699,13 +702,10 @@ impl Node {
                         *msg.src().as_node()?,
                     )?;
                 }
-                Variant::DKGResult {
-                    elders_info,
-                    result,
-                } => {
+                Variant::DKGResult { dkg_key, result } => {
                     stage.handle_dkg_result(
                         &mut self.core,
-                        elders_info.clone(),
+                        *dkg_key,
                         *result,
                         *msg.src().as_node()?,
                     )?;
@@ -1007,7 +1007,7 @@ impl Node {
     // Simulate DKG completion
     pub(crate) fn complete_dkg(
         &mut self,
-        elders_info: EldersInfo,
+        elders_info: &EldersInfo,
         public_key_set: bls::PublicKeySet,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Result<()> {

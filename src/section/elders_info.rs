@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto::Digest256, id::P2pNode, Prefix, XorName};
 #[cfg(test)]
 use crate::{id::FullId, rng::MainRng};
+use crate::{id::P2pNode, Prefix, XorName};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -39,25 +39,6 @@ impl EldersInfo {
     /// "field element" which is typically a numeric index.
     pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
         self.elders.keys().position(|other_name| other_name == name)
-    }
-
-    /// Calculate cryptographic hash of this EldersInfo.
-    pub(crate) fn hash(&self) -> Digest256 {
-        use tiny_keccak::{Hasher, Sha3};
-
-        // Calculate the hash without involving serialization to avoid having to return `Result`.
-        let mut hasher = Sha3::v256();
-
-        for name in self.elders.keys() {
-            hasher.update(&name.0);
-        }
-
-        hasher.update(&self.prefix.name().0);
-        hasher.update(&self.prefix.bit_count().to_le_bytes());
-
-        let mut output = Digest256::default();
-        hasher.finalize(&mut output);
-        output
     }
 }
 
