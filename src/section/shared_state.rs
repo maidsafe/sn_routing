@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
+use super::{quorum_count, EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
 use crate::{
     consensus::{Proof, Proven},
     error::Error,
@@ -241,20 +241,11 @@ impl SharedState {
 
         if expected_elders == current_elders {
             vec![]
+        } else if expected_elders.len() < quorum_count(current_elders.len()) {
+            warn!("ignore attempt to reduce the number of elders too much");
+            vec![]
         } else {
             let new_info = EldersInfo::new(expected_elders_map, self.our_info().prefix);
-
-            if new_info.elders.len() < network_params.elder_size
-                && self.our_info().elders.len() >= network_params.elder_size
-            {
-                warn!(
-                    "Dropping below elder_size ({}) elders (old: {:?}, new: {:?})",
-                    network_params.elder_size,
-                    self.our_info(),
-                    new_info
-                );
-            }
-
             vec![new_info]
         }
     }
