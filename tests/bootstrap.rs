@@ -11,18 +11,27 @@ mod utils;
 use futures::future::join_all;
 use sn_routing::{
     event::{Connected, Event},
-    Error, Node, Result,
+    rng::MainRng,
+    Error, FullId, Node, Result,
 };
 use utils::*;
 use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
-    let (node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
+    let full_id = FullId::gen(&mut MainRng::default());
+    let (node, mut event_stream) = TestNodeBuilder::new(None)
+        .first()
+        .full_id(full_id.clone())
+        .create()
+        .await?;
+
+    assert!(node.is_genesis());
+    assert_eq!(*full_id.public_id(), node.id().await);
 
     expect_next_event!(event_stream, Event::Connected(Connected::First))?;
     expect_next_event!(event_stream, Event::PromotedToElder)?;
-    assert!(node.is_genesis());
+
     assert!(node.is_elder().await);
 
     Ok(())

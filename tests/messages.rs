@@ -18,9 +18,10 @@ use utils::*;
 
 #[tokio::test]
 async fn test_messages_client_node() -> Result<()> {
-    let (node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
     let msg = b"hello!";
     let response = b"good bye!";
+
+    let (node, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -58,10 +59,10 @@ async fn test_messages_client_node() -> Result<()> {
 
 #[tokio::test]
 async fn test_messages_between_nodes() -> Result<()> {
-    let (mut node1, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
     let msg = b"hello!";
     let response = b"good bye!";
 
+    let (mut node1, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
     let node1_contact = node1.our_connection_info().await?;
     let node1_name = node1.name().await;
 

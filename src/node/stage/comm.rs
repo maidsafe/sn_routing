@@ -71,10 +71,13 @@ impl Comm {
         ))
     }
 
-    /// Starts listening for events returning a stream where to read them from.
-    pub fn listen_events(&mut self) -> Result<IncomingConnections> {
+    /// Starts listening for connections returning a stream where to read them from.
+    pub fn listen(&mut self) -> Result<IncomingConnections> {
         self.endpoint.listen().map_err(|err| {
-            Error::Unexpected(format!("Failed to start listening for messages: {}", err))
+            Error::Unexpected(format!(
+                "Failed to start listening for connections: {}",
+                err
+            ))
         })
     }
 

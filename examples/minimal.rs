@@ -37,7 +37,7 @@ use hex_fmt::HexFmt;
 use log::{debug, info, LevelFilter};
 use sn_routing::{
     event::{Connected, Event},
-    Node, NodeConfig, TransportConfig,
+    EventStream, Node, NodeConfig, TransportConfig,
 };
 use std::{
     collections::HashSet,
@@ -195,7 +195,7 @@ async fn start_node(
         transport_config,
         ..Default::default()
     };
-    let node = Node::new(config)
+    let (node, event_stream) = Node::new(config)
         .await
         .expect("Failed to instantiate a Node");
 
@@ -203,18 +203,14 @@ async fn start_node(
         .our_connection_info()
         .await
         .expect("Failed to obtain node's contact info.");
-    run_node(index, node).await;
+
+    run_node(index, event_stream).await;
 
     contact_info
 }
 
 // Runs the nodes event loop. Blocks until terminated.
-async fn run_node(index: usize, node: Node) {
-    let mut event_stream = node
-        .listen_events()
-        .await
-        .expect("Failed to start listening for events from node.");
-
+async fn run_node(index: usize, mut event_stream: EventStream) {
     tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             if !handle_event(index, event) {

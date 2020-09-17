@@ -35,9 +35,9 @@ impl EventStream {
     pub(crate) async fn new(
         stage: Arc<Mutex<Stage>>,
         xorname: XorName,
+        incoming_conns: IncomingConnections,
         is_genesis: bool,
     ) -> Result<Self> {
-        let incoming_conns = stage.lock().await.listen_events()?;
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         Self::spawn_connections_handler(stage, events_tx, incoming_conns, xorname, is_genesis);
 
