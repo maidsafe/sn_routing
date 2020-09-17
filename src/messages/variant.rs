@@ -74,18 +74,23 @@ pub(crate) enum Variant {
         message: Bytes,
     },
     /// Sent to the new elder candidates to start the DKG process.
-    DKGStart(EldersInfo),
+    DKGStart {
+        /// The identifier of the DKG session to start.
+        dkg_key: DkgKey,
+        /// The DKG particpants.
+        elders_info: EldersInfo,
+    },
     /// Message exchanged for DKG process.
     DKGMessage {
-        /// The identifier of the key_gen instance this message is about.
+        /// The identifier of the DKG session this message is for.
         dkg_key: DkgKey,
         /// The serialized DKG message.
         message: Bytes,
     },
     /// Message to notify current elders about the DKG result.
     DKGResult {
-        /// The `EldersInfo` the DKG is for.
-        elders_info: EldersInfo,
+        /// The identifier of the DKG session the result is for.
+        dkg_key: DkgKey,
         /// The result of the DKG.
         result: Result<bls::PublicKey, ()>,
     },
@@ -168,18 +173,22 @@ impl Debug for Variant {
                 .field("src_key", src_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGStart(info) => f.debug_tuple("DKGStart").field(info).finish(),
+            Self::DKGStart {
+                dkg_key,
+                elders_info,
+            } => f
+                .debug_struct("DKGStart")
+                .field("dkg_key", dkg_key)
+                .field("elders_info", elders_info)
+                .finish(),
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
                 .field("dkg_key", &dkg_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGResult {
-                elders_info,
-                result,
-            } => f
+            Self::DKGResult { dkg_key, result } => f
                 .debug_struct("DKGResult")
-                .field("elders_info", elders_info)
+                .field("dkg_key", dkg_key)
                 .field("result", result)
                 .finish(),
             Self::Vote {

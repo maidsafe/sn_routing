@@ -12,7 +12,7 @@ use crate::{
     rng::MainRng,
     section::{quorum_count, EldersInfo},
 };
-use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome, KeyGen};
+use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
@@ -20,6 +20,8 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug, Formatter},
 };
+
+pub type DkgMessage = bls_dkg::key_gen::message::Message<PublicId>;
 
 // Maximum number of DKG sessions we can observe at the same time. Normally there should be no
 // more than two DKG sessions at the time (one during normal section update, two during split), but
@@ -40,7 +42,22 @@ pub struct DkgKey(Digest256);
 
 impl DkgKey {
     pub fn new(elders_info: &EldersInfo) -> Self {
-        Self(elders_info.hash())
+        use tiny_keccak::{Hasher, Sha3};
+
+        // Calculate the hash without involving serialization to avoid having to return `Result`.
+        let mut hasher = Sha3::v256();
+
+        for name in elders_info.elders.keys() {
+            hasher.update(&name.0);
+        }
+
+        hasher.update(&elders_info.prefix.name().0);
+        hasher.update(&elders_info.prefix.bit_count().to_le_bytes());
+
+        let mut output = Digest256::default();
+        hasher.finalize(&mut output);
+
+        Self(output)
     }
 }
 
@@ -49,8 +66,6 @@ impl Debug for DkgKey {
         write!(f, "DkgKey({:10})", HexFmt(&self.0))
     }
 }
-
-pub type DkgStatus<T> = Option<Result<T, EldersInfo>>;
 
 /// DKG voter carries out the work of participating and/or observing a DKG.
 ///
@@ -77,7 +92,7 @@ pub type DkgStatus<T> = Option<Result<T, EldersInfo>>;
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
     participant: Option<Participant>,
-    observers: LruCache<EldersInfo, Observer>,
+    observers: LruCache<DkgKey, Observer>,
 }
 
 impl Default for DkgVoter {
@@ -95,14 +110,11 @@ impl DkgVoter {
     pub fn start_participating(
         &mut self,
         full_id: &FullId,
+        dkg_key: DkgKey,
         elders_info: EldersInfo,
-    ) -> Option<(DkgKey, DkgMessage<PublicId>)> {
-        if let Some(current_elders_info) = self
-            .participant
-            .as_ref()
-            .and_then(|session| session.elders_info.as_ref())
-        {
-            if *current_elders_info == elders_info {
+    ) -> Option<DkgMessage> {
+        if let Some(session) = &self.participant {
+            if session.dkg_key == dkg_key && session.elders_info.is_some() {
                 trace!("DKG for {} already in progress", elders_info);
                 return None;
             }
@@ -120,8 +132,6 @@ impl DkgVoter {
             Ok((key_gen, message)) => {
                 trace!("DKG for {} starting", elders_info);
 
-                let dkg_key = DkgKey::new(&elders_info);
-
                 self.participant = Some(Participant {
                     dkg_key,
                     key_gen,
@@ -129,7 +139,7 @@ impl DkgVoter {
                     timer_token: 0,
                 });
 
-                Some((dkg_key, message))
+                Some(message)
             }
             Err(error) => {
                 debug!("DKG for {} failed to start: {}", elders_info, error);
@@ -140,13 +150,13 @@ impl DkgVoter {
     }
 
     // Start a new DKG session as an observer.
-    pub fn start_observing(&mut self, elders_info: EldersInfo) {
+    pub fn start_observing(&mut self, dkg_key: DkgKey, elders_info: EldersInfo) {
         trace!("DKG for {} observing", elders_info);
 
-        let _ = self
-            .observers
-            .entry(elders_info)
-            .or_insert_with(Default::default);
+        let _ = self.observers.entry(dkg_key).or_insert_with(|| Observer {
+            elders_info,
+            accumulator: Default::default(),
+        });
     }
 
     // Check whether a key generator is finalized to give a DKG outcome.
@@ -157,7 +167,7 @@ impl DkgVoter {
     // - `None` if the DKG is still in progress or if there is no active DKG session.
     //
     // A returned `Some` should be sent to the DKG observers for accumulation.
-    pub fn check_dkg(&mut self) -> DkgStatus<(EldersInfo, Outcome)> {
+    pub fn check_dkg(&mut self) -> Option<Result<(EldersInfo, Outcome), ()>> {
         let session = self.participant.as_mut()?;
         let _ = session.elders_info.as_ref()?;
 
@@ -193,38 +203,36 @@ impl DkgVoter {
 
             self.participant = None;
 
-            Some(Err(elders_info))
+            Some(Err(()))
         }
     }
 
     // Make key generator progress with timed phase.
     //
     // Returns:
-    // - `Some(Ok((dkg_key, messages)))` if the DKG is still in progress. The returned messages
+    // - `Some((dkg_key, Ok(messages)))` if the DKG is still in progress. The returned messages
     //   should be broadcast to the other participants.
-    // - `Some(Err(elders_info))` if the DKG failed. The result should be sent to the DKG observers
+    // - `Some((dkg_key, Err(())))` if the DKG failed. The result should be sent to the DKG observers
     //   for accumulation.
     // - `None` if there is no active DKG session.
     pub fn progress_dkg(
         &mut self,
         rng: &mut MainRng,
-    ) -> DkgStatus<(DkgKey, Vec<DkgMessage<PublicId>>)> {
+    ) -> Option<(DkgKey, Result<Vec<DkgMessage>, ()>)> {
         let session = self.participant.as_mut()?;
         let elders_info = session.elders_info.as_ref()?;
 
         trace!("DKG for {} progressing", elders_info);
 
         match session.key_gen.timed_phase_transition(rng) {
-            Ok(messages) => Some(Ok((session.dkg_key, messages))),
+            Ok(messages) => Some((session.dkg_key, Ok(messages))),
             Err(error) => {
                 trace!("DKG for {} failed: {}", elders_info, error);
 
-                // This is OK to `unwrap` because we already checked it is `Some`.
-                let elders_info = session.elders_info.take().unwrap();
-
+                let dkg_key = session.dkg_key;
                 self.participant = None;
 
-                Some(Err(elders_info))
+                Some((dkg_key, Err(())))
             }
         }
     }
@@ -244,8 +252,8 @@ impl DkgVoter {
         &mut self,
         rng: &mut MainRng,
         dkg_key: &DkgKey,
-        message: DkgMessage<PublicId>,
-    ) -> Vec<DkgMessage<PublicId>> {
+        message: DkgMessage,
+    ) -> Vec<DkgMessage> {
         let session = if let Some(session) = &mut self.participant {
             session
         } else {
@@ -265,30 +273,31 @@ impl DkgVoter {
     // Observer and accumulate a DKG result (either success or failure).
     //
     // Returns:
-    // - `Some(Result)` if the results accumulated
+    // - `Some((EldersInfo, Result))` if the results accumulated
     // - `None` if more results are still needed
     pub fn observe_result(
         &mut self,
-        elders_info: &EldersInfo,
+        dkg_key: &DkgKey,
         result: Result<bls::PublicKey, ()>,
         sender: PublicId,
-    ) -> Option<Result<bls::PublicKey, ()>> {
-        if !elders_info.elders.contains_key(sender.name()) {
-            return None;
+    ) -> Option<(EldersInfo, Result<bls::PublicKey, ()>)> {
+        // Avoid updating the LRU list if the entry already exists or the sender is invalid.
+        if let Some(session) = self.observers.peek(dkg_key) {
+            if !session.elders_info.elders.contains_key(sender.name()) {
+                return None;
+            }
+
+            if session
+                .accumulator
+                .get(&result)
+                .map(|ids| ids.contains(&sender))
+                .unwrap_or(false)
+            {
+                return None;
+            }
         }
 
-        // Avoid updating the LRU list if the entry already exists.
-        if self
-            .observers
-            .peek(elders_info)
-            .and_then(|session| session.accumulator.get(&result))
-            .map(|ids| ids.contains(&sender))
-            .unwrap_or(false)
-        {
-            return None;
-        }
-
-        let session = self.observers.get_mut(elders_info)?;
+        let session = self.observers.get_mut(dkg_key)?;
 
         let _ = session
             .accumulator
@@ -297,10 +306,10 @@ impl DkgVoter {
             .insert(sender);
 
         let total: usize = session.accumulator.values().map(|ids| ids.len()).sum();
-        let missing = elders_info.elders.len() - total;
-        let quorum = quorum_count(elders_info.elders.len());
+        let missing = session.elders_info.elders.len() - total;
+        let quorum = quorum_count(session.elders_info.elders.len());
 
-        let output = if let Some((public_key, count)) = session
+        let result = if let Some((public_key, count)) = session
             .accumulator
             .iter()
             .filter_map(|(result, ids)| result.ok().map(|key| (key, ids.len())))
@@ -310,31 +319,30 @@ impl DkgVoter {
 
             if count >= quorum {
                 // Successful quorum reached
-                Some(Ok(public_key))
+                Ok(public_key)
             } else if count + missing >= quorum {
                 // Successful quorum is still possible
-                None
+                return None;
             } else {
                 // Successful quorum is no longer possible
-                Some(Err(()))
+                Err(())
             }
         } else {
             // No successful results yet
 
             if missing >= quorum {
                 // Successful quorum is still possible
-                None
+                return None;
             } else {
                 // Successful quorum is no longer possible
-                Some(Err(()))
+                Err(())
             }
         };
 
-        if output.is_some() {
-            let _ = self.observers.remove(elders_info);
-        }
+        // Ok to `unwrap` because we already checked the entry exists.
+        let elders_info = self.observers.remove(dkg_key).unwrap().elders_info;
 
-        output
+        Some((elders_info, result))
     }
 
     // Returns the timer token of the active DKG session if there is one. If this timer fires, we
@@ -364,5 +372,6 @@ struct Participant {
 // Data for a DKG observer.
 #[derive(Default)]
 struct Observer {
+    elders_info: EldersInfo,
     accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<PublicId>>,
 }
