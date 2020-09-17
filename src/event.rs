@@ -89,7 +89,10 @@ pub enum Event {
     },
     /// This node has started relocating to other section. Will be followed by
     /// `Connected(Relocate)` when the node finishes joining the destination section.
-    RelocationStarted,
+    RelocationStarted {
+        /// Previous name before relocation
+        previous_name: XorName,
+    },
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -140,7 +143,10 @@ impl Debug for Event {
                 .field("key", key)
                 .field("elders", elders)
                 .finish(),
-            Self::RelocationStarted => write!(formatter, "RelocationStarted"),
+            Self::RelocationStarted { previous_name } => formatter
+                .debug_struct("RelocationStarted")
+                .field("previous_name", previous_name)
+                .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
             Self::Terminated => write!(formatter, "Terminated"),
         }

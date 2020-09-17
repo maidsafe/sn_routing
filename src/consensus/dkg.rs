@@ -330,8 +330,10 @@ impl DkgVoter {
         };
 
         let elders_info = if result.is_ok() {
+            // On success, remove the sesssion because we don't need it anymore.
             self.observers.remove(dkg_key).unwrap().elders_info
         } else {
+            // On failure, only clear the accumulator to allow new votes from restarted DKG
             session.accumulator.clear();
             session.elders_info.clone()
         };

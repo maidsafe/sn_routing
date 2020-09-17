@@ -622,98 +622,72 @@ pub fn add_mature_nodes(
 
 /// Poll until all relocations complete, including secondary relocations triggered by previous
 /// relocations.
-/// `index_cache` is a map from names to indices from the time before the event that caused
 pub fn poll_until_all_relocations_complete(env: &Environment, nodes: &mut [TestNode]) {
-    const MAX_ITERATIONS: usize = 100;
-
-    for _ in 0..MAX_ITERATIONS {
-        // Detect all ongoing relocations.
-        let mut pending = BTreeSet::new();
-
-        for (index, node) in nodes.iter_mut().enumerate() {
-            while let Some(event) = node.try_recv_event() {
-                if matches!(event, Event::RelocationStarted) {
-                    let _ = pending.insert(index);
-                    break;
-                }
-            }
-        }
-
-        if pending.is_empty() {
-            return;
-        }
-
-        trace!(
-            "pending relocations: {}",
-            pending
-                .iter()
-                .map(|&index| nodes[index].name())
-                .format(", ")
-        );
-        poll_until_relocations_complete(env, nodes, pending);
-    }
-
-    panic!(
-        "poll_until_all_relocations_complete has been called {} times",
-        MAX_ITERATIONS
-    );
-}
-
-// Poll until the given relocations (given as a set of old names of the relocating nodes) all
-// complete.
-fn poll_until_relocations_complete(
-    env: &Environment,
-    nodes: &mut [TestNode],
-    mut pending_relocations: BTreeSet<usize>,
-) {
-    let mut old_names = HashMap::new();
+    let mut pending_relocations = HashMap::new();
+    let mut done = Vec::new();
 
     poll_until(env, nodes, |nodes| {
-        for index in pending_relocations.clone() {
-            if !old_names.contains_key(&index) {
-                while let Some(event) = nodes[index].try_recv_event() {
-                    if let Event::Connected(Connected::Relocate { previous_name }) = event {
-                        let _ = old_names.insert(index, previous_name);
-                        break;
+        for (index, node) in nodes.iter().enumerate() {
+            while let Some(event) = node.try_recv_event() {
+                match event {
+                    Event::RelocationStarted { previous_name } => {
+                        let _ = pending_relocations.insert(previous_name, (index, None));
                     }
+                    Event::Connected(Connected::Relocate { previous_name }) => {
+                        let _ =
+                            pending_relocations.insert(previous_name, (index, Some(*node.name())));
+                    }
+                    _ => {}
                 }
             }
+        }
 
-            let old_name = if let Some(name) = old_names.get(&index) {
+        for (old_name, (index, new_name)) in &pending_relocations {
+            let new_name = if let Some(name) = new_name {
                 name
             } else {
-                trace!(
-                    "pending relocation: {} not reconnected",
-                    nodes[index].name()
-                );
-                return false;
+                trace!("pending relocation: {} have not reconnected", old_name);
+                continue;
             };
-
-            let new_name = nodes[index].name();
 
             if !node_left(nodes, old_name) {
                 trace!(
-                    "pending relocation: {} (was {}) have not left the source section according to some nodes",
+                    "pending relocation: {} (was {}) is not seen as leaving the source section",
                     new_name,
                     old_name
                 );
-                return false;
+                continue;
             }
 
-            if !node_joined(nodes, index) {
+            if !node_joined(nodes, *index) {
                 trace!(
-                    "pending relocation: {} (was {}) have not joined the target section according to some nodes",
+                    "pending relocation: {} (was {}) is not seen as joining the target section",
                     new_name,
                     old_name,
                 );
-                return false;
+                continue;
             }
 
             trace!("relocation complete: {} -> {}", old_name, new_name);
-            let _ = pending_relocations.remove(&index);
+            done.push(*old_name);
         }
 
-        true
+        for name in done.drain(..) {
+            let _ = pending_relocations.remove(&name);
+        }
+
+        if pending_relocations.is_empty() {
+            true
+        } else {
+            trace!(
+                "pending relocations: {}",
+                pending_relocations
+                    .iter()
+                    .map(|(name, _)| name)
+                    .format(", ")
+            );
+            false
+        }
     })
 }
 
