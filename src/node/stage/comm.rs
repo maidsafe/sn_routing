@@ -154,4 +154,17 @@ impl Comm {
             .await
             .map_err(Error::Network)
     }
+
+    pub async fn remove_conn_from_cache(&mut self, addr: &SocketAddr) {
+        if self.node_conns.lock().await.remove(addr).is_none() {
+            trace!(
+                "Connection with {} was not in the cache when trying to remove it.",
+                addr
+            );
+        }
+    }
+
+    pub async fn drop_node_conns(&mut self) {
+        self.node_conns.lock().await.clear();
+    }
 }

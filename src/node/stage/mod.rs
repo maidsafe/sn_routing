@@ -222,8 +222,7 @@ impl Stage {
         self.comm.send_message_to_target(recipient, msg).await
     }
 
-    /// Process a message accordng to ccurrent stage.
-    /// This function may return an Event that needs to be reported to the user.
+    /// Process a message accordng to current stage.
     pub async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         if !self.in_dst_location(&msg).await? {
             return Ok(());

@@ -145,8 +145,6 @@ impl SharedState {
             .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.name()))
     }
 
-    // TODO: review if we still need this function
-    /*
     /// Returns all nodes we know (our members + neighbour elders).
     pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
@@ -154,7 +152,6 @@ impl SharedState {
             .map(|info| &info.p2p_node)
             .chain(self.sections.neighbour_elders())
     }
-    */
 
     /// Returns our members that are either joined or are left but still elders.
     pub fn active_members(&self) -> impl Iterator<Item = &P2pNode> {
