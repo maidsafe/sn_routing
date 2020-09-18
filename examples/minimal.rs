@@ -34,7 +34,7 @@
 //!
 
 use hex_fmt::HexFmt;
-use log::{debug, info, LevelFilter};
+use log::{info, LevelFilter};
 use sn_routing::{
     event::{Connected, Event},
     EventStream, Node, NodeConfig, TransportConfig,
@@ -204,16 +204,16 @@ async fn start_node(
         .await
         .expect("Failed to obtain node's contact info.");
 
-    run_node(index, event_stream).await;
+    run_node(index, node, event_stream).await;
 
     contact_info
 }
 
 // Runs the nodes event loop. Blocks until terminated.
-async fn run_node(index: usize, mut event_stream: EventStream) {
+async fn run_node(index: usize, mut node: Node, mut event_stream: EventStream) {
     tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
-            if !handle_event(index, event) {
+            if !handle_event(index, &mut node, event).await {
                 break;
             }
         }
@@ -221,7 +221,7 @@ async fn run_node(index: usize, mut event_stream: EventStream) {
 }
 
 // Handles the event emitted by the node.
-fn handle_event(index: usize, event: Event) -> bool {
+async fn handle_event(index: usize, node: &mut Node, event: Event) -> bool {
     match event {
         Event::Connected(Connected::First) => {
             info!("Node #{} connected", index,);
@@ -231,7 +231,7 @@ fn handle_event(index: usize, event: Event) -> bool {
                 "Node #{} relocated - old name: {}, new name: {}",
                 index,
                 previous_name,
-                node.name()
+                node.name().await
             );
         }
         Event::PromotedToElder => {

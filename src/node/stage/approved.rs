@@ -31,7 +31,6 @@ use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use itertools::Itertools;
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 // TODO: review if we still need to set a timer for DKG
@@ -84,7 +83,6 @@ impl Approved {
         &mut self,
         sender: SocketAddr,
         msg: Message,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<Option<Bootstrapping>> {
         trace!("Got {:?}", msg);
         // Filter messages which were already handled
@@ -96,8 +94,7 @@ impl Approved {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 self.update_section_knowledge(&msg).await?;
-                self.handle_useful_message(Some(sender), msg, events_tx)
-                    .await
+                self.handle_useful_message(Some(sender), msg).await
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {}: {:?} ", sender, msg);
@@ -172,17 +169,9 @@ impl Approved {
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
-    async fn handle_unordered_vote(
-        &mut self,
-        vote: Vote,
-        proof_share: ProofShare,
-        events_tx: &mut mpsc::Sender<Event>,
-    ) -> Result<()> {
+    async fn handle_unordered_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<()> {
         match self.vote_accumulator.add(vote, proof_share) {
-            Ok((vote, proof)) => {
-                self.handle_unordered_consensus(vote, proof, events_tx)
-                    .await
-            }
+            Ok((vote, proof)) => self.handle_unordered_consensus(vote, proof).await,
             Err(AccumulationError::NotEnoughShares) => Ok(()),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
@@ -336,12 +325,6 @@ impl Approved {
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
 
-    async fn send_event(&self, events_tx: &mut mpsc::Sender<Event>, event: Event) {
-        if let Err(err) = events_tx.send(event).await {
-            error!("Error reporting new Event: {} - {:?}", err, err);
-        }
-    }
-
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         let our_id = self.node_info.full_id.public_id();
 
@@ -427,7 +410,6 @@ impl Approved {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
-        mut events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<Option<Bootstrapping>> {
         self.msg_filter.insert_incoming(&msg);
         match msg.variant() {
@@ -439,13 +421,13 @@ impl Approved {
                 Ok(None)
             }
             Variant::Sync(shared_state) => {
-                self.handle_sync(shared_state.clone(), events_tx).await?;
+                self.handle_sync(shared_state.clone()).await?;
                 Ok(None)
             }
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
-                match self.handle_relocate(signed_relocate, events_tx).await {
+                match self.handle_relocate(signed_relocate).await {
                     Some(RelocateParams {
                         conn_infos,
                         details,
@@ -466,7 +448,7 @@ impl Approved {
                 }
             }
             Variant::RelocatePromise(promise) => {
-                self.handle_relocate_promise(*promise, msg.to_bytes(), events_tx)
+                self.handle_relocate_promise(*promise, msg.to_bytes())
                     .await?;
                 Ok(None)
             }
@@ -493,15 +475,13 @@ impl Approved {
                 Ok(None)
             }
             Variant::UserMessage(content) => {
-                self.send_event(
-                    &mut events_tx,
-                    Event::MessageReceived {
+                self.node_info
+                    .send_event(Event::MessageReceived {
                         content: content.clone(),
                         src: msg.src().src_location(),
                         dst: *msg.dst(),
-                    },
-                )
-                .await;
+                    })
+                    .await;
                 Ok(None)
             }
             Variant::BouncedUntrustedMessage(message) => {
@@ -546,7 +526,7 @@ impl Approved {
                 proof_share,
             } => {
                 let result = self
-                    .handle_unordered_vote(content.clone(), proof_share.clone(), events_tx)
+                    .handle_unordered_vote(content.clone(), proof_share.clone())
                     .await;
                 if let Some(addr) = sender {
                     self.check_lagging(&addr, proof_share).await?;
@@ -753,11 +733,7 @@ impl Approved {
         }
     }
 
-    async fn handle_sync(
-        &mut self,
-        shared_state: SharedState,
-        events_tx: &mut mpsc::Sender<Event>,
-    ) -> Result<()> {
+    async fn handle_sync(&mut self, shared_state: SharedState) -> Result<()> {
         if !shared_state
             .our_prefix()
             .matches(self.node_info.full_id.public_id().name())
@@ -766,13 +742,12 @@ impl Approved {
             return Ok(());
         }
 
-        self.update_shared_state(shared_state, events_tx).await
+        self.update_shared_state(shared_state).await
     }
 
     async fn handle_relocate(
         &mut self,
         signed_msg: SignedRelocateDetails,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Option<RelocateParams> {
         if signed_msg.relocate_details().pub_id != *self.node_info.full_id.public_id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
@@ -786,13 +761,11 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            self.send_event(
-                events_tx,
-                Event::RelocationStarted {
+            self.node_info
+                .send_event(Event::RelocationStarted {
                     previous_name: *self.node_info.full_id.public_id().name(),
-                },
-            )
-            .await;
+                })
+                .await;
         }
 
         let conn_infos: Vec<_> = self
@@ -822,20 +795,17 @@ impl Approved {
         &mut self,
         promise: RelocatePromise,
         msg_bytes: Bytes,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
         if promise.name == *self.node_info.full_id.public_id().name() {
             // Store the `RelocatePromise` message and send it back after we are demoted.
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                self.send_event(
-                    events_tx,
-                    Event::RelocationStarted {
+                self.node_info
+                    .send_event(Event::RelocationStarted {
                         previous_name: *self.node_info.full_id.public_id().name(),
-                    },
-                )
-                .await;
+                    })
+                    .await;
             } else {
                 trace!("ignore RelocatePromise - already have one");
             }
@@ -1264,12 +1234,7 @@ impl Approved {
                 <= self.node_info.network_params.recommended_section_size
     }
 
-    async fn handle_unordered_consensus(
-        &mut self,
-        vote: Vote,
-        proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
-    ) -> Result<()> {
+    async fn handle_unordered_consensus(&mut self, vote: Vote, proof: Proof) -> Result<()> {
         debug!("handle consensus on {:?}", vote);
 
         match vote {
@@ -1278,31 +1243,15 @@ impl Approved {
                 previous_name,
                 their_knowledge,
             } => {
-                self.handle_online_event(
-                    member_info,
-                    previous_name,
-                    their_knowledge,
-                    proof,
-                    events_tx,
-                )
-                .await
-            }
-            Vote::Offline(member_info) => {
-                self.handle_offline_event(member_info, proof, events_tx)
+                self.handle_online_event(member_info, previous_name, their_knowledge, proof)
                     .await
             }
+            Vote::Offline(member_info) => self.handle_offline_event(member_info, proof).await,
             Vote::SectionInfo(elders_info) => {
-                self.handle_section_info_event(elders_info, proof, events_tx)
-                    .await
+                self.handle_section_info_event(elders_info, proof).await
             }
-            Vote::OurKey { prefix, key } => {
-                self.handle_our_key_event(prefix, key, proof, events_tx)
-                    .await
-            }
-            Vote::TheirKey { prefix, key } => {
-                self.handle_their_key_event(prefix, key, proof, events_tx)
-                    .await
-            }
+            Vote::OurKey { prefix, key } => self.handle_our_key_event(prefix, key, proof).await,
+            Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof).await,
             Vote::TheirKnowledge { prefix, key_index } => {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
                 Ok(())
@@ -1320,7 +1269,6 @@ impl Approved {
         previous_name: Option<XorName>,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
         let p2p_node = member_info.p2p_node.clone();
         let age = member_info.age;
@@ -1338,35 +1286,26 @@ impl Approved {
         self.print_network_stats();
 
         if let Some(previous_name) = previous_name {
-            self.send_event(
-                events_tx,
-                Event::MemberJoined {
+            self.node_info
+                .send_event(Event::MemberJoined {
                     name: *p2p_node.name(),
                     previous_name,
                     age,
-                },
-            )
-            .await;
+                })
+                .await;
         } else {
-            self.send_event(
-                events_tx,
-                Event::InfantJoined {
+            self.node_info
+                .send_event(Event::InfantJoined {
                     name: *p2p_node.name(),
                     age,
-                },
-            )
-            .await;
+                })
+                .await;
         }
 
         self.promote_and_demote_elders().await
     }
 
-    async fn handle_offline_event(
-        &mut self,
-        member_info: MemberInfo,
-        proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
-    ) -> Result<()> {
+    async fn handle_offline_event(&mut self, member_info: MemberInfo, proof: Proof) -> Result<()> {
         let p2p_node = member_info.p2p_node.clone();
         let age = member_info.age;
         let signature = proof.signature.clone();
@@ -1382,14 +1321,12 @@ impl Approved {
         // TODO ??
         //core.transport.disconnect(*p2p_node.peer_addr());
 
-        self.send_event(
-            events_tx,
-            Event::MemberLeft {
+        self.node_info
+            .send_event(Event::MemberLeft {
                 name: *p2p_node.name(),
                 age,
-            },
-        )
-        .await;
+            })
+            .await;
 
         self.promote_and_demote_elders().await
     }
@@ -1398,7 +1335,6 @@ impl Approved {
         &mut self,
         elders_info: EldersInfo,
         proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
         let elders_info = Proven::new(elders_info, proof);
 
@@ -1413,7 +1349,7 @@ impl Approved {
                 self.node_info.full_id.public_id().name(),
                 elders_info,
             );
-            self.try_update_our_section(events_tx).await
+            self.try_update_our_section().await
         } else {
             // Other section
             self.update_neighbour_info(elders_info);
@@ -1426,7 +1362,6 @@ impl Approved {
         prefix: Prefix,
         key: bls::PublicKey,
         proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
         let key = Proven::new(key, proof);
 
@@ -1436,7 +1371,7 @@ impl Approved {
             &prefix,
             key,
         );
-        self.try_update_our_section(events_tx).await
+        self.try_update_our_section().await
     }
 
     async fn handle_their_key_event(
@@ -1444,7 +1379,6 @@ impl Approved {
         prefix: Prefix,
         key: bls::PublicKey,
         proof: Proof,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<()> {
         let key = Proven::new((prefix, key), proof);
 
@@ -1454,7 +1388,7 @@ impl Approved {
                 self.node_info.full_id.public_id().name(),
                 key,
             );
-            self.try_update_our_section(events_tx).await
+            self.try_update_our_section().await
         } else {
             let _ = self.shared_state.update_their_key(key);
             Ok(())
@@ -1512,14 +1446,14 @@ impl Approved {
             .await
     }
 
-    async fn try_update_our_section(&mut self, events_tx: &mut mpsc::Sender<Event>) -> Result<()> {
+    async fn try_update_our_section(&mut self) -> Result<()> {
         let (our, sibling) = self
             .section_update_barrier
             .take(self.shared_state.our_prefix());
 
         if let Some(our) = our {
             trace!("update our section: {:?}", our.our_info());
-            self.update_shared_state(our, events_tx).await?;
+            self.update_shared_state(our).await?;
         }
 
         if let Some(sibling) = sibling {
@@ -1540,11 +1474,7 @@ impl Approved {
         Ok(())
     }
 
-    async fn update_shared_state(
-        &mut self,
-        update: SharedState,
-        mut events_tx: &mut mpsc::Sender<Event>,
-    ) -> Result<()> {
+    async fn update_shared_state(&mut self, update: SharedState) -> Result<()> {
         let old_is_elder = self.is_our_elder(self.node_info.full_id.public_id());
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
@@ -1599,9 +1529,8 @@ impl Approved {
                 self.send_sync(self.shared_state.clone()).await?;
             }
 
-            self.send_event(
-                &mut events_tx,
-                Event::EldersChanged {
+            self.node_info
+                .send_event(Event::EldersChanged {
                     prefix: *self.shared_state.our_prefix(),
                     key: *self.shared_state.our_history.last_key(),
                     elders: self
@@ -1611,14 +1540,13 @@ impl Approved {
                         .keys()
                         .copied()
                         .collect(),
-                },
-            )
-            .await;
+                })
+                .await;
         }
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            self.send_event(events_tx, Event::PromotedToElder).await;
+            self.node_info.send_event(Event::PromotedToElder).await;
 
             // Ping all members to detect recent lost nodes for which the section might need
             // our Offline vote.
@@ -1637,7 +1565,7 @@ impl Approved {
             info!("Demoted");
             self.shared_state.demote();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            self.send_event(events_tx, Event::Demoted).await;
+            self.node_info.send_event(Event::Demoted).await;
         }
 
         if !new_is_elder {
