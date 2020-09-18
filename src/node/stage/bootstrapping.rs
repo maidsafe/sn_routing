@@ -23,8 +23,6 @@ use xor_name::Prefix;
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {
-    // Using `FxHashSet` for deterministic iteration order.
-    // TODO - we may not need it anymore: pending_requests: FxHashSet<SocketAddr>,
     relocate_details: Option<SignedRelocateDetails>,
     node_info: NodeInfo,
     comm: Comm,
@@ -111,17 +109,6 @@ impl Bootstrapping {
         sender: P2pNode,
         response: BootstrapResponse,
     ) -> Result<Option<JoinParams>> {
-        // TODO: do we really need to keep track of which peers we are trying to bootstrap to?
-        // Ignore messages from peers we didn't send `BootstrapRequest` to.
-        /*if !self.pending_requests.contains(sender.peer_addr()) {
-            debug!(
-                "Ignoring BootstrapResponse from unexpected peer: {}",
-                sender,
-            );
-            core.transport.disconnect(*sender.peer_addr());
-            return Ok(None);
-        }*/
-
         match response {
             BootstrapResponse::Join {
                 elders_info,
@@ -167,10 +154,9 @@ impl Bootstrapping {
     }
 
     async fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
-        // TODO???
-        /*for addr in self.pending_requests.drain() {
-            core.transport.disconnect(addr);
-        }*/
+        // We clear the connections cache to drop all
+        // currently opened connections to peers.
+        self.comm.drop_node_conns().await;
 
         for conn_info in new_conn_infos {
             self.send_bootstrap_request(conn_info).await?;
@@ -195,6 +181,7 @@ impl Bootstrapping {
         );
 
         // FIXME: do we need to reuse MainRng everywhere really??
+        // This will currently break tests.
         let mut rng = crate::rng::MainRng::default();
         let new_full_id = FullId::within_range(&mut rng, &name_prefix.range_inclusive());
         let relocate_payload = RelocatePayload::new(

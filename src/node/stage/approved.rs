@@ -776,14 +776,13 @@ impl Approved {
             .collect();
 
         // Disconnect from everyone we know.
-        // TODO????
-        /*for addr in self
+        for addr in self
             .shared_state
             .known_nodes()
             .map(|node| *node.peer_addr())
         {
-            core.transport.disconnect(addr);
-        }*/
+            self.comm.remove_conn_from_cache(&addr).await;
+        }
 
         Some(RelocateParams {
             details: signed_msg,
@@ -1088,10 +1087,12 @@ impl Approved {
 
         // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
         // TODO ??
+        /*
         if !responses.is_empty() {
-            //self.dkg_voter
-            //    .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+            self.dkg_voter
+                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
         }
+        */
 
         for response in responses {
             let _ = self.broadcast_dkg_message(dkg_key, response).await;
@@ -1318,8 +1319,7 @@ impl Approved {
         info!("handle Offline: {}", p2p_node);
 
         self.increment_ages(p2p_node.name(), &signature).await?;
-        // TODO ??
-        //core.transport.disconnect(*p2p_node.peer_addr());
+        self.comm.remove_conn_from_cache(p2p_node.peer_addr()).await;
 
         self.node_info
             .send_event(Event::MemberLeft {
@@ -1352,7 +1352,7 @@ impl Approved {
             self.try_update_our_section().await
         } else {
             // Other section
-            self.update_neighbour_info(elders_info);
+            self.update_neighbour_info(elders_info).await;
             Ok(())
         }
     }
@@ -1484,7 +1484,8 @@ impl Approved {
         self.shared_state.merge(update)?;
 
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
-        self.prune_neighbour_connections(&neighbour_elders_removed);
+        self.prune_neighbour_connections(&neighbour_elders_removed)
+            .await;
 
         self.section_keys_provider
             .finalise_dkg(self.shared_state.our_history.last_key());
@@ -1575,11 +1576,12 @@ impl Approved {
         Ok(())
     }
 
-    fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) {
+    async fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) {
         let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         let _ = self.shared_state.update_neighbour_info(elders_info);
         let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
-        self.prune_neighbour_connections(&neighbour_elders_removed);
+        self.prune_neighbour_connections(&neighbour_elders_removed)
+            .await;
     }
 
     /* FIXME: bring back unresponsiveness detection
@@ -1994,7 +1996,10 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     // Disconnect from peers that are no longer elders of neighbour sections.
-    fn prune_neighbour_connections(&mut self, neighbour_elders_removed: &NeighbourEldersRemoved) {
+    async fn prune_neighbour_connections(
+        &mut self,
+        neighbour_elders_removed: &NeighbourEldersRemoved,
+    ) {
         for p2p_node in &neighbour_elders_removed.0 {
             // The peer might have been relocated from a neighbour to us - in that case do not
             // disconnect from them.
@@ -2002,7 +2007,7 @@ impl Approved {
                 continue;
             }
 
-            //TODO??? core.transport.disconnect(*p2p_node.peer_addr());
+            self.comm.remove_conn_from_cache(p2p_node.peer_addr()).await;
         }
     }
 

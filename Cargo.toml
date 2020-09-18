@@ -33,7 +33,7 @@ rand = "~0.7.3"
 rand_core = "~0.5.1"
 rand_os = "~0.2.2"
 rand_xorshift = "~0.2.0"
-bls_signature_aggregator = "~0.1.0"
+bls_signature_aggregator = { git = "https://github.com/madadam/bls_signature_aggregator.git", branch = "repetition" }
 serde = { version = "1.0.111", features = ["derive" ,"rc"] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 tokio = { version = "~0.2.5", features = ["sync"] }
@@ -53,6 +53,3 @@ mock = [
     "env_logger",
     "bls_signature_aggregator/mock_timer"
 ]
-
-[patch.crates-io]
-bls_signature_aggregator = { git = "https://github.com/madadam/bls_signature_aggregator.git", branch = "repetition" }

@@ -45,7 +45,7 @@ impl<'a> TestNodeBuilder {
                 .init()
         });
 
-        let config = config.unwrap_or_else(|| NodeConfig::default());
+        let config = config.unwrap_or_else(NodeConfig::default);
 
         Self { config }
     }
@@ -119,12 +119,12 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
     let our_prefix = node
         .our_prefix()
         .await
-        .ok_or(Error::Unexpected("Failed to get node's prefix".to_string()))?;
+        .ok_or_else(|| Error::Unexpected("Failed to get node's prefix".to_string()))?;
 
     let our_section_elders: BTreeSet<_> = node
         .our_section()
         .await
-        .ok_or(Error::Unexpected("Failed to get node's prefix".to_string()))?
+        .ok_or_else(|| Error::Unexpected("Failed to get node's prefix".to_string()))?
         .elders
         .keys()
         .copied()
