@@ -18,7 +18,6 @@ use crate::{
     section::{EldersInfo, SharedState},
 };
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 // TODO: review if we still need to set a timeout for joining
@@ -66,7 +65,6 @@ impl Joining {
         &mut self,
         sender: SocketAddr,
         msg: Message,
-        events_tx: &mut mpsc::Sender<Event>,
     ) -> Result<Option<Approved>> {
         trace!("Got {:?}", msg);
         match self.decide_message_status(&msg)? {
@@ -100,9 +98,9 @@ impl Joining {
                         self.node_info.clone(),
                     )?;
 
-                    if let Err(err) = events_tx.send(Event::Connected(connect_type)).await {
-                        error!("Error reporting new Event: {:?}", err);
-                    }
+                    self.node_info
+                        .send_event(Event::Connected(connect_type))
+                        .await;
 
                     Ok(Some(new_stage))
                 }
