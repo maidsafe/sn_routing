@@ -62,21 +62,25 @@ impl<'a> TestNodeBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn elder_size(mut self, size: usize) -> Self {
         self.config.network_params.elder_size = size;
         self
     }
 
+    #[allow(dead_code)]
     pub fn recommended_section_size(mut self, size: usize) -> Self {
         self.config.network_params.recommended_section_size = size;
         self
     }
 
+    #[allow(dead_code)]
     pub fn transport_config(mut self, config: TransportConfig) -> Self {
         self.config.transport_config = config;
         self
     }
 
+    #[allow(dead_code)]
     pub fn full_id(mut self, full_id: FullId) -> Self {
         self.config.full_id = Some(full_id);
         self
@@ -112,6 +116,7 @@ macro_rules! expect_next_event {
     };
 }
 
+#[allow(dead_code)]
 pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Result<()> {
     let our_name = node.name().await;
     assert!(node.matches_our_prefix(&our_name).await?);
