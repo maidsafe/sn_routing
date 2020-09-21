@@ -55,6 +55,7 @@ impl Env {
         let (subject, ..) = Node::approved(
             NodeConfig {
                 network_params: NETWORK_PARAMS,
+                rng: rng::new_from(&mut rng),
                 ..Default::default()
             },
             shared_state,
