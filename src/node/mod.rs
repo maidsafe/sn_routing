@@ -23,7 +23,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     log_utils,
     network_params::NetworkParams,
-    rng::{self, MainRng},
+    rng::MainRng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -48,9 +48,6 @@ pub struct NodeConfig {
     pub transport_config: TransportConfig,
     /// Global network parameters. Must be identical for all nodes in the network.
     pub network_params: NetworkParams,
-    /// Random number generator to be used by the node. Can be used to achieve repeatable tests by
-    /// providing a pre-seeded RNG. By default uses a random seed provided by the OS.
-    pub rng: MainRng,
 }
 
 impl Default for NodeConfig {
@@ -60,7 +57,6 @@ impl Default for NodeConfig {
             full_id: None,
             transport_config: TransportConfig::default(),
             network_params: NetworkParams::default(),
-            rng: rng::new(),
         }
     }
 }
@@ -75,7 +71,6 @@ impl Default for NodeConfig {
 #[derive(Clone)]
 pub struct Node {
     stage: Arc<Mutex<Stage>>,
-    is_genesis: bool,
 }
 
 impl Node {
@@ -85,7 +80,7 @@ impl Node {
 
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
-        let mut rng = config.rng;
+        let mut rng = MainRng::default();
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let node_name = *full_id.public_id().name();
         let transport_config = config.transport_config;
@@ -93,7 +88,7 @@ impl Node {
         let is_genesis = config.first;
 
         let (stage, incoming_conns, timer_rx, events_rx) = if is_genesis {
-            match Stage::first_node(transport_config, full_id, network_params, rng).await {
+            match Stage::first_node(transport_config, full_id, network_params).await {
                 Ok(stage_and_conns_stream) => {
                     info!("{} Started a new network as a seed node.", node_name);
                     stage_and_conns_stream
@@ -106,7 +101,7 @@ impl Node {
             }
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(transport_config, full_id, network_params, rng).await?
+            Stage::bootstrap(transport_config, full_id, network_params).await?
         };
 
         let stage = Arc::new(Mutex::new(stage));
@@ -120,12 +115,7 @@ impl Node {
         )
         .await?;
 
-        Ok((Self { stage, is_genesis }, event_stream))
-    }
-
-    /// Is this the genesis node or not
-    pub fn is_genesis(&self) -> bool {
-        self.is_genesis
+        Ok((Self { stage }, event_stream))
     }
 
     /// Returns the `PublicId` of this node.
@@ -160,10 +150,15 @@ impl Node {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        let name = self.name().await;
-        match self.stage.lock().await.approved() {
+        let stage = self.stage.lock().await;
+        match stage.approved() {
             None => false,
-            Some(stage) => stage.shared_state.sections.our().elders.contains_key(&name),
+            Some(state) => state
+                .shared_state
+                .sections
+                .our()
+                .elders
+                .contains_key(stage.full_id().public_id().name()),
         }
     }
 

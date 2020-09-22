@@ -132,6 +132,7 @@ impl Approved {
     }
 
     // Cast a vote that doesn't need total order, only section consensus.
+    #[async_recursion]
     async fn cast_unordered_vote(&mut self, vote: Vote) -> Result<()> {
         trace!("Vote for {:?}", vote);
 
@@ -176,13 +177,8 @@ impl Approved {
             .await?;
 
         // We need to relay it to ourself as well
-        // TODO: don't send it over the wire but just internally,
-        // making sure we don't create a recursive call.
-        self.comm
-            .send_message_to_target(&self.comm.our_connection_info()?, message.to_bytes())
-            .await?;
-
-        Ok(())
+        // TODO: remove the recursion caused by this call.
+        self.handle_unordered_vote(vote, proof_share).await
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
@@ -1770,6 +1766,7 @@ impl Approved {
         Ok(())
     }
 
+    #[async_recursion]
     async fn broadcast_dkg_message(
         &mut self,
         dkg_key: DkgKey,
@@ -1801,13 +1798,13 @@ impl Approved {
             .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
             .await?;
 
-        // TODO: don't send it over the wire but just internally,
-        // making sure we don't create a recursive call.
-        self.comm
-            .send_message_to_target(&self.comm.our_connection_info()?, message.to_bytes())
-            .await?;
-
-        Ok(())
+        // TODO: remove the recursion caused by this call.
+        self.handle_dkg_message(
+            dkg_key,
+            dkg_message_bytes,
+            *self.node_info.full_id.public_id(),
+        )
+        .await
     }
 
     // Send message over the network.
