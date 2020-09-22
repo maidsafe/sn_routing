@@ -17,7 +17,7 @@ use futures::lock::Mutex;
 use hex_fmt::HexFmt;
 use lru_time_cache::LruCache;
 use qp2p::{Config, Connection, Endpoint, IncomingConnections, QuicP2p};
-use std::{boxed::Box, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 // Number of Connections to maintain in the cache
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
@@ -25,22 +25,22 @@ const CONNECTIONS_CACHE_SIZE: usize = 1024;
 // Communication component of the node to interact with other nodes.
 #[derive(Clone)]
 pub(crate) struct Comm {
-    quic_p2p: Arc<Box<QuicP2p>>,
-    endpoint: Arc<Box<Endpoint>>,
+    quic_p2p: Arc<QuicP2p>,
+    endpoint: Arc<Endpoint>,
     node_conns: Arc<Mutex<LruCache<SocketAddr, Connection>>>,
 }
 
 impl Comm {
     pub async fn new(transport_config: Config) -> Result<Self> {
-        let quic_p2p = Arc::new(Box::new(QuicP2p::with_config(
+        let quic_p2p = Arc::new(QuicP2p::with_config(
             Some(transport_config),
             Default::default(),
             true,
-        )?));
+        )?);
 
         // Don't bootstrap, just create an endpoint where to listen to
         // the incoming messages from other nodes.
-        let endpoint = Arc::new(Box::new(quic_p2p.new_endpoint()?));
+        let endpoint = Arc::new(quic_p2p.new_endpoint()?);
 
         let node_conns = Arc::new(Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE)));
 
@@ -57,8 +57,8 @@ impl Comm {
         // Bootstrap to the network returning the connection to a node.
         let (endpoint, connection) = quic_p2p.bootstrap().await?;
 
-        let quic_p2p = Arc::new(Box::new(quic_p2p));
-        let endpoint = Arc::new(Box::new(endpoint));
+        let quic_p2p = Arc::new(quic_p2p);
+        let endpoint = Arc::new(endpoint);
         let node_conns = Arc::new(Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE)));
 
         Ok((
@@ -72,7 +72,7 @@ impl Comm {
     }
 
     /// Starts listening for connections returning a stream where to read them from.
-    pub fn listen(&mut self) -> Result<IncomingConnections> {
+    pub fn listen(&self) -> Result<IncomingConnections> {
         self.endpoint.listen().map_err(|err| {
             Error::Unexpected(format!(
                 "Failed to start listening for connections: {}",
@@ -89,7 +89,7 @@ impl Comm {
     }
 
     pub async fn send_message_to_targets(
-        &mut self,
+        &self,
         conn_infos: &[SocketAddr],
         delivery_group_size: usize,
         msg: Bytes,
@@ -117,11 +117,7 @@ impl Comm {
         Ok(())
     }
 
-    pub async fn send_message_to_target(
-        &mut self,
-        recipient: &SocketAddr,
-        msg: Bytes,
-    ) -> Result<()> {
+    pub async fn send_message_to_target(&self, recipient: &SocketAddr, msg: Bytes) -> Result<()> {
         trace!("Sending message to target {:?}", recipient);
         // Cache the Connection to the node or obtain the already cached one
         let mut node_conns = self.node_conns.lock().await;
@@ -132,7 +128,7 @@ impl Comm {
     }
 
     pub async fn send_direct_message(
-        &mut self,
+        &self,
         src_id: &FullId,
         recipient: &SocketAddr,
         variant: Variant,
@@ -144,7 +140,7 @@ impl Comm {
 
     // Private helper to send a message using the given quic-p2p Connection
     pub async fn send_direct_message_on_conn(
-        &mut self,
+        &self,
         src_id: &FullId,
         conn: &mut Connection,
         variant: Variant,
@@ -153,18 +149,5 @@ impl Comm {
         conn.send_uni(message.to_bytes())
             .await
             .map_err(Error::Network)
-    }
-
-    pub async fn remove_conn_from_cache(&mut self, addr: &SocketAddr) {
-        if self.node_conns.lock().await.remove(addr).is_none() {
-            trace!(
-                "Connection with {} was not in the cache when trying to remove it.",
-                addr
-            );
-        }
-    }
-
-    pub async fn drop_node_conns(&mut self) {
-        self.node_conns.lock().await.clear();
     }
 }

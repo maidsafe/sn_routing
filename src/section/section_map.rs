@@ -13,11 +13,7 @@ use super::{
 use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
 
 use serde::Serialize;
-use std::{
-    cmp::Ordering,
-    collections::{BTreeSet, HashSet},
-    iter,
-};
+use std::{cmp::Ordering, collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 
 /// Container for storing information about sections in the network.
@@ -97,13 +93,6 @@ impl SectionMap {
     /// Returns all elders from our section.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.our().elders.values()
-    }
-
-    /// Returns all elders from neighbour sections.
-    pub fn neighbour_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbours
-            .iter()
-            .flat_map(|info| info.value.elders.values())
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
@@ -342,28 +331,6 @@ impl SectionMap {
     /// Returns iterator over all neighbours sections.
     pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
         self.neighbours.iter().map(|info| &info.value)
-    }
-}
-
-// Neighbour section elders that got removed/demoted.
-#[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NeighbourEldersRemoved(pub BTreeSet<P2pNode>);
-
-impl NeighbourEldersRemoved {
-    pub fn builder(sections: &SectionMap) -> NeighbourEldersRemovedBuilder {
-        NeighbourEldersRemovedBuilder(sections.neighbour_elders().cloned().collect())
-    }
-}
-
-pub struct NeighbourEldersRemovedBuilder(BTreeSet<P2pNode>);
-
-impl NeighbourEldersRemovedBuilder {
-    pub fn build(mut self, sections: &SectionMap) -> NeighbourEldersRemoved {
-        for p2p_node in sections.neighbour_elders() {
-            let _ = self.0.remove(p2p_node);
-        }
-
-        NeighbourEldersRemoved(self.0)
     }
 }
 
