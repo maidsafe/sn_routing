@@ -28,6 +28,7 @@ use crate::{
     },
     timer::Timer,
 };
+use async_recursion::async_recursion;
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use itertools::Itertools;
@@ -1096,6 +1097,7 @@ impl Approved {
         }
     }
 
+    #[async_recursion]
     async fn handle_accumulated_message(&mut self, msg: Message) -> Result<()> {
         trace!("accumulated message {:?}", msg);
 
@@ -1118,6 +1120,7 @@ impl Approved {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 self.msg_filter.insert_incoming(&msg);
+                let _ = self.handle_useful_message(None, msg).await?;
                 Ok(())
             }
             MessageStatus::Untrusted => {
