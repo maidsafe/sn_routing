@@ -26,7 +26,6 @@ async fn test_genesis_node() -> Result<()> {
         .create()
         .await?;
 
-    assert!(node.is_genesis());
     assert_eq!(*full_id.public_id(), node.id().await);
 
     expect_next_event!(event_stream, Event::Connected(Connected::First))?;
@@ -58,7 +57,6 @@ async fn test_node_bootstrapping() -> Result<()> {
         .create()
         .await?;
 
-    assert!(!node1.is_genesis());
     expect_next_event!(event_stream, Event::Connected(Connected::First))?;
 
     // just await for genesis node to finish receiving all events

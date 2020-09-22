@@ -54,7 +54,6 @@ enum State {
 pub(crate) struct NodeInfo {
     pub full_id: FullId,
     pub network_params: Arc<NetworkParams>,
-    pub rng: Arc<MainRng>,
     events_tx: mpsc::Sender<Event>,
 }
 
@@ -94,7 +93,6 @@ impl Stage {
         transport_config: TransportConfig,
         full_id: FullId,
         network_params: NetworkParams,
-        mut rng: MainRng,
     ) -> Result<(
         Self,
         IncomingConnections,
@@ -105,6 +103,7 @@ impl Stage {
         let connection_info = comm.our_connection_info()?;
         let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
 
+        let mut rng = MainRng::default();
         let secret_key_set = consensus::generate_secret_key_set(&mut rng, 1);
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);
@@ -125,7 +124,6 @@ impl Stage {
         let mut node_info = NodeInfo {
             full_id,
             network_params: Arc::new(network_params),
-            rng: Arc::new(rng),
             events_tx,
         };
 
@@ -154,7 +152,6 @@ impl Stage {
         transport_config: TransportConfig,
         full_id: FullId,
         network_params: NetworkParams,
-        rng: MainRng,
     ) -> Result<(
         Self,
         IncomingConnections,
@@ -167,7 +164,6 @@ impl Stage {
         let node_info = NodeInfo {
             full_id,
             network_params: Arc::new(network_params),
-            rng: Arc::new(rng),
             events_tx,
         };
 
