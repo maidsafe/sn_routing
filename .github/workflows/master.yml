@@ -1,0 +1,78 @@
+# Push to master workflow.
+#
+# Runs when a PR has been merged to the master branch.
+#
+# 1. Generates a release build.
+# 2. If the last commit is a version change, publish.
+
+name: Master
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  # Run all cargo commands with --verbose.
+  CARGO_TERM_VERBOSE: true
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - uses: actions/checkout@v2
+      # Install Rust
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      # Generate Cargo.lock, needed for the cache.
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+
+      # Cache.
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
+
+      # Make sure the code builds.
+      - name: Cargo Build
+        run: cargo build --release
+
+  # Publish if we're on a release commit
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: build
+    if: "startsWith(github.event.head_commit.message, 'chore(release):')"
+    steps:
+      - uses: actions/checkout@v2
+      # checkout with fetch-depth: '0' to be sure to retrieve all commits to look for the semver commit message
+        with:
+          fetch-depth: '0'
+     
+      # Install Rust
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      # Publish to crates.io.
+      - name: Cargo Login
+        run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Cargo Publish
+        run: cargo publish
