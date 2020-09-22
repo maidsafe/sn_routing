@@ -163,10 +163,6 @@ impl Bootstrapping {
     }
 
     async fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
-        // We clear the connections cache to drop all
-        // currently opened connections to peers.
-        self.comm.drop_node_conns().await;
-
         for conn_info in new_conn_infos {
             self.send_bootstrap_request(conn_info).await?;
         }

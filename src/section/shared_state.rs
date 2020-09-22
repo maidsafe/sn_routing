@@ -145,14 +145,6 @@ impl SharedState {
             .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.name()))
     }
 
-    /// Returns all nodes we know (our members + neighbour elders).
-    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_members
-            .joined()
-            .map(|info| &info.p2p_node)
-            .chain(self.sections.neighbour_elders())
-    }
-
     /// Returns our members that are either joined or are left but still elders.
     pub fn active_members(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
@@ -162,11 +154,6 @@ impl SharedState {
                     || self.is_peer_our_elder(info.p2p_node.name())
             })
             .map(|info| &info.p2p_node)
-    }
-
-    /// Returns whether we know the given peer.
-    pub fn is_known_peer(&self, name: &XorName) -> bool {
-        self.our_members.is_joined(name) || self.sections.is_elder(name)
     }
 
     /// Checks if given name is an elder in our section or one of our neighbour sections.
@@ -183,14 +170,6 @@ impl SharedState {
     pub fn is_peer_adult_or_elder(&self, name: &XorName) -> bool {
         self.our_members.is_adult(name) || self.is_peer_our_elder(name)
     }
-
-    // TODO: review if we still need this function
-    /*
-    pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.known_nodes()
-            .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
-    }
-    */
 
     /// All section keys we know of, including the past keys of our section.
     pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {

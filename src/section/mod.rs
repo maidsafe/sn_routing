@@ -24,7 +24,7 @@ pub use self::{
     member_info::{MemberInfo, MemberState, MIN_AGE},
     network_stats::NetworkStats,
     section_keys::{SectionKeyShare, SectionKeysProvider},
-    section_map::{NeighbourEldersRemoved, SectionMap},
+    section_map::SectionMap,
     section_members::SectionMembers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };

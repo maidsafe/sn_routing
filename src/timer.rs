@@ -168,7 +168,7 @@ mod tests {
 
         let run = async {
             let mut num_expired = 0;
-            while let Some(_) = rx.recv().await {
+            while rx.recv().await.is_some() {
                 num_expired += 1;
 
                 if num_expired >= num_scheduled {

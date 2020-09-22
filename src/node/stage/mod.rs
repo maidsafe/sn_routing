@@ -77,11 +77,7 @@ pub(crate) struct Stage {
 
 impl Stage {
     // Private constructor
-    fn new(
-        state: State,
-        mut comm: Comm,
-        node_info: NodeInfo,
-    ) -> Result<(Self, IncomingConnections)> {
+    fn new(state: State, comm: Comm, node_info: NodeInfo) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
         let stage = Self {
@@ -165,7 +161,7 @@ impl Stage {
         mpsc::UnboundedReceiver<u64>,
         mpsc::Receiver<Event>,
     )> {
-        let (mut comm, mut connection) = Comm::from_bootstrapping(transport_config).await?;
+        let (comm, mut connection) = Comm::from_bootstrapping(transport_config).await?;
 
         debug!(
             "Sending BootstrapRequest to {}",
