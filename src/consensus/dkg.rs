@@ -9,7 +9,7 @@
 use crate::{
     crypto::Digest256,
     id::{FullId, P2pNode, PublicId},
-    rng::MainRng,
+    rng::{self, MainRng},
     section::{quorum_count, EldersInfo},
 };
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
@@ -84,6 +84,7 @@ impl Debug for DkgKey {
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
+    rng: MainRng,
     participant: Option<Participant>,
     observers: HashMap<DkgKey, Observer>,
 }
@@ -91,6 +92,7 @@ pub struct DkgVoter {
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
+            rng: rng::new(),
             participant: None,
             observers: HashMap::new(),
         }
@@ -129,8 +131,7 @@ impl DkgVoter {
                     dkg_key,
                     key_gen,
                     elders_info: Some(elders_info),
-                    // TODO: review if we still need this
-                    //timer_token: 0,
+                    timer_token: 0,
                 });
 
                 Some(message)
@@ -215,18 +216,13 @@ impl DkgVoter {
     // - `Some((dkg_key, Err(())))` if the DKG failed. The result should be sent to the DKG observers
     //   for accumulation.
     // - `None` if there is no active DKG session.
-    // TODO: review if we still need this function
-    /*
-    pub fn progress_dkg(
-        &mut self,
-        rng: &mut MainRng,
-    ) -> Option<(DkgKey, Result<Vec<DkgMessage>, ()>)> {
+    pub fn progress_dkg(&mut self) -> Option<(DkgKey, Result<Vec<DkgMessage>, ()>)> {
         let session = self.participant.as_mut()?;
         let elders_info = session.elders_info.as_ref()?;
 
         trace!("DKG for {} progressing", elders_info);
 
-        match session.key_gen.timed_phase_transition(rng) {
+        match session.key_gen.timed_phase_transition(&mut self.rng) {
             Ok(messages) => Some((session.dkg_key, Ok(messages))),
             Err(error) => {
                 trace!("DKG for {} failed: {}", elders_info, error);
@@ -238,7 +234,6 @@ impl DkgVoter {
             }
         }
     }
-    */
 
     /// Returns the participants of the DKG session, if there is one.
     pub fn participants(&self) -> impl Iterator<Item = &P2pNode> {
@@ -253,7 +248,6 @@ impl DkgVoter {
     // participants, if any.
     pub fn process_dkg_message(
         &mut self,
-        rng: &mut MainRng,
         dkg_key: &DkgKey,
         message: DkgMessage,
     ) -> Vec<DkgMessage> {
@@ -269,7 +263,7 @@ impl DkgVoter {
 
         session
             .key_gen
-            .handle_message(rng, message)
+            .handle_message(&mut self.rng, message)
             .unwrap_or_default()
     }
 
@@ -352,23 +346,17 @@ impl DkgVoter {
 
     // Returns the timer token of the active DKG session if there is one. If this timer fires, we
     // should call `progress_dkg`.
-    // TODO: review if we still need this function
-    /*
     pub fn timer_token(&self) -> Option<u64> {
         self.participant.as_ref().map(|session| session.timer_token)
     }
-    */
 
     // Sets the timer token for the active DKG session. This should be set after a successful DKG
     // initialization, or after handling a DKG message that produced at least one response.
-    // TODO: review if we still need this function
-    /*
     pub fn set_timer_token(&mut self, token: u64) {
         if let Some(session) = &mut self.participant {
             session.timer_token = token;
         }
     }
-    */
 }
 
 // Data for a DKG participant.
@@ -377,8 +365,7 @@ struct Participant {
     elders_info: Option<EldersInfo>,
     dkg_key: DkgKey,
     key_gen: KeyGen<FullId>,
-    // TODO: review if we still need this
-    //timer_token: u64,
+    timer_token: u64,
 }
 
 // Data for a DKG observer.

@@ -7,13 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::time::{Duration, Instant};
-use crossbeam_channel as mpmc;
-use itertools::Itertools;
-#[cfg(feature = "mock")]
-use std::cell::RefCell;
-#[cfg(not(feature = "mock"))]
-use std::thread;
-use std::{cell::Cell, collections::BTreeMap};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
+use tokio::{
+    self,
+    sync::mpsc::{self, Receiver, Sender, UnboundedSender},
+    time,
+};
 
 struct Detail {
     expiry: Instant,
@@ -21,65 +26,46 @@ struct Detail {
 }
 
 /// Simple timer.
+/// Note: cloning is cheap and crates just another handle to the same underlying timer.
+#[derive(Clone)]
 pub struct Timer {
-    next_token: Cell<u64>,
-    tx: mpmc::Sender<Detail>,
-
-    #[cfg(feature = "mock")]
-    worker: Worker,
+    next_token: Arc<AtomicU64>,
+    schedule_tx: Sender<Detail>,
 }
 
 impl Timer {
     /// Creates a new timer, passing a channel sender used to send timeouted tokens.
-    #[cfg(not(feature = "mock"))]
-    pub fn new(sender: mpmc::Sender<u64>) -> Self {
-        let (tx, rx) = mpmc::bounded(1);
-        let _ = thread::Builder::new()
-            .name("Timer".to_string())
-            .spawn(move || Self::run(sender, rx))
-            .expect("failed to spawn timer thread");
+    pub fn new(expire_tx: UnboundedSender<u64>) -> Self {
+        let (schedule_tx, schedule_rx) = mpsc::channel(1);
+
+        let _ = tokio::spawn(async move { Self::run(expire_tx, schedule_rx).await });
+
         Self {
-            next_token: Cell::new(0),
-            tx,
+            next_token: Arc::new(AtomicU64::new(0)),
+            schedule_tx,
         }
     }
 
-    #[cfg(feature = "mock")]
-    pub fn new(sender: mpmc::Sender<u64>) -> Self {
-        let (tx, rx) = mpmc::unbounded();
-        let worker = Worker {
-            deadlines: RefCell::new(BTreeMap::default()),
-            sender,
-            rx,
-        };
-
-        Self {
-            next_token: Cell::new(0),
-            tx,
-            worker,
-        }
-    }
-
-    // TODO Do proper error handling here by returning a result - currently complying it with
-    // existing code and logging and error
     /// Schedules a timeout event after `duration`. Returns a token that can be used to identify
     /// the timeout event.
-    pub fn schedule(&self, duration: Duration) -> u64 {
-        let token = self.next_token.get();
-        self.next_token.set(token.wrapping_add(1));
+    pub async fn schedule(&mut self, duration: Duration) -> u64 {
+        let token = self.next_token.fetch_add(1, Ordering::Relaxed);
 
         let detail = Detail {
             expiry: Instant::now() + duration,
             token,
         };
-        self.tx.send(detail).map(|()| token).unwrap_or_else(|e| {
-            error!("Timer could not be scheduled: {:?}", e);
+
+        if self.schedule_tx.send(detail).await.is_ok() {
+            token
+        } else {
+            error!("Timer could not be scheduled");
             0
-        })
+        }
     }
 
-    #[cfg(not(feature = "mock"))]
-    fn run(sender: mpmc::Sender<u64>, rx: mpmc::Receiver<Detail>) {
+    // #[cfg(not(feature = "mock"))]
+    async fn run(mut expire_tx: UnboundedSender<u64>, mut schedule_rx: Receiver<Detail>) {
         let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
         loop {
@@ -87,18 +73,18 @@ impl Timer {
                 let now = Instant::now();
                 if *t > now {
                     let duration = *t - now;
-                    match rx.recv_timeout(duration) {
-                        Ok(d) => Some(d),
-                        Err(mpmc::RecvTimeoutError::Timeout) => None,
-                        Err(mpmc::RecvTimeoutError::Disconnected) => break,
+                    match time::timeout(duration, schedule_rx.recv()).await {
+                        Ok(Some(detail)) => Some(detail),
+                        Ok(None) => break,
+                        Err(_) => None,
                     }
                 } else {
                     None
                 }
             } else {
-                match rx.recv() {
-                    Ok(d) => Some(d),
-                    Err(mpmc::RecvError) => break,
+                match schedule_rx.recv().await {
+                    Some(detail) => Some(detail),
+                    None => break,
                 }
             };
 
@@ -106,95 +92,55 @@ impl Timer {
                 deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
             }
 
-            process_deadlines(&mut deadlines, &sender);
+            process_deadlines(&mut deadlines, &mut expire_tx);
         }
-    }
-
-    #[cfg(feature = "mock")]
-    pub fn process_timers(&self) {
-        self.worker.process()
     }
 }
 
-fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, sender: &mpmc::Sender<u64>) {
+fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, tx: &mut UnboundedSender<u64>) {
     let now = Instant::now();
-    let expired_list = deadlines
+    let expired_list: Vec<_> = deadlines
         .keys()
         .take_while(|&&deadline| deadline < now)
-        .cloned()
-        .collect_vec();
+        .copied()
+        .collect();
     for expired in expired_list {
-        // Safe to call `expect()` as we just got the key we're removing from
-        // `deadlines`.
-        let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
-        for token in tokens {
-            let _ = sender.send(token);
+        for token in deadlines.remove(&expired).into_iter().flatten() {
+            let _ = tx.send(token);
         }
-    }
-}
-
-#[cfg(feature = "mock")]
-struct Worker {
-    deadlines: RefCell<BTreeMap<Instant, Vec<u64>>>,
-    sender: mpmc::Sender<u64>,
-    rx: mpmc::Receiver<Detail>,
-}
-
-#[cfg(feature = "mock")]
-impl Worker {
-    fn process(&self) {
-        let mut deadlines = self.deadlines.borrow_mut();
-
-        while let Ok(Detail { expiry, token }) = self.rx.try_recv() {
-            deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
-        }
-
-        process_deadlines(&mut *deadlines, &self.sender);
     }
 }
 
 #[cfg(all(test, not(feature = "mock")))]
 mod tests {
     use super::*;
-    use std::{
-        thread,
-        time::{Duration, Instant},
-    };
+    use std::time::{Duration, Instant};
 
-    #[test]
-    fn schedule() {
-        let (action_tx, action_rx) = mpmc::unbounded();
+    #[tokio::test]
+    async fn schedule() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let interval = Duration::from_millis(500);
         let instant_when_added;
-        let check_no_events_received = || {
-            let action = action_rx.try_recv();
-            assert!(
-                action.is_err(),
-                "Expected no event, but received {:?}",
-                action
-            );
-        };
+
         {
-            let timer = Timer::new(action_tx);
+            let mut timer = Timer::new(tx);
 
             // Add deadlines, the first to time out after 2.5s, the second after 2.0s, and so on
             // down to 500ms.
             let count = 5;
             for i in 0..count {
                 let timeout = interval * (count - i);
-                let token = timer.schedule(timeout);
+                let token = timer.schedule(timeout).await;
                 assert_eq!(token, u64::from(i));
             }
 
             // Ensure timeout notifications are received correctly.
-            thread::sleep(Duration::from_millis(100));
+            time::delay_for(Duration::from_millis(100)).await;
             for i in 0..count {
-                check_no_events_received();
-                thread::sleep(interval);
+                assert!(rx.try_recv().is_err());
+                time::delay_for(interval).await;
 
-                let token = action_rx
-                    .try_recv()
-                    .expect("Should have received a timer token.");
+                let token = rx.try_recv().expect("Should have received a timer token.");
                 assert_eq!(token, u64::from(count - i - 1));
             }
 
@@ -204,25 +150,41 @@ mod tests {
             let _ = timer.schedule(interval);
         }
 
-        assert!(
-            Instant::now() - instant_when_added < interval,
-            "`Timer::drop()` is blocking."
-        );
+        assert!(instant_when_added.elapsed() < interval);
 
-        thread::sleep(interval + Duration::from_millis(100));
-        check_no_events_received();
+        time::delay_for(interval + Duration::from_millis(100)).await;
+        assert!(rx.try_recv().is_err());
     }
 
-    #[test]
-    fn heavy_duty_time_out() {
-        let (tx, rx) = mpmc::unbounded();
-        let timer = Timer::new(tx);
-        let count = 1000;
+    #[tokio::test]
+    async fn heavy_duty_time_out() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut timer = Timer::new(tx);
+        let num_scheduled: usize = 1000;
 
-        for _ in 0..count {
-            let _ = timer.schedule(Duration::new(0, 3000));
+        for _ in 0..num_scheduled {
+            let _ = timer.schedule(Duration::from_millis(100)).await;
         }
 
-        assert_eq!(rx.iter().take(count).count(), count);
+        let run = async {
+            let mut num_expired = 0;
+            while let Some(_) = rx.recv().await {
+                num_expired += 1;
+
+                if num_expired >= num_scheduled {
+                    break;
+                }
+            }
+
+            num_expired
+        };
+
+        match time::timeout(Duration::from_millis(500), run).await {
+            Ok(num_expired) => {
+                assert_eq!(num_expired, num_scheduled);
+                assert!(rx.try_recv().is_err());
+            }
+            Err(_) => panic!("timeout"),
+        }
     }
 }

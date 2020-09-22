@@ -26,9 +26,11 @@ impl EventStream {
         stage: Arc<Mutex<Stage>>,
         xorname: XorName,
         incoming_conns: IncomingConnections,
+        timer_rx: mpsc::UnboundedReceiver<u64>,
         events_rx: mpsc::Receiver<Event>,
     ) -> Result<Self> {
-        Self::spawn_connections_handler(stage, incoming_conns, xorname);
+        Self::spawn_connections_handler(Arc::clone(&stage), incoming_conns, xorname);
+        Self::spawn_timer_handler(stage, timer_rx);
 
         Ok(Self { events_rx })
     }
@@ -100,6 +102,16 @@ impl EventStream {
 
                         stage.lock().await.send_event(event).await;
                     }
+                }
+            }
+        });
+    }
+
+    fn spawn_timer_handler(stage: Arc<Mutex<Stage>>, mut rx: mpsc::UnboundedReceiver<u64>) {
+        let _ = tokio::spawn(async move {
+            while let Some(token) = rx.recv().await {
+                if let Err(err) = stage.lock().await.process_timeout(token).await {
+                    error!("Error encountered when processing timeout: {}", err);
                 }
             }
         });

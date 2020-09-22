@@ -130,6 +130,7 @@ mod node;
 mod relocation;
 mod section;
 mod time;
+mod timer;
 
 // Cryptography
 mod crypto;
