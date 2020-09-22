@@ -16,13 +16,13 @@ use crate::{
     },
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
+    timer::Timer,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 use xor_name::Prefix;
 
-// TODO: review if we still need to set a timeout for joining
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
-//pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
 pub(crate) struct Joining {
@@ -34,6 +34,8 @@ pub(crate) struct Joining {
     join_type: JoinType,
     comm: Comm,
     node_info: NodeInfo,
+    timer: Timer,
+    timer_token: u64,
 }
 
 impl Joining {
@@ -43,6 +45,7 @@ impl Joining {
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
         node_info: NodeInfo,
+        timer: Timer,
     ) -> Result<Self> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
@@ -55,6 +58,8 @@ impl Joining {
             join_type,
             comm,
             node_info,
+            timer,
+            timer_token: 0,
         };
         stage.send_join_requests().await?;
 
@@ -96,6 +101,7 @@ impl Joining {
                         shared_state,
                         None,
                         self.node_info.clone(),
+                        self.timer.clone(),
                     )?;
 
                     self.node_info
@@ -118,15 +124,15 @@ impl Joining {
         }
     }
 
-    /*async fn handle_timeout(&mut self, comm: &mut Comm, token: u64) -> Result<()> {
+    pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
         if token == self.timer_token {
             debug!("Timeout when trying to join a section");
             // Try again
             self.send_join_requests().await?;
-            self.timer_token = comm.timer.schedule(JOIN_TIMEOUT);
         }
+
         Ok(())
-    }*/
+    }
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         trace!("Deciding message status: {:?}", msg);
@@ -233,6 +239,8 @@ impl Joining {
                 .send_direct_message(&self.node_info.full_id, dst.peer_addr(), variant)
                 .await?;
         }
+
+        self.timer_token = self.timer.schedule(JOIN_TIMEOUT).await;
 
         Ok(())
     }

@@ -13,6 +13,7 @@ use crate::{
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
+    timer::Timer,
 };
 use std::{iter, net::SocketAddr};
 use xor_name::Prefix;
@@ -26,6 +27,7 @@ pub(crate) struct Bootstrapping {
     relocate_details: Option<SignedRelocateDetails>,
     node_info: NodeInfo,
     comm: Comm,
+    timer: Timer,
 }
 
 impl Bootstrapping {
@@ -33,11 +35,13 @@ impl Bootstrapping {
         relocate_details: Option<SignedRelocateDetails>,
         comm: Comm,
         node_info: NodeInfo,
+        timer: Timer,
     ) -> Self {
         Self {
             relocate_details,
             node_info,
             comm,
+            timer,
         }
     }
 
@@ -69,6 +73,7 @@ impl Bootstrapping {
                             section_key,
                             relocate_payload,
                             self.node_info.clone(),
+                            self.timer.clone(),
                         )
                         .await?;
 
@@ -102,6 +107,10 @@ impl Bootstrapping {
                 Ok(None)
             }
         }
+    }
+
+    pub async fn process_timeout(&mut self, _token: u64) -> Result<()> {
+        todo!()
     }
 
     async fn handle_bootstrap_response(

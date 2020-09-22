@@ -92,7 +92,7 @@ impl Node {
         let network_params = config.network_params;
         let is_genesis = config.first;
 
-        let (stage, incoming_conns, events_rx) = if is_genesis {
+        let (stage, incoming_conns, timer_rx, events_rx) = if is_genesis {
             match Stage::first_node(transport_config, full_id, network_params, rng).await {
                 Ok(stage_and_conns_stream) => {
                     info!("{} Started a new network as a seed node.", node_name);
@@ -111,8 +111,14 @@ impl Node {
 
         let stage = Arc::new(Mutex::new(stage));
 
-        let event_stream =
-            EventStream::new(Arc::clone(&stage), node_name, incoming_conns, events_rx).await?;
+        let event_stream = EventStream::new(
+            Arc::clone(&stage),
+            node_name,
+            incoming_conns,
+            timer_rx,
+            events_rx,
+        )
+        .await?;
 
         Ok((Self { stage, is_genesis }, event_stream))
     }

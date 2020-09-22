@@ -26,16 +26,16 @@ use crate::{
         EldersInfo, MemberInfo, NeighbourEldersRemoved, SectionKeyShare, SectionKeysProvider,
         SectionUpdateBarrier, SharedState, MIN_AGE,
     },
+    timer::Timer,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use itertools::Itertools;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 use xor_name::{Prefix, XorName};
 
-// TODO: review if we still need to set a timer for DKG
 // Interval to progress DKG timed phase
-// const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
@@ -53,6 +53,7 @@ pub(crate) struct Approved {
     node_info: NodeInfo,
     comm: Comm,
     msg_filter: MessageFilter,
+    timer: Timer,
 }
 
 impl Approved {
@@ -62,6 +63,7 @@ impl Approved {
         shared_state: SharedState,
         section_key_share: Option<SectionKeyShare>,
         node_info: NodeInfo,
+        timer: Timer,
     ) -> Result<Self> {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
@@ -76,6 +78,7 @@ impl Approved {
             node_info,
             comm,
             msg_filter: MessageFilter::new(),
+            timer,
         })
     }
 
@@ -112,6 +115,19 @@ impl Approved {
                 Ok(None)
             }
         }
+    }
+
+    pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
+        if self.dkg_voter.timer_token() == Some(token) {
+            self.dkg_voter
+                .set_timer_token(self.timer.schedule(DKG_PROGRESS_INTERVAL).await);
+
+            if let Err(error) = self.progress_dkg().await {
+                error!("failed to progress DKG: {}", error);
+            }
+        }
+
+        Ok(())
     }
 
     // Cast a vote that doesn't need total order, only section consensus.
@@ -253,21 +269,6 @@ impl Approved {
     }
     */
 
-    // TODO: review if we still need this function
-    /*
-    async fn handle_timeout(&mut self, token: u64) {
-        if self.dkg_voter.timer_token() == Some(token) {
-            // TODO ??
-            //self.dkg_voter
-            //    .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
-
-            if let Err(error) = self.progress_dkg().await {
-                error!("failed to progress DKG: {}", error);
-            }
-        }
-    }
-    */
-
     async fn check_dkg(&mut self, dkg_key: DkgKey) -> Result<()> {
         match self.dkg_voter.check_dkg() {
             Some(Ok((elders_info, outcome))) => {
@@ -288,10 +289,8 @@ impl Approved {
         }
     }
 
-    // TODO: review if we still need this function
-    /*
     async fn progress_dkg(&mut self) -> Result<()> {
-        match self.dkg_voter.progress_dkg(&mut self.rng) {
+        match self.dkg_voter.progress_dkg() {
             Some((dkg_key, Ok(messages))) => {
                 for message in messages {
                     self.broadcast_dkg_message(dkg_key, message).await?;
@@ -305,7 +304,6 @@ impl Approved {
             None => Ok(()),
         }
     }
-    */
 
     /// Is the node with the given id an elder in our section?
     pub fn is_our_elder(&self, id: &PublicId) -> bool {
@@ -437,6 +435,7 @@ impl Approved {
                             Some(details),
                             self.comm.clone(),
                             self.node_info.clone(),
+                            self.timer.clone(),
                         );
 
                         for conn_info in conn_infos {
@@ -1079,20 +1078,13 @@ impl Approved {
 
         trace!("handle DKG message {:?} from {}", message, sender);
 
-        // FIXME: do we need to reuse MainRng everywhere really??
-        let mut rng = crate::rng::MainRng::default();
-        let responses = self
-            .dkg_voter
-            .process_dkg_message(&mut rng, &dkg_key, message);
+        let responses = self.dkg_voter.process_dkg_message(&dkg_key, message);
 
         // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
-        // TODO ??
-        /*
         if !responses.is_empty() {
             self.dkg_voter
-                .set_timer_token(core.timer.schedule(DKG_PROGRESS_INTERVAL));
+                .set_timer_token(self.timer.schedule(DKG_PROGRESS_INTERVAL).await);
         }
-        */
 
         for response in responses {
             let _ = self.broadcast_dkg_message(dkg_key, response).await;

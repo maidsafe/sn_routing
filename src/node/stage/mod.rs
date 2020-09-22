@@ -22,6 +22,7 @@ use crate::{
     network_params::NetworkParams,
     rng::MainRng,
     section::{EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain, SharedState, MIN_AGE},
+    timer::Timer,
     TransportConfig,
 };
 use bytes::Bytes;
@@ -80,8 +81,7 @@ impl Stage {
         state: State,
         mut comm: Comm,
         node_info: NodeInfo,
-        events_rx: mpsc::Receiver<Event>,
-    ) -> Result<(Self, IncomingConnections, mpsc::Receiver<Event>)> {
+    ) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
         let stage = Self {
@@ -90,7 +90,7 @@ impl Stage {
             node_info,
         };
 
-        Ok((stage, incoming_conns, events_rx))
+        Ok((stage, incoming_conns))
     }
 
     // Create the approved stage for the first node in the network.
@@ -99,7 +99,12 @@ impl Stage {
         full_id: FullId,
         network_params: NetworkParams,
         mut rng: MainRng,
-    ) -> Result<(Self, IncomingConnections, mpsc::Receiver<Event>)> {
+    ) -> Result<(
+        Self,
+        IncomingConnections,
+        mpsc::UnboundedReceiver<u64>,
+        mpsc::Receiver<Event>,
+    )> {
         let comm = Comm::new(transport_config).await?;
         let connection_info = comm.our_connection_info()?;
         let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
@@ -133,14 +138,20 @@ impl Stage {
             .await;
         node_info.send_event(Event::PromotedToElder).await;
 
+        let (timer_tx, timer_rx) = mpsc::unbounded_channel();
+        let timer = Timer::new(timer_tx);
+
         let state = Approved::new(
             comm.clone(),
             shared_state,
             Some(section_key_share),
             node_info.clone(),
+            timer,
         )?;
 
-        Self::new(State::Approved(state), comm, node_info, events_rx)
+        let (stage, incomming_connections) = Self::new(State::Approved(state), comm, node_info)?;
+
+        Ok((stage, incomming_connections, timer_rx, events_rx))
     }
 
     pub async fn bootstrap(
@@ -148,7 +159,12 @@ impl Stage {
         full_id: FullId,
         network_params: NetworkParams,
         rng: MainRng,
-    ) -> Result<(Self, IncomingConnections, mpsc::Receiver<Event>)> {
+    ) -> Result<(
+        Self,
+        IncomingConnections,
+        mpsc::UnboundedReceiver<u64>,
+        mpsc::Receiver<Event>,
+    )> {
         let (mut comm, mut connection) = Comm::from_bootstrapping(transport_config).await?;
 
         debug!(
@@ -170,9 +186,14 @@ impl Stage {
             events_tx,
         };
 
-        let state = Bootstrapping::new(None, comm.clone(), node_info.clone());
+        let (timer_tx, timer_rx) = mpsc::unbounded_channel();
+        let timer = Timer::new(timer_tx);
 
-        Self::new(State::Bootstrapping(state), comm, node_info, events_rx)
+        let state = Bootstrapping::new(None, comm.clone(), node_info.clone(), timer);
+        let (stage, incomming_connections) =
+            Self::new(State::Bootstrapping(state), comm, node_info)?;
+
+        Ok((stage, incomming_connections, timer_rx, events_rx))
     }
 
     pub fn approved(&self) -> Option<&Approved> {
@@ -252,6 +273,14 @@ impl Stage {
 
                 Ok(())
             }
+        }
+    }
+
+    pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
+        match &mut self.state {
+            State::Bootstrapping(stage) => stage.process_timeout(token).await,
+            State::Joining(stage) => stage.process_timeout(token).await,
+            State::Approved(stage) => stage.process_timeout(token).await,
         }
     }
 
