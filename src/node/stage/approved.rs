@@ -1932,7 +1932,10 @@ impl Approved {
             )
         }
         let dkg_key = DkgKey::new(elders_info);
-        self.handle_dkg_result(core, dkg_key, Ok(public_key), *core.id())?;
+
+        for sender in elders_info.elders.values() {
+            self.handle_dkg_result(core, dkg_key, Ok(public_key), *sender.public_id())?;
+        }
 
         Ok(())
     }
