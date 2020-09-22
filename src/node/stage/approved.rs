@@ -431,16 +431,15 @@ impl Approved {
                         details,
                     }) => {
                         // Transition from Approved to Bootstrapping on relocation
-                        let mut bootstrapping = Bootstrapping::new(
+                        let bootstrapping = Bootstrapping::new(
                             Some(details),
+                            conn_infos,
                             self.comm.clone(),
                             self.node_info.clone(),
                             self.timer.clone(),
-                        );
+                        )
+                        .await?;
 
-                        for conn_info in conn_infos {
-                            bootstrapping.send_bootstrap_request(conn_info).await?;
-                        }
                         Ok(Some(bootstrapping))
                     }
                     None => Ok(None),

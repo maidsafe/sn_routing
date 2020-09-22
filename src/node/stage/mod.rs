@@ -161,18 +161,7 @@ impl Stage {
         mpsc::UnboundedReceiver<u64>,
         mpsc::Receiver<Event>,
     )> {
-        let (comm, mut connection) = Comm::from_bootstrapping(transport_config).await?;
-
-        debug!(
-            "Sending BootstrapRequest to {}",
-            connection.remote_address()
-        );
-        comm.send_direct_message_on_conn(
-            &full_id,
-            &mut connection,
-            Variant::BootstrapRequest(*full_id.public_id().name()),
-        )
-        .await?;
+        let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
 
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         let node_info = NodeInfo {
@@ -185,9 +174,10 @@ impl Stage {
         let (timer_tx, timer_rx) = mpsc::unbounded_channel();
         let timer = Timer::new(timer_tx);
 
-        let state = Bootstrapping::new(None, comm.clone(), node_info.clone(), timer);
-        let (stage, incomming_connections) =
-            Self::new(State::Bootstrapping(state), comm, node_info)?;
+        let state =
+            Bootstrapping::new(None, vec![addr], comm.clone(), node_info.clone(), timer).await?;
+        let state = State::Bootstrapping(state);
+        let (stage, incomming_connections) = Self::new(state, comm, node_info)?;
 
         Ok((stage, incomming_connections, timer_rx, events_rx))
     }

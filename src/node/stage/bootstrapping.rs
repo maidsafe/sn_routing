@@ -19,7 +19,7 @@ use std::{iter, net::SocketAddr};
 use xor_name::Prefix;
 
 // TODO: review if we still need to set a timeout for joining
-/// Time after which bootstrap is cancelled (and possibly retried).
+/// Time after which bootstrap is cancelled (and possibly returnried).
 // pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
@@ -31,18 +31,25 @@ pub(crate) struct Bootstrapping {
 }
 
 impl Bootstrapping {
-    pub fn new(
+    pub async fn new(
         relocate_details: Option<SignedRelocateDetails>,
+        bootstrap_contacts: Vec<SocketAddr>,
         comm: Comm,
         node_info: NodeInfo,
         timer: Timer,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let mut stage = Self {
             relocate_details,
             node_info,
             comm,
             timer,
+        };
+
+        for addr in bootstrap_contacts {
+            stage.send_bootstrap_request(addr).await?;
         }
+
+        Ok(stage)
     }
 
     pub async fn process_message(
@@ -146,7 +153,7 @@ impl Bootstrapping {
         }
     }
 
-    pub async fn send_bootstrap_request(&mut self, dst: SocketAddr) -> Result<()> {
+    async fn send_bootstrap_request(&mut self, dst: SocketAddr) -> Result<()> {
         let xorname = match &self.relocate_details {
             Some(details) => *details.destination(),
             None => *self.node_info.full_id.public_id().name(),

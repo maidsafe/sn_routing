@@ -51,7 +51,7 @@ impl Comm {
         })
     }
 
-    pub async fn from_bootstrapping(transport_config: Config) -> Result<(Self, Connection)> {
+    pub async fn from_bootstrapping(transport_config: Config) -> Result<(Self, SocketAddr)> {
         let mut quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
@@ -59,15 +59,19 @@ impl Comm {
 
         let quic_p2p = Arc::new(quic_p2p);
         let endpoint = Arc::new(endpoint);
-        let node_conns = Arc::new(Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE)));
+
+        let addr = connection.remote_address();
+
+        let mut node_conns = LruCache::with_capacity(CONNECTIONS_CACHE_SIZE);
+        let _ = node_conns.insert(addr, connection);
 
         Ok((
             Self {
                 quic_p2p,
                 endpoint,
-                node_conns,
+                node_conns: Arc::new(Mutex::new(node_conns)),
             },
-            connection,
+            addr,
         ))
     }
 
@@ -136,18 +140,5 @@ impl Comm {
         let message = Message::single_src(src_id, DstLocation::Direct, variant, None, None)?;
         self.send_message_to_target(recipient, message.to_bytes())
             .await
-    }
-
-    // Private helper to send a message using the given quic-p2p Connection
-    pub async fn send_direct_message_on_conn(
-        &self,
-        src_id: &FullId,
-        conn: &mut Connection,
-        variant: Variant,
-    ) -> Result<()> {
-        let message = Message::single_src(src_id, DstLocation::Direct, variant, None, None)?;
-        conn.send_uni(message.to_bytes())
-            .await
-            .map_err(Error::Network)
     }
 }
