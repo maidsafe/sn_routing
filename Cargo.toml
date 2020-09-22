@@ -11,6 +11,7 @@ version = "0.37.0"
 edition = "2018"
 
 [dependencies]
+async-recursion = "0.3.1"
 bincode = "1.2.1"
 bls = { package = "threshold_crypto", version = "~0.4.0" }
 bls_dkg = "~0.1.0"
