@@ -28,7 +28,7 @@ use crate::{
 use bytes::Bytes;
 use qp2p::IncomingConnections;
 use serde::Serialize;
-use std::{boxed::Box, iter, net::SocketAddr, sync::Arc};
+use std::{iter, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
@@ -53,8 +53,8 @@ enum State {
 #[derive(Clone)]
 pub(crate) struct NodeInfo {
     pub full_id: FullId,
-    pub network_params: Arc<Box<NetworkParams>>,
-    pub rng: Arc<Box<MainRng>>,
+    pub network_params: Arc<NetworkParams>,
+    pub rng: Arc<MainRng>,
     events_tx: mpsc::Sender<Event>,
 }
 
@@ -124,8 +124,8 @@ impl Stage {
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         let mut node_info = NodeInfo {
             full_id,
-            network_params: Arc::new(Box::new(network_params)),
-            rng: Arc::new(Box::new(rng)),
+            network_params: Arc::new(network_params),
+            rng: Arc::new(rng),
             events_tx,
         };
 
@@ -166,8 +166,8 @@ impl Stage {
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         let node_info = NodeInfo {
             full_id,
-            network_params: Arc::new(Box::new(network_params)),
-            rng: Arc::new(Box::new(rng)),
+            network_params: Arc::new(network_params),
+            rng: Arc::new(rng),
             events_tx,
         };
 

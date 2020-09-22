@@ -107,6 +107,8 @@ impl Comm {
             );
         }
 
+        // TODO: retry upon failures. Timeout could perhaps still
+        // be handlded by user...?
         trace!(
             "Sending message to {:?}",
             &conn_infos[..delivery_group_size.min(conn_infos.len())]
