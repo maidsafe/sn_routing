@@ -12,8 +12,9 @@ use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_routing::{
     event::{Connected, Event},
-    DstLocation, Error, Result, SrcLocation,
+    DstLocation, Error, Result, SrcLocation, TransportConfig,
 };
+use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
 #[tokio::test]
@@ -42,7 +43,10 @@ async fn test_messages_client_node() -> Result<()> {
 
     // create a client which sends a message to the node
     let node_addr = node.our_connection_info().await?;
-    let mut client = QuicP2p::new()?;
+    let mut config = TransportConfig::default();
+    config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+
+    let mut client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let (_, conn) = client.connect_to(&node_addr).await?;
     let (_, mut recv) = conn.send(Bytes::from_static(msg)).await?;
 

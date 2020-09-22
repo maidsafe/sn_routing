@@ -224,7 +224,17 @@ async fn run_node(index: usize, mut node: Node, mut event_stream: EventStream) {
 async fn handle_event(index: usize, node: &mut Node, event: Event) -> bool {
     match event {
         Event::Connected(Connected::First) => {
-            info!("Node #{} connected", index,);
+            let contact_info = node
+                .our_connection_info()
+                .await
+                .expect("failed to retrieve node contact info");
+
+            info!(
+                "Node #{} connected - name: {}, contact: {}",
+                index,
+                node.name().await,
+                contact_info
+            );
         }
         Event::Connected(Connected::Relocate { previous_name }) => {
             info!(

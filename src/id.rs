@@ -12,7 +12,6 @@ use crate::{
 };
 use serde::{de::Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    boxed::Box,
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -28,7 +27,7 @@ pub struct FullId {
     public_id: PublicId,
     // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
     // memory which might be insecure.
-    secret_key: Arc<Box<SecretKey>>,
+    secret_key: Arc<SecretKey>,
 }
 
 impl FullId {
@@ -41,7 +40,7 @@ impl FullId {
 
         Self {
             public_id,
-            secret_key: Arc::new(Box::new(secret_key)),
+            secret_key: Arc::new(secret_key),
         }
     }
 
@@ -55,7 +54,7 @@ impl FullId {
             if range.contains(&name) {
                 return Self {
                     public_id: PublicId::new(public_key),
-                    secret_key: Arc::new(Box::new(secret_key)),
+                    secret_key: Arc::new(secret_key),
                 };
             }
         }
