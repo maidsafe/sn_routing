@@ -26,6 +26,7 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
 pub(crate) struct Joining {
+    pub node_info: NodeInfo,
     // EldersInfo of the section we are joining.
     elders_info: EldersInfo,
     // PublicKey of the section we are joining.
@@ -33,7 +34,6 @@ pub(crate) struct Joining {
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
     comm: Comm,
-    node_info: NodeInfo,
     timer: Timer,
     timer_token: u64,
 }
@@ -53,11 +53,11 @@ impl Joining {
         };
 
         let mut stage = Self {
+            node_info,
             elders_info,
             section_key,
             join_type,
             comm,
-            node_info,
             timer,
             timer_token: 0,
         };

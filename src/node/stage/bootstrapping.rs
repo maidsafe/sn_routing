@@ -24,8 +24,8 @@ use xor_name::Prefix;
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {
+    pub node_info: NodeInfo,
     relocate_details: Option<SignedRelocateDetails>,
-    node_info: NodeInfo,
     comm: Comm,
     timer: Timer,
 }
@@ -39,8 +39,8 @@ impl Bootstrapping {
         timer: Timer,
     ) -> Result<Self> {
         let mut stage = Self {
-            relocate_details,
             node_info,
+            relocate_details,
             comm,
             timer,
         };
