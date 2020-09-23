@@ -94,9 +94,8 @@ impl Node {
                     stage_and_conns_stream
                 }
                 Err(error) => {
-                    let msg = format!("{} Failed to start the first node: {:?}", node_name, error);
-                    error!("{}", msg);
-                    return Err(Error::Unexpected(msg));
+                    error!("{} Failed to start the first node: {:?}", node_name, error);
+                    return Err(error);
                 }
             }
         } else {

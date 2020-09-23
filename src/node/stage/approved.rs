@@ -640,11 +640,14 @@ impl Approved {
         );
 
         if let Some(dst_key) = dst_key {
-            let resend_msg = bounced_msg
-                .extend_proof_chain(&dst_key, &self.shared_state.our_history)
-                .map_err(|err| {
-                    Error::Unexpected(format!("...extending proof failed, discarding: {:?}", err))
-                })?;
+            let resend_msg =
+                match bounced_msg.extend_proof_chain(&dst_key, &self.shared_state.our_history) {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        trace!("...extending proof failed, discarding: {:?}", err);
+                        return Ok(());
+                    }
+                };
 
             trace!("    ...resending with extended proof");
             self.comm

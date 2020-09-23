@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use anyhow::{bail, ensure, format_err, Result};
 use itertools::Itertools;
-use sn_routing::{Error, EventStream, FullId, Node, NodeConfig, Result, TransportConfig};
+use sn_routing::{EventStream, FullId, Node, NodeConfig, TransportConfig};
 use std::{
     collections::{BTreeSet, HashSet},
     io::Write,
@@ -96,7 +97,7 @@ impl<'a> TestNodeBuilder {
             self.config
         };
 
-        Node::new(config).await
+        Ok(Node::new(config).await?)
     }
 }
 
@@ -105,13 +106,17 @@ impl<'a> TestNodeBuilder {
 #[macro_export]
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
-        match $node.next().await {
-            Some($pattern) => Ok(()),
-            other => Err(Error::Unexpected(format!(
+        match tokio::time::timeout(std::time::Duration::from_secs(10), $node.next()).await {
+            Ok(Some($pattern)) => Ok(()),
+            Ok(other) => Err(anyhow::format_err!(
                 "Expecting {}, got {:?}",
                 stringify!($pattern),
                 other
-            ))),
+            )),
+            Err(_) => Err(anyhow::format_err!(
+                "Timeout when expecting {}",
+                stringify!($pattern)
+            )),
         }
     };
 }
@@ -124,19 +129,19 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
     let our_prefix = node
         .our_prefix()
         .await
-        .ok_or_else(|| Error::Unexpected("Failed to get node's prefix".to_string()))?;
+        .ok_or_else(|| format_err!("Failed to get node's prefix"))?;
 
     let our_section_elders: BTreeSet<_> = node
         .our_section()
         .await
-        .ok_or_else(|| Error::Unexpected("Failed to get node's prefix".to_string()))?
+        .ok_or_else(|| format_err!("Failed to get node's prefix"))?
         .elders
         .keys()
         .copied()
         .collect();
 
     if !our_prefix.is_empty() {
-        assert!(
+        ensure!(
             our_section_elders.len() >= elder_size,
             "{}({:b}) Our section is below the minimum size ({}/{})",
             our_name,
@@ -150,9 +155,11 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         .iter()
         .find(|name| !our_prefix.matches(name))
     {
-        panic!(
+        bail!(
             "{}({:b}) A name in our section doesn't match its prefix: {}",
-            our_name, our_prefix, name,
+            our_name,
+            our_prefix,
+            name,
         );
     }
 
@@ -167,7 +174,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         .map(|info| &info.prefix)
         .find(|prefix| prefix.is_compatible(&our_prefix))
     {
-        panic!(
+        bail!(
             "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_sections: {:?})",
             our_name,
             our_prefix,
@@ -180,7 +187,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         .iter()
         .find(|info| info.elders.len() < elder_size)
     {
-        panic!(
+        bail!(
             "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_sections: {:?})",
             our_name,
             our_prefix,
@@ -193,9 +200,12 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
 
     for info in &neighbour_sections {
         if let Some(name) = info.elders.keys().find(|name| !info.prefix.matches(name)) {
-            panic!(
+            bail!(
                 "{}({:b}) A name in a section doesn't match its prefix: {:?}, {:?}",
-                our_name, our_prefix, name, info.prefix,
+                our_name,
+                our_prefix,
+                name,
+                info.prefix,
             );
         }
     }
@@ -206,9 +216,11 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         .filter(|prefix| !our_prefix.is_neighbour(prefix))
         .collect();
     if !non_neighbours.is_empty() {
-        panic!(
+        bail!(
             "{}({:b}) Some of our known sections aren't neighbours of our section: {:?}",
-            our_name, our_prefix, non_neighbours,
+            our_name,
+            our_prefix,
+            non_neighbours,
         );
     }
 
@@ -220,7 +232,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         })
     };
     if !all_neighbours_covered {
-        panic!(
+        bail!(
             "{}({:b}) Some neighbours aren't fully covered by our known sections: {:?}",
             our_name,
             our_prefix,
