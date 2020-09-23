@@ -297,13 +297,10 @@ async fn handle_event(index: usize, node: &mut Node, event: Event) -> bool {
             info!("Node #{} requires restart", index);
             return false;
         }
-        Event::ClientMessageReceived {
-            content, src, dst, ..
-        } => info!(
-            "Node #{} received message from client: {:?}, dst: {:?}, content: {}",
+        Event::ClientMessageReceived { content, src, .. } => info!(
+            "Node #{} received message from client: {:?}, content: {}",
             index,
             src,
-            dst,
             HexFmt(content)
         ),
     }

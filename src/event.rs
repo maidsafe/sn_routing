@@ -103,8 +103,6 @@ pub enum Event {
         content: Bytes,
         /// The address of the client that sent the message.
         src: SocketAddr,
-        /// The destination location that receives the message.
-        dst: DstLocation,
         /// Stream to send messages back to the client that sent the message
         send: SendStream,
         /// Stream to receive more messages from the client on the same channel
@@ -161,14 +159,11 @@ impl Debug for Event {
                 .field("previous_name", previous_name)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
-            Self::ClientMessageReceived {
-                content, src, dst, ..
-            } => write!(
+            Self::ClientMessageReceived { content, src, .. } => write!(
                 formatter,
-                "ClientMessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
+                "ClientMessageReceived {{ content: \"{:<8}\", src: {:?} }}",
                 HexFmt(content),
                 src,
-                dst
             ),
         }
     }

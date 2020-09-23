@@ -6,15 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    error::Result, event::Event, location::DstLocation, messages::Message, node::stage::Stage,
-};
+use crate::{error::Result, event::Event, messages::Message, node::stage::Stage};
 use bytes::Bytes;
 use futures::lock::Mutex;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
-use xor_name::XorName;
 
 /// Stream of routing node events
 pub struct EventStream {
@@ -24,12 +21,11 @@ pub struct EventStream {
 impl EventStream {
     pub(crate) async fn new(
         stage: Arc<Mutex<Stage>>,
-        xorname: XorName,
         incoming_conns: IncomingConnections,
         timer_rx: mpsc::UnboundedReceiver<u64>,
         events_rx: mpsc::UnboundedReceiver<Event>,
     ) -> Result<Self> {
-        Self::spawn_connections_handler(Arc::clone(&stage), incoming_conns, xorname);
+        Self::spawn_connections_handler(Arc::clone(&stage), incoming_conns);
         Self::spawn_timer_handler(stage, timer_rx);
 
         Ok(Self { events_rx })
@@ -44,7 +40,6 @@ impl EventStream {
     fn spawn_connections_handler(
         stage: Arc<Mutex<Stage>>,
         mut incoming_conns: IncomingConnections,
-        xorname: XorName,
     ) {
         let _ = tokio::spawn(async move {
             while let Some(incoming_msgs) = incoming_conns.next().await {
@@ -52,17 +47,13 @@ impl EventStream {
                     "New connection established by peer {}",
                     incoming_msgs.remote_addr()
                 );
-                Self::spawn_messages_handler(stage.clone(), incoming_msgs, xorname)
+                Self::spawn_messages_handler(stage.clone(), incoming_msgs)
             }
         });
     }
 
     // Spawns a task which handles each new incoming message from a connection with a peer
-    fn spawn_messages_handler(
-        stage: Arc<Mutex<Stage>>,
-        mut incoming_msgs: IncomingMessages,
-        xorname: XorName,
-    ) {
+    fn spawn_messages_handler(stage: Arc<Mutex<Stage>>, mut incoming_msgs: IncomingMessages) {
         let _ = tokio::spawn(async move {
             while let Some(msg) = incoming_msgs.next().await {
                 match msg {
@@ -95,7 +86,6 @@ impl EventStream {
                         let event = Event::ClientMessageReceived {
                             content: bytes,
                             src,
-                            dst: DstLocation::Node(xorname),
                             send,
                             recv,
                         };
