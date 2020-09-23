@@ -134,7 +134,7 @@ impl Stage {
             comm.clone(),
             shared_state,
             Some(section_key_share),
-            node_info.clone(),
+            node_info,
             timer,
         )?;
 

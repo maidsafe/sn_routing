@@ -83,7 +83,7 @@ pub use self::{
     network_params::NetworkParams,
     node::{EventStream, Node, NodeConfig},
     qp2p::Config as TransportConfig,
-    section::SectionProofChain,
+    section::{SectionProofChain, MIN_AGE},
 };
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
@@ -102,7 +102,7 @@ pub mod mock;
 
 /// Mock network
 #[cfg(feature = "mock")]
-pub use self::section::{quorum_count, MIN_AGE};
+pub use self::section::quorum_count;
 
 #[cfg(feature = "mock")]
 #[doc(hidden)]
