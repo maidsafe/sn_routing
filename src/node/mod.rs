@@ -106,14 +106,8 @@ impl Node {
 
         let stage = Arc::new(Mutex::new(stage));
 
-        let event_stream = EventStream::new(
-            Arc::clone(&stage),
-            node_name,
-            incoming_conns,
-            timer_rx,
-            events_rx,
-        )
-        .await?;
+        let event_stream =
+            EventStream::new(Arc::clone(&stage), incoming_conns, timer_rx, events_rx).await?;
 
         Ok((Self { stage }, event_stream))
     }
