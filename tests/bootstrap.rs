@@ -8,11 +8,12 @@
 
 mod utils;
 
+use anyhow::{Error, Result};
 use futures::future::join_all;
 use sn_routing::{
     event::{Connected, Event},
     rng::MainRng,
-    Error, FullId, Node, Result,
+    FullId, Node,
 };
 use utils::*;
 use xor_name::XorName;
@@ -60,9 +61,7 @@ async fn test_node_bootstrapping() -> Result<()> {
     expect_next_event!(event_stream, Event::Connected(Connected::First))?;
 
     // just await for genesis node to finish receiving all events
-    genesis_handler
-        .await
-        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+    genesis_handler.await??;
 
     let elder_size = 2;
     verify_invariants_for_node(&genesis_node, elder_size).await?;
@@ -120,14 +119,10 @@ async fn test_section_bootstrapping() -> Result<()> {
     let nodes = join_all(nodes_joining_tasks).await;
 
     // just await for genesis node to finish receiving all events
-    let joined_nodes = genesis_handler
-        .await
-        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+    let joined_nodes = genesis_handler.await??;
 
-    for result in nodes.iter() {
-        let node = result
-            .as_ref()
-            .map_err(|err| Error::Unexpected(format!("{}", err)))?;
+    for result in nodes {
+        let node = result?;
         let name = node.name().await;
 
         // assert names of nodes joined match

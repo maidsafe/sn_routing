@@ -8,11 +8,12 @@
 
 mod utils;
 
+use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_routing::{
     event::{Connected, Event},
-    DstLocation, Error, Result, SrcLocation, TransportConfig,
+    DstLocation, Error, SrcLocation, TransportConfig,
 };
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
@@ -51,9 +52,7 @@ async fn test_messages_client_node() -> Result<()> {
     let (_, mut recv) = conn.send(Bytes::from_static(msg)).await?;
 
     // just await for node to respond to client
-    node_handler
-        .await
-        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+    node_handler.await??;
 
     let resp = recv.next().await?;
     assert_eq!(resp, Bytes::from_static(response));
@@ -81,7 +80,7 @@ async fn test_messages_between_nodes() -> Result<()> {
                 _other => {}
             }
         }
-        Err(Error::Unexpected("".to_string()))
+        Err(format_err!("message not received"))
     });
 
     // start a second node which sends a message to the first node
@@ -101,9 +100,7 @@ async fn test_messages_between_nodes() -> Result<()> {
         .await?;
 
     // just await for node1 to receive message from node2
-    let dst = node_handler
-        .await
-        .map_err(|err| Error::Unexpected(format!("{}", err)))??;
+    let dst = node_handler.await??;
 
     // send response from node1 to node2
     node1
@@ -120,11 +117,11 @@ async fn test_messages_between_nodes() -> Result<()> {
             Event::MessageReceived { content, src, .. } => {
                 assert_eq!(content, Bytes::from_static(response));
                 assert_eq!(src, SrcLocation::Node(node1_name));
-                break;
+                return Ok(());
             }
             _other => {}
         }
     }
 
-    Ok(())
+    Err(format_err!("message not received"))
 }

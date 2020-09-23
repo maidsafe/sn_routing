@@ -77,12 +77,7 @@ impl Comm {
 
     /// Starts listening for connections returning a stream where to read them from.
     pub fn listen(&self) -> Result<IncomingConnections> {
-        self.endpoint.listen().map_err(|err| {
-            Error::Unexpected(format!(
-                "Failed to start listening for connections: {}",
-                err
-            ))
-        })
+        Ok(self.endpoint.listen()?)
     }
 
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
