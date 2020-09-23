@@ -15,7 +15,7 @@ use futures::future;
 use itertools::Itertools;
 use sn_routing::{
     event::{Connected, Event},
-    EventStream, FullId, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
+    log_ident, EventStream, FullId, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -45,8 +45,9 @@ impl<'a> TestNodeBuilder {
                 .format(|buf, record| {
                     writeln!(
                         buf,
-                        "{:.1} {} ({}:{})",
+                        "{:.1} {}{} ({}:{})",
                         record.level(),
+                        log_ident::get(),
                         record.args(),
                         record.file().unwrap_or("<unknown>"),
                         record.line().unwrap_or(0)

@@ -18,6 +18,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    log_ident,
     messages::{Message, Variant},
     network_params::NetworkParams,
     rng::MainRng,
@@ -202,11 +203,15 @@ impl Stage {
         dst: DstLocation,
         content: Bytes,
     ) -> Result<()> {
+        let log_ident = self.log_ident();
+
         match &mut self.state {
             State::Approved(stage) => {
-                stage
-                    .send_routing_message(src, dst, Variant::UserMessage(content), None)
-                    .await
+                log_ident::set(
+                    log_ident,
+                    stage.send_routing_message(src, dst, Variant::UserMessage(content), None),
+                )
+                .await
             }
             _ => Err(Error::InvalidState),
         }
@@ -222,43 +227,49 @@ impl Stage {
 
     /// Process a message accordng to current stage.
     pub async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
-        if !self.in_dst_location(&msg).await? {
-            return Ok(());
-        }
-
-        match &mut self.state {
-            State::Bootstrapping(stage) => {
-                if let Some(joining) = stage.process_message(sender, msg).await? {
-                    self.state = State::Joining(joining);
-                }
-
-                Ok(())
+        log_ident::set(self.log_ident(), async {
+            if !self.in_dst_location(&msg).await? {
+                return Ok(());
             }
-            State::Joining(stage) => {
-                let new_state = stage.process_message(sender, msg).await?;
-                if let Some(approved) = new_state {
-                    self.state = State::Approved(approved);
-                }
 
-                Ok(())
-            }
-            State::Approved(stage) => {
-                let new_state = stage.process_message(sender, msg).await?;
-                if let Some(bootstrapping) = new_state {
-                    self.state = State::Bootstrapping(bootstrapping);
-                }
+            match &mut self.state {
+                State::Bootstrapping(stage) => {
+                    if let Some(joining) = stage.process_message(sender, msg).await? {
+                        self.state = State::Joining(joining);
+                    }
 
-                Ok(())
+                    Ok(())
+                }
+                State::Joining(stage) => {
+                    let new_state = stage.process_message(sender, msg).await?;
+                    if let Some(approved) = new_state {
+                        self.state = State::Approved(approved);
+                    }
+
+                    Ok(())
+                }
+                State::Approved(stage) => {
+                    let new_state = stage.process_message(sender, msg).await?;
+                    if let Some(bootstrapping) = new_state {
+                        self.state = State::Bootstrapping(bootstrapping);
+                    }
+
+                    Ok(())
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
-        match &mut self.state {
-            State::Bootstrapping(stage) => stage.process_timeout(token).await,
-            State::Joining(stage) => stage.process_timeout(token).await,
-            State::Approved(stage) => stage.process_timeout(token).await,
-        }
+        log_ident::set(self.log_ident(), async {
+            match &mut self.state {
+                State::Bootstrapping(stage) => stage.process_timeout(token).await,
+                State::Joining(stage) => stage.process_timeout(token).await,
+                State::Approved(stage) => stage.process_timeout(token).await,
+            }
+        })
+        .await
     }
 
     // Checks whether the given location represents self.
@@ -298,7 +309,23 @@ impl Stage {
         }
     }
 
-    pub fn name_and_prefix(&self) -> String {
+    fn node_info(&self) -> &NodeInfo {
+        match &self.state {
+            State::Bootstrapping(state) => &state.node_info,
+            State::Joining(state) => &state.node_info,
+            State::Approved(state) => &state.node_info,
+        }
+    }
+
+    fn node_info_mut(&mut self) -> &mut NodeInfo {
+        match &mut self.state {
+            State::Bootstrapping(state) => &mut state.node_info,
+            State::Joining(state) => &mut state.node_info,
+            State::Approved(state) => &mut state.node_info,
+        }
+    }
+
+    fn log_ident(&self) -> String {
         match &self.state {
             State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
             State::Joining(state) => format!(
@@ -322,22 +349,6 @@ impl Stage {
                     )
                 }
             }
-        }
-    }
-
-    fn node_info(&self) -> &NodeInfo {
-        match &self.state {
-            State::Bootstrapping(state) => &state.node_info,
-            State::Joining(state) => &state.node_info,
-            State::Approved(state) => &state.node_info,
-        }
-    }
-
-    fn node_info_mut(&mut self) -> &mut NodeInfo {
-        match &mut self.state {
-            State::Bootstrapping(state) => &mut state.node_info,
-            State::Joining(state) => &mut state.node_info,
-            State::Approved(state) => &mut state.node_info,
         }
     }
 }

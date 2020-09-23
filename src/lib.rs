@@ -65,11 +65,11 @@
 )]
 
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate serde;
 
 // Needs to be before all other modules to make the macros available to them.
-#[macro_use]
-mod log_utils;
 #[macro_use]
 mod macros;
 
@@ -89,6 +89,7 @@ pub use self::{
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// sn_routing events.
 pub mod event;
+pub mod log_ident;
 /// Random number generation
 pub mod rng;
 

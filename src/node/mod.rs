@@ -21,7 +21,6 @@ use crate::{
     error::{Error, Result},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    log_utils,
     network_params::NetworkParams,
     rng::MainRng,
     section::{EldersInfo, SectionProofChain},
@@ -88,16 +87,8 @@ impl Node {
         let is_genesis = config.first;
 
         let (stage, incoming_conns, timer_rx, events_rx) = if is_genesis {
-            match Stage::first_node(transport_config, full_id, network_params).await {
-                Ok(stage_and_conns_stream) => {
-                    info!("{} Started a new network as a seed node.", node_name);
-                    stage_and_conns_stream
-                }
-                Err(error) => {
-                    error!("{} Failed to start the first node: {:?}", node_name, error);
-                    return Err(error);
-                }
-            }
+            info!("{} Starting a new network as the seed node.", node_name);
+            Stage::first_node(transport_config, full_id, network_params).await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             Stage::bootstrap(transport_config, full_id, network_params).await?
@@ -225,11 +216,6 @@ impl Node {
         if let DstLocation::Direct = dst {
             return Err(Error::BadLocation);
         }
-
-        // Set log identifier
-        let str = self.stage.lock().await.name_and_prefix();
-        use std::fmt::Write;
-        let _log_ident = log_utils::set_ident(|buffer| write!(buffer, "{}", str));
 
         self.stage
             .lock()
