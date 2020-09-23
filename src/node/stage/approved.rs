@@ -41,6 +41,7 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub(crate) struct Approved {
+    pub node_info: NodeInfo,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     message_accumulator: MessageAccumulator,
@@ -51,7 +52,6 @@ pub(crate) struct Approved {
     // Serialized `RelocatePromise` message that we received from our section. To be sent back to
     // them after we are demoted.
     relocate_promise: Option<Bytes>,
-    node_info: NodeInfo,
     comm: Comm,
     msg_filter: MessageFilter,
     timer: Timer,
@@ -69,6 +69,7 @@ impl Approved {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
         Ok(Self {
+            node_info,
             shared_state,
             section_keys_provider,
             message_accumulator: Default::default(),
@@ -76,7 +77,6 @@ impl Approved {
             section_update_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_promise: None,
-            node_info,
             comm,
             msg_filter: MessageFilter::new(),
             timer,

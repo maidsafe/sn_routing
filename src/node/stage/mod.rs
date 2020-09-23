@@ -16,7 +16,7 @@ use crate::{
     consensus::{self, Proof, Proven},
     error::{Error, Result},
     event::{Connected, Event},
-    id::{FullId, P2pNode},
+    id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{Message, Variant},
     network_params::NetworkParams,
@@ -28,9 +28,9 @@ use crate::{
 use bytes::Bytes;
 use qp2p::IncomingConnections;
 use serde::Serialize;
-use std::{iter, net::SocketAddr, sync::Arc};
+use std::{iter, net::SocketAddr};
 use tokio::sync::mpsc;
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 #[cfg(feature = "mock")]
 pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
@@ -53,11 +53,19 @@ enum State {
 #[derive(Clone)]
 pub(crate) struct NodeInfo {
     pub full_id: FullId,
-    pub network_params: Arc<NetworkParams>,
+    pub network_params: NetworkParams,
     events_tx: mpsc::Sender<Event>,
 }
 
 impl NodeInfo {
+    pub fn public_id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&mut self, event: Event) {
         if let Err(err) = self.events_tx.send(event).await {
@@ -71,19 +79,14 @@ impl NodeInfo {
 pub(crate) struct Stage {
     state: State,
     comm: Comm,
-    node_info: NodeInfo,
 }
 
 impl Stage {
     // Private constructor
-    fn new(state: State, comm: Comm, node_info: NodeInfo) -> Result<(Self, IncomingConnections)> {
+    fn new(state: State, comm: Comm) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
-        let stage = Self {
-            state,
-            comm,
-            node_info,
-        };
+        let stage = Self { state, comm };
 
         Ok((stage, incoming_conns))
     }
@@ -123,7 +126,7 @@ impl Stage {
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         let mut node_info = NodeInfo {
             full_id,
-            network_params: Arc::new(network_params),
+            network_params,
             events_tx,
         };
 
@@ -143,7 +146,7 @@ impl Stage {
             timer,
         )?;
 
-        let (stage, incomming_connections) = Self::new(State::Approved(state), comm, node_info)?;
+        let (stage, incomming_connections) = Self::new(State::Approved(state), comm)?;
 
         Ok((stage, incomming_connections, timer_rx, events_rx))
     }
@@ -163,7 +166,7 @@ impl Stage {
         let (events_tx, events_rx) = mpsc::channel::<Event>(MAX_EVENTS_BUFFERED);
         let node_info = NodeInfo {
             full_id,
-            network_params: Arc::new(network_params),
+            network_params,
             events_tx,
         };
 
@@ -173,7 +176,7 @@ impl Stage {
         let state =
             Bootstrapping::new(None, vec![addr], comm.clone(), node_info.clone(), timer).await?;
         let state = State::Bootstrapping(state);
-        let (stage, incomming_connections) = Self::new(state, comm, node_info)?;
+        let (stage, incomming_connections) = Self::new(state, comm)?;
 
         Ok((stage, incomming_connections, timer_rx, events_rx))
     }
@@ -187,12 +190,12 @@ impl Stage {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&mut self, event: Event) {
-        self.node_info.send_event(event).await;
+        self.node_info_mut().send_event(event).await;
     }
 
     /// Returns current FullId of the node
     pub fn full_id(&self) -> &FullId {
-        &self.node_info.full_id
+        &self.node_info().full_id
     }
 
     /// Returns connection info of this node.
@@ -270,13 +273,13 @@ impl Stage {
     async fn in_dst_location(&mut self, msg: &Message) -> Result<bool> {
         let in_dst = match &mut self.state {
             State::Bootstrapping(_) | State::Joining(_) => match msg.dst() {
-                DstLocation::Node(name) => name == self.node_info.full_id.public_id().name(),
+                DstLocation::Node(name) => name == self.node_info().full_id.public_id().name(),
                 DstLocation::Section(_) => false,
                 DstLocation::Direct => true,
             },
             State::Approved(stage) => {
                 let is_dst_location = msg.dst().contains(
-                    self.node_info.full_id.public_id().name(),
+                    stage.node_info.full_id.public_id().name(),
                     stage.shared_state.our_prefix(),
                 );
 
@@ -304,26 +307,45 @@ impl Stage {
     }
 
     pub fn name_and_prefix(&self) -> String {
-        let name = self.node_info.full_id.public_id().name();
         match &self.state {
-            State::Bootstrapping(_) => format!("{}(?) ", name),
-            State::Joining(stage) => format!(
+            State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
+            State::Joining(state) => format!(
                 "{}({:b}?) ",
-                name,
-                stage.target_section_elders_info().prefix,
+                state.node_info.name(),
+                state.target_section_elders_info().prefix,
             ),
-            State::Approved(stage) => {
-                if stage.is_our_elder(self.node_info.full_id.public_id()) {
+            State::Approved(state) => {
+                if state.is_our_elder(state.node_info.public_id()) {
                     format!(
                         "{}({:b}v{}!) ",
-                        name,
-                        stage.shared_state.our_prefix(),
-                        stage.shared_state.our_history.last_key_index()
+                        state.node_info.name(),
+                        state.shared_state.our_prefix(),
+                        state.shared_state.our_history.last_key_index()
                     )
                 } else {
-                    format!("{}({:b}) ", name, stage.shared_state.our_prefix())
+                    format!(
+                        "{}({:b}) ",
+                        state.node_info.name(),
+                        state.shared_state.our_prefix()
+                    )
                 }
             }
+        }
+    }
+
+    fn node_info(&self) -> &NodeInfo {
+        match &self.state {
+            State::Bootstrapping(state) => &state.node_info,
+            State::Joining(state) => &state.node_info,
+            State::Approved(state) => &state.node_info,
+        }
+    }
+
+    fn node_info_mut(&mut self) -> &mut NodeInfo {
+        match &mut self.state {
+            State::Bootstrapping(state) => &mut state.node_info,
+            State::Joining(state) => &mut state.node_info,
+            State::Approved(state) => &mut state.node_info,
         }
     }
 }
