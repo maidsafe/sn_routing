@@ -470,13 +470,11 @@ impl Approved {
                 Ok(None)
             }
             Variant::UserMessage(content) => {
-                self.node_info
-                    .send_event(Event::MessageReceived {
-                        content: content.clone(),
-                        src: msg.src().src_location(),
-                        dst: *msg.dst(),
-                    })
-                    .await;
+                self.node_info.send_event(Event::MessageReceived {
+                    content: content.clone(),
+                    src: msg.src().src_location(),
+                    dst: *msg.dst(),
+                });
                 Ok(None)
             }
             Variant::BouncedUntrustedMessage(message) => {
@@ -756,11 +754,9 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            self.node_info
-                .send_event(Event::RelocationStarted {
-                    previous_name: *self.node_info.full_id.public_id().name(),
-                })
-                .await;
+            self.node_info.send_event(Event::RelocationStarted {
+                previous_name: *self.node_info.full_id.public_id().name(),
+            });
         }
 
         let conn_infos: Vec<_> = self
@@ -786,11 +782,9 @@ impl Approved {
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                self.node_info
-                    .send_event(Event::RelocationStarted {
-                        previous_name: *self.node_info.full_id.public_id().name(),
-                    })
-                    .await;
+                self.node_info.send_event(Event::RelocationStarted {
+                    previous_name: *self.node_info.full_id.public_id().name(),
+                });
             } else {
                 trace!("ignore RelocatePromise - already have one");
             }
@@ -1268,20 +1262,16 @@ impl Approved {
         self.print_network_stats();
 
         if let Some(previous_name) = previous_name {
-            self.node_info
-                .send_event(Event::MemberJoined {
-                    name: *p2p_node.name(),
-                    previous_name,
-                    age,
-                })
-                .await;
+            self.node_info.send_event(Event::MemberJoined {
+                name: *p2p_node.name(),
+                previous_name,
+                age,
+            });
         } else {
-            self.node_info
-                .send_event(Event::InfantJoined {
-                    name: *p2p_node.name(),
-                    age,
-                })
-                .await;
+            self.node_info.send_event(Event::InfantJoined {
+                name: *p2p_node.name(),
+                age,
+            });
         }
 
         self.promote_and_demote_elders().await
@@ -1301,12 +1291,10 @@ impl Approved {
 
         self.increment_ages(p2p_node.name(), &signature).await?;
 
-        self.node_info
-            .send_event(Event::MemberLeft {
-                name: *p2p_node.name(),
-                age,
-            })
-            .await;
+        self.node_info.send_event(Event::MemberLeft {
+            name: *p2p_node.name(),
+            age,
+        });
 
         self.promote_and_demote_elders().await
     }
@@ -1504,24 +1492,22 @@ impl Approved {
                 self.send_sync(self.shared_state.clone()).await?;
             }
 
-            self.node_info
-                .send_event(Event::EldersChanged {
-                    prefix: *self.shared_state.our_prefix(),
-                    key: *self.shared_state.our_history.last_key(),
-                    elders: self
-                        .shared_state
-                        .our_info()
-                        .elders
-                        .keys()
-                        .copied()
-                        .collect(),
-                })
-                .await;
+            self.node_info.send_event(Event::EldersChanged {
+                prefix: *self.shared_state.our_prefix(),
+                key: *self.shared_state.our_history.last_key(),
+                elders: self
+                    .shared_state
+                    .our_info()
+                    .elders
+                    .keys()
+                    .copied()
+                    .collect(),
+            });
         }
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            self.node_info.send_event(Event::PromotedToElder).await;
+            self.node_info.send_event(Event::PromotedToElder);
 
             // Ping all members to detect recent lost nodes for which the section might need
             // our Offline vote.
@@ -1540,7 +1526,7 @@ impl Approved {
             info!("Demoted");
             self.shared_state.demote();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            self.node_info.send_event(Event::Demoted).await;
+            self.node_info.send_event(Event::Demoted);
         }
 
         if !new_is_elder {

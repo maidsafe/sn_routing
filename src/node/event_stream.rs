@@ -18,7 +18,7 @@ use xor_name::XorName;
 
 /// Stream of routing node events
 pub struct EventStream {
-    events_rx: mpsc::Receiver<Event>,
+    events_rx: mpsc::UnboundedReceiver<Event>,
 }
 
 impl EventStream {
@@ -27,7 +27,7 @@ impl EventStream {
         xorname: XorName,
         incoming_conns: IncomingConnections,
         timer_rx: mpsc::UnboundedReceiver<u64>,
-        events_rx: mpsc::Receiver<Event>,
+        events_rx: mpsc::UnboundedReceiver<Event>,
     ) -> Result<Self> {
         Self::spawn_connections_handler(Arc::clone(&stage), incoming_conns, xorname);
         Self::spawn_timer_handler(stage, timer_rx);
@@ -100,7 +100,7 @@ impl EventStream {
                             recv,
                         };
 
-                        stage.lock().await.send_event(event).await;
+                        stage.lock().await.send_event(event);
                     }
                 }
             }

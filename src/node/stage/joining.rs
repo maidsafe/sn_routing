@@ -104,9 +104,7 @@ impl Joining {
                         self.timer.clone(),
                     )?;
 
-                    self.node_info
-                        .send_event(Event::Connected(connect_type))
-                        .await;
+                    self.node_info.send_event(Event::Connected(connect_type));
 
                     Ok(Some(new_stage))
                 }
