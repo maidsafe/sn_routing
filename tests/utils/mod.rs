@@ -110,16 +110,9 @@ pub const TIMEOUT: Duration = Duration::from_secs(5);
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         match tokio::time::timeout($crate::utils::TIMEOUT, $node.next()).await {
-            Ok(Some($pattern)) => Ok(()),
-            Ok(other) => Err(anyhow::format_err!(
-                "Expecting {}, got {:?}",
-                stringify!($pattern),
-                other
-            )),
-            Err(_) => Err(anyhow::format_err!(
-                "Timeout when expecting {}",
-                stringify!($pattern)
-            )),
+            Ok(Some($pattern)) => {}
+            Ok(other) => panic!("Expecting {}, got {:?}", stringify!($pattern), other),
+            Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),
         }
     };
 }
@@ -137,8 +130,8 @@ pub async fn create_connected_nodes(
         .network_params(network_params)
         .create()
         .await?;
-    expect_next_event!(event_stream, Event::Connected(Connected::First))?;
-    expect_next_event!(event_stream, Event::PromotedToElder)?;
+    expect_next_event!(event_stream, Event::Connected(Connected::First));
+    expect_next_event!(event_stream, Event::PromotedToElder);
 
     let bootstrap_contact = node.our_connection_info().await?;
 
@@ -152,7 +145,7 @@ pub async fn create_connected_nodes(
             .create()
             .await?;
 
-        expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+        expect_next_event!(event_stream, Event::Connected(Connected::First));
 
         Ok::<_, Error>((node, event_stream))
     });

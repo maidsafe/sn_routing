@@ -42,7 +42,8 @@ fn spawn_connections_handler(stage: Arc<Mutex<Stage>>, mut incoming_conns: Incom
     let _ = tokio::spawn(async move {
         while let Some(incoming_msgs) = incoming_conns.next().await {
             trace!(
-                "New connection established by peer {}",
+                "{}New connection established by peer {}",
+                stage.lock().await.log_ident(),
                 incoming_msgs.remote_addr()
             );
             spawn_messages_handler(stage.clone(), incoming_msgs)
@@ -57,7 +58,8 @@ fn spawn_messages_handler(stage: Arc<Mutex<Stage>>, mut incoming_msgs: IncomingM
             match msg {
                 QuicP2pMsg::UniStream { bytes, src, .. } => {
                     trace!(
-                        "New message ({} bytes) received on a uni-stream from: {}",
+                        "{}New message ({} bytes) received on a uni-stream from: {}",
+                        stage.lock().await.log_ident(),
                         bytes.len(),
                         src
                     );
@@ -73,7 +75,8 @@ fn spawn_messages_handler(stage: Arc<Mutex<Stage>>, mut incoming_msgs: IncomingM
                     recv,
                 } => {
                     trace!(
-                        "New message ({} bytes) received on a bi-stream from: {}",
+                        "{}New message ({} bytes) received on a bi-stream from: {}",
+                        stage.lock().await.log_ident(),
                         bytes.len(),
                         src
                     );
@@ -92,6 +95,12 @@ fn spawn_messages_handler(stage: Arc<Mutex<Stage>>, mut incoming_msgs: IncomingM
                 }
             }
         }
+
+        trace!(
+            "{}Connection to peer {} closed",
+            stage.lock().await.log_ident(),
+            incoming_msgs.remote_addr()
+        );
     });
 }
 
@@ -99,10 +108,13 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
     let _ = tokio::spawn(async move {
         match Message::from_bytes(&msg_bytes) {
             Err(error) => {
-                debug!("Failed to deserialize message: {:?}", error);
+                debug!(
+                    "{}Failed to deserialize message: {:?}",
+                    stage.lock().await.log_ident(),
+                    error
+                );
             }
             Ok(msg) => {
-                trace!("try handle message {:?}", msg);
                 // Process the message according to our stage
                 if let Err(err) = stage
                     .lock()
@@ -111,8 +123,10 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
                     .await
                 {
                     error!(
-                        "Error encountered when processing message {:?}: {}",
-                        msg, err
+                        "{}Error encountered when processing message {:?}: {}",
+                        stage.lock().await.log_ident(),
+                        msg,
+                        err
                     );
                 }
             }
@@ -124,7 +138,11 @@ fn spawn_timer_handler(stage: Arc<Mutex<Stage>>, mut rx: mpsc::UnboundedReceiver
     let _ = tokio::spawn(async move {
         while let Some(token) = rx.recv().await {
             if let Err(err) = stage.lock().await.process_timeout(token).await {
-                error!("Error encountered when processing timeout: {}", err);
+                error!(
+                    "{}Error encountered when processing timeout: {}",
+                    stage.lock().await.log_ident(),
+                    err
+                );
             }
         }
     });

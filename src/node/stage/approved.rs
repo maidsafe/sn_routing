@@ -88,7 +88,6 @@ impl Approved {
         sender: SocketAddr,
         msg: Message,
     ) -> Result<Option<Bootstrapping>> {
-        trace!("Got {:?}", msg);
         // Filter messages which were already handled
         if self.msg_filter.contains_incoming(&msg) {
             trace!("not handling message - already handled: {:?}", msg);
@@ -97,6 +96,7 @@ impl Approved {
 
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
+                trace!("Useful message from {}: {:?}", sender, msg);
                 self.update_section_knowledge(&msg).await?;
                 self.handle_useful_message(Some(sender), msg).await
             }
@@ -134,8 +134,6 @@ impl Approved {
     // Cast a vote that doesn't need total order, only section consensus.
     #[async_recursion]
     async fn cast_unordered_vote(&mut self, vote: Vote) -> Result<()> {
-        trace!("Vote for {:?}", vote);
-
         let key_share = self.section_keys_provider.key_share()?;
 
         trace!(
@@ -323,10 +321,6 @@ impl Approved {
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         let our_id = self.node_info.full_id.public_id();
 
-        trace!(
-            "Deciding message status based upon variant: {:?}",
-            msg.variant()
-        );
         match msg.variant() {
             Variant::NeighbourInfo { .. } => {
                 if !self.is_our_elder(our_id) {

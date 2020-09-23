@@ -10,7 +10,8 @@ mod utils;
 
 use self::utils::*;
 use anyhow::{ensure, format_err, Result};
-use sn_routing::{event::Event, NetworkParams};
+use bytes::Bytes;
+use sn_routing::{event::Event, DstLocation, NetworkParams, SrcLocation};
 use tokio::time;
 
 #[tokio::test]
@@ -19,6 +20,15 @@ async fn test_node_drop() -> Result<()> {
 
     // Drop one node
     let dropped_name = nodes.remove(1).0.name().await;
+
+    // Send a message to the dropped node. This will cause us detect it as gone.
+    let src = SrcLocation::Node(nodes[0].0.name().await);
+    let dst = DstLocation::Node(dropped_name);
+    nodes[0]
+        .0
+        .send_message(src, dst, Bytes::from_static(b"ping"))
+        .await?;
+
     let expect_event = async {
         while let Some(event) = nodes[0].1.next().await {
             if let Event::MemberLeft { name, .. } = event {

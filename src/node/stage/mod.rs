@@ -166,10 +166,15 @@ impl Stage {
         let (timer_tx, timer_rx) = mpsc::unbounded_channel();
         let timer = Timer::new(timer_tx);
 
-        let state =
-            Bootstrapping::new(None, vec![addr], comm.clone(), node_info.clone(), timer).await?;
-        let state = State::Bootstrapping(state);
-        let (stage, incomming_connections) = Self::new(state, comm)?;
+        let (stage, incomming_connections) =
+            log_ident::set(format!("{} ", node_info.name()), async {
+                let state =
+                    Bootstrapping::new(None, vec![addr], comm.clone(), node_info.clone(), timer)
+                        .await?;
+                let state = State::Bootstrapping(state);
+                Self::new(state, comm)
+            })
+            .await?;
 
         Ok((stage, incomming_connections, timer_rx, events_rx))
     }
@@ -228,6 +233,8 @@ impl Stage {
     /// Process a message accordng to current stage.
     pub async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
         log_ident::set(self.log_ident(), async {
+            trace!("try handle {:?} from {}", msg, sender);
+
             if !self.in_dst_location(&msg).await? {
                 return Ok(());
             }
@@ -325,7 +332,7 @@ impl Stage {
         }
     }
 
-    fn log_ident(&self) -> String {
+    pub(crate) fn log_ident(&self) -> String {
         match &self.state {
             State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
             State::Joining(state) => format!(

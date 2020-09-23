@@ -63,6 +63,8 @@
     unused_results,
     clippy::needless_borrow
 )]
+// FIXME: find a way to not need this.
+#![type_length_limit = "2174929"]
 
 #[macro_use]
 extern crate log;
@@ -82,9 +84,9 @@ pub use self::{
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
     node::{EventStream, Node, NodeConfig},
-    qp2p::Config as TransportConfig,
     section::{SectionProofChain, MIN_AGE},
 };
+pub use qp2p::Config as TransportConfig;
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// sn_routing events.
@@ -151,12 +153,6 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
-
-// Quic-p2p
-#[cfg(feature = "mock")]
-use mock_qp2p as qp2p;
-#[cfg(not(feature = "mock"))]
-use qp2p::{self};
 
 #[cfg(test)]
 mod tests {
