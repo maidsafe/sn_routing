@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 pub mod event_stream;
+mod executor;
 mod stage;
 #[cfg(all(test, feature = "mock"))]
 mod tests;
@@ -16,7 +17,7 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 pub use event_stream::EventStream;
 
-use self::stage::Stage;
+use self::{executor::Executor, stage::Stage};
 use crate::{
     error::{Error, Result},
     id::{FullId, P2pNode, PublicId},
@@ -27,9 +28,9 @@ use crate::{
     TransportConfig,
 };
 use bytes::Bytes;
-use futures::lock::Mutex;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::Mutex;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
@@ -67,9 +68,9 @@ impl Default for NodeConfig {
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
-#[derive(Clone)]
 pub struct Node {
     stage: Arc<Mutex<Stage>>,
+    _executor: Executor,
 }
 
 impl Node {
@@ -95,11 +96,15 @@ impl Node {
         };
 
         let stage = Arc::new(Mutex::new(stage));
+        let executor = Executor::new(Arc::clone(&stage), incoming_conns, timer_rx);
+        let event_stream = EventStream::new(events_rx);
 
-        let event_stream =
-            EventStream::new(Arc::clone(&stage), incoming_conns, timer_rx, events_rx).await?;
+        let node = Self {
+            stage,
+            _executor: executor,
+        };
 
-        Ok((Self { stage }, event_stream))
+        Ok((node, event_stream))
     }
 
     /// Returns the `PublicId` of this node.

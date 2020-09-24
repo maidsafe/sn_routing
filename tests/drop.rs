@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+#![allow(unused)]
+
 mod utils;
 
 use self::utils::*;
@@ -21,7 +23,7 @@ async fn test_node_drop() -> Result<()> {
     // Drop one node
     let dropped_name = nodes.remove(1).0.name().await;
 
-    // Send a message to the dropped node. This will cause us detect it as gone.
+    // Send a message to the dropped node. This will cause us to detect it as gone.
     let src = SrcLocation::Node(nodes[0].0.name().await);
     let dst = DstLocation::Node(dropped_name);
     nodes[0]
