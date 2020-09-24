@@ -14,7 +14,9 @@ use crate::{
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     timer::Timer,
+    DstLocation,
 };
+use futures::future;
 use std::{iter, net::SocketAddr};
 use xor_name::Prefix;
 
@@ -38,7 +40,7 @@ impl Bootstrapping {
         node_info: NodeInfo,
         timer: Timer,
     ) -> Result<Self> {
-        let mut stage = Self {
+        let stage = Self {
             node_info,
             relocate_details,
             comm,
@@ -153,28 +155,35 @@ impl Bootstrapping {
         }
     }
 
-    async fn send_bootstrap_request(&mut self, dst: SocketAddr) -> Result<()> {
-        let xorname = match &self.relocate_details {
+    async fn send_bootstrap_request(&self, dst: SocketAddr) -> Result<()> {
+        let destination = match &self.relocate_details {
             Some(details) => *details.destination(),
             None => *self.node_info.full_id.public_id().name(),
         };
 
-        debug!("Sending BootstrapRequest to {}.", dst);
+        let message = Message::single_src(
+            &self.node_info.full_id,
+            DstLocation::Direct,
+            Variant::BootstrapRequest(destination),
+            None,
+            None,
+        )?;
+
+        debug!("Sending BootstrapRequest to {}", dst);
         self.comm
-            .send_direct_message(
-                &self.node_info.full_id,
-                &dst,
-                Variant::BootstrapRequest(xorname),
-            )
+            .send_message_to_target(&dst, message.to_bytes())
             .await
+            .into()
     }
 
-    async fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
-        for conn_info in new_conn_infos {
-            self.send_bootstrap_request(conn_info).await?;
-        }
-
-        Ok(())
+    async fn reconnect_to_new_section(&self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
+        future::try_join_all(
+            new_conn_infos
+                .into_iter()
+                .map(|addr| self.send_bootstrap_request(addr)),
+        )
+        .await
+        .map(|_| ())
     }
 
     fn join_section(&mut self, elders_info: &EldersInfo) -> Result<Option<RelocatePayload>> {

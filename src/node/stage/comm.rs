@@ -6,18 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    error::Result,
-    id::FullId,
-    location::DstLocation,
-    messages::{Message, Variant},
-};
+use crate::error::{Error, Result};
 use bytes::Bytes;
 use futures::{
     lock::Mutex,
     stream::{FuturesUnordered, StreamExt},
 };
-use itertools::Itertools;
 use lru_time_cache::LruCache;
 use qp2p::{Config, Connection, Endpoint, IncomingConnections, QuicP2p};
 use std::{net::SocketAddr, slice, sync::Arc, time::Duration};
@@ -95,7 +89,7 @@ impl Comm {
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         msg: Bytes,
-    ) -> Result<()> {
+    ) -> SendStatus {
         if recipients.len() < delivery_group_size {
             warn!(
                 "Less than delivery_group_size valid recipients - delivery_group_size: {}, recipients: {:?}",
@@ -104,6 +98,8 @@ impl Comm {
             );
         }
 
+        // Use `FuturesUnordered` to execute all the send tasks concurrently, but still on the same
+        // thread.
         let mut state = SendState::new(recipients, delivery_group_size);
         let mut tasks = FuturesUnordered::new();
 
@@ -114,40 +110,55 @@ impl Comm {
             }
 
             if let Some((addr, result)) = tasks.next().await {
-                if result.is_ok() {
-                    trace!("Sending message to {} succeeded", addr);
-                    state.success(&addr);
-                } else {
-                    trace!("Sending message to {} failed", addr);
-                    state.failure(&addr);
+                match result {
+                    Ok(_) => {
+                        trace!("Sending message to {} succeeded", addr);
+                        state.success(&addr);
+                    }
+                    Err(err) => {
+                        trace!("Sending message to {} failed: {}", addr, err);
+                        state.failure(&addr);
+                    }
                 }
             } else {
                 break;
             }
         }
 
+        let status = state.finish();
+
         trace!(
-            "Sending message finished (failed recipients: [{}])",
-            state.failed().format(", ")
+            "Sending message finished to {}/{} recipients (failed: {:?})",
+            delivery_group_size - status.remaining,
+            delivery_group_size,
+            status.failed_recipients
         );
 
-        Ok(())
+        status
     }
 
-    pub async fn send_message_to_target(&self, recipient: &SocketAddr, msg: Bytes) -> Result<()> {
+    pub async fn send_message_to_target(&self, recipient: &SocketAddr, msg: Bytes) -> SendStatus {
         self.send_message_to_targets(slice::from_ref(recipient), 1, msg)
             .await
     }
+}
 
-    pub async fn send_direct_message(
-        &self,
-        src_id: &FullId,
-        recipient: &SocketAddr,
-        variant: Variant,
-    ) -> Result<()> {
-        let message = Message::single_src(src_id, DstLocation::Direct, variant, None, None)?;
-        self.send_message_to_target(recipient, message.to_bytes())
-            .await
+#[derive(Debug)]
+pub struct SendStatus {
+    // The number of recipients out of the requested delivery group that we haven't successfully
+    // sent the message to.
+    pub remaining: usize,
+    // Recipients that failed all the send attempts.
+    pub failed_recipients: Vec<SocketAddr>,
+}
+
+impl From<SendStatus> for Result<(), Error> {
+    fn from(status: SendStatus) -> Self {
+        if status.remaining == 0 {
+            Ok(())
+        } else {
+            Err(Error::FailedSend)
+        }
     }
 }
 
@@ -196,6 +207,7 @@ impl Inner {
     }
 }
 
+// Helper to track the sending of a single message to potentially multiple recipients.
 struct SendState {
     recipients: Vec<Recipient>,
     remaining: usize,
@@ -269,16 +281,15 @@ impl SendState {
         }
     }
 
-    // // Did we successfuly send to the required number of recipients?
-    // fn complete(&self) -> bool {
-    //     self.remaining == 0
-    // }
-
-    // Returns all failed recipients.
-    fn failed(&self) -> impl Iterator<Item = &SocketAddr> {
-        self.recipients
-            .iter()
-            .filter(|recipient| !recipient.sending && recipient.attempt >= RESEND_MAX_ATTEMPTS)
-            .map(|recipient| &recipient.addr)
+    fn finish(self) -> SendStatus {
+        SendStatus {
+            remaining: self.remaining,
+            failed_recipients: self
+                .recipients
+                .into_iter()
+                .filter(|recipient| !recipient.sending && recipient.attempt >= RESEND_MAX_ATTEMPTS)
+                .map(|recipient| recipient.addr)
+                .collect(),
+        }
     }
 }

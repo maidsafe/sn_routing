@@ -21,6 +21,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     fmt::Debug,
+    net::SocketAddr,
 };
 use xor_name::{Prefix, XorName};
 
@@ -169,6 +170,13 @@ impl SharedState {
     /// Returns whether the given peer adult or elder.
     pub fn is_peer_adult_or_elder(&self, name: &XorName) -> bool {
         self.our_members.is_adult(name) || self.is_peer_our_elder(name)
+    }
+
+    pub fn find_p2p_node_from_addr(&self, peer_addr: &SocketAddr) -> Option<&P2pNode> {
+        self.our_members
+            .all()
+            .find(|info| info.p2p_node.peer_addr() == peer_addr)
+            .map(|info| &info.p2p_node)
     }
 
     /// All section keys we know of, including the past keys of our section.

@@ -227,7 +227,10 @@ impl Stage {
         recipient: &SocketAddr,
         msg: Bytes,
     ) -> Result<()> {
-        self.comm.send_message_to_target(recipient, msg).await
+        self.comm
+            .send_message_to_target(recipient, msg)
+            .await
+            .into()
     }
 
     /// Process a message accordng to current stage.

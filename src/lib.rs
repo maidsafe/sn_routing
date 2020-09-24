@@ -64,7 +64,7 @@
     clippy::needless_borrow
 )]
 // FIXME: find a way to not need this.
-#![type_length_limit = "2174929"]
+#![type_length_limit = "2259754"]
 
 #[macro_use]
 extern crate log;

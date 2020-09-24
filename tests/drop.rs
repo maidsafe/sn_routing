@@ -6,12 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#![allow(unused)]
-
 mod utils;
 
 use self::utils::*;
-use anyhow::{ensure, format_err, Result};
+use anyhow::{format_err, Result};
 use bytes::Bytes;
 use sn_routing::{event::Event, DstLocation, NetworkParams, SrcLocation};
 use tokio::time;
@@ -31,14 +29,17 @@ async fn test_node_drop() -> Result<()> {
         .send_message(src, dst, Bytes::from_static(b"ping"))
         .await?;
 
+    // TODO: find a way to fast-forward the time, so this test doesn't need to take the full time
+    // it takes to detect a lost peer. Tokio has `time::pause` and `time::advance` which might do
+    // the job, but it doesn't seem to work. Investigate it.
+
     let expect_event = async {
         while let Some(event) = nodes[0].1.next().await {
             if let Event::MemberLeft { name, .. } = event {
-                ensure!(
-                    name == dropped_name,
+                assert_eq!(
+                    name, dropped_name,
                     "unexpected dropped node {} (expecting {})",
-                    name,
-                    dropped_name
+                    name, dropped_name
                 );
                 return Ok(());
             }

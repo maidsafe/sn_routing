@@ -37,4 +37,6 @@ pub enum Error {
     InvalidSignatureShare,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+    #[error(display = "Failed to send a message.")]
+    FailedSend,
 }
