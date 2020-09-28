@@ -78,13 +78,14 @@ mod macros;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
+    event::Event as TransportEvent,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
     node::{EventStream, Node, NodeConfig},
-    qp2p::Config as TransportConfig,
     section::SectionProofChain,
 };
+pub use qp2p::Config as TransportConfig;
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// sn_routing events.
@@ -110,8 +111,11 @@ pub mod test_consts {
     pub use crate::{
         consensus::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
         node::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
-        transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
     };
+    /// Maximal number of resend attempts to the same target.
+    pub const RESEND_MAX_ATTEMPTS: u8 = 3;
+    /// Delay before attempting to resend a previously failed message.
+    pub const RESEND_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 }
 
 // ############################################################################
@@ -150,12 +154,6 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
-
-// Quic-p2p
-#[cfg(feature = "mock")]
-use mock_qp2p as qp2p;
-#[cfg(not(feature = "mock"))]
-use qp2p::{self};
 
 #[cfg(test)]
 mod tests {

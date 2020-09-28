@@ -11,12 +11,13 @@ use crate::{
     messages::{Message, Variant},
     mock::Environment,
     node::{Node, NodeConfig, BOOTSTRAP_TIMEOUT},
-    qp2p::{EventSenders, Peer},
     transport::Transport,
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::{self as mpmc, TryRecvError};
+use qp2p::{EventSenders, Peer};
 use sn_fake_clock::FakeClock;
+use std::collections::HashSet;
 
 #[test]
 // Check that losing our proxy connection while in the bootstrapping stage doesn't stall
@@ -30,16 +31,25 @@ fn lose_proxy_connection() {
         let (client_tx, _) = mpmc::unbounded();
         (EventSenders { node_tx, client_tx }, node_rx)
     };
-    let node_a_endpoint = env.gen_addr();
-    let node_a_config = TransportConfig::node().with_endpoint(node_a_endpoint);
+    let node_a_endpoint = Environment::gen_addr();
+    let node_a_config = TransportConfig {
+        port: Some(node_a_endpoint.port()),
+        ip: Some(node_a_endpoint.ip()),
+        ..Default::default()
+    };
     let node_a_network_service = Transport::new(node_a_event_tx, node_a_config).unwrap();
 
     // Construct a node "B" which will start in the bootstrapping stage and bootstrap off the
     // network service above.
-    let node_b_endpoint = env.gen_addr();
-    let node_b_config = TransportConfig::node()
-        .with_hard_coded_contact(node_a_endpoint)
-        .with_endpoint(node_b_endpoint);
+    let node_b_endpoint = Environment::gen_addr();
+    let mut hard_coded_contacts = HashSet::new();
+    let _ = hard_coded_contacts.insert(node_b_endpoint);
+    let node_b_config = TransportConfig {
+        hard_coded_contacts,
+        port: Some(node_a_endpoint.port()),
+        ip: Some(node_a_endpoint.ip()),
+        ..Default::default()
+    };
 
     let (mut node_b, node_b_event_rx, _) = Node::new(NodeConfig {
         transport_config: node_b_config,
@@ -92,7 +102,10 @@ fn lose_proxy_connection() {
 
     // ... but there is no one to bootstrap to, so the bootstrap fails which causes B to terminate.
     step_at_least_once(&mut node_b);
-    assert!(matches!(node_b_event_rx.try_recv(), Ok(Event::Terminated)));
+    assert!(matches!(
+        node_b_event_rx.try_recv(),
+        Ok(Event::RestartRequired)
+    ));
     assert!(matches!(
         node_b_event_rx.try_recv(),
         Err(TryRecvError::Empty)

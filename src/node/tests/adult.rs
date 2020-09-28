@@ -17,8 +17,7 @@ use crate::{
     rng::{self, MainRng},
     section::{self, EldersInfo, SectionProofChain, SharedState},
 };
-
-use mock_qp2p::Network;
+use bytes::Bytes;
 use rand::Rng;
 use xor_name::Prefix;
 
@@ -30,7 +29,6 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 
 struct Env {
     rng: MainRng,
-    network: Network,
     subject: Node,
     sk_set: bls::SecretKeySet,
     elders_info: EldersInfo,
@@ -40,7 +38,6 @@ struct Env {
 impl Env {
     fn new() -> Self {
         let mut rng = rng::new();
-        let network = Network::new();
 
         let (elders_info, elder_full_ids) =
             section::gen_elders_info(&mut rng, Default::default(), ELDER_SIZE);
@@ -64,7 +61,6 @@ impl Env {
 
         Self {
             rng,
-            network,
             subject,
             sk_set,
             elders_info,
@@ -125,7 +121,7 @@ impl Env {
             src: Prefix::default(),
             dst,
             dst_key: pk,
-            variant: Variant::UserMessage(content),
+            variant: Variant::UserMessage(Bytes::copy_from_slice(&content[..])),
         };
 
         let proof_chain = SectionProofChain::new(pk);
@@ -239,7 +235,7 @@ fn handle_unknown_message() {
     env.poll();
 
     for (sender, msg) in transport.received_messages() {
-        if sender == env.subject.our_connection_info().unwrap()
+        if sender == env.subject.our_connection_info().await.unwrap()
             && matches!(msg.variant(), Variant::BouncedUnknownMessage { .. })
         {
             return;
@@ -257,7 +253,7 @@ fn handle_untrusted_accumulated_message() {
     env.sk_set = consensus::generate_secret_key_set(&mut env.rng, ELDER_SIZE);
 
     // This message is signed with the new key so won't be trusted by the adult yet.
-    let dst = DstLocation::Node(*env.subject.name());
+    let dst = DstLocation::Node(env.subject.name().await);
     let msg = env.create_user_message(dst, b"hello node".to_vec());
     let transport = env.create_elder_transport(0);
 
@@ -266,7 +262,7 @@ fn handle_untrusted_accumulated_message() {
     env.poll();
 
     for (sender, msg) in transport.received_messages() {
-        if sender == env.subject.our_connection_info().unwrap()
+        if sender == env.subject.our_connection_info().await.unwrap()
             && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
         {
             return;

@@ -18,10 +18,10 @@ use crate::{
     error::Result,
     messages::{AccumulatingMessage, Message, MessageAccumulator},
     node::Node,
-    qp2p::{EventSenders, Peer, QuicP2p},
     TransportConfig, TransportEvent,
 };
 use crossbeam_channel::Receiver;
+use qp2p::{EventSenders, Peer, QuicP2p};
 use serde::Serialize;
 use std::net::SocketAddr;
 
@@ -47,9 +47,7 @@ pub fn create_proven<T: Serialize>(sk_set: &bls::SecretKeySet, payload: T) -> Pr
 }
 
 pub(crate) fn handle_message(node: &mut Node, sender: SocketAddr, msg: Message) -> Result<()> {
-    node.try_handle_message(sender, msg)?;
-    node.handle_messages();
-    Ok(())
+    node.process_message(sender, msg)
 }
 
 pub(crate) fn accumulate_messages<I>(accumulating_msgs: I) -> Message
@@ -83,8 +81,17 @@ impl MockTransport {
             ..Default::default()
         });
 
-        let mut inner = QuicP2p::with_config(tx, config, Default::default(), false).unwrap();
-        let addr = inner.our_connection_info().unwrap();
+        let mut inner = QuicP2p::with_config(config, Default::default(), false).unwrap();
+        let endpoint = if let Ok(endpoint) = inner.new_endpoint() {
+            endpoint
+        } else {
+            panic!("cannot create an endpoint from QuicP2p instance");
+        };
+        let addr = if let Ok(addr) = endpoint.our_endpoint() {
+            addr
+        } else {
+            panic!("created endpoint instance doesn't have SocketAddr");
+        };
 
         Self {
             _inner: inner,

@@ -7,4 +7,4 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod env;
-pub use self::env::Environment;
+pub use self::env::{Environment, DEFAULT_PORT_TO_TRY};

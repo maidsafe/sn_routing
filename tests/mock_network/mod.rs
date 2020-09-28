@@ -59,7 +59,7 @@ fn disconnect_on_rebootstrap() {
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!env.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
 
-    expect_next_event!(nodes.last_mut().unwrap(), Event::Terminated);
+    expect_next_event!(nodes.last_mut().unwrap(), Event::RestartRequired);
 }
 
 #[test]

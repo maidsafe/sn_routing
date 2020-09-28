@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::qp2p::Error as QuicP2pError;
 use err_derive::Error;
+use qp2p::Error as QuicP2pError;
 
 /// The type returned by the sn_routing message handling methods.
 pub type Result<T, E = Error> = std::result::Result<T, E>;

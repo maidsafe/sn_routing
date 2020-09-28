@@ -8,23 +8,23 @@
 
 use crate::{
     network_params::NetworkParams,
-    qp2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
 };
 use rand::SeedableRng;
 use std::{
     cell::RefCell,
     io::Write,
-    ops::{Deref, DerefMut},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Once,
 };
+
+pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 
 static LOG_INIT: Once = Once::new();
 
 /// Test environment. Should be created once at the beginning of each test.
 pub struct Environment {
     rng: RefCell<MainRng>,
-    network: Network,
     network_params: NetworkParams,
     seed_printer: Option<SeedPrinter>,
 }
@@ -51,11 +51,9 @@ impl Environment {
         });
 
         let seed = Seed::default();
-        let network = Network::new();
 
         Self {
             rng: RefCell::new(MainRng::from_seed(seed)),
-            network,
             network_params,
             seed_printer: Some(SeedPrinter::on_failure(seed)),
         }
@@ -93,18 +91,9 @@ impl Environment {
             self.seed_printer = Some(SeedPrinter::on_success(seed));
         }
     }
-}
 
-impl Deref for Environment {
-    type Target = Network;
-
-    fn deref(&self) -> &Self::Target {
-        &self.network
-    }
-}
-
-impl DerefMut for Environment {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.network
+    /// Generate a new address
+    pub fn gen_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_PORT_TO_TRY)
     }
 }

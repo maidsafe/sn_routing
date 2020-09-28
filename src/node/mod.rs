@@ -21,20 +21,22 @@ use crate::{
     error::{Error, Result},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    log_utils,
+    log_utils,    
     network_params::NetworkParams,
     rng::MainRng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
+#[cfg(all(test, feature = "mock"))]
+use crate::{messages::Message, section::SectionKeyShare};
 use bytes::Bytes;
 use futures::lock::Mutex;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use xor_name::{Prefix, XorName};
 
-#[cfg(all(test, feature = "mock"))]
-use crate::section::SectionKeyShare;
+#[cfg(feature = "mock")]
+use crate::section::SharedState;
 #[cfg(feature = "mock")]
 use std::collections::BTreeSet;
 
@@ -118,7 +120,7 @@ impl Node {
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        *self.id().await.name()
+        *self.stage.lock().await.full_id().public_id().name()
     }
 
     /// Returns connection info of this node.
@@ -300,28 +302,18 @@ impl Node {
 #[cfg(feature = "mock")]
 impl Node {
     /// Returns whether the node is approved member of a section.
-    pub fn is_approved(&self) -> bool {
+    pub async fn is_approved(&self) -> bool {
         self.stage
+            .lock()
+            .await
             .approved()
-            .map(|stage| stage.is_ready(&self.core))
+            .map(|stage| stage.is_ready())
             .unwrap_or(false)
     }
 
     /// Checks whether the given location represents self.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        src.contains(self.core.name())
-    }
-
-    /// Returns the info about our neighbour sections.
-    pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
-        self.shared_state()
-            .into_iter()
-            .flat_map(|state| state.sections.neighbours())
-    }
-
-    /// Returns the info about our sections or `None` if we are not joined yet.
-    pub fn our_section(&self) -> Option<&EldersInfo> {
-        self.shared_state().map(|state| state.sections.our())
+        src.contains(self.name())
     }
 
     /// Returns the prefixes of all sections known to us
@@ -402,8 +394,10 @@ impl Node {
     }
 
     /// Returns the age of the node with `name` if this node knows it. Otherwise returns `None`.
-    pub fn member_age(&self, name: &XorName) -> Option<u8> {
+    pub async fn member_age(&self, name: &XorName) -> Option<u8> {
         self.stage
+            .lock()
+            .await
             .approved()
             .and_then(|stage| stage.shared_state.our_members.get(name))
             .map(|info| info.age)
@@ -411,11 +405,11 @@ impl Node {
 
     /// Returns the latest BLS public key of our section or `None` if we are not joined yet.
     pub fn section_key(&self) -> Option<&bls::PublicKey> {
-        self.shared_state.map(|state| state.our_history.last_key())
+        self.shared_state().map(|state| state.our_history.last_key())
     }
 
-    pub(crate) fn shared_state(&self) -> Option<&SharedState> {
-        self.stage.approved().map(|stage| &stage.shared_state)
+    pub(crate) async fn shared_state(&self) -> Option<&SharedState> {
+        self.stage.lock().await.approved().map(|stage| &stage.shared_state)
     }
 }
 
@@ -449,13 +443,13 @@ impl Node {
     }
 
     // Simulate DKG completion
-    pub(crate) fn complete_dkg(
+    pub(crate) async fn complete_dkg(
         &mut self,
         elders_info: &EldersInfo,
         public_key_set: bls::PublicKeySet,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Result<()> {
-        if let Some(stage) = self.stage.approved_mut() {
+        if let Some(stage) = self.stage.lock().await.approved_mut() {
             stage.complete_dkg(
                 &mut self.core,
                 elders_info,
@@ -465,5 +459,13 @@ impl Node {
         } else {
             Err(Error::InvalidState)
         }
+    }
+
+    pub(crate) async fn process_message(&mut self, sender: SocketAddr, msg: Message)-> Result<()> {
+        self.stage
+            .lock()
+            .await
+            .process_message(sender, msg)
+            .await
     }
 }

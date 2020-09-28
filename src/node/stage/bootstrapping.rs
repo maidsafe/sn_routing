@@ -20,7 +20,8 @@ use xor_name::Prefix;
 
 // TODO: review if we still need to set a timeout for joining
 /// Time after which bootstrap is cancelled (and possibly returnried).
-// pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
+#[cfg(feature = "mock")]
+pub const BOOTSTRAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {

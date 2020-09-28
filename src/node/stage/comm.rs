@@ -52,7 +52,7 @@ impl Comm {
     }
 
     pub async fn from_bootstrapping(transport_config: Config) -> Result<(Self, SocketAddr)> {
-        let mut quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
         let (endpoint, connection) = quic_p2p.bootstrap().await?;

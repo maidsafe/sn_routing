@@ -15,6 +15,7 @@ use crate::{
     messages::{
         AccumulatingMessage, BootstrapResponse, Message, PlainMessage, SrcAuthority, Variant,
     },
+    mock::DEFAULT_PORT_TO_TRY,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::{
@@ -23,10 +24,13 @@ use crate::{
     },
     ELDER_SIZE,
 };
+use bytes::Bytes;
 use itertools::Itertools;
-use mock_qp2p::Network;
 use rand::Rng;
-use std::{iter, net::SocketAddr};
+use std::{
+    iter,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 use xor_name::{Prefix, XorName};
 
 struct DkgToSectionInfo {
@@ -38,7 +42,6 @@ struct DkgToSectionInfo {
 
 struct Env {
     pub rng: MainRng,
-    pub network: Network,
     pub subject: Node,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
@@ -49,7 +52,6 @@ struct Env {
 impl Env {
     fn new(sec_size: usize) -> Self {
         let mut rng = rng::new();
-        let network = Network::new();
 
         let (elders_info, full_ids) =
             section::gen_elders_info(&mut rng, Default::default(), sec_size);
@@ -97,13 +99,16 @@ impl Env {
 
         Self {
             rng,
-            network,
             subject,
             other_ids,
             elders_info,
             public_key_set: sk_set.public_keys(),
             candidate,
         }
+    }
+
+    fn gen_addr() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_PORT_TO_TRY)
     }
 
     fn poll(&mut self) {
@@ -183,7 +188,7 @@ impl Env {
         let new_other_ids = self
             .other_ids
             .iter()
-            .filter(|(full_id, _)| full_id.public_id().name() != self.subject.name())
+            .filter(|(full_id, _)| full_id.public_id().name() != self.subject.name().await)
             .filter_map(|(full_id, _)| {
                 let index = new_elders_info.position(full_id.public_id().name())?;
                 Some((full_id, index))
@@ -244,6 +249,7 @@ impl Env {
             key_index: self
                 .subject
                 .our_history()
+                .await
                 .expect("subject is not approved")
                 .last_key_index(),
         };
@@ -356,7 +362,7 @@ impl Env {
             variant,
         };
 
-        let public_key_set = self.subject.public_key_set().unwrap();
+        let public_key_set = self.subject.public_key_set().await.unwrap();
         let accumulating_msgs = self.secret_key_shares().map(|(index, secret_key_share)| {
             let proof_share = content
                 .prove(public_key_set.clone(), index, secret_key_share)
@@ -379,7 +385,7 @@ impl Env {
     }
 
     fn sign_by_section(&self, payload: &[u8]) -> (bls::PublicKey, bls::Signature) {
-        let public_key_set = self.subject.public_key_set().unwrap();
+        let public_key_set = self.subject.public_key_set().await.unwrap();
         let signature_shares: Vec<_> = self
             .secret_key_shares()
             .map(|(_, sk_share)| sk_share.sign(payload))
@@ -418,7 +424,7 @@ impl Peer {
     fn gen(rng: &mut MainRng, network: &Network) -> Self {
         Self {
             full_id: FullId::gen(rng),
-            addr: network.gen_addr(),
+            addr: Env::gen_addr(),
         }
     }
 
@@ -561,7 +567,10 @@ fn handle_bounced_unknown_message() {
     env.perform_offline_and_promote(old, new).unwrap();
 
     let dst = DstLocation::Section(env.rng.gen());
-    let msg = env.accumulate_message(dst, Variant::UserMessage(b"unknown message".to_vec()));
+    let msg = env.accumulate_message(
+        dst,
+        Variant::UserMessage(Bytes::from_static(b"unknown message")),
+    );
 
     // Pretend that one of the other nodes is lagging behind and has not transitioned to elder yet
     // and so bounces a message to us as unknown.
@@ -610,7 +619,10 @@ fn handle_bounced_untrusted_message() {
     let new_section_key = *env.subject.section_key().expect("subject is not approved");
 
     let dst = DstLocation::Node(*env.other_ids[0].0.public_id().name());
-    let msg = env.accumulate_message(dst, Variant::UserMessage(b"untrusted message".to_vec()));
+    let msg = env.accumulate_message(
+        dst,
+        Variant::UserMessage(Bytes::from_static(b"untrusted message")),
+    );
 
     // Pretend that one of the other nodes is lagging behind and doesn't know the new key yet and
     // so bounces a message to us as untrusted.
@@ -657,14 +669,14 @@ fn receive_message_with_invalid_signature() {
     };
     let msg = Message::unverified(
         src,
-        DstLocation::Section(*env.subject.name()),
-        Variant::UserMessage(b"hello".to_vec()),
+        DstLocation::Section(env.subject.name().await),
+        Variant::UserMessage(Bytes::from_static(b"hello")),
         Some(proof_chain),
         Some(pk0),
     )
     .unwrap();
 
-    let sender = env.network.gen_addr();
+    let sender = Env::gen_addr();
     test_utils::handle_message(&mut env.subject, sender, msg).unwrap()
 }
 
@@ -685,9 +697,9 @@ fn receive_message_with_invalid_proof_chain() {
 
     let msg = PlainMessage {
         src: Prefix::default(),
-        dst: DstLocation::Section(*env.subject.name()),
+        dst: DstLocation::Section(env.subject.name().await),
         dst_key: pk0,
-        variant: Variant::UserMessage(b"hello".to_vec()),
+        variant: Variant::UserMessage(Bytes::from_static(b"hello")),
     };
 
     let signature = sk1.sign(&bincode::serialize(&msg.as_signable()).unwrap());
@@ -704,7 +716,7 @@ fn receive_message_with_invalid_proof_chain() {
     )
     .unwrap();
 
-    let sender = env.network.gen_addr();
+    let sender = Env::gen_addr();
     test_utils::handle_message(&mut env.subject, sender, msg).unwrap();
 }
 

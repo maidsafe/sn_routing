@@ -134,7 +134,7 @@ impl Stage {
             comm.clone(),
             shared_state,
             Some(section_key_share),
-            node_info.clone(),
+            node_info,
             timer,
         )?;
 
@@ -179,6 +179,14 @@ impl Stage {
             _ => None,
         }
     }
+
+    #[cfg(all(test, feature = "mock"))]
+     pub fn approved(&mut self) -> Option<&mut Approved> {
+        match &self.state {
+            State::Approved(stage) => Some(stage),
+            _ => None,
+        }
+    }   
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub fn send_event(&mut self, event: Event) {
