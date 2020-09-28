@@ -29,10 +29,6 @@ async fn test_node_drop() -> Result<()> {
         .send_message(src, dst, Bytes::from_static(b"ping"))
         .await?;
 
-    // TODO: find a way to fast-forward the time, so this test doesn't need to take the full time
-    // it takes to detect a lost peer. Tokio has `time::pause` and `time::advance` which might do
-    // the job, but it doesn't seem to work. Investigate it.
-
     let expect_event = async {
         while let Some(event) = nodes[0].1.next().await {
             if let Event::MemberLeft { name, .. } = event {

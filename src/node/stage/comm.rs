@@ -14,42 +14,13 @@ use futures::{
 };
 use lru_time_cache::LruCache;
 use qp2p::{Connection, Endpoint, IncomingConnections, QuicP2p};
-use std::{net::SocketAddr, slice, sync::Arc, time::Duration};
-use tokio::time;
+use std::{net::SocketAddr, slice, sync::Arc};
 
 // Number of Connections to maintain in the cache
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
 
 /// Maximal number of resend attempts to the same target.
 pub const RESEND_MAX_ATTEMPTS: u8 = 3;
-/// Default delay before attempting to resend a previously failed message.
-pub const RESEND_DELAY: Duration = Duration::from_secs(10);
-
-/// Configuration for the communication component.
-pub struct Config {
-    /// Config for the underlying network transport.
-    pub transport_config: qp2p::Config,
-    /// Delay before attempting to resend a message that previously failed to send.
-    pub resend_delay: Duration,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            transport_config: Default::default(),
-            resend_delay: RESEND_DELAY,
-        }
-    }
-}
-
-impl From<qp2p::Config> for Config {
-    fn from(transport_config: qp2p::Config) -> Self {
-        Self {
-            transport_config,
-            ..Default::default()
-        }
-    }
-}
 
 // Communication component of the node to interact with other nodes.
 #[derive(Clone)]
@@ -58,9 +29,8 @@ pub(crate) struct Comm {
 }
 
 impl Comm {
-    pub fn new(config: Config) -> Result<Self> {
-        let quic_p2p =
-            QuicP2p::with_config(Some(config.transport_config), Default::default(), true)?;
+    pub fn new(transport_config: qp2p::Config) -> Result<Self> {
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Don't bootstrap, just create an endpoint where to listen to
         // the incoming messages from other nodes.
@@ -72,14 +42,12 @@ impl Comm {
                 _quic_p2p: quic_p2p,
                 endpoint,
                 node_conns,
-                resend_delay: config.resend_delay,
             }),
         })
     }
 
-    pub async fn from_bootstrapping(config: Config) -> Result<(Self, SocketAddr)> {
-        let mut quic_p2p =
-            QuicP2p::with_config(Some(config.transport_config), Default::default(), true)?;
+    pub async fn from_bootstrapping(transport_config: qp2p::Config) -> Result<(Self, SocketAddr)> {
+        let mut quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
         let (endpoint, conn) = quic_p2p.bootstrap().await?;
@@ -95,7 +63,6 @@ impl Comm {
                     _quic_p2p: quic_p2p,
                     endpoint,
                     node_conns,
-                    resend_delay: config.resend_delay,
                 }),
             },
             addr,
@@ -134,9 +101,14 @@ impl Comm {
         let mut tasks = FuturesUnordered::new();
 
         loop {
-            while let Some((addr, failed)) = state.next() {
+            while let Some(addr) = state.next() {
                 trace!("Sending message to {}", addr);
-                tasks.push(self.inner.send_with_delay(addr, msg.clone(), failed));
+                let msg = msg.clone();
+                let task = async move {
+                    let result = self.inner.send(&addr, msg).await;
+                    (addr, result)
+                };
+                tasks.push(task);
             }
 
             if let Some((addr, result)) = tasks.next().await {
@@ -196,7 +168,6 @@ struct Inner {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
     node_conns: Mutex<LruCache<SocketAddr, Arc<Connection>>>,
-    resend_delay: Duration,
 }
 
 impl Inner {
@@ -221,20 +192,6 @@ impl Inner {
         conn.send_uni(msg).await?;
 
         Ok(())
-    }
-
-    async fn send_with_delay(
-        &self,
-        recipient: SocketAddr,
-        msg: Bytes,
-        delay: bool,
-    ) -> (SocketAddr, Result<(), qp2p::Error>) {
-        if delay {
-            time::delay_for(self.resend_delay).await;
-        }
-
-        let result = self.send(&recipient, msg).await;
-        (recipient, result)
     }
 }
 
@@ -266,7 +223,7 @@ impl SendState {
     }
 
     // Returns the next recipient to sent to.
-    fn next(&mut self) -> Option<(SocketAddr, bool)> {
+    fn next(&mut self) -> Option<SocketAddr> {
         let active = self
             .recipients
             .iter()
@@ -286,7 +243,7 @@ impl SendState {
         recipient.attempt += 1;
         recipient.sending = true;
 
-        Some((recipient.addr, recipient.attempt > 1))
+        Some(recipient.addr)
     }
 
     // Marks the recipient as failed.
@@ -330,12 +287,15 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use futures::future;
-    use std::net::{IpAddr, Ipv4Addr};
-    use tokio::{net::UdpSocket, sync::mpsc};
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        time::Duration,
+    };
+    use tokio::{net::UdpSocket, sync::mpsc, time};
 
     #[tokio::test]
     async fn successful_send() -> Result<()> {
-        let comm = Comm::new(comm_config())?;
+        let comm = Comm::new(transport_config())?;
 
         let mut peer0 = Peer::new()?;
         let mut peer1 = Peer::new()?;
@@ -356,7 +316,7 @@ mod tests {
 
     #[tokio::test]
     async fn successful_send_to_subset() -> Result<()> {
-        let comm = Comm::new(comm_config())?;
+        let comm = Comm::new(transport_config())?;
 
         let mut peer0 = Peer::new()?;
         let mut peer1 = Peer::new()?;
@@ -381,7 +341,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_send() -> Result<()> {
-        let comm = Comm::new(comm_config())?;
+        let comm = Comm::new(transport_config())?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
@@ -397,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn successful_send_after_failed_attempts() -> Result<()> {
-        let comm = Comm::new(comm_config())?;
+        let comm = Comm::new(transport_config())?;
         let mut peer = Peer::new()?;
         let invalid_addr = get_invalid_addr().await?;
 
@@ -414,7 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn partially_successful_send() -> Result<()> {
-        let comm = Comm::new(comm_config())?;
+        let comm = Comm::new(transport_config())?;
         let mut peer = Peer::new()?;
         let invalid_addr = get_invalid_addr().await?;
 
@@ -430,13 +390,6 @@ mod tests {
         Ok(())
     }
 
-    fn comm_config() -> Config {
-        Config {
-            transport_config: transport_config(),
-            resend_delay: Duration::default(),
-        }
-    }
-
     fn transport_config() -> qp2p::Config {
         qp2p::Config {
             ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -446,7 +399,6 @@ mod tests {
     }
 
     struct Peer {
-        _transport: QuicP2p,
         addr: SocketAddr,
         rx: mpsc::Receiver<Bytes>,
     }
@@ -472,11 +424,7 @@ mod tests {
                 }
             });
 
-            Ok(Self {
-                _transport: transport,
-                addr,
-                rx,
-            })
+            Ok(Self { addr, rx })
         }
     }
 
