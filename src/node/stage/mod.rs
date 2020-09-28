@@ -97,7 +97,7 @@ impl Stage {
         mpsc::UnboundedReceiver<u64>,
         mpsc::UnboundedReceiver<Event>,
     )> {
-        let comm = Comm::new(transport_config.into()).await?;
+        let comm = Comm::new(transport_config.into())?;
         let connection_info = comm.our_connection_info()?;
         let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
 

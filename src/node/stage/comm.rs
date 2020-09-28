@@ -58,7 +58,7 @@ pub(crate) struct Comm {
 }
 
 impl Comm {
-    pub async fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config) -> Result<Self> {
         let quic_p2p =
             QuicP2p::with_config(Some(config.transport_config), Default::default(), true)?;
 
@@ -200,7 +200,7 @@ struct Inner {
 }
 
 impl Inner {
-    async fn send(&self, recipient: &SocketAddr, msg: Bytes) -> Result<()> {
+    async fn send(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
         // Cache the Connection to the node or obtain the already cached one
         // Note: not using the entry API to avoid holding the mutex longer than necessary.
         let conn = self.node_conns.lock().await.get(recipient).cloned();
@@ -228,7 +228,7 @@ impl Inner {
         recipient: SocketAddr,
         msg: Bytes,
         delay: bool,
-    ) -> (SocketAddr, Result<()>) {
+    ) -> (SocketAddr, Result<(), qp2p::Error>) {
         if delay {
             time::delay_for(self.resend_delay).await;
         }
@@ -322,5 +322,175 @@ impl SendState {
                 .map(|recipient| recipient.addr)
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use futures::future;
+    use std::net::{IpAddr, Ipv4Addr};
+    use tokio::{net::UdpSocket, sync::mpsc};
+
+    #[tokio::test]
+    async fn successful_send() -> Result<()> {
+        let comm = Comm::new(comm_config())?;
+
+        let mut peer0 = Peer::new()?;
+        let mut peer1 = Peer::new()?;
+
+        let message = Bytes::from_static(b"hello world");
+        let status = comm
+            .send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
+            .await;
+
+        assert_eq!(status.remaining, 0);
+        assert!(status.failed_recipients.is_empty());
+
+        assert_eq!(peer0.rx.recv().await, Some(message.clone()));
+        assert_eq!(peer1.rx.recv().await, Some(message));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn successful_send_to_subset() -> Result<()> {
+        let comm = Comm::new(comm_config())?;
+
+        let mut peer0 = Peer::new()?;
+        let mut peer1 = Peer::new()?;
+
+        let message = Bytes::from_static(b"hello world");
+        let status = comm
+            .send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
+            .await;
+
+        assert_eq!(status.remaining, 0);
+        assert!(status.failed_recipients.is_empty());
+
+        assert_eq!(peer0.rx.recv().await, Some(message));
+
+        assert!(time::timeout(Duration::from_millis(100), peer1.rx.recv())
+            .await
+            .unwrap_or_default()
+            .is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_send() -> Result<()> {
+        let comm = Comm::new(comm_config())?;
+        let invalid_addr = get_invalid_addr().await?;
+
+        let message = Bytes::from_static(b"hello world");
+        let status = comm
+            .send_message_to_targets(&[invalid_addr], 1, message.clone())
+            .await;
+
+        assert_eq!(status.remaining, 1);
+        assert_eq!(status.failed_recipients, [invalid_addr]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn successful_send_after_failed_attempts() -> Result<()> {
+        let comm = Comm::new(comm_config())?;
+        let mut peer = Peer::new()?;
+        let invalid_addr = get_invalid_addr().await?;
+
+        let message = Bytes::from_static(b"hello world");
+        let status = comm
+            .send_message_to_targets(&[invalid_addr, peer.addr], 1, message.clone())
+            .await;
+
+        assert_eq!(status.remaining, 0);
+        assert_eq!(peer.rx.recv().await, Some(message));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn partially_successful_send() -> Result<()> {
+        let comm = Comm::new(comm_config())?;
+        let mut peer = Peer::new()?;
+        let invalid_addr = get_invalid_addr().await?;
+
+        let message = Bytes::from_static(b"hello world");
+        let status = comm
+            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
+            .await;
+
+        assert_eq!(status.remaining, 1);
+        assert_eq!(status.failed_recipients, [invalid_addr]);
+        assert_eq!(peer.rx.recv().await, Some(message));
+
+        Ok(())
+    }
+
+    fn comm_config() -> Config {
+        Config {
+            transport_config: transport_config(),
+            resend_delay: Duration::default(),
+        }
+    }
+
+    fn transport_config() -> qp2p::Config {
+        qp2p::Config {
+            ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            idle_timeout_msec: Some(1),
+            ..Default::default()
+        }
+    }
+
+    struct Peer {
+        _transport: QuicP2p,
+        addr: SocketAddr,
+        rx: mpsc::Receiver<Bytes>,
+    }
+
+    impl Peer {
+        fn new() -> Result<Self> {
+            let transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
+
+            let endpoint = transport.new_endpoint()?;
+            let addr = endpoint.local_addr()?;
+            let mut incoming_connections = endpoint.listen()?;
+
+            let (tx, rx) = mpsc::channel(1);
+
+            let _ = tokio::spawn(async move {
+                while let Some(mut connection) = incoming_connections.next().await {
+                    let mut tx = tx.clone();
+                    let _ = tokio::spawn(async move {
+                        while let Some(message) = connection.next().await {
+                            let _ = tx.send(message.get_message_data()).await;
+                        }
+                    });
+                }
+            });
+
+            Ok(Self {
+                _transport: transport,
+                addr,
+                rx,
+            })
+        }
+    }
+
+    async fn get_invalid_addr() -> Result<SocketAddr> {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let addr = socket.local_addr()?;
+
+        // Keep the socket alive to keep the address bound, but don't read/write to it so any
+        // attempt to connect to it will fail.
+        let _ = tokio::spawn(async move {
+            future::pending::<()>().await;
+            let _ = socket;
+        });
+
+        Ok(addr)
     }
 }
