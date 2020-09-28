@@ -97,7 +97,7 @@ impl Stage {
         mpsc::UnboundedReceiver<u64>,
         mpsc::UnboundedReceiver<Event>,
     )> {
-        let comm = Comm::new(transport_config).await?;
+        let comm = Comm::new(transport_config.into()).await?;
         let connection_info = comm.our_connection_info()?;
         let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
 
@@ -154,7 +154,7 @@ impl Stage {
         mpsc::UnboundedReceiver<u64>,
         mpsc::UnboundedReceiver<Event>,
     )> {
-        let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
+        let (comm, addr) = Comm::from_bootstrapping(transport_config.into()).await?;
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let node_info = NodeInfo {

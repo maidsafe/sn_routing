@@ -12,10 +12,9 @@ mod stage;
 #[cfg(all(test, feature = "mock"))]
 mod tests;
 
+pub use self::event_stream::EventStream;
 #[cfg(feature = "mock")]
 pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
-
-pub use event_stream::EventStream;
 
 use self::{executor::Executor, stage::Stage};
 use crate::{
@@ -83,16 +82,13 @@ impl Node {
         let mut rng = MainRng::default();
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let node_name = *full_id.public_id().name();
-        let transport_config = config.transport_config;
-        let network_params = config.network_params;
-        let is_genesis = config.first;
 
-        let (stage, incoming_conns, timer_rx, events_rx) = if is_genesis {
+        let (stage, incoming_conns, timer_rx, events_rx) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            Stage::first_node(transport_config, full_id, network_params).await?
+            Stage::first_node(config.transport_config, full_id, config.network_params).await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(transport_config, full_id, network_params).await?
+            Stage::bootstrap(config.transport_config, full_id, config.network_params).await?
         };
 
         let stage = Arc::new(Mutex::new(stage));

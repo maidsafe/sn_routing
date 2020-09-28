@@ -13,7 +13,7 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
 };
 use lru_time_cache::LruCache;
-use qp2p::{Config, Connection, Endpoint, IncomingConnections, QuicP2p};
+use qp2p::{Connection, Endpoint, IncomingConnections, QuicP2p};
 use std::{net::SocketAddr, slice, sync::Arc, time::Duration};
 use tokio::time;
 
@@ -22,8 +22,34 @@ const CONNECTIONS_CACHE_SIZE: usize = 1024;
 
 /// Maximal number of resend attempts to the same target.
 pub const RESEND_MAX_ATTEMPTS: u8 = 3;
-/// Delay before attempting to resend a previously failed message.
+/// Default delay before attempting to resend a previously failed message.
 pub const RESEND_DELAY: Duration = Duration::from_secs(10);
+
+/// Configuration for the communication component.
+pub struct Config {
+    /// Config for the underlying network transport.
+    pub transport_config: qp2p::Config,
+    /// Delay before attempting to resend a message that previously failed to send.
+    pub resend_delay: Duration,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            transport_config: Default::default(),
+            resend_delay: RESEND_DELAY,
+        }
+    }
+}
+
+impl From<qp2p::Config> for Config {
+    fn from(transport_config: qp2p::Config) -> Self {
+        Self {
+            transport_config,
+            ..Default::default()
+        }
+    }
+}
 
 // Communication component of the node to interact with other nodes.
 #[derive(Clone)]
@@ -32,8 +58,9 @@ pub(crate) struct Comm {
 }
 
 impl Comm {
-    pub async fn new(transport_config: Config) -> Result<Self> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
+    pub async fn new(config: Config) -> Result<Self> {
+        let quic_p2p =
+            QuicP2p::with_config(Some(config.transport_config), Default::default(), true)?;
 
         // Don't bootstrap, just create an endpoint where to listen to
         // the incoming messages from other nodes.
@@ -45,12 +72,14 @@ impl Comm {
                 _quic_p2p: quic_p2p,
                 endpoint,
                 node_conns,
+                resend_delay: config.resend_delay,
             }),
         })
     }
 
-    pub async fn from_bootstrapping(transport_config: Config) -> Result<(Self, SocketAddr)> {
-        let mut quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
+    pub async fn from_bootstrapping(config: Config) -> Result<(Self, SocketAddr)> {
+        let mut quic_p2p =
+            QuicP2p::with_config(Some(config.transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
         let (endpoint, conn) = quic_p2p.bootstrap().await?;
@@ -66,6 +95,7 @@ impl Comm {
                     _quic_p2p: quic_p2p,
                     endpoint,
                     node_conns,
+                    resend_delay: config.resend_delay,
                 }),
             },
             addr,
@@ -166,6 +196,7 @@ struct Inner {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
     node_conns: Mutex<LruCache<SocketAddr, Arc<Connection>>>,
+    resend_delay: Duration,
 }
 
 impl Inner {
@@ -199,7 +230,7 @@ impl Inner {
         delay: bool,
     ) -> (SocketAddr, Result<()>) {
         if delay {
-            time::delay_for(RESEND_DELAY).await;
+            time::delay_for(self.resend_delay).await;
         }
 
         let result = self.send(&recipient, msg).await;
