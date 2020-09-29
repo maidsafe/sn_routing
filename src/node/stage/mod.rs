@@ -19,7 +19,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_ident,
-    messages::{Message, Variant},
+    messages::Message,
     network_params::NetworkParams,
     rng::MainRng,
     section::{EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain, SharedState, MIN_AGE},
@@ -212,11 +212,7 @@ impl Stage {
 
         match &mut self.state {
             State::Approved(stage) => {
-                log_ident::set(
-                    log_ident,
-                    stage.send_routing_message(src, dst, Variant::UserMessage(content), None),
-                )
-                .await
+                log_ident::set(log_ident, stage.send_user_message(src, dst, content)).await
             }
             _ => Err(Error::InvalidState),
         }
@@ -385,7 +381,7 @@ fn create_first_shared_state(
     );
 
     for p2p_node in shared_state.sections.our().elders.values() {
-        let member_info = MemberInfo::joined(p2p_node.clone(), MIN_AGE);
+        let member_info = MemberInfo::joined(*p2p_node, MIN_AGE);
         let proof = create_first_proof(pk_set, sk_share, &member_info)?;
         let _ = shared_state
             .our_members

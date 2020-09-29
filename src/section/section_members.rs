@@ -201,7 +201,7 @@ where
     members
         .into_iter()
         .sorted_by(|lhs, rhs| cmp_elder_candidates(lhs, rhs, current_elders))
-        .map(|info| (*info.value.p2p_node.name(), info.value.p2p_node.clone()))
+        .map(|info| (*info.value.p2p_node.name(), info.value.p2p_node))
         .take(elder_size)
         .collect()
 }

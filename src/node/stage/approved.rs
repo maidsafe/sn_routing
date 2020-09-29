@@ -18,13 +18,13 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        self, AccumulatingMessage, BootstrapResponse, JoinRequest, Message, MessageAccumulator,
-        MessageHash, MessageStatus, PlainMessage, Variant, VerifyStatus,
+        self, BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
+        Variant, VerifyStatus,
     },
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
-        EldersInfo, MemberInfo, SectionKeyShare, SectionKeysProvider, SectionUpdateBarrier,
-        SharedState, MIN_AGE,
+        EldersInfo, MemberInfo, SectionKeyShare, SectionKeysProvider, SectionProofChain,
+        SectionUpdateBarrier, SharedState, MIN_AGE,
     },
     timer::Timer,
 };
@@ -44,7 +44,6 @@ pub(crate) struct Approved {
     pub node_info: NodeInfo,
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
-    message_accumulator: MessageAccumulator,
     vote_accumulator: VoteAccumulator,
     section_update_barrier: SectionUpdateBarrier,
     // Voter for DKG
@@ -72,7 +71,6 @@ impl Approved {
             node_info,
             shared_state,
             section_keys_provider,
-            message_accumulator: Default::default(),
             vote_accumulator: Default::default(),
             section_update_barrier: Default::default(),
             dkg_voter: Default::default(),
@@ -131,9 +129,21 @@ impl Approved {
         Ok(())
     }
 
-    // Cast a vote that doesn't need total order, only section consensus.
+    // Send vote to all our elders.
+    async fn vote(&mut self, vote: Vote) -> Result<()> {
+        let elders: Vec<_> = self
+            .shared_state
+            .our_info()
+            .elders
+            .values()
+            .copied()
+            .collect();
+        self.send_vote(&elders, vote).await
+    }
+
+    // Send `vote` to `recipients`.
     #[async_recursion]
-    async fn cast_unordered_vote(&mut self, vote: Vote) -> Result<()> {
+    async fn send_vote(&mut self, recipients: &[P2pNode], vote: Vote) -> Result<()> {
         let key_share = self.section_keys_provider.key_share()?;
 
         trace!(
@@ -161,27 +171,32 @@ impl Approved {
             Some(proof_chain),
             Some(*self.shared_state.our_history.last_key()),
         )?;
-        let recipients: Vec<_> = self
-            .shared_state
-            .our_info()
-            .elders
-            .values()
-            .filter(|p2p_node| p2p_node.name() != self.node_info.full_id.public_id().name())
-            .map(P2pNode::peer_addr)
-            .copied()
-            .collect();
-        self.send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
+
+        let mut others = Vec::new();
+        let mut handle = false;
+
+        for recipient in recipients {
+            if recipient.name() == self.node_info.name() {
+                handle = true;
+            } else {
+                others.push(*recipient.peer_addr());
+            }
+        }
+
+        self.send_message_to_targets(&others, others.len(), message.to_bytes())
             .await?;
 
-        // We need to relay it to ourself as well
-        // TODO: remove the recursion caused by this call.
-        self.handle_unordered_vote(vote, proof_share).await
+        if handle {
+            self.handle_vote(vote, proof_share).await?;
+        }
+
+        Ok(())
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
-    async fn handle_unordered_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<()> {
+    async fn handle_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<()> {
         match self.vote_accumulator.add(vote, proof_share) {
-            Ok((vote, proof)) => self.handle_unordered_consensus(vote, proof).await,
+            Ok((vote, proof)) => self.handle_consensus(vote, proof).await,
             Err(AccumulationError::NotEnoughShares) => Ok(()),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
@@ -224,7 +239,7 @@ impl Approved {
 
         if let Some(info) = self.shared_state.our_members.get(&name) {
             let info = info.clone().leave();
-            self.cast_unordered_vote(Vote::Offline(info)).await?;
+            self.vote(Vote::Offline(info)).await?;
         }
 
         Ok(())
@@ -327,12 +342,6 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::MessageSignature(accumulating_msg) => {
-                if !self.should_handle_vote(&accumulating_msg.proof_share) {
-                    // Message will be bounced if we are lagging (not known of the signing key).
-                    return Ok(MessageStatus::Unknown);
-                }
-            }
             Variant::RelocatePromise(promise) => {
                 if promise.name != *our_id.name() {
                     if !self.is_our_elder(our_id) {
@@ -407,18 +416,6 @@ impl Approved {
                     .await?;
                 Ok(None)
             }
-            Variant::MessageSignature(accumulating_msg) => {
-                let result = self
-                    .handle_message_signature(*accumulating_msg.clone(), *msg.src().as_node()?)
-                    .await;
-                if let Some(addr) = sender {
-                    self.check_lagging(&addr, &accumulating_msg.proof_share)
-                        .await?;
-                }
-                result?;
-
-                Ok(None)
-            }
             Variant::BootstrapRequest(name) => {
                 self.handle_bootstrap_request(msg.src().to_sender_node(sender)?, *name)
                     .await?;
@@ -430,11 +427,7 @@ impl Approved {
                 Ok(None)
             }
             Variant::UserMessage(content) => {
-                self.node_info.send_event(Event::MessageReceived {
-                    content: content.clone(),
-                    src: msg.src().src_location(),
-                    dst: *msg.dst(),
-                });
+                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
                 Ok(None)
             }
             Variant::BouncedUntrustedMessage(message) => {
@@ -478,9 +471,7 @@ impl Approved {
                 content,
                 proof_share,
             } => {
-                let result = self
-                    .handle_unordered_vote(content.clone(), proof_share.clone())
-                    .await;
+                let result = self.handle_vote(content.clone(), proof_share.clone()).await;
                 if let Some(addr) = sender {
                     self.check_lagging(&addr, proof_share).await?;
                 }
@@ -655,7 +646,7 @@ impl Approved {
         src_key: bls::PublicKey,
     ) -> Result<()> {
         if !self.shared_state.sections.has_key(&src_key) {
-            self.cast_unordered_vote(Vote::TheirKey {
+            self.vote(Vote::TheirKey {
                 prefix: elders_info.prefix,
                 key: src_key,
             })
@@ -673,11 +664,15 @@ impl Approved {
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.cast_unordered_vote(Vote::SectionInfo(elders_info))
-                .await
+            self.vote(Vote::SectionInfo(elders_info)).await
         } else {
             Ok(())
         }
+    }
+
+    fn handle_user_message(&mut self, src: SrcLocation, dst: DstLocation, content: Bytes) {
+        self.node_info
+            .send_event(Event::MessageReceived { content, src, dst })
     }
 
     async fn handle_sync(&mut self, shared_state: SharedState) -> Result<()> {
@@ -763,9 +758,8 @@ impl Approved {
             let details = self
                 .shared_state
                 .create_relocation_details(info, promise.destination);
-            let addr = *info.p2p_node.peer_addr();
-
-            self.send_relocate(addr, details).await
+            let p2p_node = info.p2p_node;
+            self.send_relocate(&p2p_node, details).await
         } else {
             error!(
                 "ignore returned RelocatePromise from {} - unknown node",
@@ -773,29 +767,6 @@ impl Approved {
             );
             Ok(())
         }
-    }
-
-    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
-    /// message, handles it.
-    async fn handle_message_signature(
-        &mut self,
-        msg: AccumulatingMessage,
-        src: PublicId,
-    ) -> Result<()> {
-        if !self.shared_state.is_peer_elder(src.name()) {
-            debug!(
-                "Received message signature from not known elder (still use it) {}, {:?}",
-                src, msg
-            );
-            // FIXME: currently accepting signatures from unknown senders to cater to lagging nodes.
-            // Need to verify whether there are any security implications with doing this.
-        }
-
-        if let Some(msg) = self.message_accumulator.add(msg) {
-            self.handle_accumulated_message(msg).await?
-        }
-
-        Ok(())
     }
 
     // Note: As an adult, we should only give info about our section elders and they would
@@ -914,7 +885,7 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
-        self.cast_unordered_vote(Vote::Online {
+        self.vote(Vote::Online {
             member_info: MemberInfo::joined(p2p_node, age),
             previous_name,
             their_knowledge,
@@ -1106,7 +1077,7 @@ impl Approved {
                 .collect();
 
             for vote in votes {
-                self.cast_unordered_vote(vote).await?;
+                self.vote(vote).await?;
             }
 
             return Ok(());
@@ -1130,15 +1101,15 @@ impl Approved {
                 churn_name
             );
 
-            let addr = *info.p2p_node.peer_addr();
+            let p2p_node = info.p2p_node;
 
-            self.cast_unordered_vote(Vote::Offline(info.relocate(*action.destination())))
+            self.vote(Vote::Offline(info.relocate(*action.destination())))
                 .await?;
 
             match action {
-                RelocateAction::Instant(details) => self.send_relocate(addr, details).await?,
+                RelocateAction::Instant(details) => self.send_relocate(&p2p_node, details).await?,
                 RelocateAction::Delayed(promise) => {
-                    self.send_relocate_promise(addr, promise).await?
+                    self.send_relocate_promise(&p2p_node, promise).await?
                 }
             }
         }
@@ -1154,7 +1125,7 @@ impl Approved {
                 <= self.node_info.network_params.recommended_section_size
     }
 
-    async fn handle_unordered_consensus(&mut self, vote: Vote, proof: Proof) -> Result<()> {
+    async fn handle_consensus(&mut self, vote: Vote, proof: Proof) -> Result<()> {
         debug!("handle consensus on {:?}", vote);
 
         match vote {
@@ -1180,6 +1151,13 @@ impl Approved {
                 self.handle_change_age_event(member_info, proof);
                 Ok(())
             }
+            Vote::SendMessage {
+                message,
+                proof_chain,
+            } => {
+                self.handle_send_message_event(*message, proof_chain, proof)
+                    .await
+            }
         }
     }
 
@@ -1190,7 +1168,7 @@ impl Approved {
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<()> {
-        let p2p_node = member_info.p2p_node.clone();
+        let p2p_node = member_info.p2p_node;
         let age = member_info.age;
         let signature = proof.signature.clone();
 
@@ -1222,7 +1200,7 @@ impl Approved {
     }
 
     async fn handle_offline_event(&mut self, member_info: MemberInfo, proof: Proof) -> Result<()> {
-        let p2p_node = member_info.p2p_node.clone();
+        let p2p_node = member_info.p2p_node;
         let age = member_info.age;
         let signature = proof.signature.clone();
 
@@ -1316,6 +1294,24 @@ impl Approved {
         let _ = self.shared_state.update_member(member_info, proof);
     }
 
+    async fn handle_send_message_event(
+        &mut self,
+        message: PlainMessage,
+        proof_chain: SectionProofChain,
+        proof: Proof,
+    ) -> Result<()> {
+        let message = Message::section_src(
+            message.src,
+            proof.signature,
+            message.dst,
+            message.variant,
+            proof_chain,
+            message.dst_key,
+        )?;
+
+        self.handle_accumulated_message(message).await
+    }
+
     async fn vote_for_section_update(
         &mut self,
         public_key: bls::PublicKey,
@@ -1337,7 +1333,7 @@ impl Approved {
         }
 
         // Casting unordered_votes will check consensus and handle accumulated immediately.
-        self.cast_unordered_vote(Vote::OurKey {
+        self.vote(Vote::OurKey {
             prefix: elders_info.prefix,
             key: public_key,
         })
@@ -1347,15 +1343,14 @@ impl Approved {
             .prefix
             .is_extension_of(self.shared_state.our_prefix())
         {
-            self.cast_unordered_vote(Vote::TheirKey {
+            self.vote(Vote::TheirKey {
                 prefix: elders_info.prefix,
                 key: public_key,
             })
             .await?;
         }
 
-        self.cast_unordered_vote(Vote::SectionInfo(elders_info))
-            .await
+        self.vote(Vote::SectionInfo(elders_info)).await
     }
 
     async fn try_update_our_section(&mut self) -> Result<()> {
@@ -1374,7 +1369,7 @@ impl Approved {
             // We can update the sibling knowledge already because we know they also reached consensus
             // on our `OurKey` so they know our latest key. Need to vote for it first though, to
             // accumulate the signatures.
-            self.cast_unordered_vote(Vote::TheirKnowledge {
+            self.vote(Vote::TheirKnowledge {
                 prefix: *sibling.our_prefix(),
                 key_index: self.shared_state.our_history.last_key_index(),
             })
@@ -1409,7 +1404,7 @@ impl Approved {
                 // We can update the sibling knowledge already because we know they also reached
                 // consensus on our `OurKey` so they know our latest key. Need to vote for it first
                 // though, to accumulate the signatures.
-                self.cast_unordered_vote(Vote::TheirKnowledge {
+                self.vote(Vote::TheirKnowledge {
                     prefix: new_prefix.sibling(),
                     key_index: new_last_key_index,
                 })
@@ -1553,11 +1548,7 @@ impl Approved {
         Ok(())
     }
 
-    async fn send_relocate(
-        &mut self,
-        recipient: SocketAddr,
-        details: RelocateDetails,
-    ) -> Result<()> {
+    async fn send_relocate(&mut self, recipient: &P2pNode, details: RelocateDetails) -> Result<()> {
         // We need to construct a proof that would be trusted by the destination section.
         let knowledge_index = self
             .shared_state
@@ -1569,15 +1560,14 @@ impl Approved {
 
         trace!("Send {:?} -> {:?}", variant, dst);
 
-        // Message accumulated at destination.
-        let message = self.to_accumulating_message(dst, variant, Some(knowledge_index))?;
-        self.send_direct_message(&recipient, Variant::MessageSignature(Box::new(message)))
-            .await
+        // Vote accumulated at destination.
+        let vote = self.create_send_message_vote(dst, variant, Some(knowledge_index))?;
+        self.send_vote(slice::from_ref(recipient), vote).await
     }
 
     async fn send_relocate_promise(
         &mut self,
-        recipient: SocketAddr,
+        recipient: &P2pNode,
         promise: RelocatePromise,
     ) -> Result<()> {
         // Note: this message is first sent to a single node who then sends it back to the section
@@ -1586,12 +1576,9 @@ impl Approved {
         let dst = DstLocation::Section(promise.name);
         let variant = Variant::RelocatePromise(promise);
 
-        // Message accumulated at destination
-        let message = self.to_accumulating_message(dst, variant, None)?;
-        self.send_direct_message(&recipient, Variant::MessageSignature(Box::new(message)))
-            .await?;
-
-        Ok(())
+        // Vote accumulated at destination
+        let vote = self.create_send_message_vote(dst, variant, None)?;
+        self.send_vote(slice::from_ref(recipient), vote).await
     }
 
     async fn return_relocate_promise(&mut self) -> Result<()> {
@@ -1608,28 +1595,13 @@ impl Approved {
         let dkg_key = DkgKey::new(&new_elders_info);
 
         // Send to all participants.
-        let recipients: Vec<_> = new_elders_info
-            .elders
-            .values()
-            .map(P2pNode::peer_addr)
-            .copied()
-            .collect();
-
+        let recipients: Vec<_> = new_elders_info.elders.values().copied().collect();
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info: new_elders_info.clone(),
         };
-        let message = self.to_accumulating_message(DstLocation::Direct, variant, None)?;
-        let message = Message::single_src(
-            &self.node_info.full_id,
-            DstLocation::Direct,
-            Variant::MessageSignature(Box::new(message)),
-            None,
-            None,
-        )?;
-
-        self.send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
-            .await?;
+        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
+        self.send_vote(&recipients, vote).await?;
 
         self.dkg_voter.start_observing(
             dkg_key,
@@ -1741,106 +1713,92 @@ impl Approved {
         Ok(())
     }
 
-    // Constructs a message, finds the nodes responsible for accumulation, and either sends
-    // these nodes a signature or tries to accumulate signatures for this message (on success, the
-    // accumulator handles or forwards the message).
-    //
-    // If `proof_start_index_override` is set it will be used as the starting index of the proof.
-    // Otherwise the index is calculated using the knowledge stored in the section map.
-    pub async fn send_routing_message(
+    pub async fn send_user_message(
         &mut self,
         src: SrcLocation,
         dst: DstLocation,
-        variant: Variant,
-        proof_start_index_override: Option<u64>,
+        content: Bytes,
     ) -> Result<()> {
-        if !src.contains(self.node_info.full_id.public_id().name()) {
-            log_or_panic!(
-                log::Level::Error,
-                "Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",
-                src,
-                dst,
-                variant
+        if !src.contains(self.node_info.name()) {
+            error!(
+                "Not sending user message {:?} -> {:?}: not part of the source location",
+                src, dst
             );
-            return Ok(());
+            return Err(Error::BadLocation);
         }
 
-        // If the source is a single node, we don't even need to send signatures, so let's cut this
-        // short
-        if !src.is_section() {
-            let msg = Message::single_src(&self.node_info.full_id, dst, variant, None, None)?;
-            return self.handle_accumulated_message(msg).await;
+        if matches!(dst, DstLocation::Direct) {
+            error!(
+                "Not sending user message {:?} -> {:?}: direct dst not supported",
+                src, dst
+            );
+            return Err(Error::BadLocation);
         }
 
-        let accumulating_msg =
-            self.to_accumulating_message(dst, variant, proof_start_index_override)?;
+        let variant = Variant::UserMessage(content);
 
-        let targets = delivery_group::signature_targets(
-            &dst,
-            self.shared_state.sections.our_elders().cloned(),
-        );
+        match src {
+            SrcLocation::Node(_) => {
+                // If the source is a single node, we don't even need to vote, so let's cut this short.
+                let msg = Message::single_src(&self.node_info.full_id, dst, variant, None, None)?;
+                self.relay_message(&msg).await
+            }
+            SrcLocation::Section(_) => {
+                let vote = self.create_send_message_vote(dst, variant, None)?;
 
-        trace!(
-            "Sending signatures for {:?} to {:?}",
-            accumulating_msg.content,
-            targets,
-        );
-
-        for target in targets {
-            if target.name() == self.node_info.full_id.public_id().name() {
-                if let Some(msg) = self.message_accumulator.add(accumulating_msg.clone()) {
-                    self.handle_accumulated_message(msg).await?;
-                }
-            } else {
-                self.send_direct_message(
-                    target.peer_addr(),
-                    Variant::MessageSignature(Box::new(accumulating_msg.clone())),
-                )
-                .await?;
+                let recipients = delivery_group::signature_targets(
+                    &dst,
+                    self.shared_state.our_info().elders.values().copied(),
+                );
+                self.send_vote(&recipients, vote).await
             }
         }
-
-        Ok(())
     }
 
-    // Signs and proves the given message and wraps it in `AccumulatingMessage`.
-    fn to_accumulating_message(
+    fn create_send_message_vote(
         &self,
         dst: DstLocation,
         variant: Variant,
-        proof_start_index_override: Option<u64>,
-    ) -> Result<AccumulatingMessage> {
-        let key_share = self.section_keys_provider.key_share()?;
-
-        let first_index = proof_start_index_override
-            .unwrap_or_else(|| self.shared_state.sections.knowledge_by_location(&dst));
-        let last_key = key_share.public_key_set.public_key();
-        let last_index = self
-            .shared_state
-            .our_history
-            .index_of(&last_key)
-            .unwrap_or_else(|| self.shared_state.our_history.last_key_index());
-        let proof_chain = self
-            .shared_state
-            .our_history
-            .slice(first_index..=last_index);
-
+        proof_chain_first_index: Option<u64>,
+    ) -> Result<Vote> {
+        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_index)?;
         let dst_key = *self.shared_state.section_key_by_location(&dst);
-
-        let content = PlainMessage {
+        let message = PlainMessage {
             src: *self.shared_state.our_prefix(),
             dst,
             dst_key,
             variant,
         };
 
-        let proof_share = content.prove(
-            key_share.public_key_set.clone(),
-            key_share.index,
-            &key_share.secret_key_share,
-        )?;
+        Ok(Vote::SendMessage {
+            message: Box::new(message),
+            proof_chain,
+        })
+    }
 
-        Ok(AccumulatingMessage::new(content, proof_chain, proof_share))
+    fn create_proof_chain(
+        &self,
+        dst: &DstLocation,
+        first_index: Option<u64>,
+    ) -> Result<SectionProofChain> {
+        let first_index =
+            first_index.unwrap_or_else(|| self.shared_state.sections.knowledge_by_location(dst));
+
+        let last_key = self
+            .section_keys_provider
+            .key_share()?
+            .public_key_set
+            .public_key();
+        let last_index = self
+            .shared_state
+            .our_history
+            .index_of(&last_key)
+            .unwrap_or_else(|| self.shared_state.our_history.last_key_index());
+
+        Ok(self
+            .shared_state
+            .our_history
+            .slice(first_index..=last_index))
     }
 
     pub async fn send_direct_message(
@@ -1936,11 +1894,10 @@ impl Approved {
         for action in actions {
             match action {
                 VoteTheirKey { prefix, key } => {
-                    self.cast_unordered_vote(Vote::TheirKey { prefix, key })
-                        .await?;
+                    self.vote(Vote::TheirKey { prefix, key }).await?;
                 }
                 VoteTheirKnowledge { prefix, key_index } => {
-                    self.cast_unordered_vote(Vote::TheirKnowledge { prefix, key_index })
+                    self.vote(Vote::TheirKnowledge { prefix, key_index })
                         .await?;
                 }
                 SendNeighbourInfo { dst, nonce } => {

@@ -157,7 +157,6 @@ impl Joining {
             | Variant::Sync { .. }
             | Variant::Relocate(_)
             | Variant::RelocatePromise(_)
-            | Variant::MessageSignature(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGStart { .. }

@@ -7,34 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{DstLocation, SignableView, Variant};
-use crate::{consensus::ProofShare, error::Result, section::SectionProofChain};
 use xor_name::Prefix;
-
-/// Section-source message that is in the process of signature accumulation.
-/// When enough signatures are collected, it can be converted into full `Message` by calling
-/// `combine_signatures`.
-#[allow(missing_docs)]
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
-pub(crate) struct AccumulatingMessage {
-    pub content: PlainMessage,
-    pub proof_chain: SectionProofChain,
-    pub proof_share: ProofShare,
-}
-
-impl AccumulatingMessage {
-    /// Create new `AccumulatingMessage`
-    pub fn new(
-        content: PlainMessage,
-        proof_chain: SectionProofChain,
-        proof_share: ProofShare,
-    ) -> Self {
-        Self {
-            content,
-            proof_chain,
-            proof_share,
-        }
-    }
-}
 
 /// Section-source message without signature and proof.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
@@ -50,21 +23,6 @@ pub(crate) struct PlainMessage {
 }
 
 impl PlainMessage {
-    /// Create ProofShare for this message.
-    pub fn prove(
-        &self,
-        public_key_set: bls::PublicKeySet,
-        index: usize,
-        secret_key_share: &bls::SecretKeyShare,
-    ) -> Result<ProofShare> {
-        Ok(ProofShare::new(
-            public_key_set,
-            index,
-            secret_key_share,
-            &bincode::serialize(&self.as_signable())?,
-        ))
-    }
-
     pub fn as_signable(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
