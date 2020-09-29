@@ -8,6 +8,7 @@
 
 use crate::error::{Error, Result};
 use bytes::Bytes;
+use err_derive::Error;
 use futures::{
     lock::Mutex,
     stream::{FuturesUnordered, StreamExt},
@@ -81,12 +82,21 @@ impl Comm {
         })
     }
 
+    /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
+    /// recipients out of the `recipients` list. If a send fails, attempts to send to the next peer
+    /// until `delivery_goup_size` successful sends complete or there are no more recipients to
+    /// try. Each recipient will be attempted at most `RESEND_MAX_ATTEMPTS` times. If it fails all
+    /// the attempts, it is considered as lost.
+    ///
+    /// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that
+    /// `delivery_group_size` succeeded. The returned error contains a list of all the recipients
+    /// that failed all their respective attempts.
     pub async fn send_message_to_targets(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         msg: Bytes,
-    ) -> SendStatus {
+    ) -> Result<(), SendError> {
         if recipients.len() < delivery_group_size {
             warn!(
                 "Less than delivery_group_size valid recipients - delivery_group_size: {}, recipients: {:?}",
@@ -96,11 +106,12 @@ impl Comm {
         }
 
         // Use `FuturesUnordered` to execute all the send tasks concurrently, but still on the same
-        // thread.
+        // thread. Keep track of the sending progress using the `SendState` helper.
         let mut state = SendState::new(recipients, delivery_group_size);
         let mut tasks = FuturesUnordered::new();
 
         loop {
+            // Start a batch of sends.
             while let Some(addr) = state.next() {
                 trace!("Sending message to {}", addr);
                 let msg = msg.clone();
@@ -111,7 +122,10 @@ impl Comm {
                 tasks.push(task);
             }
 
+            // Await until one of the started sends completes.
             if let Some((addr, result)) = tasks.next().await {
+                // Notify `SendState` about the result of the send and potentially start the next
+                // send, appending to the ones still in progress (if any).
                 match result {
                     Ok(_) => {
                         trace!("Sending message to {} succeeded", addr);
@@ -123,44 +137,47 @@ impl Comm {
                     }
                 }
             } else {
+                // No sends in progress, we are done.
                 break;
             }
         }
 
-        let status = state.finish();
+        let failed_recipients = state.finish();
 
         trace!(
             "Sending message finished to {}/{} recipients (failed: {:?})",
-            delivery_group_size - status.remaining,
+            delivery_group_size - failed_recipients.len(),
             delivery_group_size,
-            status.failed_recipients
+            failed_recipients
         );
 
-        status
+        if failed_recipients.is_empty() {
+            Ok(())
+        } else {
+            Err(SendError { failed_recipients })
+        }
     }
 
-    pub async fn send_message_to_target(&self, recipient: &SocketAddr, msg: Bytes) -> SendStatus {
+    pub async fn send_message_to_target(
+        &self,
+        recipient: &SocketAddr,
+        msg: Bytes,
+    ) -> Result<(), SendError> {
         self.send_message_to_targets(slice::from_ref(recipient), 1, msg)
             .await
     }
 }
 
-#[derive(Debug)]
-pub struct SendStatus {
-    // The number of recipients out of the requested delivery group that we haven't successfully
-    // sent the message to.
-    pub remaining: usize,
+#[derive(Debug, Error)]
+#[error(display = "Send failed to: {:?}", failed_recipients)]
+pub struct SendError {
     // Recipients that failed all the send attempts.
     pub failed_recipients: Vec<SocketAddr>,
 }
 
-impl From<SendStatus> for Result<(), Error> {
-    fn from(status: SendStatus) -> Self {
-        if status.remaining == 0 {
-            Ok(())
-        } else {
-            Err(Error::FailedSend)
-        }
+impl From<SendError> for Error {
+    fn from(_: SendError) -> Self {
+        Error::FailedSend
     }
 }
 
@@ -222,7 +239,7 @@ impl SendState {
         }
     }
 
-    // Returns the next recipient to sent to.
+    // Returns the next recipient to send to.
     fn next(&mut self) -> Option<SocketAddr> {
         let active = self
             .recipients
@@ -269,16 +286,13 @@ impl SendState {
         }
     }
 
-    fn finish(self) -> SendStatus {
-        SendStatus {
-            remaining: self.remaining,
-            failed_recipients: self
-                .recipients
-                .into_iter()
-                .filter(|recipient| !recipient.sending && recipient.attempt >= RESEND_MAX_ATTEMPTS)
-                .map(|recipient| recipient.addr)
-                .collect(),
-        }
+    // Consumes the state and returns the list of recipients that failed all attempts (if any).
+    fn finish(self) -> Vec<SocketAddr> {
+        self.recipients
+            .into_iter()
+            .filter(|recipient| !recipient.sending && recipient.attempt >= RESEND_MAX_ATTEMPTS)
+            .map(|recipient| recipient.addr)
+            .collect()
     }
 }
 
@@ -301,12 +315,8 @@ mod tests {
         let mut peer1 = Peer::new()?;
 
         let message = Bytes::from_static(b"hello world");
-        let status = comm
-            .send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
-            .await;
-
-        assert_eq!(status.remaining, 0);
-        assert!(status.failed_recipients.is_empty());
+        comm.send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
+            .await?;
 
         assert_eq!(peer0.rx.recv().await, Some(message.clone()));
         assert_eq!(peer1.rx.recv().await, Some(message));
@@ -322,12 +332,8 @@ mod tests {
         let mut peer1 = Peer::new()?;
 
         let message = Bytes::from_static(b"hello world");
-        let status = comm
-            .send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
-            .await;
-
-        assert_eq!(status.remaining, 0);
-        assert!(status.failed_recipients.is_empty());
+        comm.send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
+            .await?;
 
         assert_eq!(peer0.rx.recv().await, Some(message));
 
@@ -345,12 +351,13 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let status = comm
+        match comm
             .send_message_to_targets(&[invalid_addr], 1, message.clone())
-            .await;
-
-        assert_eq!(status.remaining, 1);
-        assert_eq!(status.failed_recipients, [invalid_addr]);
+            .await
+        {
+            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr]),
+            Ok(_) => panic!("unexpected success"),
+        }
 
         Ok(())
     }
@@ -362,11 +369,9 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let status = comm
-            .send_message_to_targets(&[invalid_addr, peer.addr], 1, message.clone())
-            .await;
+        comm.send_message_to_targets(&[invalid_addr, peer.addr], 1, message.clone())
+            .await?;
 
-        assert_eq!(status.remaining, 0);
         assert_eq!(peer.rx.recv().await, Some(message));
 
         Ok(())
@@ -379,12 +384,15 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let status = comm
-            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
-            .await;
 
-        assert_eq!(status.remaining, 1);
-        assert_eq!(status.failed_recipients, [invalid_addr]);
+        match comm
+            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
+            .await
+        {
+            Ok(_) => panic!("unexpected success"),
+            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr]),
+        }
+
         assert_eq!(peer.rx.recv().await, Some(message));
 
         Ok(())

@@ -172,8 +172,9 @@ impl Bootstrapping {
         debug!("Sending BootstrapRequest to {}", dst);
         self.comm
             .send_message_to_target(&dst, message.to_bytes())
-            .await
-            .into()
+            .await?;
+
+        Ok(())
     }
 
     async fn reconnect_to_new_section(&self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {

@@ -236,8 +236,8 @@ impl Approved {
     }
     */
 
-    async fn handle_peer_lost(&mut self, peer_addr: SocketAddr) -> Result<()> {
-        let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
+    async fn handle_peer_lost(&mut self, peer_addr: &SocketAddr) -> Result<()> {
+        let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(peer_addr) {
             debug!("Lost known peer {}", node);
             *node.name()
         } else {
@@ -1920,16 +1920,20 @@ impl Approved {
         delivery_group_size: usize,
         msg: Bytes,
     ) -> Result<()> {
-        let status = self
+        match self
             .comm
             .send_message_to_targets(recipients, delivery_group_size, msg)
-            .await;
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                for addr in &error.failed_recipients {
+                    self.handle_peer_lost(addr).await?;
+                }
 
-        for addr in status.failed_recipients {
-            self.handle_peer_lost(addr).await?;
+                Err(error.into())
+            }
         }
-
-        Ok(())
     }
 
     async fn send_message_to_target(&mut self, recipient: &SocketAddr, msg: Bytes) -> Result<()> {

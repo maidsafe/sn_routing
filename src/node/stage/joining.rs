@@ -250,15 +250,15 @@ impl Joining {
             None,
         )?;
 
-        let status = self
+        let result = self
             .comm
             .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
             .await;
 
-        if !status.failed_recipients.is_empty() {
+        if let Err(error) = result {
             error!(
                 "Failed to send JoinRequest to {:?}",
-                status.failed_recipients
+                error.failed_recipients
             )
         }
 

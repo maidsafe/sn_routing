@@ -159,7 +159,8 @@ fn spawn_timer_handler(
     });
 }
 
-// Helpers to asynchronously watch when something gets dropped.
+// A single consumer, multiple producer one-shot channel that sends when the sender gets dropped.
+// Used to observe termination of some object from any number of tasks simultaneously.
 //
 // Note: it seems we could have used `tokio::sync::watch` for this exact purpose. The reason why we
 // didn't is that `watch` interacts poorly with the `select!` macro. It requires the future
