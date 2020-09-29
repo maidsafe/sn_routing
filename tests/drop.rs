@@ -11,7 +11,7 @@ mod utils;
 use self::utils::*;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
-use sn_routing::{event::Event, DstLocation, NetworkParams, SrcLocation};
+use sn_routing::{event::Event, DstLocation, Error, NetworkParams, SrcLocation};
 use tokio::time;
 
 #[tokio::test]
@@ -27,7 +27,11 @@ async fn test_node_drop() -> Result<()> {
     nodes[0]
         .0
         .send_message(src, dst, Bytes::from_static(b"ping"))
-        .await?;
+        .await
+        .or_else(|error| match error {
+            Error::FailedSend => Ok(()),
+            _ => Err(error),
+        })?;
 
     let expect_event = async {
         while let Some(event) = nodes[0].1.next().await {
