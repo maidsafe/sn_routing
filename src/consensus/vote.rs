@@ -9,14 +9,15 @@
 use super::{AccumulationError, Proof, ProofShare, SignatureAggregator};
 use crate::{
     error::Result,
-    section::{EldersInfo, MemberInfo},
+    messages::PlainMessage,
+    section::{EldersInfo, MemberInfo, SectionProofChain},
 };
 use serde::{Serialize, Serializer};
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum Vote {
+pub(crate) enum Vote {
     /// Voted for node that is about to join our section
     Online {
         member_info: MemberInfo,
@@ -54,6 +55,12 @@ pub enum Vote {
 
     // Voted to change the age of the given node.
     ChangeAge(MemberInfo),
+
+    // Voted to send user message on behalf of the whole section.
+    SendMessage {
+        message: Box<PlainMessage>,
+        proof_chain: SectionProofChain,
+    },
 }
 
 impl Vote {
@@ -75,7 +82,7 @@ impl Vote {
 
 // Accumulator of `Vote`s.
 #[derive(Default)]
-pub struct VoteAccumulator(SignatureAggregator);
+pub(crate) struct VoteAccumulator(SignatureAggregator);
 
 impl VoteAccumulator {
     pub fn add(
@@ -111,6 +118,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
             Vote::ChangeAge(member_info) => member_info.serialize(serializer),
+            Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
         }
     }
 }

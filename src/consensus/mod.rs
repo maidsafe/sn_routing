@@ -13,10 +13,10 @@ mod proven;
 pub mod test_utils;
 mod vote;
 
+pub(crate) use self::vote::{Vote, VoteAccumulator};
 pub use self::{
     dkg::{generate_secret_key_set, DkgKey, DkgVoter},
     proven::Proven,
-    vote::{Vote, VoteAccumulator},
 };
 pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};
 

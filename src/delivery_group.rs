@@ -58,7 +58,7 @@ pub fn delivery_targets(
                 return Ok((Vec::new(), 0));
             }
             if let Some(node) = get_p2p_node(target_name, our_members, sections) {
-                return Ok((vec![node.clone()], 1));
+                return Ok((vec![*node], 1));
             }
 
             candidates(target_name, our_id, sections)?
@@ -149,11 +149,7 @@ where
         DstLocation::Node(name) => *name,
         DstLocation::Section(name) => *name,
         DstLocation::Direct => {
-            log_or_panic!(
-                log::Level::Error,
-                "Invalid destination for signature targets: {:?}",
-                dst
-            );
+            error!("Invalid destination for signature targets: {:?}", dst);
             return vec![];
         }
     };

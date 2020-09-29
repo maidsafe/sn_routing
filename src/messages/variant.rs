@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingMessage, Message, MessageHash, VerifyStatus};
+use super::{Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
     error::{Error, Result},
@@ -48,9 +48,6 @@ pub(crate) enum Variant {
     /// - from a section to a current elder to be relocated after they are demoted.
     /// - from the node to be relocated back to its section after it was demoted.
     RelocatePromise(RelocatePromise),
-    /// Sent from members of a section message's source location to the first hop. The
-    /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Box<AccumulatingMessage>),
     /// Sent from a newly connected peer to the bootstrap node to request connection infos of
     /// members of the section matching the given name.
     BootstrapRequest(XorName),
@@ -157,7 +154,6 @@ impl Debug for Variant {
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
-            Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),

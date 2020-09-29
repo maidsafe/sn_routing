@@ -157,11 +157,6 @@ impl SharedState {
             .map(|info| &info.p2p_node)
     }
 
-    /// Checks if given name is an elder in our section or one of our neighbour sections.
-    pub fn is_peer_elder(&self, name: &XorName) -> bool {
-        self.sections.is_elder(name)
-    }
-
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, name: &XorName) -> bool {
         self.our_info().elders.contains_key(name)

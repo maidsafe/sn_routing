@@ -8,13 +8,11 @@
 
 mod accumulating_message;
 mod hash;
-mod message_accumulator;
 mod src_authority;
 mod variant;
 
 pub(crate) use self::{
-    accumulating_message::{AccumulatingMessage, PlainMessage},
-    message_accumulator::MessageAccumulator,
+    accumulating_message::PlainMessage,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
 pub use self::{hash::MessageHash, src_authority::SrcAuthority};
@@ -143,6 +141,28 @@ impl Message {
         };
 
         Self::new_signed(src, dst, variant, proof_chain, dst_key)
+    }
+
+    /// Creates a signed message from a section.
+    /// Note: `signature` isn't verified and is assumed valid.
+    pub(crate) fn section_src(
+        src: Prefix,
+        signature: bls::Signature,
+        dst: DstLocation,
+        variant: Variant,
+        proof_chain: SectionProofChain,
+        dst_key: bls::PublicKey,
+    ) -> Result<Self, CreateError> {
+        Self::new_signed(
+            SrcAuthority::Section {
+                prefix: src,
+                signature,
+            },
+            dst,
+            variant,
+            Some(proof_chain),
+            Some(dst_key),
+        )
     }
 
     /// Creates a message but does not enforce that it is valid. Use only for testing.
@@ -357,9 +377,9 @@ pub enum ExtendProofChainError {
 #[derive(Serialize)]
 pub(crate) struct SignableView<'a> {
     // TODO: why don't we include also `src`?
-    dst: &'a DstLocation,
-    dst_key: Option<&'a bls::PublicKey>,
-    variant: &'a Variant,
+    pub dst: &'a DstLocation,
+    pub dst_key: Option<&'a bls::PublicKey>,
+    pub variant: &'a Variant,
 }
 
 #[cfg(test)]

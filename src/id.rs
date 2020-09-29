@@ -191,7 +191,7 @@ fn name_from_key(public_key: &PublicKey) -> XorName {
 /// Network p2p node identity.
 /// When a node knows another node as a `P2pNode` it's implicitly connected to it. This is separate
 /// from being connected at the network layer, which currently is handled by quic-p2p.
-#[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
 pub struct P2pNode {
     public_id: PublicId,
     peer_addr: OrderedSocketAddr,
@@ -234,7 +234,7 @@ impl Display for P2pNode {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct OrderedSocketAddr(pub SocketAddr);
 
 impl Hash for OrderedSocketAddr {
