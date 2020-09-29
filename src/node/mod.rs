@@ -7,30 +7,29 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 pub mod event_stream;
+mod executor;
 mod stage;
 #[cfg(all(test, feature = "mock"))]
 mod tests;
 
+pub use self::event_stream::EventStream;
 #[cfg(feature = "mock")]
 pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
-pub use event_stream::EventStream;
-
-use self::stage::Stage;
+use self::{executor::Executor, stage::Stage};
 use crate::{
     error::{Error, Result},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    log_utils,
     network_params::NetworkParams,
     rng::MainRng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
 use bytes::Bytes;
-use futures::lock::Mutex;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::Mutex;
 use xor_name::{Prefix, XorName};
 
 #[cfg(all(test, feature = "mock"))]
@@ -68,9 +67,9 @@ impl Default for NodeConfig {
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
-#[derive(Clone)]
 pub struct Node {
     stage: Arc<Mutex<Stage>>,
+    _executor: Executor,
 }
 
 impl Node {
@@ -83,32 +82,25 @@ impl Node {
         let mut rng = MainRng::default();
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let node_name = *full_id.public_id().name();
-        let transport_config = config.transport_config;
-        let network_params = config.network_params;
-        let is_genesis = config.first;
 
-        let (stage, incoming_conns, timer_rx, events_rx) = if is_genesis {
-            match Stage::first_node(transport_config, full_id, network_params).await {
-                Ok(stage_and_conns_stream) => {
-                    info!("{} Started a new network as a seed node.", node_name);
-                    stage_and_conns_stream
-                }
-                Err(error) => {
-                    error!("{} Failed to start the first node: {:?}", node_name, error);
-                    return Err(error);
-                }
-            }
+        let (stage, incoming_conns, timer_rx, events_rx) = if config.first {
+            info!("{} Starting a new network as the seed node.", node_name);
+            Stage::first_node(config.transport_config, full_id, config.network_params).await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(transport_config, full_id, network_params).await?
+            Stage::bootstrap(config.transport_config, full_id, config.network_params).await?
         };
 
         let stage = Arc::new(Mutex::new(stage));
+        let executor = Executor::new(Arc::clone(&stage), incoming_conns, timer_rx);
+        let event_stream = EventStream::new(events_rx);
 
-        let event_stream =
-            EventStream::new(Arc::clone(&stage), incoming_conns, timer_rx, events_rx).await?;
+        let node = Self {
+            stage,
+            _executor: executor,
+        };
 
-        Ok((Self { stage }, event_stream))
+        Ok((node, event_stream))
     }
 
     /// Returns the `PublicId` of this node.
@@ -225,11 +217,6 @@ impl Node {
         if let DstLocation::Direct = dst {
             return Err(Error::BadLocation);
         }
-
-        // Set log identifier
-        let str = self.stage.lock().await.name_and_prefix();
-        use std::fmt::Write;
-        let _log_ident = log_utils::set_ident(|buffer| write!(buffer, "{}", str));
 
         self.stage
             .lock()

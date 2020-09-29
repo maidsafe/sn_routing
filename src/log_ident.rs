@@ -6,21 +6,26 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::event::Event;
-use tokio::sync::mpsc;
+//! Log identifier - a short string that is prefixed in front of every log message.
 
-/// Stream of routing node events
-pub struct EventStream {
-    events_rx: mpsc::UnboundedReceiver<Event>,
+use futures::Future;
+use std::sync::Arc;
+
+tokio::task_local! {
+    static LOG_IDENT: Arc<String>;
 }
 
-impl EventStream {
-    pub(crate) fn new(events_rx: mpsc::UnboundedReceiver<Event>) -> Self {
-        Self { events_rx }
-    }
+/// Set the log identifier for the current task.
+pub async fn set<F>(ident: String, f: F) -> F::Output
+where
+    F: Future,
+{
+    LOG_IDENT.scope(Arc::new(ident), f).await
+}
 
-    /// Returns next event
-    pub async fn next(&mut self) -> Option<Event> {
-        self.events_rx.recv().await
-    }
+/// Get the current log identifier.
+pub fn get() -> Arc<String> {
+    LOG_IDENT
+        .try_with(|ident| ident.clone())
+        .unwrap_or_default()
 }

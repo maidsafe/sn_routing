@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::qp2p::Error as QuicP2pError;
 use err_derive::Error;
 
 /// The type returned by the sn_routing message handling methods.
@@ -23,7 +22,7 @@ pub enum Error {
     #[error(display = "Cannot route.")]
     CannotRoute,
     #[error(display = "Network layer error: {}", _0)]
-    Network(#[error(source)] QuicP2pError),
+    Network(#[error(source)] qp2p::Error),
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
     #[error(display = "Bincode error: {}", _0)]
@@ -38,4 +37,6 @@ pub enum Error {
     InvalidSignatureShare,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+    #[error(display = "Failed to send a message.")]
+    FailedSend,
 }

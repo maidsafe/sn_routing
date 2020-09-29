@@ -47,7 +47,7 @@ async fn test_messages_client_node() -> Result<()> {
     let mut config = TransportConfig::default();
     config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
-    let mut client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
+    let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let (_, conn) = client.connect_to(&node_addr).await?;
     let (_, mut recv) = conn.send(Bytes::from_static(msg)).await?;
 
@@ -90,7 +90,7 @@ async fn test_messages_between_nodes() -> Result<()> {
         .await?;
     let node2_name = node2.name().await;
 
-    expect_next_event!(event_stream, Event::Connected(Connected::First))?;
+    expect_next_event!(event_stream, Event::Connected(Connected::First));
     node2
         .send_message(
             SrcLocation::Node(node2_name),

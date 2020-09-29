@@ -17,6 +17,7 @@ use crate::{
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
     timer::Timer,
+    DstLocation,
 };
 use std::{net::SocketAddr, time::Duration};
 use xor_name::Prefix;
@@ -166,8 +167,7 @@ impl Joining {
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
-            | Variant::JoinRequest(_)
-            | Variant::Ping => Ok(MessageStatus::Useless),
+            | Variant::JoinRequest(_) => Ok(MessageStatus::Useless),
         }
     }
 
@@ -225,17 +225,40 @@ impl Joining {
             JoinType::Relocate(payload) => Some(payload),
         };
 
-        for dst in self.elders_info.elders.values() {
-            let join_request = JoinRequest {
-                section_key: self.section_key,
-                relocate_payload: relocate_payload.cloned(),
-            };
+        let recipients: Vec<_> = self
+            .elders_info
+            .elders
+            .values()
+            .map(|p2p_node| p2p_node.peer_addr())
+            .copied()
+            .collect();
 
-            info!("Sending {:?} to {}", join_request, dst);
-            let variant = Variant::JoinRequest(Box::new(join_request));
-            self.comm
-                .send_direct_message(&self.node_info.full_id, dst.peer_addr(), variant)
-                .await?;
+        let join_request = JoinRequest {
+            section_key: self.section_key,
+            relocate_payload: relocate_payload.cloned(),
+        };
+
+        info!("Sending {:?} to {:?}", join_request, recipients);
+
+        let variant = Variant::JoinRequest(Box::new(join_request));
+        let message = Message::single_src(
+            &self.node_info.full_id,
+            DstLocation::Direct,
+            variant,
+            None,
+            None,
+        )?;
+
+        let result = self
+            .comm
+            .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
+            .await;
+
+        if let Err(error) = result {
+            error!(
+                "Failed to send JoinRequest to {:?}",
+                error.failed_recipients
+            )
         }
 
         self.timer_token = self.timer.schedule(JOIN_TIMEOUT).await;

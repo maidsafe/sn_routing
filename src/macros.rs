@@ -15,9 +15,7 @@
 macro_rules! log_or_panic {
     ($log_level:expr, $($arg:tt)*) => {
         if cfg!(feature = "mock") && !::std::thread::panicking() {
-            $crate::log_utils::with_ident(|ident| {
-                panic!("{}{}", ident, format_args!($($arg)*));
-            })
+                panic!($($arg)*);
         } else {
             log!($log_level, $($arg)*);
         }

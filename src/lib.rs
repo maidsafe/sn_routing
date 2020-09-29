@@ -63,13 +63,18 @@
     unused_results,
     clippy::needless_borrow
 )]
+// FIXME: it seems the code in `Comm::send_message_to_targets` is triggering type-length limit
+// reached error for some reason. This is a quick workaround, but we should probably look into it
+// closely to find out whether there are any downsides doing this or whether there is another,
+// more "proper" way.
+#![type_length_limit = "2295944"]
 
+#[macro_use]
+extern crate log;
 #[macro_use]
 extern crate serde;
 
 // Needs to be before all other modules to make the macros available to them.
-#[macro_use]
-mod log_utils;
 #[macro_use]
 mod macros;
 
@@ -82,13 +87,14 @@ pub use self::{
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
     node::{EventStream, Node, NodeConfig},
-    qp2p::Config as TransportConfig,
-    section::SectionProofChain,
+    section::{SectionProofChain, MIN_AGE},
 };
+pub use qp2p::Config as TransportConfig;
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 /// sn_routing events.
 pub mod event;
+pub mod log_ident;
 /// Random number generation
 pub mod rng;
 
@@ -102,7 +108,7 @@ pub mod mock;
 
 /// Mock network
 #[cfg(feature = "mock")]
-pub use self::section::{quorum_count, MIN_AGE};
+pub use self::section::quorum_count;
 
 #[cfg(feature = "mock")]
 #[doc(hidden)]
@@ -150,12 +156,6 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
-
-// Quic-p2p
-#[cfg(feature = "mock")]
-use mock_qp2p as qp2p;
-#[cfg(not(feature = "mock"))]
-use qp2p::{self};
 
 #[cfg(test)]
 mod tests {

@@ -6,15 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use anyhow::{bail, ensure, format_err, Result};
+// HACK: there is a bug in cargo which triggers `unused` warning for things defined here that are
+// not used in *all* the test files, but only some: https://github.com/rust-lang/rust/issues/46379
+#![allow(unused)]
+
+use anyhow::{bail, format_err, Error, Result};
+use futures::future;
 use itertools::Itertools;
-use sn_routing::{EventStream, FullId, Node, NodeConfig, TransportConfig};
+use sn_routing::{
+    event::{Connected, Event},
+    log_ident, EventStream, FullId, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
+};
 use std::{
     collections::{BTreeSet, HashSet},
     io::Write,
     iter,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Once,
+    time::Duration,
 };
 
 static LOG_INIT: Once = Once::new();
@@ -36,8 +45,9 @@ impl<'a> TestNodeBuilder {
                 .format(|buf, record| {
                     writeln!(
                         buf,
-                        "{:.1} {} ({}:{})",
+                        "{:.1} {}{} ({}:{})",
                         record.level(),
+                        log_ident::get(),
                         record.args(),
                         record.file().unwrap_or("<unknown>"),
                         record.line().unwrap_or(0)
@@ -63,25 +73,16 @@ impl<'a> TestNodeBuilder {
         self
     }
 
-    #[allow(dead_code)]
+    pub fn network_params(mut self, params: NetworkParams) -> Self {
+        self.config.network_params = params;
+        self
+    }
+
     pub fn elder_size(mut self, size: usize) -> Self {
         self.config.network_params.elder_size = size;
         self
     }
 
-    #[allow(dead_code)]
-    pub fn recommended_section_size(mut self, size: usize) -> Self {
-        self.config.network_params.recommended_section_size = size;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn transport_config(mut self, config: TransportConfig) -> Self {
-        self.config.transport_config = config;
-        self
-    }
-
-    #[allow(dead_code)]
     pub fn full_id(mut self, full_id: FullId) -> Self {
         self.config.full_id = Some(full_id);
         self
@@ -101,27 +102,84 @@ impl<'a> TestNodeBuilder {
     }
 }
 
+pub const TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Expect that the next event raised by the node matches the given pattern.
 /// Errors if no event, or an event that does not match the pattern is raised.
 #[macro_export]
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
-        match tokio::time::timeout(std::time::Duration::from_secs(10), $node.next()).await {
-            Ok(Some($pattern)) => Ok(()),
-            Ok(other) => Err(anyhow::format_err!(
-                "Expecting {}, got {:?}",
-                stringify!($pattern),
-                other
-            )),
-            Err(_) => Err(anyhow::format_err!(
-                "Timeout when expecting {}",
-                stringify!($pattern)
-            )),
+        match tokio::time::timeout($crate::utils::TIMEOUT, $node.next()).await {
+            Ok(Some($pattern)) => {}
+            Ok(other) => panic!("Expecting {}, got {:?}", stringify!($pattern), other),
+            Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),
         }
     };
 }
 
-#[allow(dead_code)]
+/// Create the given number of nodes and wait until they all connect.
+pub async fn create_connected_nodes(
+    count: usize,
+    network_params: NetworkParams,
+) -> Result<Vec<(Node, EventStream)>> {
+    let mut nodes = vec![];
+
+    // Create the first node
+    let (node, mut event_stream) = TestNodeBuilder::new(None)
+        .first()
+        .network_params(network_params)
+        .create()
+        .await?;
+    expect_next_event!(event_stream, Event::Connected(Connected::First));
+    expect_next_event!(event_stream, Event::PromotedToElder);
+
+    let bootstrap_contact = node.our_connection_info().await?;
+
+    nodes.push((node, event_stream));
+
+    // Create the other nodes bootstrapping off the first node.
+    let other_nodes = (1..count).map(|_| async {
+        let (node, mut event_stream) = TestNodeBuilder::new(None)
+            .network_params(network_params)
+            .with_contact(bootstrap_contact)
+            .create()
+            .await?;
+
+        expect_next_event!(event_stream, Event::Connected(Connected::First));
+
+        Ok::<_, Error>((node, event_stream))
+    });
+
+    for result in future::join_all(other_nodes).await {
+        nodes.push(result?);
+    }
+
+    // Wait until the first node receives `InfantJoined` event for all the other nodes.
+    let mut not_joined = HashSet::new();
+    for (node, _) in &nodes[1..] {
+        let _ = not_joined.insert(node.name().await);
+    }
+
+    while let Some(event) = nodes[0].1.next().await {
+        if let Event::InfantJoined { name, age } = event {
+            assert_eq!(age, MIN_AGE);
+            let _ = not_joined.remove(&name);
+        }
+
+        if not_joined.is_empty() {
+            break;
+        }
+    }
+
+    assert!(
+        not_joined.is_empty(),
+        "Event::InfantJoined not received for: {:?}",
+        not_joined
+    );
+
+    Ok(nodes)
+}
+
 pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Result<()> {
     let our_name = node.name().await;
     assert!(node.matches_our_prefix(&our_name).await?);
@@ -141,7 +199,7 @@ pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Resul
         .collect();
 
     if !our_prefix.is_empty() {
-        ensure!(
+        assert!(
             our_section_elders.len() >= elder_size,
             "{}({:b}) Our section is below the minimum size ({}/{})",
             our_name,
