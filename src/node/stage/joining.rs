@@ -167,8 +167,7 @@ impl Joining {
 
             Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
-            | Variant::JoinRequest(_)
-            | Variant::Ping => Ok(MessageStatus::Useless),
+            | Variant::JoinRequest(_) => Ok(MessageStatus::Useless),
         }
     }
 

@@ -60,8 +60,6 @@ pub(crate) enum Variant {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Message sent to a disconnected peer to trigger lost peer detection.
-    Ping,
     /// Sent from a node that can't establish the trust of the contained message to its original
     /// source in order for them to provide new proof that the node would trust.
     BouncedUntrustedMessage(Box<Message>),
@@ -163,7 +161,6 @@ impl Debug for Variant {
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
-            Self::Ping => write!(f, "Ping"),
             Self::BouncedUntrustedMessage(message) => f
                 .debug_tuple("BouncedUntrustedMessage")
                 .field(message)

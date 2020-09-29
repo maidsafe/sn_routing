@@ -209,33 +209,6 @@ impl Approved {
         Ok(())
     }
 
-    // TODO: review if we still need to invoke this function which used to
-    // be called when couldn't connect to a peer.
-    /*
-    async fn handle_connection_failure(&mut self, addr: SocketAddr) -> Result<()> {
-        let node = self
-            .shared_state
-            .our_members
-            .joined()
-            .map(|info| &info.p2p_node)
-            .find(|node| *node.peer_addr() == addr);
-
-        if let Some(node) = node {
-            trace!("ConnectionFailure from member {}", node);
-
-            // Ping the peer to trigger lost peer detection.
-            let addr = *node.peer_addr();
-            self.comm
-                .send_direct_message(&self.node_info.full_id, &addr, Variant::Ping)
-                .await?;
-        } else {
-            trace!("ConnectionFailure from non-member {}", addr);
-        }
-
-        Ok(())
-    }
-    */
-
     async fn handle_peer_lost(&mut self, peer_addr: &SocketAddr) -> Result<()> {
         let name = if let Some(node) = self.shared_state.find_p2p_node_from_addr(peer_addr) {
             debug!("Lost known peer {}", node);
@@ -345,7 +318,7 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
+            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
                 return Ok(MessageStatus::Useless)
             }
             Variant::Vote { proof_share, .. } => {
@@ -516,9 +489,7 @@ impl Approved {
 
                 Ok(None)
             }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) | Variant::Ping => {
-                unreachable!()
-            }
+            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => unreachable!(),
         }
     }
 
@@ -1481,18 +1452,6 @@ impl Approved {
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
             self.node_info.send_event(Event::PromotedToElder);
-
-            // Ping all members to detect recent lost nodes for which the section might need
-            // our Offline vote.
-            for p2p_node in self
-                .shared_state
-                .active_members()
-                .cloned()
-                .collect::<Vec<_>>()
-            {
-                self.send_direct_message(p2p_node.peer_addr(), Variant::Ping)
-                    .await?;
-            }
         }
 
         if old_is_elder && !new_is_elder {

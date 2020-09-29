@@ -106,7 +106,6 @@ impl Bootstrapping {
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
-            | Variant::Ping
             | Variant::BouncedUnknownMessage { .. }
             | Variant::Vote { .. }
             | Variant::DKGResult { .. }
