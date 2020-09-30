@@ -90,7 +90,7 @@ async fn test_messages_between_nodes() -> Result<()> {
         .await?;
     let node2_name = node2.name().await;
 
-    expect_next_event!(event_stream, Event::Connected(Connected::First));
+    assert_next_event!(event_stream, Event::Connected(Connected::First));
     node2
         .send_message(
             SrcLocation::Node(node2_name),
