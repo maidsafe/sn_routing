@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod command;
 pub mod event_stream;
 mod executor;
 mod stage;
 
 pub use self::event_stream::EventStream;
-use self::{executor::Executor, stage::Stage};
+use self::{command::Command, executor::Executor, stage::Stage};
 use crate::{
     crypto::{name, Keypair, PublicKey},
     error::{Error, Result},
@@ -202,20 +203,13 @@ impl Node {
 
     /// Send a message.
     pub async fn send_message(
-        &mut self,
+        &self,
         src: SrcLocation,
         dst: DstLocation,
         content: Bytes,
     ) -> Result<()> {
-        if let DstLocation::Direct = dst {
-            return Err(Error::BadLocation);
-        }
-
-        self.stage
-            .lock()
-            .await
-            .send_message(src, dst, content)
-            .await
+        let command = Command::SendUserMessage { src, dst, content };
+        executor::dispatch_command(self.stage.clone(), command).await
     }
 
     /// Send a message to a client peer.

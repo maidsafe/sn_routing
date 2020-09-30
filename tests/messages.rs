@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+#![type_length_limit = "1965344"]
+
 mod utils;
 
 use anyhow::{format_err, Result};
@@ -65,7 +67,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";
 
-    let (mut node1, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
+    let (node1, mut event_stream) = TestNodeBuilder::new(None).first().create().await?;
     let node1_contact = node1.our_connection_info().await?;
     let node1_name = node1.name().await;
 
@@ -84,7 +86,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     });
 
     // start a second node which sends a message to the first node
-    let (mut node2, mut event_stream) = TestNodeBuilder::new(None)
+    let (node2, mut event_stream) = TestNodeBuilder::new(None)
         .with_contact(node1_contact)
         .create()
         .await?;

@@ -12,6 +12,7 @@ mod comm;
 mod joining;
 
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
+use super::command::Command;
 use crate::{
     consensus::{self, Proof, Proven},
     crypto::{name, Keypair},
@@ -200,26 +201,17 @@ impl Stage {
         self.node_info().name()
     }
 
+    /// Our `Prefix` once we are a part of the section.
+    pub fn our_prefix(&self) -> Option<&Prefix> {
+        match &self.state {
+            State::Bootstrapping(_) | State::Joining(_) => None,
+            State::Approved(stage) => Some(stage.shared_state.our_prefix()),
+        }
+    }
+
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.comm.our_connection_info()
-    }
-
-    /// Send a message.
-    pub async fn send_message(
-        &mut self,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    ) -> Result<()> {
-        let log_ident = self.log_ident();
-
-        match &mut self.state {
-            State::Approved(stage) => {
-                log_ident::set(log_ident, stage.send_user_message(src, dst, content)).await
-            }
-            _ => Err(Error::InvalidState),
-        }
     }
 
     pub async fn send_message_to_target(
@@ -231,53 +223,86 @@ impl Stage {
         Ok(())
     }
 
-    /// Process a message accordng to current stage.
-    pub async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+    pub async fn process_command(&mut self, command: Command) -> Result<Vec<Command>> {
         log_ident::set(self.log_ident(), async {
-            trace!("try handle {:?} from {}", msg, sender);
+            trace!("Processing command {:?}", command);
 
-            if !self.in_dst_location(&msg).await? {
-                return Ok(());
+            let result = match command {
+                Command::ProcessMessage { message, sender } => {
+                    self.process_message(sender, message).await?;
+                    Ok(vec![])
+                }
+                Command::ProcessTimeout(token) => {
+                    self.process_timeout(token).await?;
+                    Ok(vec![])
+                }
+                Command::SendUserMessage { src, dst, content } => {
+                    self.send_user_message(src, dst, content).await?;
+                    Ok(vec![])
+                }
+            };
+
+            if let Err(error) = &result {
+                error!("Error encountered when processing command: {}", error);
             }
 
-            match &mut self.state {
-                State::Bootstrapping(stage) => {
-                    if let Some(joining) = stage.process_message(sender, msg).await? {
-                        self.state = State::Joining(joining);
-                    }
-
-                    Ok(())
-                }
-                State::Joining(stage) => {
-                    let new_state = stage.process_message(sender, msg).await?;
-                    if let Some(approved) = new_state {
-                        self.state = State::Approved(approved);
-                    }
-
-                    Ok(())
-                }
-                State::Approved(stage) => {
-                    let new_state = stage.process_message(sender, msg).await?;
-                    if let Some(bootstrapping) = new_state {
-                        self.state = State::Bootstrapping(bootstrapping);
-                    }
-
-                    Ok(())
-                }
-            }
+            result
         })
         .await
     }
 
-    pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
-        log_ident::set(self.log_ident(), async {
-            match &mut self.state {
-                State::Bootstrapping(stage) => stage.process_timeout(token).await,
-                State::Joining(stage) => stage.process_timeout(token).await,
-                State::Approved(stage) => stage.process_timeout(token).await,
+    async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+        trace!("try handle {:?} from {}", msg, sender);
+
+        if !self.in_dst_location(&msg).await? {
+            return Ok(());
+        }
+
+        match &mut self.state {
+            State::Bootstrapping(stage) => {
+                if let Some(joining) = stage.process_message(sender, msg).await? {
+                    self.state = State::Joining(joining);
+                }
+
+                Ok(())
             }
-        })
-        .await
+            State::Joining(stage) => {
+                let new_state = stage.process_message(sender, msg).await?;
+                if let Some(approved) = new_state {
+                    self.state = State::Approved(approved);
+                }
+
+                Ok(())
+            }
+            State::Approved(stage) => {
+                let new_state = stage.process_message(sender, msg).await?;
+                if let Some(bootstrapping) = new_state {
+                    self.state = State::Bootstrapping(bootstrapping);
+                }
+
+                Ok(())
+            }
+        }
+    }
+
+    async fn process_timeout(&mut self, token: u64) -> Result<()> {
+        match &mut self.state {
+            State::Bootstrapping(stage) => stage.process_timeout(token).await,
+            State::Joining(stage) => stage.process_timeout(token).await,
+            State::Approved(stage) => stage.process_timeout(token).await,
+        }
+    }
+
+    async fn send_user_message(
+        &mut self,
+        src: SrcLocation,
+        dst: DstLocation,
+        content: Bytes,
+    ) -> Result<()> {
+        match &mut self.state {
+            State::Approved(stage) => stage.send_user_message(src, dst, content).await,
+            _ => Err(Error::InvalidState),
+        }
     }
 
     // Checks whether the given location represents self.
@@ -308,14 +333,6 @@ impl Stage {
         Ok(in_dst)
     }
 
-    /// Our `Prefix` once we are a part of the section.
-    pub fn our_prefix(&self) -> Option<&Prefix> {
-        match &self.state {
-            State::Bootstrapping(_) | State::Joining(_) => None,
-            State::Approved(stage) => Some(stage.shared_state.our_prefix()),
-        }
-    }
-
     fn node_info(&self) -> &NodeInfo {
         match &self.state {
             State::Bootstrapping(state) => &state.node_info,
@@ -332,7 +349,7 @@ impl Stage {
         }
     }
 
-    pub(crate) fn log_ident(&self) -> String {
+    fn log_ident(&self) -> String {
         match &self.state {
             State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
             State::Joining(state) => format!(

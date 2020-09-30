@@ -6,8 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::command::Command;
 use crate::{
     cancellation::{cancellable, CancellationHandle, CancellationToken},
+    error::Result,
     event::Event,
     messages::Message,
     node::stage::Stage,
@@ -47,8 +49,7 @@ fn spawn_connections_handler(
     let _ = tokio::spawn(cancellable(cancel_token.clone(), async move {
         while let Some(incoming_msgs) = incoming_conns.next().await {
             trace!(
-                "{}New connection established by peer {}",
-                stage.lock().await.log_ident(),
+                "New connection established by peer {}",
                 incoming_msgs.remote_addr()
             );
             spawn_messages_handler(stage.clone(), incoming_msgs, cancel_token.clone())
@@ -67,8 +68,7 @@ fn spawn_messages_handler(
             match msg {
                 QuicP2pMsg::UniStream { bytes, src, .. } => {
                     trace!(
-                        "{}New message ({} bytes) received on a uni-stream from: {}",
-                        stage.lock().await.log_ident(),
+                        "New message ({} bytes) received on a uni-stream from: {}",
                         bytes.len(),
                         src
                     );
@@ -84,8 +84,7 @@ fn spawn_messages_handler(
                     recv,
                 } => {
                     trace!(
-                        "{}New message ({} bytes) received on a bi-stream from: {}",
-                        stage.lock().await.log_ident(),
+                        "New message ({} bytes) received on a bi-stream from: {}",
                         bytes.len(),
                         src
                     );
@@ -110,24 +109,12 @@ fn spawn_messages_handler(
 fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender: SocketAddr) {
     let _ = tokio::spawn(async move {
         match Message::from_bytes(&msg_bytes) {
-            Ok(msg) => {
-                // Process the message according to our stage
-                let mut stage = stage.lock().await;
-                if let Err(err) = stage.process_message(sender, msg.clone()).await {
-                    error!(
-                        "{}Error encountered when processing message {:?}: {}",
-                        stage.log_ident(),
-                        msg,
-                        err
-                    );
-                }
+            Ok(message) => {
+                let command = Command::ProcessMessage { message, sender };
+                let _ = dispatch_command(stage, command).await;
             }
             Err(error) => {
-                debug!(
-                    "{}Failed to deserialize message: {:?}",
-                    stage.lock().await.log_ident(),
-                    error
-                );
+                debug!("Failed to deserialize message: {}", error);
             }
         }
     });
@@ -140,13 +127,23 @@ fn spawn_timer_handler(
 ) {
     let _ = tokio::spawn(cancellable(cancel_token, async move {
         while let Some(timer_token) = timer_rx.recv().await {
-            if let Err(err) = stage.lock().await.process_timeout(timer_token).await {
-                error!(
-                    "{}Error encountered when processing timeout: {}",
-                    stage.lock().await.log_ident(),
-                    err
-                );
-            }
+            let command = Command::ProcessTimeout(timer_token);
+            let _ = dispatch_command(stage.clone(), command).await;
         }
     }));
+}
+
+pub(super) async fn dispatch_command(stage: Arc<Mutex<Stage>>, command: Command) -> Result<()> {
+    let commands = stage.lock().await.process_command(command).await?;
+    for command in commands {
+        spawn_dispatch_command(stage.clone(), command)
+    }
+
+    Ok(())
+}
+
+// Note: can't call `tokio::spawn(dispatch_command(...))` directly in `dispatch_command` because
+// that fails compilation on a type check cycle error for some reason.
+fn spawn_dispatch_command(stage: Arc<Mutex<Stage>>, command: Command) {
+    let _ = tokio::spawn(dispatch_command(stage, command));
 }
