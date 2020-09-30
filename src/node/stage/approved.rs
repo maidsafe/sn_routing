@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bootstrapping::Bootstrapping, comm::Comm, NodeInfo};
+use super::{comm::Comm, Bootstrapping, Command, NodeInfo, State};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -85,11 +85,11 @@ impl Approved {
         &mut self,
         sender: SocketAddr,
         msg: Message,
-    ) -> Result<Option<Bootstrapping>> {
+    ) -> Result<Vec<Command>> {
         // Filter messages which were already handled
         if self.msg_filter.contains_incoming(&msg) {
             trace!("not handling message - already handled: {:?}", msg);
-            return Ok(None);
+            return Ok(vec![]);
         }
 
         match self.decide_message_status(&msg)? {
@@ -101,17 +101,17 @@ impl Approved {
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {}: {:?} ", sender, msg);
                 self.handle_untrusted_message(Some(sender), msg).await?;
-                Ok(None)
+                Ok(vec![])
             }
             MessageStatus::Unknown => {
                 debug!("Unknown message from {}: {:?} ", sender, msg);
                 self.handle_unknown_message(Some(sender), msg.to_bytes())
                     .await?;
-                Ok(None)
+                Ok(vec![])
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {}: {:?}", sender, msg);
-                Ok(None)
+                Ok(vec![])
             }
         }
     }
@@ -371,19 +371,18 @@ impl Approved {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
-    ) -> Result<Option<Bootstrapping>> {
+    ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
         match msg.variant() {
             Variant::NeighbourInfo { elders_info, .. } => {
                 msg.dst().check_is_section()?;
                 self.handle_neighbour_info(elders_info.value.clone(), *msg.proof_chain_last_key()?)
                     .await?;
-
-                Ok(None)
+                Ok(vec![])
             }
             Variant::Sync(shared_state) => {
                 self.handle_sync(shared_state.clone()).await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
@@ -394,7 +393,7 @@ impl Approved {
                         details,
                     }) => {
                         // Transition from Approved to Bootstrapping on relocation
-                        let bootstrapping = Bootstrapping::new(
+                        let state = Bootstrapping::new(
                             Some(details),
                             conn_infos,
                             self.comm.clone(),
@@ -402,30 +401,31 @@ impl Approved {
                             self.timer.clone(),
                         )
                         .await?;
-
-                        Ok(Some(bootstrapping))
+                        let state = State::Bootstrapping(state);
+                        let command = Command::Transition(Box::new(state));
+                        Ok(vec![command])
                     }
-                    None => Ok(None),
+                    None => Ok(vec![]),
                 }
             }
             Variant::RelocatePromise(promise) => {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
                     .await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::BootstrapRequest(name) => {
                 self.handle_bootstrap_request(msg.src().to_sender_node(sender)?, *name)
                     .await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::JoinRequest(join_request) => {
                 self.handle_join_request(msg.src().to_sender_node(sender)?, *join_request.clone())
                     .await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::UserMessage(content) => {
                 self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
-                Ok(None)
+                Ok(vec![])
             }
             Variant::BouncedUntrustedMessage(message) => {
                 self.handle_bounced_untrusted_message(
@@ -435,7 +435,7 @@ impl Approved {
                 )
                 .await?;
 
-                Ok(None)
+                Ok(vec![])
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
                 self.handle_bounced_unknown_message(
@@ -444,25 +444,24 @@ impl Approved {
                     src_key,
                 )
                 .await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
             } => {
                 self.handle_dkg_start(*dkg_key, elders_info.clone()).await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().as_node()?.0)
                     .await?;
-                Ok(None)
+                Ok(vec![])
             }
             Variant::DKGResult { dkg_key, result } => {
                 self.handle_dkg_result(*dkg_key, *result, msg.src().as_node()?.0)
                     .await?;
-
-                Ok(None)
+                Ok(vec![])
             }
             Variant::Vote {
                 content,
@@ -475,7 +474,7 @@ impl Approved {
 
                 result?;
 
-                Ok(None)
+                Ok(vec![])
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => unreachable!(),
         }
@@ -1948,6 +1947,7 @@ impl Approved {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct RelocateParams {
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,

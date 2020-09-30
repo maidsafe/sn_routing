@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::Comm, joining::Joining, NodeInfo};
+use super::{comm::Comm, joining::Joining, Command, NodeInfo, State};
 use crate::{
     crypto::{keypair_within_range, name},
     error::Result,
@@ -59,7 +59,7 @@ impl Bootstrapping {
         &mut self,
         sender: SocketAddr,
         msg: Message,
-    ) -> Result<Option<Joining>> {
+    ) -> Result<Vec<Command>> {
         match msg.variant() {
             Variant::BootstrapResponse(response) => {
                 msg.verify(iter::empty())
@@ -77,7 +77,7 @@ impl Bootstrapping {
                         section_key,
                         relocate_payload,
                     }) => {
-                        let joining = Joining::new(
+                        let state = Joining::new(
                             self.comm.clone(),
                             elders_info,
                             section_key,
@@ -86,10 +86,11 @@ impl Bootstrapping {
                             self.timer.clone(),
                         )
                         .await?;
-
-                        Ok(Some(joining))
+                        let state = State::Joining(state);
+                        let command = Command::Transition(Box::new(state));
+                        Ok(vec![command])
                     }
-                    None => Ok(None),
+                    None => Ok(vec![]),
                 }
             }
 
@@ -97,7 +98,7 @@ impl Bootstrapping {
             | Variant::UserMessage(_)
             | Variant::BouncedUntrustedMessage(_) => {
                 debug!("Unknown message from {}: {:?} ", sender, msg);
-                Ok(None)
+                Ok(vec![])
             }
 
             Variant::NodeApproval(_)
@@ -112,7 +113,7 @@ impl Bootstrapping {
             | Variant::DKGStart { .. }
             | Variant::DKGMessage { .. } => {
                 debug!("Useless message from {}: {:?}", sender, msg);
-                Ok(None)
+                Ok(vec![])
             }
         }
     }

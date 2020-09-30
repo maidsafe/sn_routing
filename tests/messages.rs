@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#![type_length_limit = "1965344"]
+#![type_length_limit = "1873294"]
 
 mod utils;
 

@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::stage::State;
 use crate::{
     location::{DstLocation, SrcLocation},
     messages::Message,
@@ -25,4 +26,5 @@ pub(crate) enum Command {
         dst: DstLocation,
         content: Bytes,
     },
+    Transition(Box<State>),
 }
