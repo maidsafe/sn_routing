@@ -63,11 +63,9 @@
     unused_results,
     clippy::needless_borrow
 )]
-// FIXME: it seems the code in `Comm::send_message_to_targets` is triggering type-length limit
-// reached error for some reason. This is a quick workaround, but we should probably look into it
-// closely to find out whether there are any downsides doing this or whether there is another,
-// more "proper" way.
-#![type_length_limit = "2295944"]
+// HACK: workaround for the "reached the type-length limit..." errors.
+// TODO: find out whether there is any downside to doing this.
+#![type_length_limit = "14621524"]
 
 #[macro_use]
 extern crate log;
