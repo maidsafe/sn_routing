@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{approved::Approved, comm::Comm, Command, NodeInfo, State};
+use super::{approved::Approved, comm::Comm, Command, Context, NodeInfo, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
@@ -65,11 +65,12 @@ impl Joining {
         Ok(stage)
     }
 
-    pub async fn process_message(
+    pub async fn handle_message(
         &mut self,
+        cx: &mut Context,
         sender: SocketAddr,
         msg: Message,
-    ) -> Result<Vec<Command>> {
+    ) -> Result<()> {
         trace!("Got {:?}", msg);
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => match msg.variant() {
@@ -82,9 +83,7 @@ impl Joining {
                         elders_info.clone(),
                         *section_key,
                     )
-                    .await?;
-
-                    Ok(vec![])
+                    .await
                 }
                 Variant::NodeApproval(payload) => {
                     // Transition from Joining to Approved
@@ -105,27 +104,27 @@ impl Joining {
                         self.timer.clone(),
                     )?;
                     let state = State::Approved(state);
-                    let command = Command::Transition(Box::new(state));
+                    cx.push(Command::Transition(Box::new(state)));
 
                     self.node_info.send_event(Event::Connected(connect_type));
 
-                    Ok(vec![command])
+                    Ok(())
                 }
                 _ => unreachable!(),
             },
             MessageStatus::Untrusted => unreachable!(),
             MessageStatus::Unknown => {
                 debug!("Unknown message from {}: {:?} ", sender, msg);
-                Ok(vec![])
+                Ok(())
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {}: {:?}", sender, msg);
-                Ok(vec![])
+                Ok(())
             }
         }
     }
 
-    pub async fn process_timeout(&mut self, token: u64) -> Result<()> {
+    pub async fn handle_timeout(&mut self, token: u64) -> Result<()> {
         if token == self.timer_token {
             debug!("Timeout when trying to join a section");
             // Try again

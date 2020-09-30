@@ -12,7 +12,11 @@ mod executor;
 mod stage;
 
 pub use self::event_stream::EventStream;
-use self::{command::Command, executor::Executor, stage::Stage};
+use self::{
+    command::{Command, Context},
+    executor::Executor,
+    stage::Stage,
+};
 use crate::{
     crypto::{name, Keypair, PublicKey},
     error::{Error, Result},

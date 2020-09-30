@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::Comm, joining::Joining, Command, NodeInfo, State};
+use super::{comm::Comm, joining::Joining, Command, Context, NodeInfo, State};
 use crate::{
     crypto::{keypair_within_range, name},
     error::Result,
@@ -55,11 +55,12 @@ impl Bootstrapping {
         Ok(stage)
     }
 
-    pub async fn process_message(
+    pub async fn handle_message(
         &mut self,
+        cx: &mut Context,
         sender: SocketAddr,
         msg: Message,
-    ) -> Result<Vec<Command>> {
+    ) -> Result<()> {
         match msg.variant() {
             Variant::BootstrapResponse(response) => {
                 msg.verify(iter::empty())
@@ -87,10 +88,10 @@ impl Bootstrapping {
                         )
                         .await?;
                         let state = State::Joining(state);
-                        let command = Command::Transition(Box::new(state));
-                        Ok(vec![command])
+                        cx.push(Command::Transition(Box::new(state)));
+                        Ok(())
                     }
-                    None => Ok(vec![]),
+                    None => Ok(()),
                 }
             }
 
@@ -98,7 +99,7 @@ impl Bootstrapping {
             | Variant::UserMessage(_)
             | Variant::BouncedUntrustedMessage(_) => {
                 debug!("Unknown message from {}: {:?} ", sender, msg);
-                Ok(vec![])
+                Ok(())
             }
 
             Variant::NodeApproval(_)
@@ -113,12 +114,12 @@ impl Bootstrapping {
             | Variant::DKGStart { .. }
             | Variant::DKGMessage { .. } => {
                 debug!("Useless message from {}: {:?}", sender, msg);
-                Ok(vec![])
+                Ok(())
             }
         }
     }
 
-    pub async fn process_timeout(&mut self, _token: u64) -> Result<()> {
+    pub async fn handle_timeout(&mut self, _token: u64) -> Result<()> {
         todo!()
     }
 

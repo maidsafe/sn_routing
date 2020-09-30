@@ -7,7 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use serde::Serialize;
-use std::{hash::Hash, net::SocketAddr};
+use std::{
+    fmt::{self, Display, Formatter},
+    hash::Hash,
+    net::SocketAddr,
+};
 use xor_name::XorName;
 
 /// Network p2p peer identity.
@@ -52,5 +56,11 @@ impl Peer {
             age: self.age.saturating_add(1),
             ..self
         }
+    }
+}
+
+impl Display for Peer {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{} at {}", self.name, self.addr)
     }
 }
