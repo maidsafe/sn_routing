@@ -11,9 +11,7 @@ use crate::{
     error::{Error, Result},
     event::{Connected, Event},
     id::P2pNode,
-    messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus,
-    },
+    messages::{BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus},
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
     timer::Timer,
@@ -192,11 +190,9 @@ impl Joining {
             self.section_key = new_section_key;
             self.send_join_requests().await?;
         } else {
-            log_or_panic!(
-                log::Level::Error,
+            warn!(
                 "Newer Join response not for our prefix {:?} from {:?}",
-                new_elders_info,
-                sender,
+                new_elders_info, sender,
             );
         }
 
@@ -285,7 +281,7 @@ fn verify_message(msg: &Message, trusted_key: Option<&bls::PublicKey>) -> Result
             (VerifyStatus::Unknown, Some(_)) => Err(Error::UntrustedMessage),
         })
         .map_err(|error| {
-            messages::log_verify_failure(msg, &error, trusted_key.map(|key| (&prefix, key)));
+            warn!("Verification of {:?} failed: {}", msg, error);
             error
         })
 }
