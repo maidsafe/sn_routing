@@ -8,23 +8,67 @@
 
 use super::stage::State;
 use crate::{
+    // consensus::{ProofShare, Vote},
     location::{DstLocation, SrcLocation},
     messages::Message,
 };
 use bytes::Bytes;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, slice};
 
 #[derive(Debug)]
 pub(crate) enum Command {
-    ProcessMessage {
-        message: Message,
+    HandleMessage {
         sender: SocketAddr,
+        message: Message,
     },
-    ProcessTimeout(u64),
+    HandleTimeout(u64),
+    HandlePeerLost(SocketAddr),
+    // HandleVote {
+    //     vote: Vote,
+    //     proof_share: ProofShare,
+    // },
+    SendMessage {
+        recipients: Vec<SocketAddr>,
+        delivery_group_size: usize,
+        message: Bytes,
+    },
     SendUserMessage {
         src: SrcLocation,
         dst: DstLocation,
         content: Bytes,
     },
     Transition(Box<State>),
+}
+
+pub(crate) struct Context(Vec<Command>);
+
+impl Context {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn push(&mut self, command: Command) {
+        self.0.push(command);
+    }
+
+    pub fn send_message_to_target(&mut self, recipient: &SocketAddr, message: Bytes) {
+        self.send_message_to_targets(slice::from_ref(recipient), 1, message)
+    }
+
+    pub fn send_message_to_targets(
+        &mut self,
+        recipients: &[SocketAddr],
+        delivery_group_size: usize,
+        message: Bytes,
+    ) {
+        self.push(Command::SendMessage {
+            recipients: recipients.to_vec(),
+            delivery_group_size,
+            message,
+        })
+    }
+
+    pub fn into_commands(self) -> Vec<Command> {
+        self.0
+    }
 }

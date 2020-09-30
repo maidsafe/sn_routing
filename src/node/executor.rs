@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::command::Command;
+use super::{Command, Context};
 use crate::{
     cancellation::{cancellable, CancellationHandle, CancellationToken},
     error::Result,
@@ -110,7 +110,7 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
     let _ = tokio::spawn(async move {
         match Message::from_bytes(&msg_bytes) {
             Ok(message) => {
-                let command = Command::ProcessMessage { message, sender };
+                let command = Command::HandleMessage { message, sender };
                 let _ = dispatch_command(stage, command).await;
             }
             Err(error) => {
@@ -127,15 +127,18 @@ fn spawn_timer_handler(
 ) {
     let _ = tokio::spawn(cancellable(cancel_token, async move {
         while let Some(timer_token) = timer_rx.recv().await {
-            let command = Command::ProcessTimeout(timer_token);
+            let command = Command::HandleTimeout(timer_token);
             let _ = dispatch_command(stage.clone(), command).await;
         }
     }));
 }
 
 pub(super) async fn dispatch_command(stage: Arc<Mutex<Stage>>, command: Command) -> Result<()> {
-    let commands = stage.lock().await.process_command(command).await?;
-    for command in commands {
+    let mut cx = Context::new();
+
+    stage.lock().await.handle_command(&mut cx, command).await?;
+
+    for command in cx.into_commands() {
         spawn_dispatch_command(stage.clone(), command)
     }
 

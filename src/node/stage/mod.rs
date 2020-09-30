@@ -12,7 +12,7 @@ mod comm;
 mod joining;
 
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
-use super::command::Command;
+use super::command::{Command, Context};
 use crate::{
     consensus::{self, Proof, Proven},
     crypto::{name, Keypair},
@@ -238,25 +238,31 @@ impl Stage {
         Ok(())
     }
 
-    pub async fn process_command(&mut self, command: Command) -> Result<Vec<Command>> {
+    pub async fn handle_command(&mut self, cx: &mut Context, command: Command) -> Result<()> {
         log_ident::set(self.log_ident(), async {
             trace!("Processing command {:?}", command);
 
             let result = match command {
-                Command::ProcessMessage { message, sender } => {
-                    self.process_message(sender, message).await
+                Command::HandleMessage { message, sender } => {
+                    self.handle_message(cx, sender, message).await
                 }
-                Command::ProcessTimeout(token) => {
-                    self.process_timeout(token).await?;
-                    Ok(vec![])
+                Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
+                // Command::HandleVote { .. } => todo!(),
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
+                Command::SendMessage {
+                    recipients,
+                    delivery_group_size,
+                    message,
+                } => {
+                    self.send_message(cx, &recipients, delivery_group_size, message)
+                        .await
                 }
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(src, dst, content).await?;
-                    Ok(vec![])
+                    self.send_user_message(src, dst, content, cx).await
                 }
                 Command::Transition(state) => {
                     self.state = *state;
-                    Ok(vec![])
+                    Ok(())
                 }
             };
 
@@ -269,25 +275,60 @@ impl Stage {
         .await
     }
 
-    async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<Vec<Command>> {
+    async fn handle_message(
+        &mut self,
+        cx: &mut Context,
+        sender: SocketAddr,
+        msg: Message,
+    ) -> Result<()> {
         trace!("try handle {:?} from {}", msg, sender);
 
-        if !self.in_dst_location(&msg).await? {
-            return Ok(vec![]);
+        if !self.in_dst_location(&msg, cx)? {
+            return Ok(());
         }
 
         match &mut self.state {
-            State::Bootstrapping(stage) => stage.process_message(sender, msg).await,
-            State::Joining(stage) => stage.process_message(sender, msg).await,
-            State::Approved(stage) => stage.process_message(sender, msg).await,
+            State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg).await,
+            State::Joining(stage) => stage.handle_message(cx, sender, msg).await,
+            State::Approved(stage) => stage.handle_message(cx, sender, msg).await,
         }
     }
 
-    async fn process_timeout(&mut self, token: u64) -> Result<()> {
+    async fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
         match &mut self.state {
-            State::Bootstrapping(stage) => stage.process_timeout(token).await,
-            State::Joining(stage) => stage.process_timeout(token).await,
-            State::Approved(stage) => stage.process_timeout(token).await,
+            State::Bootstrapping(stage) => stage.handle_timeout(token).await,
+            State::Joining(stage) => stage.handle_timeout(token).await,
+            State::Approved(stage) => stage.handle_timeout(cx, token).await,
+        }
+    }
+
+    async fn handle_peer_lost(&mut self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
+        match &mut self.state {
+            State::Approved(state) => state.handle_peer_lost(cx, &addr).await,
+            _ => Ok(()),
+        }
+    }
+
+    async fn send_message(
+        &self,
+        cx: &mut Context,
+        recipients: &[SocketAddr],
+        delivery_group_size: usize,
+        message: Bytes,
+    ) -> Result<()> {
+        match self
+            .comm
+            .send_message_to_targets(recipients, delivery_group_size, message)
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                for addr in error.failed_recipients {
+                    cx.push(Command::HandlePeerLost(addr));
+                }
+
+                Err(Error::FailedSend)
+            }
         }
     }
 
@@ -296,15 +337,16 @@ impl Stage {
         src: SrcLocation,
         dst: DstLocation,
         content: Bytes,
+        cx: &mut Context,
     ) -> Result<()> {
         match &mut self.state {
-            State::Approved(stage) => stage.send_user_message(src, dst, content).await,
+            State::Approved(stage) => stage.send_user_message(cx, src, dst, content).await,
             _ => Err(Error::InvalidState),
         }
     }
 
     // Checks whether the given location represents self.
-    async fn in_dst_location(&mut self, msg: &Message) -> Result<bool> {
+    fn in_dst_location(&mut self, msg: &Message, cx: &mut Context) -> Result<bool> {
         let in_dst = match &mut self.state {
             State::Bootstrapping(_) | State::Joining(_) => match msg.dst() {
                 DstLocation::Node(name) => name == &self.node_info().name(),
@@ -321,7 +363,7 @@ impl Stage {
                 if !is_dst_location || msg.dst().is_section() {
                     // Relay closer to the destination or
                     // broadcast to the rest of our section.
-                    stage.relay_message(msg).await?;
+                    stage.relay_message(cx, msg)?;
                 }
 
                 is_dst_location
