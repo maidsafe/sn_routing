@@ -31,7 +31,12 @@ use crate::{
 use bytes::Bytes;
 use qp2p::IncomingConnections;
 use serde::Serialize;
-use std::{iter, net::SocketAddr, sync::Arc};
+use std::{
+    fmt::{self, Debug, Formatter},
+    iter,
+    net::SocketAddr,
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -40,10 +45,20 @@ pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
 // Type to hold the various states a node goes through during its lifetime.
 #[allow(clippy::large_enum_variant)]
-enum State {
+pub(crate) enum State {
     Bootstrapping(Bootstrapping),
     Joining(Joining),
     Approved(Approved),
+}
+
+impl Debug for State {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Bootstrapping(_) => write!(f, "Bootstrapping"),
+            Self::Joining(_) => write!(f, "Joining"),
+            Self::Approved(_) => write!(f, "Approved"),
+        }
+    }
 }
 
 // Node's information.
@@ -229,8 +244,7 @@ impl Stage {
 
             let result = match command {
                 Command::ProcessMessage { message, sender } => {
-                    self.process_message(sender, message).await?;
-                    Ok(vec![])
+                    self.process_message(sender, message).await
                 }
                 Command::ProcessTimeout(token) => {
                     self.process_timeout(token).await?;
@@ -238,6 +252,10 @@ impl Stage {
                 }
                 Command::SendUserMessage { src, dst, content } => {
                     self.send_user_message(src, dst, content).await?;
+                    Ok(vec![])
+                }
+                Command::Transition(state) => {
+                    self.state = *state;
                     Ok(vec![])
                 }
             };
@@ -251,37 +269,17 @@ impl Stage {
         .await
     }
 
-    async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<()> {
+    async fn process_message(&mut self, sender: SocketAddr, msg: Message) -> Result<Vec<Command>> {
         trace!("try handle {:?} from {}", msg, sender);
 
         if !self.in_dst_location(&msg).await? {
-            return Ok(());
+            return Ok(vec![]);
         }
 
         match &mut self.state {
-            State::Bootstrapping(stage) => {
-                if let Some(joining) = stage.process_message(sender, msg).await? {
-                    self.state = State::Joining(joining);
-                }
-
-                Ok(())
-            }
-            State::Joining(stage) => {
-                let new_state = stage.process_message(sender, msg).await?;
-                if let Some(approved) = new_state {
-                    self.state = State::Approved(approved);
-                }
-
-                Ok(())
-            }
-            State::Approved(stage) => {
-                let new_state = stage.process_message(sender, msg).await?;
-                if let Some(bootstrapping) = new_state {
-                    self.state = State::Bootstrapping(bootstrapping);
-                }
-
-                Ok(())
-            }
+            State::Bootstrapping(stage) => stage.process_message(sender, msg).await,
+            State::Joining(stage) => stage.process_message(sender, msg).await,
+            State::Approved(stage) => stage.process_message(sender, msg).await,
         }
     }
 

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{approved::Approved, comm::Comm, NodeInfo};
+use super::{approved::Approved, comm::Comm, Command, NodeInfo, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
@@ -69,7 +69,7 @@ impl Joining {
         &mut self,
         sender: SocketAddr,
         msg: Message,
-    ) -> Result<Option<Approved>> {
+    ) -> Result<Vec<Command>> {
         trace!("Got {:?}", msg);
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => match msg.variant() {
@@ -84,39 +84,43 @@ impl Joining {
                     )
                     .await?;
 
-                    Ok(None)
+                    Ok(vec![])
                 }
                 Variant::NodeApproval(payload) => {
+                    // Transition from Joining to Approved
                     let connect_type = self.connect_type();
                     let section_chain = msg.proof_chain()?.clone();
-                    // Transition from Joining to Approved
+
                     info!(
                         "This node has been approved to join the network at {:?}!",
                         payload.value.prefix,
                     );
+
                     let shared_state = SharedState::new(section_chain, payload.clone());
-                    let new_stage = Approved::new(
+                    let state = Approved::new(
                         self.comm.clone(),
                         shared_state,
                         None,
                         self.node_info.clone(),
                         self.timer.clone(),
                     )?;
+                    let state = State::Approved(state);
+                    let command = Command::Transition(Box::new(state));
 
                     self.node_info.send_event(Event::Connected(connect_type));
 
-                    Ok(Some(new_stage))
+                    Ok(vec![command])
                 }
                 _ => unreachable!(),
             },
             MessageStatus::Untrusted => unreachable!(),
             MessageStatus::Unknown => {
                 debug!("Unknown message from {}: {:?} ", sender, msg);
-                Ok(None)
+                Ok(vec![])
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {}: {:?}", sender, msg);
-                Ok(None)
+                Ok(vec![])
             }
         }
     }

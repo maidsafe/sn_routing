@@ -74,7 +74,7 @@ pub struct RelocateDetails {
 }
 
 /// SignedSNRoutingMessage with Relocate message content.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
     signed_msg: Message,

@@ -65,7 +65,7 @@
 )]
 // HACK: workaround for the "reached the type-length limit..." errors.
 // TODO: find out whether there is any downside to doing this.
-#![type_length_limit = "14621524"]
+#![type_length_limit = "14621964"]
 
 #[macro_use]
 extern crate log;
