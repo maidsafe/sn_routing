@@ -104,10 +104,10 @@ impl<'a> TestNodeBuilder {
 
 pub const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Expect that the next event raised by the node matches the given pattern.
-/// Errors if no event, or an event that does not match the pattern is raised.
+/// Assert that the next event raised by the node matches the given pattern.
+/// Fails if no event, or an event that does not match the pattern is raised.
 #[macro_export]
-macro_rules! expect_next_event {
+macro_rules! assert_next_event {
     ($node:expr, $pattern:pat) => {
         match tokio::time::timeout($crate::utils::TIMEOUT, $node.next()).await {
             Ok(Some($pattern)) => {}
@@ -130,8 +130,8 @@ pub async fn create_connected_nodes(
         .network_params(network_params)
         .create()
         .await?;
-    expect_next_event!(event_stream, Event::Connected(Connected::First));
-    expect_next_event!(event_stream, Event::PromotedToElder);
+    assert_next_event!(event_stream, Event::Connected(Connected::First));
+    assert_next_event!(event_stream, Event::PromotedToElder);
 
     let bootstrap_contact = node.our_connection_info().await?;
 
@@ -145,7 +145,7 @@ pub async fn create_connected_nodes(
             .create()
             .await?;
 
-        expect_next_event!(event_stream, Event::Connected(Connected::First));
+        assert_next_event!(event_stream, Event::Connected(Connected::First));
 
         Ok::<_, Error>((node, event_stream))
     });

@@ -29,8 +29,8 @@ async fn test_genesis_node() -> Result<()> {
 
     assert_eq!(*full_id.public_id(), node.id().await);
 
-    expect_next_event!(event_stream, Event::Connected(Connected::First));
-    expect_next_event!(event_stream, Event::PromotedToElder);
+    assert_next_event!(event_stream, Event::Connected(Connected::First));
+    assert_next_event!(event_stream, Event::PromotedToElder);
 
     assert!(node.is_elder().await);
 
@@ -43,11 +43,11 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        expect_next_event!(event_stream, Event::Connected(Connected::First));
-        expect_next_event!(event_stream, Event::PromotedToElder);
-        expect_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ });
+        assert_next_event!(event_stream, Event::Connected(Connected::First));
+        assert_next_event!(event_stream, Event::PromotedToElder);
+        assert_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ });
         // TODO: Should we expect EldersChanged event too ??
-        // expect_next_event!(event_stream, Event::EldersChanged { .. })?;
+        // assert_next_event!(event_stream, Event::EldersChanged { .. })?;
         Ok::<(), Error>(())
     });
 
@@ -58,7 +58,7 @@ async fn test_node_bootstrapping() -> Result<()> {
         .create()
         .await?;
 
-    expect_next_event!(event_stream, Event::Connected(Connected::First));
+    assert_next_event!(event_stream, Event::Connected(Connected::First));
 
     // just await for genesis node to finish receiving all events
     genesis_handler.await??;
@@ -110,7 +110,7 @@ async fn test_section_bootstrapping() -> Result<()> {
                 .create()
                 .await?;
 
-            expect_next_event!(event_stream, Event::Connected(Connected::First));
+            assert_next_event!(event_stream, Event::Connected(Connected::First));
 
             Ok::<Node, Error>(node)
         });
