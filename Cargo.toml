@@ -15,8 +15,9 @@ async-recursion = "0.3.1"
 bincode = "1.2.1"
 bls = { package = "threshold_crypto", version = "~0.4.0" }
 bls_dkg = "~0.1.0"
+bls_signature_aggregator = { git = "https://github.com/madadam/bls_signature_aggregator.git", branch = "repetition" }
 bytes = "~0.5.4"
-crossbeam-channel = "~0.4.2"
+crossbeam-channel = { version = "~0.4.2", optional = true }
 ctrlc = { version = "3", optional = true, features = ["termination"] }
 ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
 env_logger = { version = "~0.7.1", optional = true }
@@ -34,7 +35,6 @@ rand = "~0.7.3"
 rand_core = "~0.5.1"
 rand_os = "~0.2.2"
 rand_xorshift = "~0.2.0"
-bls_signature_aggregator = { git = "https://github.com/madadam/bls_signature_aggregator.git", branch = "repetition" }
 serde = { version = "1.0.111", features = ["derive" ,"rc"] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 tokio = { version = "~0.2.22", features = ["sync", "time", "rt-util"] }
@@ -47,11 +47,12 @@ anyhow = "1"
 
 [features]
 mock = [
+    "bls/use-insecure-test-only-mock-crypto",
+    "bls_signature_aggregator/mock_timer",
+    "crossbeam-channel",
+    "ctrlc",
+    "env_logger",
+    "lazy_static",
     "lru_time_cache/sn_fake_clock",
     "mock-quic-p2p",
-    "ctrlc",
-    "lazy_static",
-    "bls/use-insecure-test-only-mock-crypto",
-    "env_logger",
-    "bls_signature_aggregator/mock_timer"
 ]

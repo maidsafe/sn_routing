@@ -25,7 +25,6 @@ use crate::{
 
 use bytes::Bytes;
 use err_derive::Error;
-use itertools::Itertools;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 
@@ -316,20 +315,6 @@ impl VerifyStatus {
             Self::Unknown => Err(Error::UntrustedMessage),
         }
     }
-}
-
-pub fn log_verify_failure<'a, T, I>(msg: &T, error: &Error, their_keys: I)
-where
-    T: Debug,
-    I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
-{
-    log_or_panic!(
-        log::Level::Error,
-        "Verification failed: {:?} - {:?} --- [{:?}]",
-        msg,
-        error,
-        their_keys.into_iter().format(", ")
-    )
 }
 
 /// Status of an incomming message.

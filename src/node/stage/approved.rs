@@ -18,8 +18,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
-        Variant, VerifyStatus,
+        BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, Variant,
+        VerifyStatus,
     },
     relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
@@ -508,7 +508,7 @@ impl Approved {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::Unknown) => Ok(false),
             Err(error) => {
-                messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
+                warn!("Verification of {:?} failed: {}", msg, error);
                 Err(error)
             }
         }
