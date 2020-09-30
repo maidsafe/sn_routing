@@ -120,6 +120,7 @@ pub mod test_consts {
 // Private
 // ############################################################################
 
+mod cancellation;
 mod consensus;
 mod delivery_group;
 mod error;

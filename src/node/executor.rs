@@ -6,14 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{event::Event, messages::Message, node::stage::Stage};
+use crate::{
+    cancellation::{cancellable, CancellationHandle, CancellationToken},
+    event::Event,
+    messages::Message,
+    node::stage::Stage,
+};
 use bytes::Bytes;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{mpsc, Mutex};
 
 pub struct Executor {
-    _terminate_tx: terminate::Sender,
+    _cancellation_handle: CancellationHandle,
 }
 
 impl Executor {
@@ -22,13 +27,13 @@ impl Executor {
         incoming_conns: IncomingConnections,
         timer_rx: mpsc::UnboundedReceiver<u64>,
     ) -> Self {
-        let (terminate_tx, terminate_rx) = terminate::channel();
+        let (handle, token) = CancellationHandle::new();
 
-        spawn_connections_handler(Arc::clone(&stage), incoming_conns, terminate_rx.clone());
-        spawn_timer_handler(stage, timer_rx, terminate_rx);
+        spawn_connections_handler(Arc::clone(&stage), incoming_conns, token.clone());
+        spawn_timer_handler(stage, timer_rx, token);
 
         Self {
-            _terminate_tx: terminate_tx,
+            _cancellation_handle: handle,
         }
     }
 }
@@ -37,33 +42,28 @@ impl Executor {
 fn spawn_connections_handler(
     stage: Arc<Mutex<Stage>>,
     mut incoming_conns: IncomingConnections,
-    mut terminate_rx: terminate::Receiver,
+    cancel_token: CancellationToken,
 ) {
-    let _ = tokio::spawn(async move {
-        while let Some(incoming_msgs) = terminate_rx.run(incoming_conns.next()).await {
+    let _ = tokio::spawn(cancellable(cancel_token.clone(), async move {
+        while let Some(incoming_msgs) = incoming_conns.next().await {
             trace!(
                 "{}New connection established by peer {}",
                 stage.lock().await.log_ident(),
                 incoming_msgs.remote_addr()
             );
-            spawn_messages_handler(stage.clone(), incoming_msgs, terminate_rx.clone())
+            spawn_messages_handler(stage.clone(), incoming_msgs, cancel_token.clone())
         }
-
-        trace!(
-            "{}Connections handler terminated",
-            stage.lock().await.log_ident()
-        );
-    });
+    }));
 }
 
 // Spawns a task which handles each new incoming message from a connection with a peer
 fn spawn_messages_handler(
     stage: Arc<Mutex<Stage>>,
     mut incoming_msgs: IncomingMessages,
-    mut terminate_rx: terminate::Receiver,
+    cancel_token: CancellationToken,
 ) {
-    let _ = tokio::spawn(async move {
-        while let Some(msg) = terminate_rx.run(incoming_msgs.next()).await {
+    let _ = tokio::spawn(cancellable(cancel_token, async move {
+        while let Some(msg) = incoming_msgs.next().await {
             match msg {
                 QuicP2pMsg::UniStream { bytes, src, .. } => {
                     trace!(
@@ -104,13 +104,7 @@ fn spawn_messages_handler(
                 }
             }
         }
-
-        trace!(
-            "{}Messages handler for {} terminated",
-            stage.lock().await.log_ident(),
-            incoming_msgs.remote_addr()
-        );
-    });
+    }));
 }
 
 fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender: SocketAddr) {
@@ -142,11 +136,11 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
 fn spawn_timer_handler(
     stage: Arc<Mutex<Stage>>,
     mut timer_rx: mpsc::UnboundedReceiver<u64>,
-    mut terminate_rx: terminate::Receiver,
+    cancel_token: CancellationToken,
 ) {
-    let _ = tokio::spawn(async move {
-        while let Some(token) = terminate_rx.run(timer_rx.recv()).await {
-            if let Err(err) = stage.lock().await.process_timeout(token).await {
+    let _ = tokio::spawn(cancellable(cancel_token, async move {
+        while let Some(timer_token) = timer_rx.recv().await {
+            if let Err(err) = stage.lock().await.process_timeout(timer_token).await {
                 error!(
                     "{}Error encountered when processing timeout: {}",
                     stage.lock().await.log_ident(),
@@ -154,55 +148,5 @@ fn spawn_timer_handler(
                 );
             }
         }
-
-        trace!("{}Timer handler terminated", stage.lock().await.log_ident());
-    });
-}
-
-// A single consumer, multiple producer one-shot channel that sends when the sender gets dropped.
-// Used to observe termination of some object from any number of tasks simultaneously.
-//
-// Note: it seems we could have used `tokio::sync::watch` for this exact purpose. The reason why we
-// didn't is that `watch` interacts poorly with the `select!` macro. It requires the future
-// returned from `recv` to be pinned which leads to convoluted code.
-mod terminate {
-    use super::*;
-    use futures::Future;
-    use tokio::sync::{Mutex, OwnedMutexGuard};
-
-    // Value that notifies all corresponding `Receiver`s when dropped.
-    pub struct Sender(OwnedMutexGuard<()>);
-
-    // Value that gets notified when the corresponding `Sender` gets dropped.
-    #[derive(Clone)]
-    pub struct Receiver(Arc<Mutex<()>>);
-
-    impl Receiver {
-        // Yields until the corresponding `Sender` gets dropped.
-        pub async fn recv(&mut self) {
-            let _ = self.0.lock().await;
-        }
-
-        // Runs `future` into completion or return immediately when the corresponding `Sender`
-        // gets dropped, whichever comes first.
-        pub async fn run<F, R>(&mut self, future: F) -> F::Output
-        where
-            F: Future<Output = Option<R>>,
-        {
-            tokio::select! {
-                value = future => value,
-                _ = self.recv() => None,
-            }
-        }
-    }
-
-    pub fn channel() -> (Sender, Receiver) {
-        let mutex = Arc::new(Mutex::new(()));
-        let guard = mutex
-            .clone()
-            .try_lock_owned()
-            .expect("the mutex shouldn't be locked yet");
-
-        (Sender(guard), Receiver(mutex))
-    }
+    }));
 }
