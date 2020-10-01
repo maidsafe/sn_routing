@@ -225,7 +225,9 @@ impl Approved {
             }
         }
 
-        cx.send_message_to_targets(&others, others.len(), message.to_bytes());
+        if !others.is_empty() {
+            cx.send_message_to_targets(&others, others.len(), message.to_bytes());
+        }
 
         if handle {
             cx.push_command(Command::HandleVote { vote, proof_share });
