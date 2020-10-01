@@ -320,13 +320,13 @@ impl Stage {
     /// queue during its handling.
     pub async fn handle_commands(self: Arc<Self>, command: Command) -> Result<()> {
         let mut cx = Context::new(self.event_tx.clone());
-        self.handle_command(&mut cx, command).await?;
+        let result = self.handle_command(&mut cx, command).await;
 
         for command in cx.into_commands() {
             self.clone().spawn_handle_commands(command)
         }
 
-        Ok(())
+        result
     }
 
     /// Handles a single command.
@@ -368,7 +368,7 @@ impl Stage {
             };
 
             if let Err(error) = &result {
-                error!("Error encountered when processing command: {}", error);
+                error!("Error encountered when handling command: {}", error);
             }
 
             result
@@ -388,8 +388,6 @@ impl Stage {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
-        trace!("try handle {:?} from {:?}", msg, sender);
-
         match &mut *self.state.lock().await {
             State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg),
             State::Joining(stage) => stage.handle_message(cx, sender, msg),

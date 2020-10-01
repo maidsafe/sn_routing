@@ -13,10 +13,13 @@ use crate::{
     messages::Message,
 };
 use bytes::Bytes;
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+    time::Duration,
+};
 
 /// Command for node.
-#[derive(Debug)]
 pub(crate) enum Command {
     /// Handle `message` from `sender`.
     /// Note: `sender` is `Some` if the message was received from someone else
@@ -50,4 +53,49 @@ pub(crate) enum Command {
     ScheduleTimeout { duration: Duration, token: u64 },
     /// Transition into the given state.
     Transition(Box<State>),
+}
+
+impl Debug for Command {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::HandleMessage { sender, message } => f
+                .debug_struct("HandleMessage")
+                .field("sender", sender)
+                .field("message", message)
+                .finish(),
+            Self::HandleTimeout(token) => f.debug_tuple("HandleTimeout").field(token).finish(),
+            Self::HandlePeerLost(addr) => f.debug_tuple("HandlePeerLost").field(addr).finish(),
+            Self::HandleVote { vote, proof_share } => f
+                .debug_struct("HandleVote")
+                .field("vote", vote)
+                .field("index", &proof_share.index)
+                .finish(),
+            Self::SendMessage {
+                recipients,
+                delivery_group_size,
+                message,
+            } => f
+                .debug_struct("SendMessage")
+                .field("recipients", recipients)
+                .field("delivery_group_size", delivery_group_size)
+                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
+                .finish(),
+            Self::SendUserMessage { src, dst, content } => f
+                .debug_struct("SendUserMessage")
+                .field("src", src)
+                .field("dst", dst)
+                .field("content", &format_args!("{:10}", hex_fmt::HexFmt(content)))
+                .finish(),
+            Self::SendBootstrapRequest(recipients) => f
+                .debug_tuple("SendBootstrapRequest")
+                .field(recipients)
+                .finish(),
+            Self::ScheduleTimeout { duration, token } => f
+                .debug_struct("ScheduleTimeout")
+                .field("duration", duration)
+                .field("token", token)
+                .finish(),
+            Self::Transition(state) => f.debug_tuple("Transition").field(state).finish(),
+        }
+    }
 }
