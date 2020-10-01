@@ -25,7 +25,6 @@ use crate::{
     peer::Peer,
     rng::MainRng,
     section::{EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain, SharedState, MIN_AGE},
-    timer::Timer,
     TransportConfig,
 };
 use bytes::Bytes;
@@ -37,8 +36,12 @@ use std::{
     iter,
     net::SocketAddr,
     sync::Arc,
+    time::Duration,
 };
-use tokio::sync::{mpsc, Mutex};
+use tokio::{
+    sync::{mpsc, Mutex},
+    time,
+};
 use xor_name::{Prefix, XorName};
 
 #[cfg(feature = "mock")]
@@ -119,12 +122,7 @@ impl Stage {
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
-    ) -> Result<(
-        Self,
-        IncomingConnections,
-        mpsc::UnboundedReceiver<u64>,
-        mpsc::UnboundedReceiver<Event>,
-    )> {
+    ) -> Result<(Self, IncomingConnections, mpsc::UnboundedReceiver<Event>)> {
         let comm = Comm::new(transport_config)?;
         let connection_info = comm.our_connection_info()?;
         let peer = Peer::new(name(&keypair.public), connection_info, MIN_AGE);
@@ -156,14 +154,10 @@ impl Stage {
         node_info.send_event(Event::Connected(Connected::First));
         node_info.send_event(Event::PromotedToElder);
 
-        let (timer_tx, timer_rx) = mpsc::unbounded_channel();
-        let timer = Timer::new(timer_tx);
-
-        let state = Approved::new(shared_state, Some(section_key_share), node_info, timer)?;
-
+        let state = Approved::new(shared_state, Some(section_key_share), node_info)?;
         let (stage, incomming_connections) = Self::new(State::Approved(state), comm)?;
 
-        Ok((stage, incomming_connections, timer_rx, events_rx))
+        Ok((stage, incomming_connections, events_rx))
     }
 
     pub async fn bootstrap(
@@ -171,12 +165,7 @@ impl Stage {
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
-    ) -> Result<(
-        Self,
-        IncomingConnections,
-        mpsc::UnboundedReceiver<u64>,
-        mpsc::UnboundedReceiver<Event>,
-    )> {
+    ) -> Result<(Self, IncomingConnections, mpsc::UnboundedReceiver<Event>)> {
         let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -186,14 +175,11 @@ impl Stage {
             events_tx,
         };
 
-        let (timer_tx, timer_rx) = mpsc::unbounded_channel();
-        let timer = Timer::new(timer_tx);
-
-        let state = Bootstrapping::new(cx, None, vec![addr], node_info, timer);
+        let state = Bootstrapping::new(cx, None, vec![addr], node_info);
         let state = State::Bootstrapping(state);
         let (stage, incomming_connections) = Self::new(state, comm)?;
 
-        Ok((stage, incomming_connections, timer_rx, events_rx))
+        Ok((stage, incomming_connections, events_rx))
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
@@ -370,6 +356,10 @@ impl Stage {
                 Command::SendBootstrapRequest(recipients) => {
                     self.send_bootstrap_request(&mut cx, recipients).await
                 }
+                Command::ScheduleTimeout { duration, token } => {
+                    self.handle_schedule_timeout(&mut cx, duration, token).await;
+                    Ok(())
+                }
                 Command::Transition(state) => {
                     *self.state.lock().await = *state;
                     Ok(())
@@ -406,17 +396,17 @@ impl Stage {
         trace!("try handle {:?} from {:?}", msg, sender);
 
         match &mut *self.state.lock().await {
-            State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg).await,
-            State::Joining(stage) => stage.handle_message(cx, sender, msg).await,
-            State::Approved(stage) => stage.handle_message(cx, sender, msg).await,
+            State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg),
+            State::Joining(stage) => stage.handle_message(cx, sender, msg),
+            State::Approved(stage) => stage.handle_message(cx, sender, msg),
         }
     }
 
     async fn handle_timeout(&self, cx: &mut Context, token: u64) -> Result<()> {
         match &mut *self.state.lock().await {
-            State::Bootstrapping(stage) => stage.handle_timeout(token).await,
-            State::Joining(stage) => stage.handle_timeout(cx, token).await,
-            State::Approved(stage) => stage.handle_timeout(cx, token).await,
+            State::Bootstrapping(_) => Ok(()),
+            State::Joining(stage) => stage.handle_timeout(cx, token),
+            State::Approved(stage) => stage.handle_timeout(cx, token),
         }
     }
 
@@ -484,6 +474,11 @@ impl Stage {
             State::Bootstrapping(state) => state.send_bootstrap_request(cx, &recipients),
             _ => Err(Error::InvalidState),
         }
+    }
+
+    async fn handle_schedule_timeout(&self, cx: &mut Context, duration: Duration, token: u64) {
+        time::delay_for(duration).await;
+        cx.push(Command::HandleTimeout(token))
     }
 
     async fn log_ident(&self) -> String {

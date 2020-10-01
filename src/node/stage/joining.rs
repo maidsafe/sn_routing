@@ -14,7 +14,6 @@ use crate::{
     peer::Peer,
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
-    timer::Timer,
     DstLocation, MIN_AGE,
 };
 use std::{net::SocketAddr, time::Duration};
@@ -32,18 +31,16 @@ pub(crate) struct Joining {
     section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
-    timer: Timer,
     timer_token: u64,
 }
 
 impl Joining {
-    pub async fn new(
+    pub fn new(
         cx: &mut Context,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
         node_info: NodeInfo,
-        timer: Timer,
     ) -> Result<Self> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
@@ -55,15 +52,14 @@ impl Joining {
             elders_info,
             section_key,
             join_type,
-            timer,
             timer_token: 0,
         };
-        stage.send_join_requests(cx).await?;
+        stage.send_join_requests(cx)?;
 
         Ok(stage)
     }
 
-    pub async fn handle_message(
+    pub fn handle_message(
         &mut self,
         cx: &mut Context,
         sender: Option<SocketAddr>,
@@ -87,7 +83,6 @@ impl Joining {
                     elders_info.clone(),
                     *section_key,
                 )
-                .await
             }
             Variant::NodeApproval(payload) => {
                 let trusted_key = match &self.join_type {
@@ -108,12 +103,7 @@ impl Joining {
                 );
 
                 let shared_state = SharedState::new(section_chain, payload.clone());
-                let state = Approved::new(
-                    shared_state,
-                    None,
-                    self.node_info.clone(),
-                    self.timer.clone(),
-                )?;
+                let state = Approved::new(shared_state, None, self.node_info.clone())?;
                 let state = State::Approved(state);
                 cx.push(Command::Transition(Box::new(state)));
 
@@ -128,17 +118,17 @@ impl Joining {
         }
     }
 
-    pub async fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
+    pub fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
         if token == self.timer_token {
             debug!("Timeout when trying to join a section");
             // Try again
-            self.send_join_requests(cx).await?;
+            self.send_join_requests(cx)?;
         }
 
         Ok(())
     }
 
-    async fn handle_bootstrap_response(
+    fn handle_bootstrap_response(
         &mut self,
         cx: &mut Context,
         sender: Peer,
@@ -156,7 +146,7 @@ impl Joining {
             );
             self.elders_info = new_elders_info;
             self.section_key = new_section_key;
-            self.send_join_requests(cx).await?;
+            self.send_join_requests(cx)?;
         } else {
             warn!(
                 "Newer Join response not for our prefix {:?} from {:?}",
@@ -182,7 +172,7 @@ impl Joining {
         }
     }
 
-    async fn send_join_requests(&mut self, cx: &mut Context) -> Result<()> {
+    fn send_join_requests(&mut self, cx: &mut Context) -> Result<()> {
         let (relocate_payload, age) = match &self.join_type {
             JoinType::First { .. } => (None, MIN_AGE),
             JoinType::Relocate(payload) => (Some(payload), payload.relocate_details().age),
@@ -214,7 +204,7 @@ impl Joining {
         )?;
 
         cx.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
-        self.timer_token = self.timer.schedule(JOIN_TIMEOUT).await;
+        self.timer_token = cx.schedule_timeout(JOIN_TIMEOUT);
 
         Ok(())
     }

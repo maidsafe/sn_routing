@@ -26,9 +26,7 @@ use crate::{
         EldersInfo, MemberInfo, SectionKeyShare, SectionKeysProvider, SectionProofChain,
         SectionUpdateBarrier, SharedState, MIN_AGE,
     },
-    timer::Timer,
 };
-use async_recursion::async_recursion;
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use itertools::Itertools;
@@ -52,7 +50,6 @@ pub(crate) struct Approved {
     // them after we are demoted.
     relocate_promise: Option<Bytes>,
     msg_filter: MessageFilter,
-    timer: Timer,
 }
 
 impl Approved {
@@ -61,7 +58,6 @@ impl Approved {
         shared_state: SharedState,
         section_key_share: Option<SectionKeyShare>,
         node_info: NodeInfo,
-        timer: Timer,
     ) -> Result<Self> {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
@@ -74,11 +70,10 @@ impl Approved {
             dkg_voter: Default::default(),
             relocate_promise: None,
             msg_filter: MessageFilter::new(),
-            timer,
         })
     }
 
-    pub async fn handle_message(
+    pub fn handle_message(
         &mut self,
         cx: &mut Context,
         sender: Option<SocketAddr>,
@@ -108,7 +103,7 @@ impl Approved {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 self.update_section_knowledge(cx, &msg)?;
-                self.handle_useful_message(cx, sender, msg).await
+                self.handle_useful_message(cx, sender, msg)
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -125,12 +120,12 @@ impl Approved {
         }
     }
 
-    pub async fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
+    pub fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
         if self.dkg_voter.timer_token() == Some(token) {
             self.dkg_voter
-                .set_timer_token(self.timer.schedule(DKG_PROGRESS_INTERVAL).await);
+                .set_timer_token(cx.schedule_timeout(DKG_PROGRESS_INTERVAL));
 
-            if let Err(error) = self.progress_dkg(cx).await {
+            if let Err(error) = self.progress_dkg(cx) {
                 error!("failed to progress DKG: {}", error);
             }
         }
@@ -279,11 +274,11 @@ impl Approved {
         }
     }
 
-    async fn progress_dkg(&mut self, cx: &mut Context) -> Result<()> {
+    fn progress_dkg(&mut self, cx: &mut Context) -> Result<()> {
         match self.dkg_voter.progress_dkg() {
             Some((dkg_key, Ok(messages))) => {
                 for message in messages {
-                    self.broadcast_dkg_message(cx, dkg_key, message).await?;
+                    self.broadcast_dkg_message(cx, dkg_key, message)?;
                 }
                 self.check_dkg(cx, dkg_key)
             }
@@ -381,7 +376,7 @@ impl Approved {
         }
     }
 
-    async fn handle_useful_message(
+    fn handle_useful_message(
         &mut self,
         cx: &mut Context,
         sender: Option<SocketAddr>,
@@ -401,7 +396,7 @@ impl Approved {
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
-                match self.handle_relocate(signed_relocate).await {
+                match self.handle_relocate(signed_relocate) {
                     Some(RelocateParams {
                         conn_infos,
                         details,
@@ -412,7 +407,6 @@ impl Approved {
                             Some(details),
                             conn_infos,
                             self.node_info.clone(),
-                            self.timer.clone(),
                         );
                         let state = State::Bootstrapping(state);
                         cx.push(Command::Transition(Box::new(state)));
@@ -446,25 +440,19 @@ impl Approved {
                 );
                 Ok(())
             }
-            Variant::BouncedUnknownMessage { src_key, message } => {
-                self.handle_bounced_unknown_message(
+            Variant::BouncedUnknownMessage { src_key, message } => self
+                .handle_bounced_unknown_message(
                     cx,
                     msg.src().to_sender_node(sender)?,
                     message.clone(),
                     src_key,
-                )
-                .await
-            }
+                ),
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
-            } => {
-                self.handle_dkg_start(cx, *dkg_key, elders_info.clone())
-                    .await
-            }
+            } => self.handle_dkg_start(cx, *dkg_key, elders_info.clone()),
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(cx, *dkg_key, message.clone(), msg.src().as_node()?.0)
-                    .await
             }
             Variant::DKGResult { dkg_key, result } => {
                 self.handle_dkg_result(cx, *dkg_key, *result, msg.src().as_node()?.0)
@@ -616,7 +604,7 @@ impl Approved {
         }
     }
 
-    async fn handle_bounced_unknown_message(
+    fn handle_bounced_unknown_message(
         &self,
         cx: &mut Context,
         sender: Peer,
@@ -697,10 +685,7 @@ impl Approved {
         self.update_shared_state(cx, shared_state)
     }
 
-    async fn handle_relocate(
-        &mut self,
-        signed_msg: SignedRelocateDetails,
-    ) -> Option<RelocateParams> {
+    fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
         if signed_msg.relocate_details().pub_id != self.node_info.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
@@ -906,7 +891,7 @@ impl Approved {
         )
     }
 
-    pub async fn handle_dkg_start(
+    fn handle_dkg_start(
         &mut self,
         cx: &mut Context,
         dkg_key: DkgKey,
@@ -919,8 +904,8 @@ impl Approved {
                 .start_participating(self.node_info.name(), dkg_key, new_elders_info)
         {
             self.dkg_voter
-                .set_timer_token(self.timer.schedule(DKG_PROGRESS_INTERVAL).await);
-            self.broadcast_dkg_message(cx, dkg_key, message).await?
+                .set_timer_token(cx.schedule_timeout(DKG_PROGRESS_INTERVAL));
+            self.broadcast_dkg_message(cx, dkg_key, message)?
         }
 
         Ok(())
@@ -978,7 +963,7 @@ impl Approved {
         Ok(())
     }
 
-    pub async fn handle_dkg_message(
+    pub fn handle_dkg_message(
         &mut self,
         cx: &mut Context,
         dkg_key: DkgKey,
@@ -994,11 +979,11 @@ impl Approved {
         // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
         if !responses.is_empty() {
             self.dkg_voter
-                .set_timer_token(self.timer.schedule(DKG_PROGRESS_INTERVAL).await);
+                .set_timer_token(cx.schedule_timeout(DKG_PROGRESS_INTERVAL));
         }
 
         for response in responses {
-            let _ = self.broadcast_dkg_message(cx, dkg_key, response).await;
+            let _ = self.broadcast_dkg_message(cx, dkg_key, response);
         }
 
         self.check_dkg(cx, dkg_key)
@@ -1632,8 +1617,7 @@ impl Approved {
         Ok(())
     }
 
-    #[async_recursion]
-    async fn broadcast_dkg_message(
+    fn broadcast_dkg_message(
         &mut self,
         cx: &mut Context,
         dkg_key: DkgKey,
@@ -1665,8 +1649,12 @@ impl Approved {
         cx.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
 
         // TODO: remove the recursion caused by this call.
-        self.handle_dkg_message(cx, dkg_key, dkg_message_bytes, self.node_info.name())
-            .await
+        self.handle_dkg_message(
+            cx,
+            dkg_key,
+            dkg_message_bytes,
+            self.node_info.name(),
+        )
     }
 
     // Send message over the network.
