@@ -107,7 +107,6 @@ mod node;
 mod peer;
 mod relocation;
 mod section;
-mod timer;
 
 // Cryptography
 mod crypto;

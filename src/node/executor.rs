@@ -16,22 +16,15 @@ use crate::{
 use bytes::Bytes;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::mpsc;
 
 pub struct Executor {
     _cancellation_handle: CancellationHandle,
 }
 
 impl Executor {
-    pub(crate) fn new(
-        stage: Arc<Stage>,
-        incoming_conns: IncomingConnections,
-        timer_rx: mpsc::UnboundedReceiver<u64>,
-    ) -> Self {
+    pub(crate) fn new(stage: Arc<Stage>, incoming_conns: IncomingConnections) -> Self {
         let (handle, token) = CancellationHandle::new();
-
-        spawn_connections_handler(Arc::clone(&stage), incoming_conns, token.clone());
-        spawn_timer_handler(stage, timer_rx, token);
+        spawn_connections_handler(stage, incoming_conns, token);
 
         Self {
             _cancellation_handle: handle,
@@ -120,17 +113,4 @@ fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: Socke
             }
         }
     });
-}
-
-fn spawn_timer_handler(
-    stage: Arc<Stage>,
-    mut timer_rx: mpsc::UnboundedReceiver<u64>,
-    cancel_token: CancellationToken,
-) {
-    let _ = tokio::spawn(cancellable(cancel_token, async move {
-        while let Some(timer_token) = timer_rx.recv().await {
-            let command = Command::HandleTimeout(timer_token);
-            let _ = stage.clone().handle_command(command).await;
-        }
-    }));
 }

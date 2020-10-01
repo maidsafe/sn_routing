@@ -81,7 +81,7 @@ impl Node {
             .unwrap_or_else(|| Keypair::generate(&mut rng));
         let node_name = name(&keypair.public);
 
-        let (stage, incoming_conns, timer_rx, events_rx) = if config.first {
+        let (stage, incoming_conns, events_rx) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             Stage::first_node(config.transport_config, keypair, config.network_params).await?
         } else {
@@ -96,7 +96,7 @@ impl Node {
         };
 
         let stage = Arc::new(stage);
-        let executor = Executor::new(stage.clone(), incoming_conns, timer_rx);
+        let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(events_rx);
 
         // Process the initial commands.

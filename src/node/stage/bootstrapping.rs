@@ -14,7 +14,6 @@ use crate::{
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
-    timer::Timer,
     DstLocation, MIN_AGE,
 };
 use std::{iter, net::SocketAddr, sync::Arc};
@@ -28,7 +27,6 @@ use xor_name::Prefix;
 pub(crate) struct Bootstrapping {
     pub node_info: NodeInfo,
     relocate_details: Option<SignedRelocateDetails>,
-    timer: Timer,
 }
 
 impl Bootstrapping {
@@ -37,18 +35,16 @@ impl Bootstrapping {
         relocate_details: Option<SignedRelocateDetails>,
         bootstrap_contacts: Vec<SocketAddr>,
         node_info: NodeInfo,
-        timer: Timer,
     ) -> Self {
         cx.push(Command::SendBootstrapRequest(bootstrap_contacts));
 
         Self {
             node_info,
             relocate_details,
-            timer,
         }
     }
 
-    pub async fn handle_message(
+    pub fn handle_message(
         &mut self,
         cx: &mut Context,
         sender: Option<SocketAddr>,
@@ -82,9 +78,7 @@ impl Bootstrapping {
                             section_key,
                             relocate_payload,
                             self.node_info.clone(),
-                            self.timer.clone(),
-                        )
-                        .await?;
+                        )?;
                         let state = State::Joining(state);
                         cx.push(Command::Transition(Box::new(state)));
                         Ok(())
@@ -106,10 +100,6 @@ impl Bootstrapping {
                 Ok(())
             }
         }
-    }
-
-    pub async fn handle_timeout(&mut self, _token: u64) -> Result<()> {
-        todo!()
     }
 
     pub fn send_bootstrap_request(
