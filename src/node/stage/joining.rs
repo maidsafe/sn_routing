@@ -66,7 +66,7 @@ impl Joining {
     pub async fn handle_message(
         &mut self,
         cx: &mut Context,
-        sender: SocketAddr,
+        sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
         trace!("Got {:?}", msg);
@@ -78,7 +78,7 @@ impl Joining {
                 verify_message(&msg, None)?;
                 self.handle_bootstrap_response(
                     cx,
-                    msg.src().to_sender_node(Some(sender))?,
+                    msg.src().to_sender_node(sender)?,
                     elders_info.clone(),
                     *section_key,
                 )
@@ -117,7 +117,7 @@ impl Joining {
                 Ok(())
             }
             _ => {
-                debug!("Useless message from {}: {:?}", sender, msg);
+                debug!("Useless message from {:?}: {:?}", sender, msg);
                 Ok(())
             }
         }

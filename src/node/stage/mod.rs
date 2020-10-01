@@ -14,7 +14,7 @@ mod joining;
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
 use super::command::{Command, Context};
 use crate::{
-    consensus::{self, Proof, Proven},
+    consensus::{self, Proof, ProofShare, Proven, Vote},
     crypto::{name, Keypair},
     error::{Error, Result},
     event::{Connected, Event},
@@ -236,8 +236,10 @@ impl Stage {
                     self.handle_message(cx, sender, message).await
                 }
                 Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
-                // Command::HandleVote { .. } => todo!(),
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
+                Command::HandleVote { vote, proof_share } => {
+                    self.handle_vote(cx, vote, proof_share)
+                }
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr),
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
@@ -247,7 +249,7 @@ impl Stage {
                         .await
                 }
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(src, dst, content, cx).await
+                    self.send_user_message(src, dst, content, cx)
                 }
                 Command::SendBootstrapRequest(recipients) => {
                     self.send_bootstrap_request(cx, recipients)
@@ -270,10 +272,10 @@ impl Stage {
     async fn handle_message(
         &mut self,
         cx: &mut Context,
-        sender: SocketAddr,
+        sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
-        trace!("try handle {:?} from {}", msg, sender);
+        trace!("try handle {:?} from {:?}", msg, sender);
 
         if !self.in_dst_location(&msg, cx)? {
             return Ok(());
@@ -294,9 +296,16 @@ impl Stage {
         }
     }
 
-    async fn handle_peer_lost(&mut self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
+    fn handle_vote(&mut self, cx: &mut Context, vote: Vote, proof_share: ProofShare) -> Result<()> {
         match &mut self.state {
-            State::Approved(state) => state.handle_peer_lost(cx, &addr).await,
+            State::Approved(state) => state.handle_vote(cx, vote, proof_share),
+            _ => Err(Error::InvalidState),
+        }
+    }
+
+    fn handle_peer_lost(&mut self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
+        match &mut self.state {
+            State::Approved(state) => state.handle_peer_lost(cx, &addr),
             _ => Ok(()),
         }
     }
@@ -324,7 +333,7 @@ impl Stage {
         }
     }
 
-    async fn send_user_message(
+    fn send_user_message(
         &mut self,
         src: SrcLocation,
         dst: DstLocation,
@@ -332,7 +341,7 @@ impl Stage {
         cx: &mut Context,
     ) -> Result<()> {
         match &mut self.state {
-            State::Approved(stage) => stage.send_user_message(cx, src, dst, content).await,
+            State::Approved(stage) => stage.send_user_message(cx, src, dst, content),
             _ => Err(Error::InvalidState),
         }
     }
