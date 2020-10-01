@@ -228,7 +228,7 @@ impl Approved {
         cx.send_message_to_targets(&others, others.len(), message.to_bytes());
 
         if handle {
-            cx.push(Command::HandleVote { vote, proof_share });
+            cx.push_command(Command::HandleVote { vote, proof_share });
         }
 
         Ok(())
@@ -396,7 +396,7 @@ impl Approved {
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
-                match self.handle_relocate(signed_relocate) {
+                match self.handle_relocate(cx, signed_relocate) {
                     Some(RelocateParams {
                         conn_infos,
                         details,
@@ -409,7 +409,7 @@ impl Approved {
                             self.node_info.clone(),
                         );
                         let state = State::Bootstrapping(state);
-                        cx.push(Command::Transition(Box::new(state)));
+                        cx.push_command(Command::Transition(Box::new(state)));
 
                         Ok(())
                     }
@@ -428,7 +428,7 @@ impl Approved {
                 *join_request.clone(),
             ),
             Variant::UserMessage(content) => {
-                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
+                self.handle_user_message(cx, msg.src().src_location(), *msg.dst(), content.clone());
                 Ok(())
             }
             Variant::BouncedUntrustedMessage(message) => {
@@ -671,9 +671,14 @@ impl Approved {
         }
     }
 
-    fn handle_user_message(&mut self, src: SrcLocation, dst: DstLocation, content: Bytes) {
-        self.node_info
-            .send_event(Event::MessageReceived { content, src, dst })
+    fn handle_user_message(
+        &self,
+        cx: &mut Context,
+        src: SrcLocation,
+        dst: DstLocation,
+        content: Bytes,
+    ) {
+        cx.send_event(Event::MessageReceived { content, src, dst })
     }
 
     fn handle_sync(&mut self, cx: &mut Context, shared_state: SharedState) -> Result<()> {
@@ -685,7 +690,11 @@ impl Approved {
         self.update_shared_state(cx, shared_state)
     }
 
-    fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
+    fn handle_relocate(
+        &mut self,
+        cx: &mut Context,
+        signed_msg: SignedRelocateDetails,
+    ) -> Option<RelocateParams> {
         if signed_msg.relocate_details().pub_id != self.node_info.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
@@ -698,7 +707,7 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            self.node_info.send_event(Event::RelocationStarted {
+            cx.send_event(Event::RelocationStarted {
                 previous_name: self.node_info.name(),
             });
         }
@@ -728,7 +737,7 @@ impl Approved {
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                self.node_info.send_event(Event::RelocationStarted {
+                cx.send_event(Event::RelocationStarted {
                     previous_name: self.node_info.name(),
                 });
             } else {
@@ -1125,13 +1134,13 @@ impl Approved {
         self.print_network_stats();
 
         if let Some(previous_name) = previous_name {
-            self.node_info.send_event(Event::MemberJoined {
+            cx.send_event(Event::MemberJoined {
                 name: *peer.name(),
                 previous_name,
                 age,
             });
         } else {
-            self.node_info.send_event(Event::InfantJoined {
+            cx.send_event(Event::InfantJoined {
                 name: *peer.name(),
                 age,
             });
@@ -1159,7 +1168,7 @@ impl Approved {
 
         self.increment_ages(cx, peer.name(), &signature)?;
 
-        self.node_info.send_event(Event::MemberLeft {
+        cx.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
         });
@@ -1259,7 +1268,7 @@ impl Approved {
             message.dst_key,
         )?;
 
-        cx.push(Command::HandleMessage {
+        cx.push_command(Command::HandleMessage {
             message,
             sender: None,
         });
@@ -1395,7 +1404,7 @@ impl Approved {
                 self.send_sync(cx, self.shared_state.clone())?;
             }
 
-            self.node_info.send_event(Event::EldersChanged {
+            cx.send_event(Event::EldersChanged {
                 prefix: *self.shared_state.our_prefix(),
                 key: *self.shared_state.our_history.last_key(),
                 elders: self
@@ -1410,14 +1419,14 @@ impl Approved {
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            self.node_info.send_event(Event::PromotedToElder);
+            cx.send_event(Event::PromotedToElder);
         }
 
         if old_is_elder && !new_is_elder {
             info!("Demoted");
             self.shared_state.demote();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            self.node_info.send_event(Event::Demoted);
+            cx.send_event(Event::Demoted);
         }
 
         if !new_is_elder {
@@ -1649,12 +1658,7 @@ impl Approved {
         cx.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
 
         // TODO: remove the recursion caused by this call.
-        self.handle_dkg_message(
-            cx,
-            dkg_key,
-            dkg_message_bytes,
-            self.node_info.name(),
-        )
+        self.handle_dkg_message(cx, dkg_key, dkg_message_bytes, self.node_info.name())
     }
 
     // Send message over the network.

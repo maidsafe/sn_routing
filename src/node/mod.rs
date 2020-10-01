@@ -30,6 +30,7 @@ use crate::{
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 /// Node configuration.
@@ -74,16 +75,24 @@ impl Node {
 
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
-        let mut cx = Context::new();
         let mut rng = MainRng::default();
         let keypair = config
             .keypair
             .unwrap_or_else(|| Keypair::generate(&mut rng));
         let node_name = name(&keypair.public);
 
-        let (stage, incoming_conns, events_rx) = if config.first {
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let mut cx = Context::new(event_tx.clone());
+
+        let (stage, incoming_conns) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            Stage::first_node(config.transport_config, keypair, config.network_params).await?
+            Stage::first_node(
+                config.transport_config,
+                keypair,
+                config.network_params,
+                event_tx,
+            )
+            .await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             Stage::bootstrap(
@@ -91,13 +100,14 @@ impl Node {
                 config.transport_config,
                 keypair,
                 config.network_params,
+                event_tx,
             )
             .await?
         };
 
         let stage = Arc::new(stage);
         let executor = Executor::new(stage.clone(), incoming_conns);
-        let event_stream = EventStream::new(events_rx);
+        let event_stream = EventStream::new(event_rx);
 
         // Process the initial commands.
         for command in cx.into_commands() {

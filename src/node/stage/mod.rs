@@ -81,19 +81,11 @@ pub(crate) struct NodeInfo {
     // memory which might be insecure.
     pub keypair: Arc<Keypair>,
     pub network_params: NetworkParams,
-    events_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl NodeInfo {
     pub fn name(&self) -> XorName {
         name(&self.keypair.public)
-    }
-
-    /// Send provided Event to the user which shall receive it through the EventStream
-    pub fn send_event(&mut self, event: Event) {
-        if let Err(err) = self.events_tx.send(event) {
-            trace!("Error reporting new Event: {:?}", err);
-        }
     }
 }
 
@@ -102,16 +94,22 @@ impl NodeInfo {
 pub(crate) struct Stage {
     state: Mutex<State>,
     comm: Comm,
+    event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Stage {
     // Private constructor
-    fn new(state: State, comm: Comm) -> Result<(Self, IncomingConnections)> {
+    fn new(
+        state: State,
+        comm: Comm,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
         let stage = Self {
             state: Mutex::new(state),
             comm,
+            event_tx,
         };
 
         Ok((stage, incoming_conns))
@@ -122,7 +120,8 @@ impl Stage {
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
-    ) -> Result<(Self, IncomingConnections, mpsc::UnboundedReceiver<Event>)> {
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Result<(Self, IncomingConnections)> {
         let comm = Comm::new(transport_config)?;
         let connection_info = comm.our_connection_info()?;
         let peer = Peer::new(name(&keypair.public), connection_info, MIN_AGE);
@@ -144,20 +143,18 @@ impl Stage {
             secret_key_share,
         };
 
-        let (events_tx, events_rx) = mpsc::unbounded_channel();
-        let mut node_info = NodeInfo {
+        let node_info = NodeInfo {
             keypair: Arc::new(keypair),
             network_params,
-            events_tx,
         };
 
-        node_info.send_event(Event::Connected(Connected::First));
-        node_info.send_event(Event::PromotedToElder);
+        let _ = event_tx.send(Event::Connected(Connected::First));
+        let _ = event_tx.send(Event::PromotedToElder);
 
         let state = Approved::new(shared_state, Some(section_key_share), node_info)?;
-        let (stage, incomming_connections) = Self::new(State::Approved(state), comm)?;
+        let (stage, incomming_connections) = Self::new(State::Approved(state), comm, event_tx)?;
 
-        Ok((stage, incomming_connections, events_rx))
+        Ok((stage, incomming_connections))
     }
 
     pub async fn bootstrap(
@@ -165,33 +162,25 @@ impl Stage {
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
-    ) -> Result<(Self, IncomingConnections, mpsc::UnboundedReceiver<Event>)> {
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Result<(Self, IncomingConnections)> {
         let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
 
-        let (events_tx, events_rx) = mpsc::unbounded_channel();
         let node_info = NodeInfo {
             keypair: Arc::new(keypair),
             network_params,
-            events_tx,
         };
 
         let state = Bootstrapping::new(cx, None, vec![addr], node_info);
         let state = State::Bootstrapping(state);
-        let (stage, incomming_connections) = Self::new(state, comm)?;
+        let (stage, incomming_connections) = Self::new(state, comm, event_tx)?;
 
-        Ok((stage, incomming_connections, events_rx))
+        Ok((stage, incomming_connections))
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
-    pub async fn send_event(&self, event: Event) {
-        let mut state = self.state.lock().await;
-        let node_info = match &mut *state {
-            State::Bootstrapping(state) => &mut state.node_info,
-            State::Joining(state) => &mut state.node_info,
-            State::Approved(state) => &mut state.node_info,
-        };
-
-        node_info.send_event(event)
+    pub fn send_event(&self, event: Event) {
+        let _ = self.event_tx.clone().send(event);
     }
 
     /// Returns the name of the node
@@ -328,7 +317,7 @@ impl Stage {
     }
 
     pub async fn handle_command(self: Arc<Self>, command: Command) -> Result<()> {
-        let mut cx = Context::new();
+        let mut cx = Context::new(self.event_tx.clone());
 
         log_ident::set(self.log_ident().await, async {
             trace!("Processing command {:?}", command);
@@ -444,7 +433,7 @@ impl Stage {
             Ok(()) => Ok(()),
             Err(error) => {
                 for addr in error.failed_recipients {
-                    cx.push(Command::HandlePeerLost(addr));
+                    cx.push_command(Command::HandlePeerLost(addr));
                 }
 
                 Err(Error::FailedSend)
@@ -478,7 +467,7 @@ impl Stage {
 
     async fn handle_schedule_timeout(&self, cx: &mut Context, duration: Duration, token: u64) {
         time::delay_for(duration).await;
-        cx.push(Command::HandleTimeout(token))
+        cx.push_command(Command::HandleTimeout(token))
     }
 
     async fn log_ident(&self) -> String {
