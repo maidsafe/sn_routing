@@ -116,7 +116,7 @@ impl Stage {
     }
 
     // Create the approved stage for the first node in the network.
-    pub async fn first_node(
+    pub fn first_node(
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
@@ -322,7 +322,7 @@ impl Stage {
         let mut cx = Context::new(self.event_tx.clone());
         let result = self.handle_command(&mut cx, command).await;
 
-        for command in cx.into_commands() {
+        for command in cx.take_commands() {
             self.clone().spawn_handle_commands(command)
         }
 

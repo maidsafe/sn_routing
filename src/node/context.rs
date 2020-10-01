@@ -64,8 +64,18 @@ impl Context {
         token
     }
 
-    pub fn into_commands(self) -> Vec<Command> {
-        self.command_queue
+    pub fn take_commands<'a>(&'a mut self) -> impl Iterator<Item = Command> + 'a {
+        self.command_queue.drain(..)
+    }
+
+    /// Remove the first command in the queue. For testing only.
+    #[cfg(test)]
+    pub fn pop_command(&mut self) -> Option<Command> {
+        if self.command_queue.is_empty() {
+            None
+        } else {
+            Some(self.command_queue.remove(0))
+        }
     }
 
     /// Send user event.
