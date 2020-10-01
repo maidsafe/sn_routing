@@ -176,7 +176,7 @@ impl Stage {
         let (timer_tx, timer_rx) = mpsc::unbounded_channel();
         let timer = Timer::new(timer_tx);
 
-        let state = Bootstrapping::new(cx, None, vec![addr], node_info.clone(), timer);
+        let state = Bootstrapping::new(cx, None, vec![addr], node_info, timer);
         let state = State::Bootstrapping(state);
         let (stage, incomming_connections) = Self::new(state, comm)?;
 

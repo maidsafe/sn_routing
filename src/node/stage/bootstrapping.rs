@@ -52,16 +52,17 @@ impl Bootstrapping {
         &mut self,
         cx: &mut Context,
         sender: SocketAddr,
-        msg: Message,
+        message: Message,
     ) -> Result<()> {
-        match msg.variant() {
+        match message.variant() {
             Variant::BootstrapResponse(response) => {
-                msg.verify(iter::empty())
+                message
+                    .verify(iter::empty())
                     .and_then(VerifyStatus::require_full)?;
 
                 match self.handle_bootstrap_response(
                     cx,
-                    msg.src().to_sender_node(Some(sender))?,
+                    message.src().to_sender_node(Some(sender))?,
                     response.clone(),
                 )? {
                     Some(JoinParams {
@@ -85,26 +86,17 @@ impl Bootstrapping {
                     None => Ok(()),
                 }
             }
-
-            Variant::NeighbourInfo { .. }
-            | Variant::UserMessage(_)
-            | Variant::BouncedUntrustedMessage(_) => {
-                debug!("Unknown message from {}: {:?} ", sender, msg);
+            Variant::NodeApproval(_) => {
+                // We send the `JoinRequest` before we push the `Transition(Joining)` command to
+                // the command queue (because the send happen internally in Joining::new). Because
+                // of this it can happen that we receive the `NodeApproval` response before we
+                // finish the transition. To handle this situation, push the `NodeApproval` back to
+                // the command queue so we process it after the transition is finished.
+                cx.push(Command::HandleMessage { sender, message });
                 Ok(())
             }
-
-            Variant::NodeApproval(_)
-            | Variant::Sync { .. }
-            | Variant::Relocate(_)
-            | Variant::RelocatePromise(_)
-            | Variant::BootstrapRequest(_)
-            | Variant::JoinRequest(_)
-            | Variant::BouncedUnknownMessage { .. }
-            | Variant::Vote { .. }
-            | Variant::DKGResult { .. }
-            | Variant::DKGStart { .. }
-            | Variant::DKGMessage { .. } => {
-                debug!("Useless message from {}: {:?}", sender, msg);
+            _ => {
+                debug!("Useless message from {}: {:?} ", sender, message);
                 Ok(())
             }
         }

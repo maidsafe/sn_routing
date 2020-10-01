@@ -10,7 +10,7 @@ use super::{approved::Approved, Command, Context, NodeInfo, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
-    messages::{BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus},
+    messages::{BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
     peer::Peer,
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
@@ -70,52 +70,53 @@ impl Joining {
         msg: Message,
     ) -> Result<()> {
         trace!("Got {:?}", msg);
-        match self.decide_message_status(&msg)? {
-            MessageStatus::Useful => match msg.variant() {
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
-                }) => {
-                    self.handle_bootstrap_response(
-                        cx,
-                        msg.src().to_sender_node(Some(sender))?,
-                        elders_info.clone(),
-                        *section_key,
-                    )
-                    .await
-                }
-                Variant::NodeApproval(payload) => {
-                    // Transition from Joining to Approved
-                    let connect_type = self.connect_type();
-                    let section_chain = msg.proof_chain()?.clone();
+        match msg.variant() {
+            Variant::BootstrapResponse(BootstrapResponse::Join {
+                elders_info,
+                section_key,
+            }) => {
+                verify_message(&msg, None)?;
+                self.handle_bootstrap_response(
+                    cx,
+                    msg.src().to_sender_node(Some(sender))?,
+                    elders_info.clone(),
+                    *section_key,
+                )
+                .await
+            }
+            Variant::NodeApproval(payload) => {
+                let trusted_key = match &self.join_type {
+                    JoinType::Relocate(payload) => {
+                        Some(&payload.relocate_details().destination_key)
+                    }
+                    JoinType::First { .. } => None,
+                };
+                verify_message(&msg, trusted_key)?;
 
-                    info!(
-                        "This node has been approved to join the network at {:?}!",
-                        payload.value.prefix,
-                    );
+                // Transition from Joining to Approved
+                let connect_type = self.connect_type();
+                let section_chain = msg.proof_chain()?.clone();
 
-                    let shared_state = SharedState::new(section_chain, payload.clone());
-                    let state = Approved::new(
-                        shared_state,
-                        None,
-                        self.node_info.clone(),
-                        self.timer.clone(),
-                    )?;
-                    let state = State::Approved(state);
-                    cx.push(Command::Transition(Box::new(state)));
+                info!(
+                    "This node has been approved to join the network at {:?}!",
+                    payload.value.prefix,
+                );
 
-                    self.node_info.send_event(Event::Connected(connect_type));
+                let shared_state = SharedState::new(section_chain, payload.clone());
+                let state = Approved::new(
+                    shared_state,
+                    None,
+                    self.node_info.clone(),
+                    self.timer.clone(),
+                )?;
+                let state = State::Approved(state);
+                cx.push(Command::Transition(Box::new(state)));
 
-                    Ok(())
-                }
-                _ => unreachable!(),
-            },
-            MessageStatus::Untrusted => unreachable!(),
-            MessageStatus::Unknown => {
-                debug!("Unknown message from {}: {:?} ", sender, msg);
+                self.node_info.send_event(Event::Connected(connect_type));
+
                 Ok(())
             }
-            MessageStatus::Useless => {
+            _ => {
                 debug!("Useless message from {}: {:?}", sender, msg);
                 Ok(())
             }
@@ -130,43 +131,6 @@ impl Joining {
         }
 
         Ok(())
-    }
-
-    fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
-        trace!("Deciding message status: {:?}", msg);
-        match msg.variant() {
-            Variant::NodeApproval(_) => {
-                let trusted_key = match &self.join_type {
-                    JoinType::Relocate(payload) => {
-                        Some(&payload.relocate_details().destination_key)
-                    }
-                    JoinType::First { .. } => None,
-                };
-                verify_message(msg, trusted_key)?;
-                Ok(MessageStatus::Useful)
-            }
-
-            Variant::BootstrapResponse(BootstrapResponse::Join { .. }) => {
-                verify_message(msg, None)?;
-                Ok(MessageStatus::Useful)
-            }
-
-            Variant::NeighbourInfo { .. }
-            | Variant::UserMessage(_)
-            | Variant::Sync { .. }
-            | Variant::Relocate(_)
-            | Variant::RelocatePromise(_)
-            | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGStart { .. }
-            | Variant::DKGMessage { .. }
-            | Variant::DKGResult { .. }
-            | Variant::Vote { .. } => Ok(MessageStatus::Unknown),
-
-            Variant::BootstrapRequest(_)
-            | Variant::BootstrapResponse(_)
-            | Variant::JoinRequest(_) => Ok(MessageStatus::Useless),
-        }
     }
 
     async fn handle_bootstrap_response(
