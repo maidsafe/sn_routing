@@ -13,7 +13,12 @@ use crate::{
     messages::Message,
 };
 use bytes::Bytes;
-use std::{net::SocketAddr, slice};
+use std::{
+    net::SocketAddr,
+    slice,
+    // sync::atomic::{AtomicU64, Ordering},
+    // time::Duration,
+};
 
 #[derive(Debug)]
 pub(crate) enum Command {
@@ -41,6 +46,10 @@ pub(crate) enum Command {
         content: Bytes,
     },
     SendBootstrapRequest(Vec<SocketAddr>),
+    // ScheduleTimeout {
+    //     duration: Duration,
+    //     token: u64,
+    // },
     Transition(Box<State>),
 }
 
@@ -72,7 +81,15 @@ impl Context {
         })
     }
 
+    // pub fn schedule_timeout(&mut self, duration: Duration) -> u64 {
+    //     let token = NEXT_TIMER_TOKEN.fetch_add(1, Ordering::Relaxed);
+    //     self.push(Command::ScheduleTimeout { duration, token });
+    //     token
+    // }
+
     pub fn into_commands(self) -> Vec<Command> {
         self.0
     }
 }
+
+// static NEXT_TIMER_TOKEN: AtomicU64 = AtomicU64::new(0);

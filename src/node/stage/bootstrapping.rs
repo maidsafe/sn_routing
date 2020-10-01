@@ -54,6 +54,12 @@ impl Bootstrapping {
         sender: Option<SocketAddr>,
         message: Message,
     ) -> Result<()> {
+        trace!("Got {:?}", message);
+
+        if !self.in_dst_location(message.dst()) {
+            return Ok(());
+        }
+
         match message.variant() {
             Variant::BootstrapResponse(response) => {
                 message
@@ -192,6 +198,14 @@ impl Bootstrapping {
         self.node_info.keypair = Arc::new(new_keypair);
 
         Ok(Some(relocate_payload))
+    }
+
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        match dst {
+            DstLocation::Node(name) => *name == self.node_info.name(),
+            DstLocation::Section(_) => false,
+            DstLocation::Direct => true,
+        }
     }
 }
 

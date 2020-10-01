@@ -70,6 +70,11 @@ impl Joining {
         msg: Message,
     ) -> Result<()> {
         trace!("Got {:?}", msg);
+
+        if !self.in_dst_location(msg.dst()) {
+            return Ok(());
+        }
+
         match msg.variant() {
             Variant::BootstrapResponse(BootstrapResponse::Join {
                 elders_info,
@@ -212,6 +217,14 @@ impl Joining {
         self.timer_token = self.timer.schedule(JOIN_TIMEOUT).await;
 
         Ok(())
+    }
+
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        match dst {
+            DstLocation::Node(name) => *name == self.node_info.name(),
+            DstLocation::Section(_) => false,
+            DstLocation::Direct => true,
+        }
     }
 }
 

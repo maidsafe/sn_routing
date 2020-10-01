@@ -54,7 +54,7 @@ async fn test_node_bootstrapping() -> Result<()> {
     });
 
     // bootstrap a second node with genesis
-    let genesis_contact = genesis_node.our_connection_info().await?;
+    let genesis_contact = genesis_node.our_connection_info()?;
     let (node1, mut event_stream) = TestNodeBuilder::new(None)
         .with_contact(genesis_contact)
         .create()
@@ -104,7 +104,7 @@ async fn test_section_bootstrapping() -> Result<()> {
     });
 
     // bootstrap several nodes with genesis to form a section
-    let genesis_contact = genesis_node.our_connection_info().await?;
+    let genesis_contact = genesis_node.our_connection_info()?;
     let mut nodes_joining_tasks = Vec::with_capacity(num_of_nodes);
     for _ in 0..num_of_nodes {
         nodes_joining_tasks.push(async {

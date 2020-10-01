@@ -84,6 +84,20 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
+        // Check if the message is for us.
+        let in_dst_location = msg
+            .dst()
+            .contains(&self.node_info.name(), self.shared_state.our_prefix());
+        if !in_dst_location || msg.dst().is_section() {
+            // Relay closer to the destination or
+            // broadcast to the rest of our section.
+            self.relay_message(cx, &msg)?;
+        }
+        if !in_dst_location {
+            // Message not for us.
+            return Ok(());
+        }
+
         // Filter messages which were already handled
         if self.msg_filter.contains_incoming(&msg) {
             trace!("not handling message - already handled: {:?}", msg);
@@ -150,7 +164,7 @@ impl Approved {
             return Ok(());
         };
 
-        if !self.is_our_elder(&self.node_info.name()) {
+        if !self.is_elder() {
             return Ok(());
         }
 
@@ -280,9 +294,13 @@ impl Approved {
         }
     }
 
-    /// Is the node with the given id an elder in our section?
-    pub fn is_our_elder(&self, id: &XorName) -> bool {
-        self.shared_state.sections.our().elders.contains_key(id)
+    /// Is this node an elder?
+    pub fn is_elder(&self) -> bool {
+        self.shared_state
+            .sections
+            .our()
+            .elders
+            .contains_key(&self.node_info.name())
     }
 
     /// Returns the current BLS public key set
@@ -295,21 +313,19 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
-        let our_id = self.node_info.name();
-
         match msg.variant() {
             Variant::NeighbourInfo { .. } => {
-                if !self.is_our_elder(&our_id) {
+                if !self.is_elder() {
                     return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::UserMessage(_) => {
-                if !self.should_handle_user_message(&our_id, msg.dst()) {
+                if !self.should_handle_user_message(msg.dst()) {
                     return Ok(MessageStatus::Unknown);
                 }
             }
             Variant::JoinRequest(req) => {
-                if !self.should_handle_join_request(&our_id, req) {
+                if !self.should_handle_join_request(req) {
                     // Note: We don't bounce this message because the current bounce-resend
                     // mechanism wouldn't preserve the original SocketAddr which is needed for
                     // properly handling this message.
@@ -319,12 +335,12 @@ impl Approved {
                 }
             }
             Variant::DKGStart { elders_info, .. } => {
-                if !elders_info.elders.contains_key(&our_id) {
+                if !elders_info.elders.contains_key(&self.node_info.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }
             Variant::DKGResult { .. } => {
-                if !self.is_our_elder(&our_id) {
+                if !self.is_elder() {
                     return Ok(MessageStatus::Unknown);
                 }
             }
@@ -338,8 +354,8 @@ impl Approved {
                 }
             }
             Variant::RelocatePromise(promise) => {
-                if promise.name != our_id {
-                    if !self.is_our_elder(&our_id) {
+                if promise.name != self.node_info.name() {
+                    if !self.is_elder() {
                         return Ok(MessageStatus::Useless);
                     }
 
@@ -471,14 +487,14 @@ impl Approved {
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
-    fn should_handle_join_request(&self, our_id: &XorName, req: &JoinRequest) -> bool {
-        self.is_our_elder(our_id) || req.section_key != *self.shared_state.our_history.last_key()
+    fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
+        self.is_elder() || req.section_key != *self.shared_state.our_history.last_key()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
-    fn should_handle_user_message(&self, our_id: &XorName, dst: &DstLocation) -> bool {
-        self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id)
+    fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
+        self.is_elder() || dst.as_node().ok() == Some(&self.node_info.name())
     }
 
     // Handle `Vote` message only if signed with known key, otherwise bounce.
@@ -735,7 +751,7 @@ impl Approved {
             }
 
             // We are no longer elder. Send the promise back already.
-            if !self.is_our_elder(&self.node_info.name()) {
+            if !self.is_elder() {
                 self.send_message_to_our_elders(cx, msg_bytes);
             }
 
@@ -921,7 +937,7 @@ impl Approved {
             self.send_dkg_result(cx, dkg_key, result)?;
         }
 
-        if !self.is_our_elder(&self.node_info.name()) {
+        if !self.is_elder() {
             return Ok(());
         }
 
@@ -1343,7 +1359,7 @@ impl Approved {
     }
 
     fn update_shared_state(&mut self, cx: &mut Context, update: SharedState) -> Result<()> {
-        let old_is_elder = self.is_our_elder(&self.node_info.name());
+        let old_is_elder = self.is_elder();
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
 
@@ -1354,7 +1370,7 @@ impl Approved {
         self.dkg_voter
             .stop_observing(self.shared_state.our_history.last_key_index());
 
-        let new_is_elder = self.is_our_elder(&self.node_info.name());
+        let new_is_elder = self.is_elder();
         let new_last_key_index = self.shared_state.our_history.last_key_index();
         let new_prefix = *self.shared_state.our_prefix();
 
@@ -1815,7 +1831,7 @@ impl Approved {
     fn update_section_knowledge(&mut self, cx: &mut Context, msg: &Message) -> Result<()> {
         use crate::section::UpdateSectionKnowledgeAction::*;
 
-        if !self.is_our_elder(&self.node_info.name()) {
+        if !self.is_elder() {
             return Ok(());
         }
 

@@ -29,6 +29,7 @@ use crate::{
     TransportConfig,
 };
 use bytes::Bytes;
+use ed25519_dalek::PublicKey;
 use qp2p::IncomingConnections;
 use serde::Serialize;
 use std::{
@@ -37,7 +38,7 @@ use std::{
     net::SocketAddr,
     sync::Arc,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use xor_name::{Prefix, XorName};
 
 #[cfg(feature = "mock")]
@@ -49,6 +50,15 @@ pub(crate) enum State {
     Bootstrapping(Bootstrapping),
     Joining(Joining),
     Approved(Approved),
+}
+
+impl State {
+    fn approved(&self) -> Option<&Approved> {
+        match self {
+            Self::Approved(state) => Some(state),
+            _ => None,
+        }
+    }
 }
 
 impl Debug for State {
@@ -87,7 +97,7 @@ impl NodeInfo {
 // Node's current stage whcich is responsible
 // for accessing current info and trigger operations.
 pub(crate) struct Stage {
-    state: State,
+    state: Mutex<State>,
     comm: Comm,
 }
 
@@ -96,7 +106,10 @@ impl Stage {
     fn new(state: State, comm: Comm) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
-        let stage = Self { state, comm };
+        let stage = Self {
+            state: Mutex::new(state),
+            comm,
+        };
 
         Ok((stage, incoming_conns))
     }
@@ -183,52 +196,153 @@ impl Stage {
         Ok((stage, incomming_connections, timer_rx, events_rx))
     }
 
-    pub fn approved(&self) -> Option<&Approved> {
-        match &self.state {
-            State::Approved(stage) => Some(stage),
-            _ => None,
-        }
-    }
-
     /// Send provided Event to the user which shall receive it through the EventStream
-    pub fn send_event(&mut self, event: Event) {
-        self.node_info_mut().send_event(event);
-    }
+    pub async fn send_event(&self, event: Event) {
+        let mut state = self.state.lock().await;
+        let node_info = match &mut *state {
+            State::Bootstrapping(state) => &mut state.node_info,
+            State::Joining(state) => &mut state.node_info,
+            State::Approved(state) => &mut state.node_info,
+        };
 
-    /// Returns current Keypair of the node
-    pub fn keypair(&self) -> &Keypair {
-        &self.node_info().keypair
+        node_info.send_event(event)
     }
 
     /// Returns the name of the node
-    pub fn name(&self) -> XorName {
-        self.node_info().name()
+    pub async fn name(&self) -> XorName {
+        let state = self.state.lock().await;
+        let node_info = match &*state {
+            State::Bootstrapping(state) => &state.node_info,
+            State::Joining(state) => &state.node_info,
+            State::Approved(state) => &state.node_info,
+        };
+
+        node_info.name()
+    }
+
+    /// Returns the public key of the node
+    pub async fn public_key(&self) -> PublicKey {
+        let state = self.state.lock().await;
+        let node_info = match &*state {
+            State::Bootstrapping(state) => &state.node_info,
+            State::Joining(state) => &state.node_info,
+            State::Approved(state) => &state.node_info,
+        };
+
+        node_info.keypair.public
     }
 
     /// Our `Prefix` once we are a part of the section.
-    pub fn our_prefix(&self) -> Option<&Prefix> {
-        match &self.state {
-            State::Bootstrapping(_) | State::Joining(_) => None,
-            State::Approved(stage) => Some(stage.shared_state.our_prefix()),
-        }
+    pub async fn our_prefix(&self) -> Option<Prefix> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.shared_state.our_prefix())
+            .cloned()
     }
 
     /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
+    pub fn our_connection_info(&self) -> Result<SocketAddr> {
         self.comm.our_connection_info()
     }
 
-    pub async fn send_message_to_target(
-        &mut self,
-        recipient: &SocketAddr,
-        msg: Bytes,
-    ) -> Result<()> {
-        self.comm.send_message_to_target(recipient, msg).await?;
-        Ok(())
+    /// Returns whether the node is Elder.
+    pub async fn is_elder(&self) -> bool {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.is_elder())
+            .unwrap_or(false)
     }
 
-    pub async fn handle_command(&mut self, cx: &mut Context, command: Command) -> Result<()> {
-        log_ident::set(self.log_ident(), async {
+    /// Returns the information of all the current section elders.
+    pub async fn our_elders(&self) -> Vec<Peer> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.shared_state.sections.our_elders().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the information of all the current section adults.
+    pub async fn our_adults(&self) -> Vec<Peer> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.shared_state.our_adults().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the info about our section or `None` if we are not joined yet.
+    pub async fn our_section(&self) -> Option<EldersInfo> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.shared_state.sections.our().clone())
+    }
+
+    /// Returns the info about our neighbour sections.
+    pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|state| state.shared_state.sections.neighbours().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
+    /// yet.
+    pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .and_then(|state| state.section_key_share())
+            .map(|share| share.public_key_set.clone())
+            .ok_or(Error::InvalidState)
+    }
+
+    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
+    /// elder.
+    pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| share.secret_key_share.clone())
+            .ok_or(Error::InvalidState)
+    }
+
+    /// Returns our section proof chain, or `None` if we are not joined yet.
+    pub async fn our_history(&self) -> Option<SectionProofChain> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .map(|stage| stage.shared_state.our_history.clone())
+    }
+
+    /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
+    /// not generated yet.
+    pub async fn our_index(&self) -> Result<usize> {
+        self.state
+            .lock()
+            .await
+            .approved()
+            .and_then(|stage| stage.section_key_share())
+            .map(|share| share.index)
+            .ok_or(Error::InvalidState)
+    }
+
+    pub async fn handle_command(&self, cx: &mut Context, command: Command) -> Result<()> {
+        log_ident::set(self.log_ident().await, async {
             trace!("Processing command {:?}", command);
 
             let result = match command {
@@ -237,9 +351,9 @@ impl Stage {
                 }
                 Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
                 Command::HandleVote { vote, proof_share } => {
-                    self.handle_vote(cx, vote, proof_share)
+                    self.handle_vote(cx, vote, proof_share).await
                 }
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr),
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
@@ -249,13 +363,13 @@ impl Stage {
                         .await
                 }
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(src, dst, content, cx)
+                    self.send_user_message(cx, src, dst, content).await
                 }
                 Command::SendBootstrapRequest(recipients) => {
-                    self.send_bootstrap_request(cx, recipients)
+                    self.send_bootstrap_request(cx, recipients).await
                 }
                 Command::Transition(state) => {
-                    self.state = *state;
+                    *self.state.lock().await = *state;
                     Ok(())
                 }
             };
@@ -270,41 +384,42 @@ impl Stage {
     }
 
     async fn handle_message(
-        &mut self,
+        &self,
         cx: &mut Context,
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
         trace!("try handle {:?} from {:?}", msg, sender);
 
-        if !self.in_dst_location(&msg, cx)? {
-            return Ok(());
-        }
-
-        match &mut self.state {
+        match &mut *self.state.lock().await {
             State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg).await,
             State::Joining(stage) => stage.handle_message(cx, sender, msg).await,
             State::Approved(stage) => stage.handle_message(cx, sender, msg).await,
         }
     }
 
-    async fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
-        match &mut self.state {
+    async fn handle_timeout(&self, cx: &mut Context, token: u64) -> Result<()> {
+        match &mut *self.state.lock().await {
             State::Bootstrapping(stage) => stage.handle_timeout(token).await,
             State::Joining(stage) => stage.handle_timeout(cx, token).await,
             State::Approved(stage) => stage.handle_timeout(cx, token).await,
         }
     }
 
-    fn handle_vote(&mut self, cx: &mut Context, vote: Vote, proof_share: ProofShare) -> Result<()> {
-        match &mut self.state {
+    async fn handle_vote(
+        &self,
+        cx: &mut Context,
+        vote: Vote,
+        proof_share: ProofShare,
+    ) -> Result<()> {
+        match &mut *self.state.lock().await {
             State::Approved(state) => state.handle_vote(cx, vote, proof_share),
             _ => Err(Error::InvalidState),
         }
     }
 
-    fn handle_peer_lost(&mut self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
-        match &mut self.state {
+    async fn handle_peer_lost(&self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
+        match &*self.state.lock().await {
             State::Approved(state) => state.handle_peer_lost(cx, &addr),
             _ => Ok(()),
         }
@@ -333,72 +448,32 @@ impl Stage {
         }
     }
 
-    fn send_user_message(
-        &mut self,
+    async fn send_user_message(
+        &self,
+        cx: &mut Context,
         src: SrcLocation,
         dst: DstLocation,
         content: Bytes,
-        cx: &mut Context,
     ) -> Result<()> {
-        match &mut self.state {
+        match &mut *self.state.lock().await {
             State::Approved(stage) => stage.send_user_message(cx, src, dst, content),
             _ => Err(Error::InvalidState),
         }
     }
 
-    fn send_bootstrap_request(&self, cx: &mut Context, recipients: Vec<SocketAddr>) -> Result<()> {
-        match &self.state {
+    async fn send_bootstrap_request(
+        &self,
+        cx: &mut Context,
+        recipients: Vec<SocketAddr>,
+    ) -> Result<()> {
+        match &*self.state.lock().await {
             State::Bootstrapping(state) => state.send_bootstrap_request(cx, &recipients),
             _ => Err(Error::InvalidState),
         }
     }
 
-    // Checks whether the given location represents self.
-    fn in_dst_location(&mut self, msg: &Message, cx: &mut Context) -> Result<bool> {
-        let in_dst = match &mut self.state {
-            State::Bootstrapping(_) | State::Joining(_) => match msg.dst() {
-                DstLocation::Node(name) => name == &self.node_info().name(),
-                DstLocation::Section(_) => false,
-                DstLocation::Direct => true,
-            },
-            State::Approved(stage) => {
-                let is_dst_location = msg
-                    .dst()
-                    .contains(&stage.node_info.name(), stage.shared_state.our_prefix());
-
-                // Relay a message to the network if the message
-                // is not for us, or if it is for the section.
-                if !is_dst_location || msg.dst().is_section() {
-                    // Relay closer to the destination or
-                    // broadcast to the rest of our section.
-                    stage.relay_message(cx, msg)?;
-                }
-
-                is_dst_location
-            }
-        };
-
-        Ok(in_dst)
-    }
-
-    fn node_info(&self) -> &NodeInfo {
-        match &self.state {
-            State::Bootstrapping(state) => &state.node_info,
-            State::Joining(state) => &state.node_info,
-            State::Approved(state) => &state.node_info,
-        }
-    }
-
-    fn node_info_mut(&mut self) -> &mut NodeInfo {
-        match &mut self.state {
-            State::Bootstrapping(state) => &mut state.node_info,
-            State::Joining(state) => &mut state.node_info,
-            State::Approved(state) => &mut state.node_info,
-        }
-    }
-
-    fn log_ident(&self) -> String {
-        match &self.state {
+    async fn log_ident(&self) -> String {
+        match &*self.state.lock().await {
             State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
             State::Joining(state) => format!(
                 "{}({:b}?) ",
@@ -406,7 +481,7 @@ impl Stage {
                 state.target_section_elders_info().prefix,
             ),
             State::Approved(state) => {
-                if state.is_our_elder(&state.node_info.name()) {
+                if state.is_elder() {
                     format!(
                         "{}({:b}v{}!) ",
                         state.node_info.name(),
