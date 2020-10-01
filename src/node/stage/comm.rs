@@ -94,6 +94,13 @@ impl Comm {
         delivery_group_size: usize,
         msg: Bytes,
     ) -> Result<(), SendError> {
+        trace!(
+            "Sending message ({} bytes) to {} of {:?}",
+            msg.len(),
+            delivery_group_size,
+            recipients
+        );
+
         if recipients.len() < delivery_group_size {
             warn!(
                 "Less than delivery_group_size valid recipients - delivery_group_size: {}, recipients: {:?}",
@@ -110,7 +117,6 @@ impl Comm {
         loop {
             // Start a batch of sends.
             while let Some(addr) = state.next() {
-                trace!("Sending message to {}", addr);
                 let msg = msg.clone();
                 let task = async move {
                     let result = self.send_once(&addr, msg).await;
@@ -124,12 +130,14 @@ impl Comm {
                 // Notify `SendState` about the result of the send and potentially start the next
                 // send, appending to the ones still in progress (if any).
                 match result {
-                    Ok(_) => {
-                        trace!("Sending message to {} succeeded", addr);
-                        state.success(&addr);
-                    }
+                    Ok(_) => state.success(&addr),
                     Err(err) => {
-                        trace!("Sending message to {} failed: {}", addr, err);
+                        trace!(
+                            "Sending message ({} bytes) to {} failed: {}",
+                            msg.len(),
+                            addr,
+                            err
+                        );
                         state.failure(&addr);
                     }
                 }
@@ -142,7 +150,8 @@ impl Comm {
         let failed_recipients = state.finish();
 
         trace!(
-            "Sending message finished to {}/{} recipients (failed: {:?})",
+            "Sending message ({} bytes) finished to {}/{} recipients (failed: {:?})",
+            msg.len(),
             delivery_group_size - failed_recipients.len(),
             delivery_group_size,
             failed_recipients

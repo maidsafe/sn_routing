@@ -44,3 +44,4 @@ xor_name = "1.1.0"
 env_logger = "~0.7.1"
 structopt = "~0.3.17"
 anyhow = "1"
+
