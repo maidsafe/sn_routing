@@ -341,32 +341,34 @@ impl Stage {
             .ok_or(Error::InvalidState)
     }
 
-    pub async fn handle_command(&self, cx: &mut Context, command: Command) -> Result<()> {
+    pub async fn handle_command(self: Arc<Self>, command: Command) -> Result<()> {
+        let mut cx = Context::new();
+
         log_ident::set(self.log_ident().await, async {
             trace!("Processing command {:?}", command);
 
             let result = match command {
                 Command::HandleMessage { message, sender } => {
-                    self.handle_message(cx, sender, message).await
+                    self.handle_message(&mut cx, sender, message).await
                 }
-                Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
+                Command::HandleTimeout(token) => self.handle_timeout(&mut cx, token).await,
                 Command::HandleVote { vote, proof_share } => {
-                    self.handle_vote(cx, vote, proof_share).await
+                    self.handle_vote(&mut cx, vote, proof_share).await
                 }
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(&mut cx, addr).await,
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
                     message,
                 } => {
-                    self.send_message(cx, &recipients, delivery_group_size, message)
+                    self.send_message(&mut cx, &recipients, delivery_group_size, message)
                         .await
                 }
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(cx, src, dst, content).await
+                    self.send_user_message(&mut cx, src, dst, content).await
                 }
                 Command::SendBootstrapRequest(recipients) => {
-                    self.send_bootstrap_request(cx, recipients).await
+                    self.send_bootstrap_request(&mut cx, recipients).await
                 }
                 Command::Transition(state) => {
                     *self.state.lock().await = *state;
@@ -380,7 +382,19 @@ impl Stage {
 
             result
         })
-        .await
+        .await?;
+
+        for command in cx.into_commands() {
+            self.clone().spawn_handle_command(command)
+        }
+
+        Ok(())
+    }
+
+    // Note: this indirecton is needed. Trying to call `spawn(self.handle_command(...))` directly
+    // inside `handle_command` causes compile error about type check cycle.
+    fn spawn_handle_command(self: Arc<Self>, command: Command) {
+        let _ = tokio::spawn(self.handle_command(command));
     }
 
     async fn handle_message(

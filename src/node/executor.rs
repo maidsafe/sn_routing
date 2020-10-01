@@ -6,10 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Command, Context};
+use super::Command;
 use crate::{
     cancellation::{cancellable, CancellationHandle, CancellationToken},
-    error::Result,
     event::Event,
     messages::Message,
     node::stage::Stage,
@@ -114,7 +113,7 @@ fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: Socke
                     message,
                     sender: Some(sender),
                 };
-                let _ = dispatch_command(stage, command).await;
+                let _ = stage.handle_command(command).await;
             }
             Err(error) => {
                 debug!("Failed to deserialize message: {}", error);
@@ -131,25 +130,7 @@ fn spawn_timer_handler(
     let _ = tokio::spawn(cancellable(cancel_token, async move {
         while let Some(timer_token) = timer_rx.recv().await {
             let command = Command::HandleTimeout(timer_token);
-            let _ = dispatch_command(stage.clone(), command).await;
+            let _ = stage.clone().handle_command(command).await;
         }
     }));
-}
-
-pub(super) async fn dispatch_command(stage: Arc<Stage>, command: Command) -> Result<()> {
-    let mut cx = Context::new();
-
-    stage.handle_command(&mut cx, command).await?;
-
-    for command in cx.into_commands() {
-        spawn_dispatch_command(stage.clone(), command)
-    }
-
-    Ok(())
-}
-
-// Note: can't call `tokio::spawn(dispatch_command(...))` directly in `dispatch_command` because
-// that fails compilation on a type check cycle error for some reason.
-fn spawn_dispatch_command(stage: Arc<Stage>, command: Command) {
-    let _ = tokio::spawn(dispatch_command(stage, command));
 }

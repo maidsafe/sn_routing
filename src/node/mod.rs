@@ -101,7 +101,7 @@ impl Node {
 
         // Process the initial commands.
         for command in cx.into_commands() {
-            let _ = tokio::spawn(executor::dispatch_command(stage.clone(), command));
+            let _ = tokio::spawn(stage.clone().handle_command(command));
         }
 
         let node = Self {
@@ -194,12 +194,12 @@ impl Node {
         content: Bytes,
     ) -> Result<()> {
         let command = Command::SendUserMessage { src, dst, content };
-        executor::dispatch_command(self.stage.clone(), command).await
+        self.stage.clone().handle_command(command).await
     }
 
     /// Send a message to a client peer.
     pub async fn send_message_to_client(
-        &mut self,
+        &self,
         recipient: SocketAddr,
         message: Bytes,
     ) -> Result<()> {
@@ -208,7 +208,7 @@ impl Node {
             delivery_group_size: 1,
             message,
         };
-        executor::dispatch_command(self.stage.clone(), command).await
+        self.stage.clone().handle_command(command).await
     }
 
     /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
