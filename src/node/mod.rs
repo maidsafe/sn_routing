@@ -11,6 +11,8 @@ mod context;
 pub mod event_stream;
 mod executor;
 mod stage;
+#[cfg(test)]
+mod tests;
 
 pub use self::event_stream::EventStream;
 use self::{command::Command, context::Context, executor::Executor, stage::Stage};
@@ -88,8 +90,7 @@ impl Node {
                 keypair,
                 config.network_params,
                 event_tx,
-            )
-            .await?
+            )?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             Stage::bootstrap(
@@ -107,7 +108,7 @@ impl Node {
         let event_stream = EventStream::new(event_rx);
 
         // Process the initial commands.
-        for command in cx.into_commands() {
+        for command in cx.take_commands() {
             let _ = tokio::spawn(stage.clone().handle_commands(command));
         }
 
