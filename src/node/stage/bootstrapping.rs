@@ -36,7 +36,7 @@ impl Bootstrapping {
         bootstrap_contacts: Vec<SocketAddr>,
         node_info: NodeInfo,
     ) -> Self {
-        cx.push(Command::SendBootstrapRequest(bootstrap_contacts));
+        cx.push_command(Command::SendBootstrapRequest(bootstrap_contacts));
 
         Self {
             node_info,
@@ -80,7 +80,7 @@ impl Bootstrapping {
                             self.node_info.clone(),
                         )?;
                         let state = State::Joining(state);
-                        cx.push(Command::Transition(Box::new(state)));
+                        cx.push_command(Command::Transition(Box::new(state)));
                         Ok(())
                     }
                     None => Ok(()),
@@ -92,7 +92,7 @@ impl Bootstrapping {
                 // of this it can happen that we receive the `NodeApproval` response before we
                 // finish the transition. To handle this situation, push the `NodeApproval` back to
                 // the command queue so we process it after the transition is finished.
-                cx.push(Command::HandleMessage { sender, message });
+                cx.push_command(Command::HandleMessage { sender, message });
                 Ok(())
             }
             _ => {
