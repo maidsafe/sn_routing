@@ -103,7 +103,9 @@ impl<'a> TestNodeBuilder {
     }
 }
 
-pub const TIMEOUT: Duration = Duration::from_secs(5);
+// Note: setting the timeout quite high, so that if it triggers it mostly likely indicates an
+// actual error rather than the test just being slow.
+pub const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Assert that the next event raised by the node matches the given pattern.
 /// Fails if no event, or an event that does not match the pattern is raised.
