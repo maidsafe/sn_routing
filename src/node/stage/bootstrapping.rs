@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::Comm, joining::Joining, Command, Context, NodeInfo, State};
+use super::{joining::Joining, Command, Context, NodeInfo, State};
 use crate::{
     crypto::{keypair_within_range, name},
     error::Result,
@@ -17,7 +17,6 @@ use crate::{
     timer::Timer,
     DstLocation, MIN_AGE,
 };
-use futures::future;
 use std::{iter, net::SocketAddr, sync::Arc};
 use xor_name::Prefix;
 
@@ -29,30 +28,24 @@ use xor_name::Prefix;
 pub(crate) struct Bootstrapping {
     pub node_info: NodeInfo,
     relocate_details: Option<SignedRelocateDetails>,
-    comm: Comm,
     timer: Timer,
 }
 
 impl Bootstrapping {
-    pub async fn new(
+    pub fn new(
+        cx: &mut Context,
         relocate_details: Option<SignedRelocateDetails>,
         bootstrap_contacts: Vec<SocketAddr>,
-        comm: Comm,
         node_info: NodeInfo,
         timer: Timer,
-    ) -> Result<Self> {
-        let stage = Self {
+    ) -> Self {
+        cx.push(Command::SendBootstrapRequest(bootstrap_contacts));
+
+        Self {
             node_info,
             relocate_details,
-            comm,
             timer,
-        };
-
-        for addr in bootstrap_contacts {
-            stage.send_bootstrap_request(addr).await?;
         }
-
-        Ok(stage)
     }
 
     pub async fn handle_message(
@@ -66,20 +59,18 @@ impl Bootstrapping {
                 msg.verify(iter::empty())
                     .and_then(VerifyStatus::require_full)?;
 
-                match self
-                    .handle_bootstrap_response(
-                        msg.src().to_sender_node(Some(sender))?,
-                        response.clone(),
-                    )
-                    .await?
-                {
+                match self.handle_bootstrap_response(
+                    cx,
+                    msg.src().to_sender_node(Some(sender))?,
+                    response.clone(),
+                )? {
                     Some(JoinParams {
                         elders_info,
                         section_key,
                         relocate_payload,
                     }) => {
                         let state = Joining::new(
-                            self.comm.clone(),
+                            cx,
                             elders_info,
                             section_key,
                             relocate_payload,
@@ -123,8 +114,34 @@ impl Bootstrapping {
         todo!()
     }
 
-    async fn handle_bootstrap_response(
+    pub fn send_bootstrap_request(
+        &self,
+        cx: &mut Context,
+        recipients: &[SocketAddr],
+    ) -> Result<()> {
+        let (destination, age) = match &self.relocate_details {
+            Some(details) => (*details.destination(), details.relocate_details().age),
+            None => (self.node_info.name(), MIN_AGE),
+        };
+
+        let message = Message::single_src(
+            &self.node_info.keypair,
+            age,
+            DstLocation::Direct,
+            Variant::BootstrapRequest(destination),
+            None,
+            None,
+        )?;
+
+        debug!("Sending BootstrapRequest to {:?}", recipients);
+        cx.send_message_to_targets(recipients, recipients.len(), message.to_bytes());
+
+        Ok(())
+    }
+
+    fn handle_bootstrap_response(
         &mut self,
+        cx: &mut Context,
         sender: Peer,
         response: BootstrapResponse,
     ) -> Result<Option<JoinParams>> {
@@ -150,43 +167,10 @@ impl Bootstrapping {
                     "Bootstrapping redirected to another set of peers: {:?}",
                     new_conn_infos
                 );
-                self.reconnect_to_new_section(new_conn_infos).await?;
+                self.send_bootstrap_request(cx, &new_conn_infos)?;
                 Ok(None)
             }
         }
-    }
-
-    async fn send_bootstrap_request(&self, dst: SocketAddr) -> Result<()> {
-        let (destination, age) = match &self.relocate_details {
-            Some(details) => (*details.destination(), details.relocate_details().age),
-            None => (self.node_info.name(), MIN_AGE),
-        };
-
-        let message = Message::single_src(
-            &self.node_info.keypair,
-            age,
-            DstLocation::Direct,
-            Variant::BootstrapRequest(destination),
-            None,
-            None,
-        )?;
-
-        debug!("Sending BootstrapRequest to {}", dst);
-        self.comm
-            .send_message_to_target(&dst, message.to_bytes())
-            .await?;
-
-        Ok(())
-    }
-
-    async fn reconnect_to_new_section(&self, new_conn_infos: Vec<SocketAddr>) -> Result<()> {
-        future::try_join_all(
-            new_conn_infos
-                .into_iter()
-                .map(|addr| self.send_bootstrap_request(addr)),
-        )
-        .await
-        .map(|_| ())
     }
 
     fn join_section(&mut self, elders_info: &EldersInfo) -> Result<Option<RelocatePayload>> {

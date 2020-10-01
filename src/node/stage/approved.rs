@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::Comm, Bootstrapping, Command, Context, NodeInfo, State};
+use super::{Bootstrapping, Command, Context, NodeInfo, State};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -51,7 +51,6 @@ pub(crate) struct Approved {
     // Serialized `RelocatePromise` message that we received from our section. To be sent back to
     // them after we are demoted.
     relocate_promise: Option<Bytes>,
-    comm: Comm,
     msg_filter: MessageFilter,
     timer: Timer,
 }
@@ -59,7 +58,6 @@ pub(crate) struct Approved {
 impl Approved {
     // Create the approved stage for a regular node.
     pub fn new(
-        comm: Comm,
         shared_state: SharedState,
         section_key_share: Option<SectionKeyShare>,
         node_info: NodeInfo,
@@ -75,7 +73,6 @@ impl Approved {
             section_update_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_promise: None,
-            comm,
             msg_filter: MessageFilter::new(),
             timer,
         })
@@ -406,13 +403,12 @@ impl Approved {
                     }) => {
                         // Transition from Approved to Bootstrapping on relocation
                         let state = Bootstrapping::new(
+                            cx,
                             Some(details),
                             conn_infos,
-                            self.comm.clone(),
                             self.node_info.clone(),
                             self.timer.clone(),
-                        )
-                        .await?;
+                        );
                         let state = State::Bootstrapping(state);
                         cx.push(Command::Transition(Box::new(state)));
 

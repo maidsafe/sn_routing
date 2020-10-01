@@ -24,9 +24,10 @@ const CONNECTIONS_CACHE_SIZE: usize = 1024;
 pub const RESEND_MAX_ATTEMPTS: u8 = 3;
 
 // Communication component of the node to interact with other nodes.
-#[derive(Clone)]
 pub(crate) struct Comm {
-    inner: Arc<Inner>,
+    _quic_p2p: QuicP2p,
+    endpoint: Endpoint,
+    node_conns: Mutex<LruCache<SocketAddr, Arc<Connection>>>,
 }
 
 impl Comm {
@@ -39,11 +40,9 @@ impl Comm {
         let node_conns = Mutex::new(LruCache::with_capacity(CONNECTIONS_CACHE_SIZE));
 
         Ok(Self {
-            inner: Arc::new(Inner {
-                _quic_p2p: quic_p2p,
-                endpoint,
-                node_conns,
-            }),
+            _quic_p2p: quic_p2p,
+            endpoint,
+            node_conns,
         })
     }
 
@@ -60,11 +59,9 @@ impl Comm {
 
         Ok((
             Self {
-                inner: Arc::new(Inner {
-                    _quic_p2p: quic_p2p,
-                    endpoint,
-                    node_conns,
-                }),
+                _quic_p2p: quic_p2p,
+                endpoint,
+                node_conns,
             },
             addr,
         ))
@@ -72,11 +69,11 @@ impl Comm {
 
     /// Starts listening for connections returning a stream where to read them from.
     pub fn listen(&self) -> Result<IncomingConnections> {
-        Ok(self.inner.endpoint.listen()?)
+        Ok(self.endpoint.listen()?)
     }
 
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.inner.endpoint.our_endpoint().map_err(|err| {
+        self.endpoint.our_endpoint().map_err(|err| {
             debug!("Failed to retrieve our connection info: {:?}", err);
             err.into()
         })
@@ -116,7 +113,7 @@ impl Comm {
                 trace!("Sending message to {}", addr);
                 let msg = msg.clone();
                 let task = async move {
-                    let result = self.inner.send(&addr, msg).await;
+                    let result = self.send_once(&addr, msg).await;
                     (addr, result)
                 };
                 tasks.push(task);
@@ -158,6 +155,8 @@ impl Comm {
         }
     }
 
+    /// Calls `send_message_to_targets` with just one recipient and delivery_group_size of 1.
+    /// Provided for convenience.
     pub async fn send_message_to_target(
         &self,
         recipient: &SocketAddr,
@@ -166,29 +165,9 @@ impl Comm {
         self.send_message_to_targets(slice::from_ref(recipient), 1, msg)
             .await
     }
-}
 
-#[derive(Debug, Error)]
-#[error(display = "Send failed to: {:?}", failed_recipients)]
-pub struct SendError {
-    // Recipients that failed all the send attempts.
-    pub failed_recipients: Vec<SocketAddr>,
-}
-
-impl From<SendError> for Error {
-    fn from(_: SendError) -> Self {
-        Error::FailedSend
-    }
-}
-
-struct Inner {
-    _quic_p2p: QuicP2p,
-    endpoint: Endpoint,
-    node_conns: Mutex<LruCache<SocketAddr, Arc<Connection>>>,
-}
-
-impl Inner {
-    async fn send(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
+    // Low-level send
+    async fn send_once(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
         // Cache the Connection to the node or obtain the already cached one
         // Note: not using the entry API to avoid holding the mutex longer than necessary.
         let conn = self.node_conns.lock().await.get(recipient).cloned();
@@ -209,6 +188,19 @@ impl Inner {
         conn.send_uni(msg).await?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+#[error(display = "Send failed to: {:?}", failed_recipients)]
+pub struct SendError {
+    // Recipients that failed all the send attempts.
+    pub failed_recipients: Vec<SocketAddr>,
+}
+
+impl From<SendError> for Error {
+    fn from(_: SendError) -> Self {
+        Error::FailedSend
     }
 }
 
