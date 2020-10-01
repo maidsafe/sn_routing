@@ -51,7 +51,7 @@ impl Bootstrapping {
     pub async fn handle_message(
         &mut self,
         cx: &mut Context,
-        sender: SocketAddr,
+        sender: Option<SocketAddr>,
         message: Message,
     ) -> Result<()> {
         match message.variant() {
@@ -62,7 +62,7 @@ impl Bootstrapping {
 
                 match self.handle_bootstrap_response(
                     cx,
-                    message.src().to_sender_node(Some(sender))?,
+                    message.src().to_sender_node(sender)?,
                     response.clone(),
                 )? {
                     Some(JoinParams {
@@ -96,7 +96,7 @@ impl Bootstrapping {
                 Ok(())
             }
             _ => {
-                debug!("Useless message from {}: {:?} ", sender, message);
+                debug!("Useless message from {:?}: {:?} ", sender, message);
                 Ok(())
             }
         }

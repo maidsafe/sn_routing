@@ -110,7 +110,10 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
     let _ = tokio::spawn(async move {
         match Message::from_bytes(&msg_bytes) {
             Ok(message) => {
-                let command = Command::HandleMessage { message, sender };
+                let command = Command::HandleMessage {
+                    message,
+                    sender: Some(sender),
+                };
                 let _ = dispatch_command(stage, command).await;
             }
             Err(error) => {

@@ -8,7 +8,7 @@
 
 use super::stage::State;
 use crate::{
-    // consensus::{ProofShare, Vote},
+    consensus::{ProofShare, Vote},
     location::{DstLocation, SrcLocation},
     messages::Message,
 };
@@ -18,15 +18,18 @@ use std::{net::SocketAddr, slice};
 #[derive(Debug)]
 pub(crate) enum Command {
     HandleMessage {
-        sender: SocketAddr,
+        // Some if the message was received from someone else
+        // None if the message came from an accumulated `Vote::SendMessage`
+        // TODO: consider using a custom enum for clarity
+        sender: Option<SocketAddr>,
         message: Message,
     },
     HandleTimeout(u64),
     HandlePeerLost(SocketAddr),
-    // HandleVote {
-    //     vote: Vote,
-    //     proof_share: ProofShare,
-    // },
+    HandleVote {
+        vote: Vote,
+        proof_share: ProofShare,
+    },
     SendMessage {
         recipients: Vec<SocketAddr>,
         delivery_group_size: usize,

@@ -81,7 +81,7 @@ impl Approved {
     pub async fn handle_message(
         &mut self,
         cx: &mut Context,
-        sender: SocketAddr,
+        sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<()> {
         // Filter messages which were already handled
@@ -92,20 +92,20 @@ impl Approved {
 
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
-                trace!("Useful message from {}: {:?}", sender, msg);
-                self.update_section_knowledge(cx, &msg).await?;
-                self.handle_useful_message(cx, Some(sender), msg).await
+                trace!("Useful message from {:?}: {:?}", sender, msg);
+                self.update_section_knowledge(cx, &msg)?;
+                self.handle_useful_message(cx, sender, msg).await
             }
             MessageStatus::Untrusted => {
-                debug!("Untrusted message from {}: {:?} ", sender, msg);
-                self.handle_untrusted_message(cx, Some(sender), msg)
+                debug!("Untrusted message from {:?}: {:?} ", sender, msg);
+                self.handle_untrusted_message(cx, sender, msg)
             }
             MessageStatus::Unknown => {
-                debug!("Unknown message from {}: {:?} ", sender, msg);
-                self.handle_unknown_message(cx, Some(sender), msg.to_bytes())
+                debug!("Unknown message from {:?}: {:?} ", sender, msg);
+                self.handle_unknown_message(cx, sender, msg.to_bytes())
             }
             MessageStatus::Useless => {
-                debug!("Useless message from {}: {:?}", sender, msg);
+                debug!("Useless message from {:?}: {:?}", sender, msg);
                 Ok(())
             }
         }
@@ -124,11 +124,24 @@ impl Approved {
         Ok(())
     }
 
-    pub async fn handle_peer_lost(
+    // Insert the vote into the vote accumulator and handle it if accumulated.
+    pub fn handle_vote(
         &mut self,
         cx: &mut Context,
-        peer_addr: &SocketAddr,
+        vote: Vote,
+        proof_share: ProofShare,
     ) -> Result<()> {
+        match self.vote_accumulator.add(vote, proof_share) {
+            Ok((vote, proof)) => self.handle_consensus(cx, vote, proof),
+            Err(AccumulationError::NotEnoughShares) => Ok(()),
+            Err(error) => {
+                error!("Failed to add vote: {}", error);
+                Err(Error::InvalidSignatureShare)
+            }
+        }
+    }
+
+    pub fn handle_peer_lost(&self, cx: &mut Context, peer_addr: &SocketAddr) -> Result<()> {
         let name = if let Some(peer) = self.shared_state.find_peer_from_addr(peer_addr) {
             debug!("Lost known peer {}", peer);
             *peer.name()
@@ -143,14 +156,14 @@ impl Approved {
 
         if let Some(info) = self.shared_state.our_members.get(&name) {
             let info = info.clone().leave();
-            self.vote(cx, Vote::Offline(info)).await?;
+            self.vote(cx, Vote::Offline(info))?;
         }
 
         Ok(())
     }
 
     // Send vote to all our elders.
-    async fn vote(&mut self, cx: &mut Context, vote: Vote) -> Result<()> {
+    fn vote(&self, cx: &mut Context, vote: Vote) -> Result<()> {
         let elders: Vec<_> = self
             .shared_state
             .our_info()
@@ -158,12 +171,11 @@ impl Approved {
             .values()
             .copied()
             .collect();
-        self.send_vote(cx, &elders, vote).await
+        self.send_vote(cx, &elders, vote)
     }
 
     // Send `vote` to `recipients`.
-    #[async_recursion]
-    async fn send_vote(&mut self, cx: &mut Context, recipients: &[Peer], vote: Vote) -> Result<()> {
+    fn send_vote(&self, cx: &mut Context, recipients: &[Peer], vote: Vote) -> Result<()> {
         let key_share = self.section_keys_provider.key_share()?;
 
         trace!(
@@ -207,27 +219,10 @@ impl Approved {
         cx.send_message_to_targets(&others, others.len(), message.to_bytes());
 
         if handle {
-            self.handle_vote(cx, vote, proof_share).await?;
+            cx.push(Command::HandleVote { vote, proof_share });
         }
 
         Ok(())
-    }
-
-    // Insert the vote into the vote accumulator and handle it if accumulated.
-    async fn handle_vote(
-        &mut self,
-        cx: &mut Context,
-        vote: Vote,
-        proof_share: ProofShare,
-    ) -> Result<()> {
-        match self.vote_accumulator.add(vote, proof_share) {
-            Ok((vote, proof)) => self.handle_consensus(cx, vote, proof).await,
-            Err(AccumulationError::NotEnoughShares) => Ok(()),
-            Err(error) => {
-                error!("Failed to add vote: {}", error);
-                Err(Error::InvalidSignatureShare)
-            }
-        }
     }
 
     fn check_lagging(
@@ -254,7 +249,7 @@ impl Approved {
         Ok(())
     }
 
-    async fn check_dkg(&mut self, cx: &mut Context, dkg_key: DkgKey) -> Result<()> {
+    fn check_dkg(&mut self, cx: &mut Context, dkg_key: DkgKey) -> Result<()> {
         match self.dkg_voter.check_dkg() {
             Some(Ok((elders_info, outcome))) => {
                 let public_key = outcome.public_key_set.public_key();
@@ -264,12 +259,8 @@ impl Approved {
                     outcome,
                 );
                 self.handle_dkg_result(cx, dkg_key, Ok(public_key), self.node_info.name())
-                    .await
             }
-            Some(Err(())) => {
-                self.handle_dkg_result(cx, dkg_key, Err(()), self.node_info.name())
-                    .await
-            }
+            Some(Err(())) => self.handle_dkg_result(cx, dkg_key, Err(()), self.node_info.name()),
             None => Ok(()),
         }
     }
@@ -280,11 +271,10 @@ impl Approved {
                 for message in messages {
                     self.broadcast_dkg_message(cx, dkg_key, message).await?;
                 }
-                self.check_dkg(cx, dkg_key).await
+                self.check_dkg(cx, dkg_key)
             }
             Some((dkg_key, Err(()))) => {
                 self.handle_dkg_result(cx, dkg_key, Err(()), self.node_info.name())
-                    .await
             }
             None => Ok(()),
         }
@@ -390,9 +380,8 @@ impl Approved {
                     elders_info.value.clone(),
                     *msg.proof_chain_last_key()?,
                 )
-                .await
             }
-            Variant::Sync(shared_state) => self.handle_sync(cx, shared_state.clone()).await,
+            Variant::Sync(shared_state) => self.handle_sync(cx, shared_state.clone()),
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
@@ -419,19 +408,15 @@ impl Approved {
             }
             Variant::RelocatePromise(promise) => {
                 self.handle_relocate_promise(cx, *promise, msg.to_bytes())
-                    .await
             }
             Variant::BootstrapRequest(name) => {
                 self.handle_bootstrap_request(cx, msg.src().to_sender_node(sender)?, *name)
             }
-            Variant::JoinRequest(join_request) => {
-                self.handle_join_request(
-                    cx,
-                    msg.src().to_sender_node(sender)?,
-                    *join_request.clone(),
-                )
-                .await
-            }
+            Variant::JoinRequest(join_request) => self.handle_join_request(
+                cx,
+                msg.src().to_sender_node(sender)?,
+                *join_request.clone(),
+            ),
             Variant::UserMessage(content) => {
                 self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
                 Ok(())
@@ -467,22 +452,18 @@ impl Approved {
             }
             Variant::DKGResult { dkg_key, result } => {
                 self.handle_dkg_result(cx, *dkg_key, *result, msg.src().as_node()?.0)
-                    .await
             }
             Variant::Vote {
                 content,
                 proof_share,
             } => {
-                let result = self
-                    .handle_vote(cx, content.clone(), proof_share.clone())
-                    .await;
+                let result = self.handle_vote(cx, content.clone(), proof_share.clone());
+
                 if let Some(addr) = sender {
                     self.check_lagging(cx, &addr, proof_share)?;
                 }
 
-                result?;
-
-                Ok(())
+                result
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => unreachable!(),
         }
@@ -653,8 +634,8 @@ impl Approved {
         Ok(())
     }
 
-    async fn handle_neighbour_info(
-        &mut self,
+    fn handle_neighbour_info(
+        &self,
         cx: &mut Context,
         elders_info: EldersInfo,
         src_key: bls::PublicKey,
@@ -666,8 +647,7 @@ impl Approved {
                     prefix: elders_info.prefix,
                     key: src_key,
                 },
-            )
-            .await?;
+            )?;
         } else {
             trace!(
                 "Ignore not new section key of {:?}: {:?}",
@@ -681,7 +661,7 @@ impl Approved {
             .prefix
             .is_neighbour(self.shared_state.our_prefix())
         {
-            self.vote(cx, Vote::SectionInfo(elders_info)).await
+            self.vote(cx, Vote::SectionInfo(elders_info))
         } else {
             Ok(())
         }
@@ -692,13 +672,13 @@ impl Approved {
             .send_event(Event::MessageReceived { content, src, dst })
     }
 
-    async fn handle_sync(&mut self, cx: &mut Context, shared_state: SharedState) -> Result<()> {
+    fn handle_sync(&mut self, cx: &mut Context, shared_state: SharedState) -> Result<()> {
         if !shared_state.our_prefix().matches(&self.node_info.name()) {
             trace!("ignore Sync - not our section");
             return Ok(());
         }
 
-        self.update_shared_state(cx, shared_state).await
+        self.update_shared_state(cx, shared_state)
     }
 
     async fn handle_relocate(
@@ -736,7 +716,7 @@ impl Approved {
         })
     }
 
-    async fn handle_relocate_promise(
+    fn handle_relocate_promise(
         &mut self,
         cx: &mut Context,
         promise: RelocatePromise,
@@ -775,7 +755,7 @@ impl Approved {
                 .shared_state
                 .create_relocation_details(info, promise.destination);
             let peer = info.peer;
-            self.send_relocate(cx, &peer, details).await
+            self.send_relocate(cx, &peer, details)
         } else {
             error!(
                 "ignore returned RelocatePromise from {} - unknown node",
@@ -820,8 +800,8 @@ impl Approved {
         self.send_direct_message(cx, peer.addr(), Variant::BootstrapResponse(response))
     }
 
-    async fn handle_join_request(
-        &mut self,
+    fn handle_join_request(
+        &self,
         cx: &mut Context,
         peer: Peer,
         join_request: JoinRequest,
@@ -908,7 +888,6 @@ impl Approved {
                 their_knowledge,
             },
         )
-        .await
     }
 
     pub async fn handle_dkg_start(
@@ -931,7 +910,7 @@ impl Approved {
         Ok(())
     }
 
-    pub async fn handle_dkg_result(
+    fn handle_dkg_result(
         &mut self,
         cx: &mut Context,
         dkg_key: DkgKey,
@@ -964,9 +943,9 @@ impl Approved {
                 debug!("handle DKG result for {}: {:?}", info, result);
 
                 if let Ok(public_key) = result {
-                    self.vote_for_section_update(cx, public_key, info).await?
+                    self.vote_for_section_update(cx, public_key, info)?
                 } else {
-                    self.send_dkg_start(cx, info).await?;
+                    self.send_dkg_start(cx, info)?;
                 }
             } else if info.prefix == elders_info.prefix
                 || info.prefix.is_extension_of(&elders_info.prefix)
@@ -976,7 +955,7 @@ impl Approved {
                     elders_info,
                     result
                 );
-                self.send_dkg_start(cx, info).await?;
+                self.send_dkg_start(cx, info)?;
             }
         }
 
@@ -1006,60 +985,7 @@ impl Approved {
             let _ = self.broadcast_dkg_message(cx, dkg_key, response).await;
         }
 
-        self.check_dkg(cx, dkg_key).await
-    }
-
-    fn try_relay_message(&mut self, cx: &mut Context, msg: &Message) -> Result<()> {
-        if !msg
-            .dst()
-            .contains(&self.node_info.name(), self.shared_state.our_prefix())
-            || msg.dst().is_section()
-        {
-            // Relay closer to the destination or broadcast to the rest of our section.
-            self.relay_message(cx, msg)
-        } else {
-            Ok(())
-        }
-    }
-
-    #[async_recursion]
-    async fn handle_accumulated_message(&mut self, cx: &mut Context, msg: Message) -> Result<()> {
-        trace!("accumulated message {:?}", msg);
-
-        // TODO: this is almost the same as `Node::try_handle_message` - find a way
-        // to avoid the duplication.
-        self.try_relay_message(cx, &msg)?;
-
-        if !msg
-            .dst()
-            .contains(&self.node_info.name(), self.shared_state.our_prefix())
-        {
-            return Ok(());
-        }
-
-        if self.msg_filter.contains_incoming(&msg) {
-            trace!("not handling message - already handled: {:?}", msg);
-            return Ok(());
-        }
-
-        match self.decide_message_status(&msg)? {
-            MessageStatus::Useful => {
-                self.msg_filter.insert_incoming(&msg);
-                self.handle_useful_message(cx, None, msg).await
-            }
-            MessageStatus::Untrusted => {
-                trace!("Untrusted accumulated message: {:?}", msg);
-                self.handle_untrusted_message(cx, None, msg)
-            }
-            MessageStatus::Unknown => {
-                trace!("Unknown accumulated message: {:?}", msg);
-                self.handle_unknown_message(cx, None, msg.to_bytes())
-            }
-            MessageStatus::Useless => {
-                trace!("Useless accumulated message: {:?}", msg);
-                Ok(())
-            }
-        }
+        self.check_dkg(cx, dkg_key)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1068,19 +994,19 @@ impl Approved {
 
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
-    async fn promote_and_demote_elders(&mut self, cx: &mut Context) -> Result<()> {
+    fn promote_and_demote_elders(&mut self, cx: &mut Context) -> Result<()> {
         for info in self
             .shared_state
             .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
         {
-            self.send_dkg_start(cx, info).await?;
+            self.send_dkg_start(cx, info)?;
         }
 
         Ok(())
     }
 
-    async fn increment_ages(
-        &mut self,
+    fn increment_ages(
+        &self,
         cx: &mut Context,
         churn_name: &XorName,
         churn_signature: &bls::Signature,
@@ -1097,7 +1023,7 @@ impl Approved {
                 .collect();
 
             for vote in votes {
-                self.vote(cx, vote).await?;
+                self.vote(cx, vote)?;
             }
 
             return Ok(());
@@ -1123,13 +1049,12 @@ impl Approved {
 
             let peer = info.peer;
 
-            self.vote(cx, Vote::Offline(info.relocate(*action.destination())))
-                .await?;
+            self.vote(cx, Vote::Offline(info.relocate(*action.destination())))?;
 
             match action {
-                RelocateAction::Instant(details) => self.send_relocate(cx, &peer, details).await?,
+                RelocateAction::Instant(details) => self.send_relocate(cx, &peer, details)?,
                 RelocateAction::Delayed(promise) => {
-                    self.send_relocate_promise(cx, &peer, promise).await?
+                    self.send_relocate_promise(cx, &peer, promise)?
                 }
             }
         }
@@ -1145,7 +1070,7 @@ impl Approved {
                 <= self.node_info.network_params.recommended_section_size
     }
 
-    async fn handle_consensus(&mut self, cx: &mut Context, vote: Vote, proof: Proof) -> Result<()> {
+    fn handle_consensus(&mut self, cx: &mut Context, vote: Vote, proof: Proof) -> Result<()> {
         debug!("handle consensus on {:?}", vote);
 
         match vote {
@@ -1153,18 +1078,13 @@ impl Approved {
                 member_info,
                 previous_name,
                 their_knowledge,
-            } => {
-                self.handle_online_event(cx, member_info, previous_name, their_knowledge, proof)
-                    .await
-            }
-            Vote::Offline(member_info) => self.handle_offline_event(cx, member_info, proof).await,
+            } => self.handle_online_event(cx, member_info, previous_name, their_knowledge, proof),
+            Vote::Offline(member_info) => self.handle_offline_event(cx, member_info, proof),
             Vote::SectionInfo(elders_info) => {
-                self.handle_section_info_event(cx, elders_info, proof).await
+                self.handle_section_info_event(cx, elders_info, proof)
             }
-            Vote::OurKey { prefix, key } => self.handle_our_key_event(cx, prefix, key, proof).await,
-            Vote::TheirKey { prefix, key } => {
-                self.handle_their_key_event(cx, prefix, key, proof).await
-            }
+            Vote::OurKey { prefix, key } => self.handle_our_key_event(cx, prefix, key, proof),
+            Vote::TheirKey { prefix, key } => self.handle_their_key_event(cx, prefix, key, proof),
             Vote::TheirKnowledge { prefix, key_index } => {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
                 Ok(())
@@ -1176,14 +1096,11 @@ impl Approved {
             Vote::SendMessage {
                 message,
                 proof_chain,
-            } => {
-                self.handle_send_message_event(cx, *message, proof_chain, proof)
-                    .await
-            }
+            } => self.handle_send_message_event(cx, *message, proof_chain, proof),
         }
     }
 
-    async fn handle_online_event(
+    fn handle_online_event(
         &mut self,
         cx: &mut Context,
         member_info: MemberInfo,
@@ -1202,7 +1119,7 @@ impl Approved {
 
         info!("handle Online: {:?} (age: {})", peer, age);
 
-        self.increment_ages(cx, peer.name(), &signature).await?;
+        self.increment_ages(cx, peer.name(), &signature)?;
         self.send_node_approval(cx, &peer, their_knowledge)?;
         self.print_network_stats();
 
@@ -1219,10 +1136,10 @@ impl Approved {
             });
         }
 
-        self.promote_and_demote_elders(cx).await
+        self.promote_and_demote_elders(cx)
     }
 
-    async fn handle_offline_event(
+    fn handle_offline_event(
         &mut self,
         cx: &mut Context,
         member_info: MemberInfo,
@@ -1239,17 +1156,17 @@ impl Approved {
 
         info!("handle Offline: {:?}", peer);
 
-        self.increment_ages(cx, peer.name(), &signature).await?;
+        self.increment_ages(cx, peer.name(), &signature)?;
 
         self.node_info.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
         });
 
-        self.promote_and_demote_elders(cx).await
+        self.promote_and_demote_elders(cx)
     }
 
-    async fn handle_section_info_event(
+    fn handle_section_info_event(
         &mut self,
         cx: &mut Context,
         elders_info: EldersInfo,
@@ -1268,7 +1185,7 @@ impl Approved {
                 &self.node_info.name(),
                 elders_info,
             );
-            self.try_update_our_section(cx).await
+            self.try_update_our_section(cx)
         } else {
             // Other section
             let _ = self.shared_state.update_neighbour_info(elders_info);
@@ -1276,7 +1193,7 @@ impl Approved {
         }
     }
 
-    async fn handle_our_key_event(
+    fn handle_our_key_event(
         &mut self,
         cx: &mut Context,
         prefix: Prefix,
@@ -1291,10 +1208,10 @@ impl Approved {
             &prefix,
             key,
         );
-        self.try_update_our_section(cx).await
+        self.try_update_our_section(cx)
     }
 
-    async fn handle_their_key_event(
+    fn handle_their_key_event(
         &mut self,
         cx: &mut Context,
         prefix: Prefix,
@@ -1309,7 +1226,7 @@ impl Approved {
                 &self.node_info.name(),
                 key,
             );
-            self.try_update_our_section(cx).await
+            self.try_update_our_section(cx)
         } else {
             let _ = self.shared_state.update_their_key(key);
             Ok(())
@@ -1325,8 +1242,8 @@ impl Approved {
         let _ = self.shared_state.update_member(member_info, proof);
     }
 
-    async fn handle_send_message_event(
-        &mut self,
+    fn handle_send_message_event(
+        &self,
         cx: &mut Context,
         message: PlainMessage,
         proof_chain: SectionProofChain,
@@ -1341,10 +1258,15 @@ impl Approved {
             message.dst_key,
         )?;
 
-        self.handle_accumulated_message(cx, message).await
+        cx.push(Command::HandleMessage {
+            message,
+            sender: None,
+        });
+
+        Ok(())
     }
 
-    async fn vote_for_section_update(
+    fn vote_for_section_update(
         &mut self,
         cx: &mut Context,
         public_key: bls::PublicKey,
@@ -1372,8 +1294,7 @@ impl Approved {
                 prefix: elders_info.prefix,
                 key: public_key,
             },
-        )
-        .await?;
+        )?;
 
         if elders_info
             .prefix
@@ -1385,21 +1306,20 @@ impl Approved {
                     prefix: elders_info.prefix,
                     key: public_key,
                 },
-            )
-            .await?;
+            )?;
         }
 
-        self.vote(cx, Vote::SectionInfo(elders_info)).await
+        self.vote(cx, Vote::SectionInfo(elders_info))
     }
 
-    async fn try_update_our_section(&mut self, cx: &mut Context) -> Result<()> {
+    fn try_update_our_section(&mut self, cx: &mut Context) -> Result<()> {
         let (our, sibling) = self
             .section_update_barrier
             .take(self.shared_state.our_prefix());
 
         if let Some(our) = our {
             trace!("update our section: {:?}", our.our_info());
-            self.update_shared_state(cx, our).await?;
+            self.update_shared_state(cx, our)?;
         }
 
         if let Some(sibling) = sibling {
@@ -1414,8 +1334,7 @@ impl Approved {
                     prefix: *sibling.our_prefix(),
                     key_index: self.shared_state.our_history.last_key_index(),
                 },
-            )
-            .await?;
+            )?;
 
             self.send_sync(cx, sibling)?;
         }
@@ -1423,7 +1342,7 @@ impl Approved {
         Ok(())
     }
 
-    async fn update_shared_state(&mut self, cx: &mut Context, update: SharedState) -> Result<()> {
+    fn update_shared_state(&mut self, cx: &mut Context, update: SharedState) -> Result<()> {
         let old_is_elder = self.is_our_elder(&self.node_info.name());
         let old_last_key_index = self.shared_state.our_history.last_key_index();
         let old_prefix = *self.shared_state.our_prefix();
@@ -1452,8 +1371,7 @@ impl Approved {
                         prefix: new_prefix.sibling(),
                         key_index: new_last_key_index,
                     },
-                )
-                .await?;
+                )?;
             }
         }
 
@@ -1468,7 +1386,7 @@ impl Approved {
                     self.shared_state.our_info().elders.values().format(", ")
                 );
 
-                self.promote_and_demote_elders(cx).await?;
+                self.promote_and_demote_elders(cx)?;
                 self.print_network_stats();
             }
 
@@ -1594,8 +1512,8 @@ impl Approved {
         Ok(())
     }
 
-    async fn send_relocate(
-        &mut self,
+    fn send_relocate(
+        &self,
         cx: &mut Context,
         recipient: &Peer,
         details: RelocateDetails,
@@ -1613,11 +1531,11 @@ impl Approved {
 
         // Vote accumulated at destination.
         let vote = self.create_send_message_vote(dst, variant, Some(knowledge_index))?;
-        self.send_vote(cx, slice::from_ref(recipient), vote).await
+        self.send_vote(cx, slice::from_ref(recipient), vote)
     }
 
-    async fn send_relocate_promise(
-        &mut self,
+    fn send_relocate_promise(
+        &self,
         cx: &mut Context,
         recipient: &Peer,
         promise: RelocatePromise,
@@ -1630,7 +1548,7 @@ impl Approved {
 
         // Vote accumulated at destination
         let vote = self.create_send_message_vote(dst, variant, None)?;
-        self.send_vote(cx, slice::from_ref(recipient), vote).await
+        self.send_vote(cx, slice::from_ref(recipient), vote)
     }
 
     fn return_relocate_promise(&self, cx: &mut Context) {
@@ -1640,11 +1558,7 @@ impl Approved {
         }
     }
 
-    async fn send_dkg_start(
-        &mut self,
-        cx: &mut Context,
-        new_elders_info: EldersInfo,
-    ) -> Result<()> {
+    fn send_dkg_start(&mut self, cx: &mut Context, new_elders_info: EldersInfo) -> Result<()> {
         trace!("Send DKGStart for {}", new_elders_info);
 
         let dkg_key = DkgKey::new(&new_elders_info);
@@ -1656,7 +1570,7 @@ impl Approved {
             elders_info: new_elders_info.clone(),
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-        self.send_vote(cx, &recipients, vote).await?;
+        self.send_vote(cx, &recipients, vote)?;
 
         self.dkg_voter.start_observing(
             dkg_key,
@@ -1765,7 +1679,7 @@ impl Approved {
         Ok(())
     }
 
-    pub async fn send_user_message(
+    pub fn send_user_message(
         &mut self,
         cx: &mut Context,
         src: SrcLocation,
@@ -1810,7 +1724,7 @@ impl Approved {
                     &dst,
                     self.shared_state.our_info().elders.values().copied(),
                 );
-                self.send_vote(cx, &recipients, vote).await
+                self.send_vote(cx, &recipients, vote)
             }
         }
     }
@@ -1898,7 +1812,7 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    async fn update_section_knowledge(&mut self, cx: &mut Context, msg: &Message) -> Result<()> {
+    fn update_section_knowledge(&mut self, cx: &mut Context, msg: &Message) -> Result<()> {
         use crate::section::UpdateSectionKnowledgeAction::*;
 
         if !self.is_our_elder(&self.node_info.name()) {
@@ -1929,11 +1843,10 @@ impl Approved {
         for action in actions {
             match action {
                 VoteTheirKey { prefix, key } => {
-                    self.vote(cx, Vote::TheirKey { prefix, key }).await?;
+                    self.vote(cx, Vote::TheirKey { prefix, key })?;
                 }
                 VoteTheirKnowledge { prefix, key_index } => {
-                    self.vote(cx, Vote::TheirKnowledge { prefix, key_index })
-                        .await?;
+                    self.vote(cx, Vote::TheirKnowledge { prefix, key_index })?;
                 }
                 SendNeighbourInfo { dst, nonce } => self.send_neighbour_info(
                     cx,
