@@ -30,7 +30,6 @@ use crate::{
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
 use xor_name::{Prefix, XorName};
 
 /// Node configuration.
@@ -64,7 +63,7 @@ impl Default for NodeConfig {
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
-    stage: Arc<Mutex<Stage>>,
+    stage: Arc<Stage>,
     _executor: Executor,
 }
 
@@ -96,8 +95,8 @@ impl Node {
             .await?
         };
 
-        let stage = Arc::new(Mutex::new(stage));
-        let executor = Executor::new(Arc::clone(&stage), incoming_conns, timer_rx);
+        let stage = Arc::new(stage);
+        let executor = Executor::new(stage.clone(), incoming_conns, timer_rx);
         let event_stream = EventStream::new(events_rx);
 
         // Process the initial commands.
@@ -115,22 +114,22 @@ impl Node {
 
     /// Returns the `PublicKey` of this node.
     pub async fn public_key(&self) -> PublicKey {
-        self.stage.lock().await.keypair().public
+        self.stage.public_key().await
     }
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        self.stage.lock().await.name()
+        self.stage.name().await
     }
 
     /// Returns connection info of this node.
-    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.stage.lock().await.our_connection_info()
+    pub fn our_connection_info(&self) -> Result<SocketAddr> {
+        self.stage.our_connection_info()
     }
 
     /// Our `Prefix` once we are a part of the section.
     pub async fn our_prefix(&self) -> Option<Prefix> {
-        self.stage.lock().await.our_prefix().cloned()
+        self.stage.our_prefix().await
     }
 
     /// Finds out if the given XorName matches our prefix. Returns error
@@ -145,76 +144,46 @@ impl Node {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        let stage = self.stage.lock().await;
-        match stage.approved() {
-            None => false,
-            Some(state) => state
-                .shared_state
-                .sections
-                .our()
-                .elders
-                .contains_key(&stage.name()),
-        }
+        self.stage.is_elder().await
     }
 
     /// Returns the information of all the current section elders.
     pub async fn our_elders(&self) -> Vec<Peer> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => stage.shared_state.sections.our_elders().cloned().collect(),
-            None => vec![],
-        }
+        self.stage.our_elders().await
     }
 
     /// Returns the elders of our section sorted by their distance to `name` (closest first).
     pub async fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<Peer> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => stage
-                .shared_state
-                .sections
-                .our_elders()
-                .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
-                .cloned()
-                .collect(),
-            None => vec![],
-        }
+        self.our_elders()
+            .await
+            .into_iter()
+            .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Returns the information of all the current section adults.
     pub async fn our_adults(&self) -> Vec<Peer> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => stage.shared_state.our_adults().cloned().collect(),
-            None => vec![],
-        }
+        self.stage.our_adults().await
     }
 
     /// Returns the adults of our section sorted by their distance to `name` (closest first).
     /// If we are not elder or if there are no adults in the section, returns empty vec.
     pub async fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<Peer> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => stage
-                .shared_state
-                .our_adults()
-                .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
-                .cloned()
-                .collect(),
-            None => vec![],
-        }
+        self.our_adults()
+            .await
+            .into_iter()
+            .sorted_by(|lhs, rhs| name.cmp_distance(lhs.name(), rhs.name()))
+            .collect()
     }
 
     /// Returns the info about our section or `None` if we are not joined yet.
     pub async fn our_section(&self) -> Option<EldersInfo> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => Some(stage.shared_state.sections.our().clone()),
-            None => None,
-        }
+        self.stage.our_section().await
     }
 
     /// Returns the info about our neighbour sections.
     pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
-        match self.stage.lock().await.approved() {
-            Some(stage) => stage.shared_state.sections.neighbours().cloned().collect(),
-            None => vec![],
-        }
+        self.stage.neighbour_sections().await
     }
 
     /// Send a message.
@@ -231,58 +200,37 @@ impl Node {
     /// Send a message to a client peer.
     pub async fn send_message_to_client(
         &mut self,
-        peer_addr: SocketAddr,
-        msg: Bytes,
+        recipient: SocketAddr,
+        message: Bytes,
     ) -> Result<()> {
-        self.stage
-            .lock()
-            .await
-            .send_message_to_target(&peer_addr, msg)
-            .await
+        let command = Command::SendMessage {
+            recipients: vec![recipient],
+            delivery_group_size: 1,
+            message,
+        };
+        executor::dispatch_command(self.stage.clone(), command).await
     }
 
     /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
     /// yet.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.stage
-            .lock()
-            .await
-            .approved()
-            .and_then(|stage| stage.section_key_share())
-            .map(|share| share.public_key_set.clone())
-            .ok_or(Error::InvalidState)
+        self.stage.public_key_set().await
     }
 
     /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
     /// elder.
     pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
-        self.stage
-            .lock()
-            .await
-            .approved()
-            .and_then(|stage| stage.section_key_share())
-            .map(|share| share.secret_key_share.clone())
-            .ok_or(Error::InvalidState)
+        self.stage.secret_key_share().await
     }
 
     /// Returns our section proof chain, or `None` if we are not joined yet.
     pub async fn our_history(&self) -> Option<SectionProofChain> {
-        self.stage
-            .lock()
-            .await
-            .approved()
-            .map(|stage| stage.shared_state.our_history.clone())
+        self.stage.our_history().await
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
     /// not generated yet.
     pub async fn our_index(&self) -> Result<usize> {
-        self.stage
-            .lock()
-            .await
-            .approved()
-            .and_then(|stage| stage.section_key_share())
-            .map(|share| share.index)
-            .ok_or(Error::InvalidState)
+        self.stage.our_index().await
     }
 }

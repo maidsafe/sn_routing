@@ -134,7 +134,7 @@ pub async fn create_connected_nodes(
     assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::PromotedToElder);
 
-    let bootstrap_contact = node.our_connection_info().await?;
+    let bootstrap_contact = node.our_connection_info()?;
 
     nodes.push((node, event_stream));
 

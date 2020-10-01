@@ -15,7 +15,7 @@ use futures::{
 };
 use lru_time_cache::LruCache;
 use qp2p::{Connection, Endpoint, IncomingConnections, QuicP2p};
-use std::{net::SocketAddr, slice, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 // Number of Connections to maintain in the cache
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
@@ -153,17 +153,6 @@ impl Comm {
         } else {
             Err(SendError { failed_recipients })
         }
-    }
-
-    /// Calls `send_message_to_targets` with just one recipient and delivery_group_size of 1.
-    /// Provided for convenience.
-    pub async fn send_message_to_target(
-        &self,
-        recipient: &SocketAddr,
-        msg: Bytes,
-    ) -> Result<(), SendError> {
-        self.send_message_to_targets(slice::from_ref(recipient), 1, msg)
-            .await
     }
 
     // Low-level send

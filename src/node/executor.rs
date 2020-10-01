@@ -17,7 +17,7 @@ use crate::{
 use bytes::Bytes;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 pub struct Executor {
     _cancellation_handle: CancellationHandle,
@@ -25,7 +25,7 @@ pub struct Executor {
 
 impl Executor {
     pub(crate) fn new(
-        stage: Arc<Mutex<Stage>>,
+        stage: Arc<Stage>,
         incoming_conns: IncomingConnections,
         timer_rx: mpsc::UnboundedReceiver<u64>,
     ) -> Self {
@@ -42,7 +42,7 @@ impl Executor {
 
 // Spawns a task which handles each new incoming connection from peers
 fn spawn_connections_handler(
-    stage: Arc<Mutex<Stage>>,
+    stage: Arc<Stage>,
     mut incoming_conns: IncomingConnections,
     cancel_token: CancellationToken,
 ) {
@@ -59,7 +59,7 @@ fn spawn_connections_handler(
 
 // Spawns a task which handles each new incoming message from a connection with a peer
 fn spawn_messages_handler(
-    stage: Arc<Mutex<Stage>>,
+    stage: Arc<Stage>,
     mut incoming_msgs: IncomingMessages,
     cancel_token: CancellationToken,
 ) {
@@ -99,14 +99,14 @@ fn spawn_messages_handler(
                         recv,
                     };
 
-                    stage.lock().await.send_event(event);
+                    stage.send_event(event).await;
                 }
             }
         }
     }));
 }
 
-fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender: SocketAddr) {
+fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
     let _ = tokio::spawn(async move {
         match Message::from_bytes(&msg_bytes) {
             Ok(message) => {
@@ -124,7 +124,7 @@ fn spawn_node_message_handler(stage: Arc<Mutex<Stage>>, msg_bytes: Bytes, sender
 }
 
 fn spawn_timer_handler(
-    stage: Arc<Mutex<Stage>>,
+    stage: Arc<Stage>,
     mut timer_rx: mpsc::UnboundedReceiver<u64>,
     cancel_token: CancellationToken,
 ) {
@@ -136,10 +136,10 @@ fn spawn_timer_handler(
     }));
 }
 
-pub(super) async fn dispatch_command(stage: Arc<Mutex<Stage>>, command: Command) -> Result<()> {
+pub(super) async fn dispatch_command(stage: Arc<Stage>, command: Command) -> Result<()> {
     let mut cx = Context::new();
 
-    stage.lock().await.handle_command(&mut cx, command).await?;
+    stage.handle_command(&mut cx, command).await?;
 
     for command in cx.into_commands() {
         spawn_dispatch_command(stage.clone(), command)
@@ -150,6 +150,6 @@ pub(super) async fn dispatch_command(stage: Arc<Mutex<Stage>>, command: Command)
 
 // Note: can't call `tokio::spawn(dispatch_command(...))` directly in `dispatch_command` because
 // that fails compilation on a type check cycle error for some reason.
-fn spawn_dispatch_command(stage: Arc<Mutex<Stage>>, command: Command) {
+fn spawn_dispatch_command(stage: Arc<Stage>, command: Command) {
     let _ = tokio::spawn(dispatch_command(stage, command));
 }
