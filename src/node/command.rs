@@ -37,6 +37,7 @@ pub(crate) enum Command {
         dst: DstLocation,
         content: Bytes,
     },
+    SendBootstrapRequest(Vec<SocketAddr>),
     Transition(Box<State>),
 }
 

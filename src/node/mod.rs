@@ -75,6 +75,7 @@ impl Node {
 
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
+        let mut cx = Context::new();
         let mut rng = MainRng::default();
         let keypair = config
             .keypair
@@ -86,12 +87,23 @@ impl Node {
             Stage::first_node(config.transport_config, keypair, config.network_params).await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(config.transport_config, keypair, config.network_params).await?
+            Stage::bootstrap(
+                &mut cx,
+                config.transport_config,
+                keypair,
+                config.network_params,
+            )
+            .await?
         };
 
         let stage = Arc::new(Mutex::new(stage));
         let executor = Executor::new(Arc::clone(&stage), incoming_conns, timer_rx);
         let event_stream = EventStream::new(events_rx);
+
+        // Process the initial commands.
+        for command in cx.into_commands() {
+            let _ = tokio::spawn(executor::dispatch_command(stage.clone(), command));
+        }
 
         let node = Self {
             stage,

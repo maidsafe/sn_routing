@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{approved::Approved, comm::Comm, Command, Context, NodeInfo, State};
+use super::{approved::Approved, Command, Context, NodeInfo, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
@@ -32,14 +32,13 @@ pub(crate) struct Joining {
     section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
-    comm: Comm,
     timer: Timer,
     timer_token: u64,
 }
 
 impl Joining {
     pub async fn new(
-        comm: Comm,
+        cx: &mut Context,
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
@@ -56,11 +55,10 @@ impl Joining {
             elders_info,
             section_key,
             join_type,
-            comm,
             timer,
             timer_token: 0,
         };
-        stage.send_join_requests().await?;
+        stage.send_join_requests(cx).await?;
 
         Ok(stage)
     }
@@ -79,6 +77,7 @@ impl Joining {
                     section_key,
                 }) => {
                     self.handle_bootstrap_response(
+                        cx,
                         msg.src().to_sender_node(Some(sender))?,
                         elders_info.clone(),
                         *section_key,
@@ -97,7 +96,6 @@ impl Joining {
 
                     let shared_state = SharedState::new(section_chain, payload.clone());
                     let state = Approved::new(
-                        self.comm.clone(),
                         shared_state,
                         None,
                         self.node_info.clone(),
@@ -124,11 +122,11 @@ impl Joining {
         }
     }
 
-    pub async fn handle_timeout(&mut self, token: u64) -> Result<()> {
+    pub async fn handle_timeout(&mut self, cx: &mut Context, token: u64) -> Result<()> {
         if token == self.timer_token {
             debug!("Timeout when trying to join a section");
             // Try again
-            self.send_join_requests().await?;
+            self.send_join_requests(cx).await?;
         }
 
         Ok(())
@@ -173,6 +171,7 @@ impl Joining {
 
     async fn handle_bootstrap_response(
         &mut self,
+        cx: &mut Context,
         sender: Peer,
         new_elders_info: EldersInfo,
         new_section_key: bls::PublicKey,
@@ -188,7 +187,7 @@ impl Joining {
             );
             self.elders_info = new_elders_info;
             self.section_key = new_section_key;
-            self.send_join_requests().await?;
+            self.send_join_requests(cx).await?;
         } else {
             warn!(
                 "Newer Join response not for our prefix {:?} from {:?}",
@@ -214,7 +213,7 @@ impl Joining {
         }
     }
 
-    async fn send_join_requests(&mut self) -> Result<()> {
+    async fn send_join_requests(&mut self, cx: &mut Context) -> Result<()> {
         let (relocate_payload, age) = match &self.join_type {
             JoinType::First { .. } => (None, MIN_AGE),
             JoinType::Relocate(payload) => (Some(payload), payload.relocate_details().age),
@@ -245,18 +244,7 @@ impl Joining {
             None,
         )?;
 
-        let result = self
-            .comm
-            .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
-            .await;
-
-        if let Err(error) = result {
-            error!(
-                "Failed to send JoinRequest to {:?}",
-                error.failed_recipients
-            )
-        }
-
+        cx.send_message_to_targets(&recipients, recipients.len(), message.to_bytes());
         self.timer_token = self.timer.schedule(JOIN_TIMEOUT).await;
 
         Ok(())
