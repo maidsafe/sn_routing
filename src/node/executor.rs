@@ -106,7 +106,7 @@ fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: Socke
                     message,
                     sender: Some(sender),
                 };
-                let _ = stage.handle_command(command).await;
+                let _ = stage.handle_commands(command).await;
             }
             Err(error) => {
                 debug!("Failed to deserialize message: {}", error);

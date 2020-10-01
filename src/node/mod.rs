@@ -7,16 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod command;
+mod context;
 pub mod event_stream;
 mod executor;
 mod stage;
 
 pub use self::event_stream::EventStream;
-use self::{
-    command::{Command, Context},
-    executor::Executor,
-    stage::Stage,
-};
+use self::{command::Command, context::Context, executor::Executor, stage::Stage};
 use crate::{
     crypto::{name, Keypair, PublicKey},
     error::{Error, Result},
@@ -111,7 +108,7 @@ impl Node {
 
         // Process the initial commands.
         for command in cx.into_commands() {
-            let _ = tokio::spawn(stage.clone().handle_command(command));
+            let _ = tokio::spawn(stage.clone().handle_commands(command));
         }
 
         let node = Self {
@@ -204,7 +201,7 @@ impl Node {
         content: Bytes,
     ) -> Result<()> {
         let command = Command::SendUserMessage { src, dst, content };
-        self.stage.clone().handle_command(command).await
+        self.stage.clone().handle_commands(command).await
     }
 
     /// Send a message to a client peer.
@@ -218,7 +215,7 @@ impl Node {
             delivery_group_size: 1,
             message,
         };
-        self.stage.clone().handle_command(command).await
+        self.stage.clone().handle_commands(command).await
     }
 
     /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined

@@ -12,7 +12,7 @@ mod comm;
 mod joining;
 
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
-use super::command::{Command, Context};
+use super::{Command, Context};
 use crate::{
     consensus::{self, Proof, ProofShare, Proven, Vote},
     crypto::{name, Keypair},
@@ -316,37 +316,49 @@ impl Stage {
             .ok_or(Error::InvalidState)
     }
 
-    pub async fn handle_command(self: Arc<Self>, command: Command) -> Result<()> {
+    /// Handles the given command and transitively any new commands that are pushed into the command
+    /// queue during its handling.
+    pub async fn handle_commands(self: Arc<Self>, command: Command) -> Result<()> {
         let mut cx = Context::new(self.event_tx.clone());
+        self.handle_command(&mut cx, command).await?;
 
+        for command in cx.into_commands() {
+            self.clone().spawn_handle_commands(command)
+        }
+
+        Ok(())
+    }
+
+    /// Handles a single command.
+    pub async fn handle_command(&self, cx: &mut Context, command: Command) -> Result<()> {
         log_ident::set(self.log_ident().await, async {
-            trace!("Processing command {:?}", command);
+            trace!("Handling command {:?}", command);
 
             let result = match command {
                 Command::HandleMessage { message, sender } => {
-                    self.handle_message(&mut cx, sender, message).await
+                    self.handle_message(cx, sender, message).await
                 }
-                Command::HandleTimeout(token) => self.handle_timeout(&mut cx, token).await,
+                Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
                 Command::HandleVote { vote, proof_share } => {
-                    self.handle_vote(&mut cx, vote, proof_share).await
+                    self.handle_vote(cx, vote, proof_share).await
                 }
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(&mut cx, addr).await,
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
                     message,
                 } => {
-                    self.send_message(&mut cx, &recipients, delivery_group_size, message)
+                    self.send_message(cx, &recipients, delivery_group_size, message)
                         .await
                 }
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(&mut cx, src, dst, content).await
+                    self.send_user_message(cx, src, dst, content).await
                 }
                 Command::SendBootstrapRequest(recipients) => {
-                    self.send_bootstrap_request(&mut cx, recipients).await
+                    self.send_bootstrap_request(cx, recipients).await
                 }
                 Command::ScheduleTimeout { duration, token } => {
-                    self.handle_schedule_timeout(&mut cx, duration, token).await;
+                    self.handle_schedule_timeout(cx, duration, token).await;
                     Ok(())
                 }
                 Command::Transition(state) => {
@@ -361,19 +373,13 @@ impl Stage {
 
             result
         })
-        .await?;
-
-        for command in cx.into_commands() {
-            self.clone().spawn_handle_command(command)
-        }
-
-        Ok(())
+        .await
     }
 
-    // Note: this indirecton is needed. Trying to call `spawn(self.handle_command(...))` directly
-    // inside `handle_command` causes compile error about type check cycle.
-    fn spawn_handle_command(self: Arc<Self>, command: Command) {
-        let _ = tokio::spawn(self.handle_command(command));
+    // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
+    // inside `handle_commands` causes compile error about type check cycle.
+    fn spawn_handle_commands(self: Arc<Self>, command: Command) {
+        let _ = tokio::spawn(self.handle_commands(command));
     }
 
     async fn handle_message(
