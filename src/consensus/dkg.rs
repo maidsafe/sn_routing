@@ -105,7 +105,7 @@ impl DkgVoter {
     // to the other DKG participants.
     pub fn start_participating(
         &mut self,
-        our_id: XorName,
+        our_name: XorName,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
     ) -> Option<DkgMessage> {
@@ -124,7 +124,7 @@ impl DkgVoter {
             .copied()
             .collect();
 
-        match KeyGen::initialize(our_id, threshold, participants) {
+        match KeyGen::initialize(our_name, threshold, participants) {
             Ok((key_gen, message)) => {
                 trace!("DKG for {} starting", elders_info);
 
@@ -182,10 +182,7 @@ impl DkgVoter {
         // This is OK to `unwrap` because we already checked it is `Some`.
         let elders_info = session.elders_info.take().unwrap();
 
-        if participants
-            .iter()
-            .eq(elders_info.elders.values().map(Peer::name))
-        {
+        if participants.iter().eq(elders_info.elders.keys()) {
             trace!(
                 "DKG for {} complete: {:?}",
                 elders_info,
