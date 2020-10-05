@@ -12,7 +12,7 @@ mod comm;
 mod joining;
 
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
-use super::{Command, Context};
+use super::{command, Command};
 use crate::{
     consensus::{self, Proof, ProofShare, Proven, Vote},
     crypto::{name, Keypair},
@@ -161,12 +161,11 @@ impl Stage {
     }
 
     pub async fn bootstrap(
-        cx: &mut Context,
         transport_config: TransportConfig,
         keypair: Keypair,
         network_params: NetworkParams,
         event_tx: mpsc::UnboundedSender<Event>,
-    ) -> Result<(Self, IncomingConnections)> {
+    ) -> Result<(Self, IncomingConnections, Command)> {
         let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
 
         let node_info = NodeInfo {
@@ -175,11 +174,11 @@ impl Stage {
             event_tx,
         };
 
-        let state = Bootstrapping::new(cx, None, vec![addr], node_info);
+        let (state, command) = Bootstrapping::new(None, vec![addr], node_info);
         let state = State::Bootstrapping(state);
         let (stage, incomming_connections) = Self::new(state, comm)?;
 
-        Ok((stage, incomming_connections))
+        Ok((stage, incomming_connections, command))
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
@@ -324,64 +323,60 @@ impl Stage {
             .ok_or(Error::InvalidState)
     }
 
-    /// Handles the given command and transitively any new commands that are pushed into the command
-    /// queue during its handling.
+    /// Handles the given command and transitively any new commands that are produced during its
+    /// handling.
     pub async fn handle_commands(self: Arc<Self>, command: Command) -> Result<()> {
-        let mut cx = Context::new();
-        let result = self.handle_command(&mut cx, command).await;
-
-        for command in cx.take_commands() {
+        let commands = self.handle_command(command).await?;
+        for command in commands {
             self.clone().spawn_handle_commands(command)
         }
 
-        result
+        Ok(())
     }
 
     /// Handles a single command.
-    pub async fn handle_command(&self, cx: &mut Context, command: Command) -> Result<()> {
-        log_ident::set(self.log_ident().await, async {
+    pub async fn handle_command(&self, command: Command) -> Result<Vec<Command>> {
+        let result = log_ident::set(self.log_ident().await, async {
             trace!("Handling command {:?}", command);
 
-            let result = match command {
+            match command {
                 Command::HandleMessage { message, sender } => {
-                    self.handle_message(cx, sender, message).await
+                    self.handle_message(sender, message).await
                 }
-                Command::HandleTimeout(token) => self.handle_timeout(cx, token).await,
+                Command::HandleTimeout(token) => self.handle_timeout(token).await,
                 Command::HandleVote { vote, proof_share } => {
-                    self.handle_vote(cx, vote, proof_share).await
+                    self.handle_vote(vote, proof_share).await
                 }
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(cx, addr).await,
+                Command::HandlePeerLost(addr) => self.handle_peer_lost(addr).await,
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
                     message,
-                } => {
-                    self.send_message(cx, &recipients, delivery_group_size, message)
-                        .await
-                }
+                } => Ok(self
+                    .send_message(&recipients, delivery_group_size, message)
+                    .await),
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(cx, src, dst, content).await
+                    self.send_user_message(src, dst, content).await
                 }
                 Command::SendBootstrapRequest(recipients) => {
-                    self.send_bootstrap_request(cx, recipients).await
+                    Ok(vec![self.send_bootstrap_request(recipients).await?])
                 }
                 Command::ScheduleTimeout { duration, token } => {
-                    self.handle_schedule_timeout(cx, duration, token).await;
-                    Ok(())
+                    Ok(vec![self.handle_schedule_timeout(duration, token).await])
                 }
                 Command::Transition(state) => {
                     *self.state.lock().await = *state;
-                    Ok(())
+                    Ok(vec![])
                 }
-            };
-
-            if let Err(error) = &result {
-                error!("Error encountered when handling command: {}", error);
             }
-
-            result
         })
-        .await
+        .await;
+
+        if let Err(error) = &result {
+            error!("Error encountered when handling command: {}", error);
+        }
+
+        result
     }
 
     // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
@@ -392,94 +387,80 @@ impl Stage {
 
     async fn handle_message(
         &self,
-        cx: &mut Context,
         sender: Option<SocketAddr>,
         msg: Message,
-    ) -> Result<()> {
+    ) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Bootstrapping(stage) => stage.handle_message(cx, sender, msg),
-            State::Joining(stage) => stage.handle_message(cx, sender, msg),
-            State::Approved(stage) => stage.handle_message(cx, sender, msg),
+            State::Bootstrapping(stage) => stage.handle_message(sender, msg),
+            State::Joining(stage) => stage.handle_message(sender, msg),
+            State::Approved(stage) => stage.handle_message(sender, msg),
         }
     }
 
-    async fn handle_timeout(&self, cx: &mut Context, token: u64) -> Result<()> {
+    async fn handle_timeout(&self, token: u64) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Bootstrapping(_) => Ok(()),
-            State::Joining(stage) => stage.handle_timeout(cx, token),
-            State::Approved(stage) => stage.handle_timeout(cx, token),
+            State::Bootstrapping(_) => Ok(vec![]),
+            State::Joining(stage) => stage.handle_timeout(token),
+            State::Approved(stage) => stage.handle_timeout(token),
         }
     }
 
-    async fn handle_vote(
-        &self,
-        cx: &mut Context,
-        vote: Vote,
-        proof_share: ProofShare,
-    ) -> Result<()> {
+    async fn handle_vote(&self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Approved(state) => state.handle_vote(cx, vote, proof_share),
+            State::Approved(state) => state.handle_vote(vote, proof_share),
             _ => Err(Error::InvalidState),
         }
     }
 
-    async fn handle_peer_lost(&self, cx: &mut Context, addr: SocketAddr) -> Result<()> {
+    async fn handle_peer_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
         match &*self.state.lock().await {
-            State::Approved(state) => state.handle_peer_lost(cx, &addr),
-            _ => Ok(()),
+            State::Approved(state) => state.handle_peer_lost(&addr),
+            _ => Ok(vec![]),
         }
     }
 
     async fn send_message(
         &self,
-        cx: &mut Context,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         message: Bytes,
-    ) -> Result<()> {
+    ) -> Vec<Command> {
         match self
             .comm
             .send_message_to_targets(recipients, delivery_group_size, message)
             .await
         {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                for addr in error.failed_recipients {
-                    cx.push_command(Command::HandlePeerLost(addr));
-                }
-
-                Err(Error::FailedSend)
-            }
+            Ok(()) => vec![],
+            Err(error) => error
+                .failed_recipients
+                .into_iter()
+                .map(Command::HandlePeerLost)
+                .collect(),
         }
     }
 
     async fn send_user_message(
         &self,
-        cx: &mut Context,
         src: SrcLocation,
         dst: DstLocation,
         content: Bytes,
-    ) -> Result<()> {
+    ) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Approved(stage) => stage.send_user_message(cx, src, dst, content),
+            State::Approved(stage) => stage.send_user_message(src, dst, content),
             _ => Err(Error::InvalidState),
         }
     }
 
-    async fn send_bootstrap_request(
-        &self,
-        cx: &mut Context,
-        recipients: Vec<SocketAddr>,
-    ) -> Result<()> {
+    async fn send_bootstrap_request(&self, recipients: Vec<SocketAddr>) -> Result<Command> {
         match &*self.state.lock().await {
-            State::Bootstrapping(state) => state.send_bootstrap_request(cx, &recipients),
+            State::Bootstrapping(state) => state.send_bootstrap_request(&recipients),
             _ => Err(Error::InvalidState),
         }
     }
 
-    async fn handle_schedule_timeout(&self, cx: &mut Context, duration: Duration, token: u64) {
+    async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Command {
         time::delay_for(duration).await;
-        cx.push_command(Command::HandleTimeout(token))
+        Command::HandleTimeout(token)
     }
 
     async fn log_ident(&self) -> String {

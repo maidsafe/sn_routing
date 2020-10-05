@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{joining::Joining, Command, Context, NodeInfo, State};
+use super::{joining::Joining, Command, NodeInfo, State};
 use crate::{
     crypto::{keypair_within_range, name},
     error::Result,
@@ -31,29 +31,28 @@ pub(crate) struct Bootstrapping {
 
 impl Bootstrapping {
     pub fn new(
-        cx: &mut Context,
         relocate_details: Option<SignedRelocateDetails>,
         bootstrap_contacts: Vec<SocketAddr>,
         node_info: NodeInfo,
-    ) -> Self {
-        cx.push_command(Command::SendBootstrapRequest(bootstrap_contacts));
-
-        Self {
-            node_info,
-            relocate_details,
-        }
+    ) -> (Self, Command) {
+        (
+            Self {
+                node_info,
+                relocate_details,
+            },
+            Command::SendBootstrapRequest(bootstrap_contacts),
+        )
     }
 
     pub fn handle_message(
         &mut self,
-        cx: &mut Context,
         sender: Option<SocketAddr>,
         message: Message,
-    ) -> Result<()> {
+    ) -> Result<Vec<Command>> {
         trace!("Got {:?}", message);
 
         if !self.in_dst_location(message.dst()) {
-            return Ok(());
+            return Ok(vec![]);
         }
 
         match message.variant() {
@@ -62,51 +61,19 @@ impl Bootstrapping {
                     .verify(iter::empty())
                     .and_then(VerifyStatus::require_full)?;
 
-                match self.handle_bootstrap_response(
-                    cx,
+                self.handle_bootstrap_response(
                     message.src().to_sender_node(sender)?,
                     response.clone(),
-                )? {
-                    Some(JoinParams {
-                        elders_info,
-                        section_key,
-                        relocate_payload,
-                    }) => {
-                        let state = Joining::new(
-                            cx,
-                            elders_info,
-                            section_key,
-                            relocate_payload,
-                            self.node_info.clone(),
-                        )?;
-                        let state = State::Joining(state);
-                        cx.push_command(Command::Transition(Box::new(state)));
-                        Ok(())
-                    }
-                    None => Ok(()),
-                }
-            }
-            Variant::NodeApproval(_) => {
-                // We send the `JoinRequest` before we push the `Transition(Joining)` command to
-                // the command queue (because the send happen internally in Joining::new). Because
-                // of this it can happen that we receive the `NodeApproval` response before we
-                // finish the transition. To handle this situation, push the `NodeApproval` back to
-                // the command queue so we process it after the transition is finished.
-                cx.push_command(Command::HandleMessage { sender, message });
-                Ok(())
+                )
             }
             _ => {
                 debug!("Useless message from {:?}: {:?} ", sender, message);
-                Ok(())
+                Ok(vec![])
             }
         }
     }
 
-    pub fn send_bootstrap_request(
-        &self,
-        cx: &mut Context,
-        recipients: &[SocketAddr],
-    ) -> Result<()> {
+    pub fn send_bootstrap_request(&self, recipients: &[SocketAddr]) -> Result<Command> {
         let (destination, age) = match &self.relocate_details {
             Some(details) => (*details.destination(), details.relocate_details().age),
             None => (self.node_info.name(), MIN_AGE),
@@ -122,17 +89,19 @@ impl Bootstrapping {
         )?;
 
         debug!("Sending BootstrapRequest to {:?}", recipients);
-        cx.send_message_to_targets(recipients, recipients.len(), message.to_bytes());
 
-        Ok(())
+        Ok(Command::send_message_to_targets(
+            recipients,
+            recipients.len(),
+            message.to_bytes(),
+        ))
     }
 
     fn handle_bootstrap_response(
         &mut self,
-        cx: &mut Context,
         sender: Peer,
         response: BootstrapResponse,
-    ) -> Result<Option<JoinParams>> {
+    ) -> Result<Vec<Command>> {
         match response {
             BootstrapResponse::Join {
                 elders_info,
@@ -144,19 +113,24 @@ impl Bootstrapping {
                 );
 
                 let relocate_payload = self.join_section(&elders_info)?;
-                Ok(Some(JoinParams {
+                let (state, commands) = Joining::new(
                     elders_info,
                     section_key,
                     relocate_payload,
-                }))
+                    self.node_info.clone(),
+                )?;
+                let state = State::Joining(state);
+
+                Ok(iter::once(Command::Transition(Box::new(state)))
+                    .chain(commands)
+                    .collect())
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
                 info!(
                     "Bootstrapping redirected to another set of peers: {:?}",
                     new_conn_infos
                 );
-                self.send_bootstrap_request(cx, &new_conn_infos)?;
-                Ok(None)
+                Ok(vec![self.send_bootstrap_request(&new_conn_infos)?])
             }
         }
     }
@@ -197,10 +171,4 @@ impl Bootstrapping {
             DstLocation::Direct => true,
         }
     }
-}
-
-pub(crate) struct JoinParams {
-    pub elders_info: EldersInfo,
-    pub section_key: bls::PublicKey,
-    pub relocate_payload: Option<RelocatePayload>,
 }

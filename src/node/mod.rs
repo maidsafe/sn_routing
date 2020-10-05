@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod command;
-mod context;
 pub mod event_stream;
 mod executor;
 mod stage;
@@ -15,7 +14,11 @@ mod stage;
 mod tests;
 
 pub use self::event_stream::EventStream;
-use self::{command::Command, context::Context, executor::Executor, stage::Stage};
+#[cfg(test)]
+use self::stage::State;
+use self::{command::Command, executor::Executor, stage::Stage};
+#[cfg(all(test, feature = "mock"))]
+use crate::section::SectionKeyShare;
 use crate::{
     crypto::{name, Keypair, PublicKey},
     error::{Error, Result},
@@ -28,6 +31,8 @@ use crate::{
 };
 use bytes::Bytes;
 use itertools::Itertools;
+#[cfg(feature = "mock")]
+use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -81,34 +86,34 @@ impl Node {
         let node_name = name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let mut cx = Context::new();
 
-        let (stage, incoming_conns) = if config.first {
+        let (stage, incoming_conns, initial_command) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            Stage::first_node(
+            let (stage, incoming_conns) = Stage::first_node(
                 config.transport_config,
                 keypair,
                 config.network_params,
                 event_tx,
-            )?
+            )?;
+            (stage, incoming_conns, None)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(
-                &mut cx,
+            let (stage, incoming_conns, initial_command) = Stage::bootstrap(
                 config.transport_config,
                 keypair,
                 config.network_params,
                 event_tx,
             )
-            .await?
+            .await?;
+            (stage, incoming_conns, Some(initial_command))
         };
 
         let stage = Arc::new(stage);
         let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(event_rx);
 
-        // Process the initial commands.
-        for command in cx.take_commands() {
+        // Process the initial command.
+        if let Some(command) = initial_command {
             let _ = tokio::spawn(stage.clone().handle_commands(command));
         }
 
