@@ -17,8 +17,8 @@ pub(crate) use self::{
 };
 pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
+    crypto::{self, name, Keypair, Verifier},
     error::{Error, Result},
-    id::FullId,
     location::DstLocation,
     section::{ExtendError, SectionProofChain, TrustStatus},
 };
@@ -29,7 +29,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 
 /// Message sent over the network.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Message {
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
@@ -66,10 +66,10 @@ impl Message {
 
         match &msg.src {
             SrcAuthority::Node {
-                public_id,
+                public_key,
                 signature,
             } => {
-                if !public_id.verify(&signed_bytes, signature) {
+                if public_key.verify(&signed_bytes, signature).is_err() {
                     error!("Failed signature: {:?}", msg);
                     return Err(CreateError::FailedSignature);
                 }
@@ -122,7 +122,7 @@ impl Message {
 
     /// Creates a signed message from single node.
     pub(crate) fn single_src(
-        src: &FullId,
+        keypair: &Keypair,
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SectionProofChain>,
@@ -133,9 +133,9 @@ impl Message {
             dst_key: dst_key.as_ref(),
             variant: &variant,
         })?;
-        let signature = src.sign(&serialized);
+        let signature = crypto::sign(&serialized, keypair);
         let src = SrcAuthority::Node {
-            public_id: *src.public_id(),
+            public_key: keypair.public,
             signature,
         };
 
@@ -189,17 +189,17 @@ impl Message {
 
         match &self.src {
             SrcAuthority::Node {
-                public_id,
+                public_key,
                 signature,
             } => {
-                if !public_id.verify(&bytes, signature) {
+                if public_key.verify(&bytes, signature).is_err() {
                     return Err(Error::FailedSignature);
                 }
 
                 // Variant-specific verification.
                 let trusted_keys = trusted_keys
                     .into_iter()
-                    .filter(|(known_prefix, _)| known_prefix.matches(public_id.name()))
+                    .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
                     .map(|(_, key)| key);
                 self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
             }

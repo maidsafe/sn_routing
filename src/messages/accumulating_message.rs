@@ -10,7 +10,7 @@ use super::{DstLocation, SignableView, Variant};
 use xor_name::Prefix;
 
 /// Section-source message without signature and proof.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub(crate) struct PlainMessage {
     /// Prefix of the source section.
     pub src: Prefix,

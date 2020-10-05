@@ -7,12 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    id::PublicId,
     location::DstLocation,
     messages::{Message, MessageHash},
 };
 use lru_time_cache::LruCache;
 use std::time::Duration;
+use xor_name::XorName;
 
 const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
 const OUTGOING_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
@@ -38,7 +38,7 @@ impl FilteringResult {
 // Structure to filter (throttle) incoming and outgoing messages.
 pub(crate) struct MessageFilter {
     incoming: LruCache<MessageHash, ()>,
-    outgoing: LruCache<(MessageHash, PublicId), ()>,
+    outgoing: LruCache<(MessageHash, XorName), ()>,
 }
 
 impl MessageFilter {
@@ -65,7 +65,7 @@ impl MessageFilter {
     // Filter outgoing `SNRoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &PublicId) -> FilteringResult {
+    pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &XorName) -> FilteringResult {
         // Not filtering direct messages.
         if let DstLocation::Direct = msg.dst() {
             return FilteringResult::NewMessage;

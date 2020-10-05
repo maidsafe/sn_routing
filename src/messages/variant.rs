@@ -22,7 +22,7 @@ use std::{
 };
 use xor_name::XorName;
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 /// Message variant
 pub(crate) enum Variant {
@@ -211,7 +211,7 @@ pub enum BootstrapResponse {
 }
 
 /// Request to join a section
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct JoinRequest {
     /// The public key of the section to join
     pub section_key: bls::PublicKey,

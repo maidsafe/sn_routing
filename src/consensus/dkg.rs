@@ -8,7 +8,7 @@
 
 use crate::{
     crypto::Digest256,
-    id::{FullId, P2pNode, PublicId},
+    peer::Peer,
     rng::{self, MainRng},
     section::{quorum_count, EldersInfo},
 };
@@ -19,8 +19,9 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug, Formatter},
 };
+use xor_name::XorName;
 
-pub type DkgMessage = bls_dkg::key_gen::message::Message<PublicId>;
+pub type DkgMessage = bls_dkg::key_gen::message::Message;
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
@@ -104,7 +105,7 @@ impl DkgVoter {
     // to the other DKG participants.
     pub fn start_participating(
         &mut self,
-        full_id: &FullId,
+        our_id: XorName,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
     ) -> Option<DkgMessage> {
@@ -119,11 +120,11 @@ impl DkgVoter {
         let participants = elders_info
             .elders
             .values()
-            .map(P2pNode::public_id)
+            .map(Peer::name)
             .copied()
             .collect();
 
-        match KeyGen::initialize(full_id, threshold, participants) {
+        match KeyGen::initialize(our_id, threshold, participants) {
             Ok((key_gen, message)) => {
                 trace!("DKG for {} starting", elders_info);
 
@@ -183,7 +184,7 @@ impl DkgVoter {
 
         if participants
             .iter()
-            .eq(elders_info.elders.values().map(P2pNode::public_id))
+            .eq(elders_info.elders.values().map(Peer::name))
         {
             trace!(
                 "DKG for {} complete: {:?}",
@@ -199,7 +200,7 @@ impl DkgVoter {
             trace!(
                 "DKG for {} failed: unexpected participants: {:?}",
                 elders_info,
-                participants.iter().map(PublicId::name).format(", ")
+                participants.iter().format(", ")
             );
 
             self.participant = None;
@@ -236,7 +237,7 @@ impl DkgVoter {
     }
 
     /// Returns the participants of the DKG session, if there is one.
-    pub fn participants(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn participants(&self) -> impl Iterator<Item = &Peer> {
         self.participant
             .as_ref()
             .and_then(|session| session.elders_info.as_ref())
@@ -276,11 +277,11 @@ impl DkgVoter {
         &mut self,
         dkg_key: &DkgKey,
         result: Result<bls::PublicKey, ()>,
-        sender: PublicId,
+        sender: XorName,
     ) -> Option<(EldersInfo, Result<bls::PublicKey, ()>)> {
         let session = self.observers.get_mut(dkg_key)?;
 
-        if !session.elders_info.elders.contains_key(sender.name()) {
+        if !session.elders_info.elders.contains_key(&sender) {
             return None;
         }
 
@@ -364,7 +365,7 @@ struct Participant {
     // `None` means the session is completed.
     elders_info: Option<EldersInfo>,
     dkg_key: DkgKey,
-    key_gen: KeyGen<FullId>,
+    key_gen: KeyGen,
     timer_token: u64,
 }
 
@@ -373,5 +374,5 @@ struct Participant {
 struct Observer {
     elders_info: EldersInfo,
     section_key_index: u64,
-    accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<PublicId>>,
+    accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<XorName>>,
 }

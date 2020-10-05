@@ -15,7 +15,7 @@ use crate::{
 use serde::{Serialize, Serializer};
 use xor_name::{Prefix, XorName};
 
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Vote {
     /// Voted for node that is about to join our section

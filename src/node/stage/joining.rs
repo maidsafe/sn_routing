@@ -10,8 +10,8 @@ use super::{approved::Approved, comm::Comm, NodeInfo};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
-    id::P2pNode,
     messages::{BootstrapResponse, JoinRequest, Message, MessageStatus, Variant, VerifyStatus},
+    peer::Peer,
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
     timer::Timer,
@@ -170,7 +170,7 @@ impl Joining {
 
     async fn handle_bootstrap_response(
         &mut self,
-        sender: P2pNode,
+        sender: Peer,
         new_elders_info: EldersInfo,
         new_section_key: bls::PublicKey,
     ) -> Result<()> {
@@ -180,7 +180,7 @@ impl Joining {
 
         if new_elders_info
             .prefix
-            .matches(self.node_info.full_id.public_id().name())
+            .matches(&self.node_info.name())
         {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
@@ -209,7 +209,7 @@ impl Joining {
         match &self.join_type {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(payload) => Connected::Relocate {
-                previous_name: *payload.relocate_details().pub_id.name(),
+                previous_name: payload.relocate_details().pub_id,
             },
         }
     }
@@ -224,7 +224,7 @@ impl Joining {
             .elders_info
             .elders
             .values()
-            .map(|p2p_node| p2p_node.peer_addr())
+            .map(Peer::addr)
             .copied()
             .collect();
 
@@ -237,7 +237,7 @@ impl Joining {
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(
-            &self.node_info.full_id,
+            &self.node_info.keypair,
             DstLocation::Direct,
             variant,
             None,

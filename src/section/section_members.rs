@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     consensus::{Proof, Proven},
-    id::P2pNode,
+    peer::Peer,
 };
 
 use itertools::Itertools;
@@ -53,10 +53,10 @@ impl SectionMembers {
     }
 
     /// Returns nodes from our section with age greater than `MIN_AGE`
-    pub fn adults(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn adults(&self) -> impl Iterator<Item = &Peer> {
         self.joined()
             .filter(|info| info.is_adult())
-            .map(|info| &info.p2p_node)
+            .map(|info| &info.peer)
     }
 
     /// Get info for the member with the given name.
@@ -69,7 +69,7 @@ impl SectionMembers {
         &self,
         elder_size: usize,
         current_elders: &EldersInfo,
-    ) -> BTreeMap<XorName, P2pNode> {
+    ) -> BTreeMap<XorName, Peer> {
         elder_candidates(
             elder_size,
             current_elders,
@@ -85,13 +85,12 @@ impl SectionMembers {
         prefix: &Prefix,
         elder_size: usize,
         current_elders: &EldersInfo,
-    ) -> BTreeMap<XorName, P2pNode> {
+    ) -> BTreeMap<XorName, Peer> {
         elder_candidates(
             elder_size,
             current_elders,
             self.members.values().filter(|info| {
-                info.value.state == MemberState::Joined
-                    && prefix.matches(info.value.p2p_node.name())
+                info.value.state == MemberState::Joined && prefix.matches(info.value.peer.name())
             }),
         )
     }
@@ -125,7 +124,7 @@ impl SectionMembers {
         proof: Proof,
         section_chain: &SectionProofChain,
     ) -> bool {
-        match self.members.entry(*new_info.p2p_node.name()) {
+        match self.members.entry(*new_info.peer.name()) {
             Entry::Vacant(entry) => {
                 let new_info = Proven::new(new_info, proof);
                 if new_info.verify(section_chain) {
@@ -194,14 +193,14 @@ fn elder_candidates<'a, I>(
     elder_size: usize,
     current_elders: &EldersInfo,
     members: I,
-) -> BTreeMap<XorName, P2pNode>
+) -> BTreeMap<XorName, Peer>
 where
     I: IntoIterator<Item = &'a Proven<MemberInfo>>,
 {
     members
         .into_iter()
         .sorted_by(|lhs, rhs| cmp_elder_candidates(lhs, rhs, current_elders))
-        .map(|info| (*info.value.p2p_node.name(), info.value.p2p_node))
+        .map(|info| (*info.value.peer.name(), info.value.peer))
         .take(elder_size)
         .collect()
 }
@@ -220,12 +219,8 @@ fn cmp_elder_candidates(
         .age
         .cmp(&lhs.value.age)
         .then_with(|| {
-            let lhs_is_elder = current_elders
-                .elders
-                .contains_key(lhs.value.p2p_node.name());
-            let rhs_is_elder = current_elders
-                .elders
-                .contains_key(rhs.value.p2p_node.name());
+            let lhs_is_elder = current_elders.elders.contains_key(lhs.value.peer.name());
+            let rhs_is_elder = current_elders.elders.contains_key(rhs.value.peer.name());
 
             match (lhs_is_elder, rhs_is_elder) {
                 (true, false) => Ordering::Less,
