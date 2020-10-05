@@ -398,7 +398,7 @@ impl Approved {
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
-                match self.handle_relocate(cx, signed_relocate) {
+                match self.handle_relocate(signed_relocate) {
                     Some(RelocateParams {
                         conn_infos,
                         details,
@@ -430,7 +430,7 @@ impl Approved {
                 *join_request.clone(),
             ),
             Variant::UserMessage(content) => {
-                self.handle_user_message(cx, msg.src().src_location(), *msg.dst(), content.clone());
+                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
                 Ok(())
             }
             Variant::BouncedUntrustedMessage(message) => {
@@ -673,14 +673,9 @@ impl Approved {
         }
     }
 
-    fn handle_user_message(
-        &self,
-        cx: &mut Context,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    ) {
-        cx.send_event(Event::MessageReceived { content, src, dst })
+    fn handle_user_message(&self, src: SrcLocation, dst: DstLocation, content: Bytes) {
+        self.node_info
+            .send_event(Event::MessageReceived { content, src, dst })
     }
 
     fn handle_sync(&mut self, cx: &mut Context, shared_state: SharedState) -> Result<()> {
@@ -692,11 +687,7 @@ impl Approved {
         self.update_shared_state(cx, shared_state)
     }
 
-    fn handle_relocate(
-        &mut self,
-        cx: &mut Context,
-        signed_msg: SignedRelocateDetails,
-    ) -> Option<RelocateParams> {
+    fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
         if signed_msg.relocate_details().pub_id != self.node_info.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
@@ -709,7 +700,7 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            cx.send_event(Event::RelocationStarted {
+            self.node_info.send_event(Event::RelocationStarted {
                 previous_name: self.node_info.name(),
             });
         }
@@ -739,7 +730,7 @@ impl Approved {
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                cx.send_event(Event::RelocationStarted {
+                self.node_info.send_event(Event::RelocationStarted {
                     previous_name: self.node_info.name(),
                 });
             } else {
@@ -1136,13 +1127,13 @@ impl Approved {
         self.print_network_stats();
 
         if let Some(previous_name) = previous_name {
-            cx.send_event(Event::MemberJoined {
+            self.node_info.send_event(Event::MemberJoined {
                 name: *peer.name(),
                 previous_name,
                 age,
             });
         } else {
-            cx.send_event(Event::InfantJoined {
+            self.node_info.send_event(Event::InfantJoined {
                 name: *peer.name(),
                 age,
             });
@@ -1170,7 +1161,7 @@ impl Approved {
 
         self.increment_ages(cx, peer.name(), &signature)?;
 
-        cx.send_event(Event::MemberLeft {
+        self.node_info.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
         });
@@ -1406,7 +1397,7 @@ impl Approved {
                 self.send_sync(cx, self.shared_state.clone())?;
             }
 
-            cx.send_event(Event::EldersChanged {
+            self.node_info.send_event(Event::EldersChanged {
                 prefix: *self.shared_state.our_prefix(),
                 key: *self.shared_state.our_history.last_key(),
                 elders: self
@@ -1421,14 +1412,14 @@ impl Approved {
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            cx.send_event(Event::PromotedToElder);
+            self.node_info.send_event(Event::PromotedToElder);
         }
 
         if old_is_elder && !new_is_elder {
             info!("Demoted");
             self.shared_state.demote();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            cx.send_event(Event::Demoted);
+            self.node_info.send_event(Event::Demoted);
         }
 
         if !new_is_elder {

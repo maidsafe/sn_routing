@@ -81,11 +81,19 @@ pub(crate) struct NodeInfo {
     // memory which might be insecure.
     pub keypair: Arc<Keypair>,
     pub network_params: NetworkParams,
+    event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl NodeInfo {
     pub fn name(&self) -> XorName {
         name(&self.keypair.public)
+    }
+
+    pub fn send_event(&self, event: Event) {
+        // Note: cloning the sender to avoid mutable access. Should have negligible cost.
+        if self.event_tx.clone().send(event).is_err() {
+            error!("Event receiver has been closed");
+        }
     }
 }
 
@@ -94,22 +102,16 @@ impl NodeInfo {
 pub(crate) struct Stage {
     state: Mutex<State>,
     comm: Comm,
-    event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Stage {
     // Private constructor
-    fn new(
-        state: State,
-        comm: Comm,
-        event_tx: mpsc::UnboundedSender<Event>,
-    ) -> Result<(Self, IncomingConnections)> {
+    fn new(state: State, comm: Comm) -> Result<(Self, IncomingConnections)> {
         let incoming_conns = comm.listen()?;
 
         let stage = Self {
             state: Mutex::new(state),
             comm,
-            event_tx,
         };
 
         Ok((stage, incoming_conns))
@@ -143,16 +145,17 @@ impl Stage {
             secret_key_share,
         };
 
-        let node_info = NodeInfo {
-            keypair: Arc::new(keypair),
-            network_params,
-        };
-
         let _ = event_tx.send(Event::Connected(Connected::First));
         let _ = event_tx.send(Event::PromotedToElder);
 
+        let node_info = NodeInfo {
+            keypair: Arc::new(keypair),
+            network_params,
+            event_tx,
+        };
+
         let state = Approved::new(shared_state, Some(section_key_share), node_info)?;
-        let (stage, incomming_connections) = Self::new(State::Approved(state), comm, event_tx)?;
+        let (stage, incomming_connections) = Self::new(State::Approved(state), comm)?;
 
         Ok((stage, incomming_connections))
     }
@@ -169,18 +172,23 @@ impl Stage {
         let node_info = NodeInfo {
             keypair: Arc::new(keypair),
             network_params,
+            event_tx,
         };
 
         let state = Bootstrapping::new(cx, None, vec![addr], node_info);
         let state = State::Bootstrapping(state);
-        let (stage, incomming_connections) = Self::new(state, comm, event_tx)?;
+        let (stage, incomming_connections) = Self::new(state, comm)?;
 
         Ok((stage, incomming_connections))
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
-    pub fn send_event(&self, event: Event) {
-        let _ = self.event_tx.clone().send(event);
+    pub async fn send_event(&self, event: Event) {
+        match &*self.state.lock().await {
+            State::Bootstrapping(state) => state.node_info.send_event(event),
+            State::Joining(state) => state.node_info.send_event(event),
+            State::Approved(state) => state.node_info.send_event(event),
+        }
     }
 
     /// Returns the name of the node
@@ -319,7 +327,7 @@ impl Stage {
     /// Handles the given command and transitively any new commands that are pushed into the command
     /// queue during its handling.
     pub async fn handle_commands(self: Arc<Self>, command: Command) -> Result<()> {
-        let mut cx = Context::new(self.event_tx.clone());
+        let mut cx = Context::new();
         let result = self.handle_command(&mut cx, command).await;
 
         for command in cx.take_commands() {

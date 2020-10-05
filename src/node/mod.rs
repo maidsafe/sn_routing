@@ -81,7 +81,7 @@ impl Node {
         let node_name = name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let mut cx = Context::new(event_tx.clone());
+        let mut cx = Context::new();
 
         let (stage, incoming_conns) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);

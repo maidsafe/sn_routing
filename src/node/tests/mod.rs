@@ -24,7 +24,7 @@ use crate::{
     peer::Peer,
     rng,
     section::EldersInfo,
-    ELDER_SIZE,
+    ELDER_SIZE, MIN_AGE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -43,7 +43,7 @@ async fn send_bootstrap_request() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new(event_tx.clone());
+    let mut cx = Context::new();
 
     let (node, _) = Stage::bootstrap(
         &mut cx,
@@ -91,7 +91,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new(event_tx.clone());
+    let mut cx = Context::new();
 
     let (node, _) = Stage::first_node(
         env.transport_config(),
@@ -105,6 +105,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 
     let message = Message::single_src(
         &new_node_keypair,
+        MIN_AGE,
         DstLocation::Direct,
         Variant::BootstrapRequest(crypto::name(&new_node_keypair.public)),
         None,
@@ -144,7 +145,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new(event_tx.clone());
+    let mut cx = Context::new();
 
     let (node, _) = Stage::bootstrap(
         &mut cx,
@@ -159,6 +160,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
 
     let message = Message::single_src(
         &env.elder_keypairs[0],
+        MIN_AGE,
         DstLocation::Direct,
         Variant::BootstrapResponse(BootstrapResponse::Join {
             elders_info: env.elders_info.clone(),
@@ -170,7 +172,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
     node.handle_command(
         &mut cx,
         Command::HandleMessage {
-            sender: Some(env.elder(0).addr),
+            sender: Some(*env.elder(0).addr()),
             message,
         },
     )
@@ -185,12 +187,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
         }) => (recipients, delivery_group_size, message)
     );
     assert_eq!(delivery_group_size, env.elders_info.elders.len());
-    let expected_recipients: HashSet<_> = env
-        .elders_info
-        .elders
-        .values()
-        .map(|peer| &peer.addr)
-        .collect();
+    let expected_recipients: HashSet<_> = env.elders_info.elders.values().map(Peer::addr).collect();
     let actual_recipients: HashSet<_> = recipients.iter().collect();
     assert_eq!(actual_recipients, expected_recipients);
 
@@ -280,7 +277,7 @@ fn gen_elders_info() -> (EldersInfo, Vec<Keypair>) {
         .enumerate()
         .map(|(index, keypair)| {
             let addr = ([192, 0, 2, 0], 1000 + index as u16).into();
-            Peer::new(crypto::name(&keypair.public), addr)
+            Peer::new(crypto::name(&keypair.public), addr, MIN_AGE)
         })
         .map(|p2p_node| (*p2p_node.name(), p2p_node))
         .collect();

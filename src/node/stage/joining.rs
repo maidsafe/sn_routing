@@ -106,7 +106,7 @@ impl Joining {
                 let state = Approved::new(shared_state, None, self.node_info.clone())?;
                 let state = State::Approved(state);
                 cx.push_command(Command::Transition(Box::new(state)));
-                cx.send_event(Event::Connected(connect_type));
+                self.node_info.send_event(Event::Connected(connect_type));
 
                 Ok(())
             }

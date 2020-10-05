@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::Command;
-use crate::event::Event;
 use bytes::Bytes;
 use std::{
     net::SocketAddr,
@@ -15,20 +14,17 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
-use tokio::sync::mpsc;
 
 /// Context passed to all the command handler methods. Used for pushing new commands to the command
 /// queue and for sending user events.
 pub(crate) struct Context {
     command_queue: Vec<Command>,
-    event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Context {
-    pub fn new(event_tx: mpsc::UnboundedSender<Event>) -> Self {
+    pub fn new() -> Self {
         Self {
             command_queue: Vec::new(),
-            event_tx,
         }
     }
 
@@ -75,13 +71,6 @@ impl Context {
             None
         } else {
             Some(self.command_queue.remove(0))
-        }
-    }
-
-    /// Send user event.
-    pub fn send_event(&mut self, event: Event) {
-        if self.event_tx.send(event).is_err() {
-            error!("Event receiver has been closed");
         }
     }
 }
