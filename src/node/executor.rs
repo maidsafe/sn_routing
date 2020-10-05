@@ -91,7 +91,7 @@ fn spawn_messages_handler(
                         recv,
                     };
 
-                    stage.send_event(event);
+                    stage.send_event(event).await;
                 }
             }
         }
