@@ -14,13 +14,14 @@ mod joining;
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
 use crate::{
     consensus::{self, Proof, Proven},
+    crypto::{Keypair, name},
     error::{Error, Result},
     event::{Connected, Event},
-    id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_ident,
     messages::Message,
     network_params::NetworkParams,
+    peer::Peer,
     rng::MainRng,
     section::{EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain, SharedState, MIN_AGE},
     timer::Timer,
@@ -29,7 +30,7 @@ use crate::{
 use bytes::Bytes;
 use qp2p::IncomingConnections;
 use serde::Serialize;
-use std::{iter, net::SocketAddr};
+use std::{iter, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -47,18 +48,16 @@ enum State {
 // Node's information.
 #[derive(Clone)]
 pub(crate) struct NodeInfo {
-    pub full_id: FullId,
+    // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
+    // memory which might be insecure.
+    pub keypair: Arc<Keypair>,
     pub network_params: NetworkParams,
     events_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl NodeInfo {
-    pub fn public_id(&self) -> &PublicId {
-        self.full_id.public_id()
-    }
-
-    pub fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
+    pub fn name(&self) -> XorName {
+        name(&self.keypair.public)
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
@@ -89,7 +88,7 @@ impl Stage {
     // Create the approved stage for the first node in the network.
     pub async fn first_node(
         transport_config: TransportConfig,
-        full_id: FullId,
+        keypair: Keypair,
         network_params: NetworkParams,
     ) -> Result<(
         Self,
@@ -99,7 +98,7 @@ impl Stage {
     )> {
         let comm = Comm::new(transport_config)?;
         let connection_info = comm.our_connection_info()?;
-        let p2p_node = P2pNode::new(*full_id.public_id(), connection_info);
+        let peer = Peer::new(name(&keypair.public), connection_info);
 
         let mut rng = MainRng::default();
         let secret_key_set = consensus::generate_secret_key_set(&mut rng, 1);
@@ -108,7 +107,7 @@ impl Stage {
 
         // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
         // of the network there is no previous key. Sign with the current key instead.
-        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, p2p_node)?;
+        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
         let shared_state =
             create_first_shared_state(&public_key_set, &secret_key_share, elders_info)?;
 
@@ -120,7 +119,7 @@ impl Stage {
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let mut node_info = NodeInfo {
-            full_id,
+            keypair: Arc::new(keypair),
             network_params,
             events_tx,
         };
@@ -146,7 +145,7 @@ impl Stage {
 
     pub async fn bootstrap(
         transport_config: TransportConfig,
-        full_id: FullId,
+        keypair: Keypair,
         network_params: NetworkParams,
     ) -> Result<(
         Self,
@@ -158,7 +157,7 @@ impl Stage {
 
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let node_info = NodeInfo {
-            full_id,
+            keypair: Arc::new(keypair),
             network_params,
             events_tx,
         };
@@ -191,10 +190,15 @@ impl Stage {
         self.node_info_mut().send_event(event);
     }
 
-    /// Returns current FullId of the node
-    pub fn full_id(&self) -> &FullId {
-        &self.node_info().full_id
+    /// Returns current Keypair of the node
+    pub fn keypair(&self) -> &Keypair {
+        &self.node_info().keypair
     }
+
+    /// Returns the name of the node
+    pub fn name(&self) -> XorName {
+        self.node_info().name()
+     }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
@@ -280,13 +284,13 @@ impl Stage {
     async fn in_dst_location(&mut self, msg: &Message) -> Result<bool> {
         let in_dst = match &mut self.state {
             State::Bootstrapping(_) | State::Joining(_) => match msg.dst() {
-                DstLocation::Node(name) => name == self.node_info().full_id.public_id().name(),
+                DstLocation::Node(name) => name == &self.node_info().name(),
                 DstLocation::Section(_) => false,
                 DstLocation::Direct => true,
             },
             State::Approved(stage) => {
                 let is_dst_location = msg.dst().contains(
-                    stage.node_info.full_id.public_id().name(),
+                    &stage.node_info.name(),
                     stage.shared_state.our_prefix(),
                 );
 
@@ -338,7 +342,7 @@ impl Stage {
                 state.target_section_elders_info().prefix,
             ),
             State::Approved(state) => {
-                if state.is_our_elder(state.node_info.public_id()) {
+                if state.is_our_elder(&state.node_info.name()) {
                     format!(
                         "{}({:b}v{}!) ",
                         state.node_info.name(),
@@ -361,10 +365,10 @@ impl Stage {
 fn create_first_elders_info(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
-    p2p_node: P2pNode,
+    peer: Peer,
 ) -> Result<Proven<EldersInfo>> {
-    let name = *p2p_node.name();
-    let node = (name, p2p_node);
+    let name = *peer.name();
+    let node = (name, peer);
     let elders_info = EldersInfo::new(iter::once(node).collect(), Prefix::default());
     let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
     Ok(Proven::new(elders_info, proof))
@@ -380,8 +384,8 @@ fn create_first_shared_state(
         elders_info,
     );
 
-    for p2p_node in shared_state.sections.our().elders.values() {
-        let member_info = MemberInfo::joined(*p2p_node, MIN_AGE);
+    for peer in shared_state.sections.our().elders.values() {
+        let member_info = MemberInfo::joined(*peer, MIN_AGE);
         let proof = create_first_proof(pk_set, sk_share, &member_info)?;
         let _ = shared_state
             .our_members

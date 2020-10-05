@@ -8,16 +8,17 @@
 
 use super::{comm::Comm, joining::Joining, NodeInfo};
 use crate::{
+    crypto::{keypair_within_range, name},
     error::Result,
-    id::{FullId, P2pNode},
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
+    peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     timer::Timer,
     DstLocation,
 };
 use futures::future;
-use std::{iter, net::SocketAddr};
+use std::{iter, net::SocketAddr, sync::Arc};
 use xor_name::Prefix;
 
 // TODO: review if we still need to set a timeout for joining
@@ -122,7 +123,7 @@ impl Bootstrapping {
 
     async fn handle_bootstrap_response(
         &mut self,
-        sender: P2pNode,
+        sender: Peer,
         response: BootstrapResponse,
     ) -> Result<Option<JoinParams>> {
         match response {
@@ -156,11 +157,11 @@ impl Bootstrapping {
     async fn send_bootstrap_request(&self, dst: SocketAddr) -> Result<()> {
         let destination = match &self.relocate_details {
             Some(details) => *details.destination(),
-            None => *self.node_info.full_id.public_id().name(),
+            None => self.node_info.name(),
         };
 
         let message = Message::single_src(
-            &self.node_info.full_id,
+            &self.node_info.keypair,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
             None,
@@ -203,15 +204,16 @@ impl Bootstrapping {
         // FIXME: do we need to reuse MainRng everywhere really??
         // This will currently break tests.
         let mut rng = crate::rng::MainRng::default();
-        let new_full_id = FullId::within_range(&mut rng, &name_prefix.range_inclusive());
+        let new_keypair = keypair_within_range(&mut rng, &name_prefix.range_inclusive());
+        let new_name = name(&new_keypair.public);
         let relocate_payload = RelocatePayload::new(
             relocate_details,
-            new_full_id.public_id(),
-            &self.node_info.full_id,
+            &new_name,
+            &self.node_info.keypair,
         )?;
 
-        info!("Changing name to {}.", new_full_id.public_id().name());
-        self.node_info.full_id = new_full_id;
+        info!("Changing name to {}.", new_name);
+        self.node_info.keypair = Arc::new(new_keypair);
 
         Ok(Some(relocate_payload))
     }

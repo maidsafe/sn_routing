@@ -9,13 +9,11 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    crypto::{self, Signature},
+    crypto::{self, Keypair, Signature, Verifier},
     error::Error,
-    id::{FullId, PublicId},
     messages::{Message, Variant},
 };
 
-use bincode::serialize;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use xor_name::XorName;
 
@@ -65,7 +63,7 @@ fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct RelocateDetails {
     /// Public id of the node to relocate.
-    pub pub_id: PublicId,
+    pub pub_id: XorName,
     /// Relocation destination - the node will be relocated to a section whose prefix matches this
     /// name.
     pub destination: XorName,
@@ -76,7 +74,7 @@ pub struct RelocateDetails {
 }
 
 /// SignedSNRoutingMessage with Relocate message content.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
     signed_msg: Message,
@@ -128,39 +126,39 @@ impl<'de> Deserialize<'de> for SignedRelocateDetails {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct RelocatePayload {
     /// The Relocate Signed message.
     pub details: SignedRelocateDetails,
-    /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
-    pub signature_of_new_id_with_old_id: Signature,
+    /// The new name of the node signed using its old public_key, to prove the node identity.
+    pub signature_of_new_name_with_old_key: Signature,
 }
 
 impl RelocatePayload {
     pub fn new(
         details: SignedRelocateDetails,
-        new_pub_id: &PublicId,
-        old_full_id: &FullId,
+        new_name: &XorName,
+        old_keypair: &Keypair,
     ) -> Result<Self, Error> {
-        let new_id_serialised = serialize(new_pub_id)?;
-        let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
+        let signature_of_new_name_with_old_key = crypto::sign(&new_name.0, old_keypair);
 
         Ok(Self {
             details,
-            signature_of_new_id_with_old_id,
+            signature_of_new_name_with_old_key,
         })
     }
 
-    pub fn verify_identity(&self, new_pub_id: &PublicId) -> bool {
-        let new_id_serialised = match serialize(new_pub_id) {
-            Ok(buf) => buf,
-            Err(_) => return false,
+    pub fn verify_identity(&self, new_name: &XorName) -> bool {
+        let pub_key = if let Ok(pub_key) = crypto::pub_key(&self.details.relocate_details().pub_id)
+        {
+            pub_key
+        } else {
+            return false;
         };
 
-        self.details
-            .relocate_details()
-            .pub_id
-            .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
+        pub_key
+            .verify(&new_name.0, &self.signature_of_new_name_with_old_key)
+            .is_ok()
     }
 
     pub fn relocate_details(&self) -> &RelocateDetails {

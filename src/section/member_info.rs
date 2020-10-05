@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::id::P2pNode;
+use crate::peer::Peer;
 use xor_name::XorName;
 
 /// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
@@ -16,16 +16,16 @@ pub const MIN_AGE: u8 = 4;
 /// Information about a member of our section.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
-    pub p2p_node: P2pNode,
+    pub peer: Peer,
     pub state: MemberState,
     pub age: u8,
 }
 
 impl MemberInfo {
     // Creates a `MemberInfo` in the `Joined` state.
-    pub fn joined(p2p_node: P2pNode, age: u8) -> Self {
+    pub fn joined(peer: Peer, age: u8) -> Self {
         Self {
-            p2p_node,
+            peer,
             state: MemberState::Joined,
             age,
         }

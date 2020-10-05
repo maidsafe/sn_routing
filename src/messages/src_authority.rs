@@ -7,27 +7,28 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::Signature as SimpleSignature,
+    crypto::{name, PublicKey, Signature as SimpleSignature},
     error::{Error, Result},
-    id::{P2pNode, PublicId},
     location::SrcLocation,
+    peer::Peer,
 };
 
 use std::net::SocketAddr;
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 /// Source authority of a message.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 /// Src of message and authority to send it. Authority is validated by the signature.
 /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
 /// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we
 /// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
 pub enum SrcAuthority {
-    /// Authority of a single node.
+    /// Authority of a single peer.
     Node {
-        /// Id of the source node.
-        public_id: PublicId,
-        /// ed-25519 signature of the message corresponding to the public key of the source node.
+        /// Public key of the source peer.
+        public_key: PublicKey,
+        /// ed-25519 signature of the message corresponding to the public key of the source peer.
         signature: SimpleSignature,
     },
     /// Authority of a whole section.
@@ -42,7 +43,7 @@ pub enum SrcAuthority {
 impl SrcAuthority {
     pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
-            Self::Node { public_id, .. } => SrcLocation::Node(*public_id.name()),
+            Self::Node { public_key, .. } => SrcLocation::Node(name(public_key)),
             Self::Section { prefix, .. } => SrcLocation::Section(*prefix),
         }
     }
@@ -59,9 +60,9 @@ impl SrcAuthority {
         matches!(self, Self::Section { .. })
     }
 
-    pub(crate) fn as_node(&self) -> Result<&PublicId> {
+    pub(crate) fn as_node(&self) -> Result<XorName> {
         match self {
-            Self::Node { public_id, .. } => Ok(public_id),
+            Self::Node { public_key, .. } => Ok(name(public_key)),
             Self::Section { .. } => Err(Error::BadLocation),
         }
     }
@@ -74,9 +75,9 @@ impl SrcAuthority {
         }
     }
 
-    pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
-        let pub_id = *self.as_node()?;
+    pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<Peer> {
+        let name = self.as_node()?;
         let conn_info = sender.ok_or(Error::InvalidSource)?;
-        Ok(P2pNode::new(pub_id, conn_info))
+        Ok(Peer::new(name, conn_info))
     }
 }

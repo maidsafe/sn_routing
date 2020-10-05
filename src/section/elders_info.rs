@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 use crate::{id::FullId, rng::MainRng};
-use crate::{id::P2pNode, Prefix, XorName};
+use crate::{peer::Peer, Prefix, XorName};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,15 +22,15 @@ use std::{
 /// change, due to an elder being added or removed, or the section splitting or merging.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct EldersInfo {
-    /// The section's complete set of elders as a map from their name to a `P2pNode`.
-    pub elders: BTreeMap<XorName, P2pNode>,
+    /// The section's complete set of elders as a map from their name to a `Peer`.
+    pub elders: BTreeMap<XorName, Peer>,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
 }
 
 impl EldersInfo {
     /// Creates a new `EldersInfo` with the given members, prefix and version.
-    pub fn new(elders: BTreeMap<XorName, P2pNode>, prefix: Prefix) -> Self {
+    pub fn new(elders: BTreeMap<XorName, Peer>, prefix: Prefix) -> Self {
         Self { elders, prefix }
     }
 
@@ -52,7 +52,7 @@ impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo {{ prefix: ({:b}), elders: {{{}}} }}",
+            "EldersInfo {{ prefix: ({:b}), elders: {{{:?}}} }}",
             self.prefix,
             self.elders.values().format(", "),
         )
@@ -105,8 +105,8 @@ pub(crate) fn gen_elders_info(
         .iter()
         .map(|full_id| {
             let addr = gen_socket_addr(rng);
-            let p2p_node = P2pNode::new(*full_id.public_id(), addr);
-            (*p2p_node.public_id().name(), p2p_node)
+            let peer = Peer::new(*full_id.public_id(), addr);
+            (*peer.name(), peer)
         })
         .collect();
 

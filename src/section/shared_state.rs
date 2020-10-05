@@ -10,10 +10,10 @@ use super::{quorum_count, EldersInfo, MemberInfo, SectionMap, SectionMembers, Se
 use crate::{
     consensus::{Proof, Proven},
     error::Error,
-    id::P2pNode,
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
+    peer::Peer,
     relocation::{self, RelocateAction, RelocateDetails, RelocatePromise},
 };
 
@@ -140,21 +140,21 @@ impl SharedState {
     }
 
     /// Returns adults from our own section.
-    pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn our_adults(&self) -> impl Iterator<Item = &Peer> {
         self.our_members
             .adults()
-            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.name()))
+            .filter(move |peer| !self.is_peer_our_elder(peer.name()))
     }
 
     /// Returns our members that are either joined or are left but still elders.
-    pub fn active_members(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn active_members(&self) -> impl Iterator<Item = &Peer> {
         self.our_members
             .all()
             .filter(move |info| {
-                self.our_members.is_joined(info.p2p_node.name())
-                    || self.is_peer_our_elder(info.p2p_node.name())
+                self.our_members.is_joined(info.peer.name())
+                    || self.is_peer_our_elder(info.peer.name())
             })
-            .map(|info| &info.p2p_node)
+            .map(|info| &info.peer)
     }
 
     /// Returns whether the given peer is elder in our section.
@@ -167,11 +167,11 @@ impl SharedState {
         self.our_members.is_adult(name) || self.is_peer_our_elder(name)
     }
 
-    pub fn find_p2p_node_from_addr(&self, peer_addr: &SocketAddr) -> Option<&P2pNode> {
+    pub fn find_peer_from_addr(&self, peer_addr: &SocketAddr) -> Option<&Peer> {
         self.our_members
             .all()
-            .find(|info| info.p2p_node.peer_addr() == peer_addr)
-            .map(|info| &info.p2p_node)
+            .find(|info| info.peer.addr() == peer_addr)
+            .map(|info| &info.peer)
     }
 
     /// All section keys we know of, including the past keys of our section.
@@ -327,7 +327,7 @@ impl SharedState {
             .unwrap_or_else(|| self.our_history.first_key());
 
         RelocateDetails {
-            pub_id: *info.p2p_node.public_id(),
+            pub_id: *info.peer.name(),
             destination,
             destination_key,
             age: info.age.saturating_add(1),
@@ -339,11 +339,11 @@ impl SharedState {
         info: &Proven<MemberInfo>,
         churn_name: &XorName,
     ) -> RelocateAction {
-        let destination = relocation::compute_destination(info.value.p2p_node.name(), churn_name);
+        let destination = relocation::compute_destination(info.value.peer.name(), churn_name);
 
-        if self.is_peer_our_elder(info.value.p2p_node.name()) {
+        if self.is_peer_our_elder(info.value.peer.name()) {
             RelocateAction::Delayed(RelocatePromise {
-                name: *info.value.p2p_node.name(),
+                name: *info.value.peer.name(),
                 destination,
             })
         } else {
@@ -371,7 +371,7 @@ impl SharedState {
         let (our_new_size, sibling_new_size) = self
             .our_members
             .adults()
-            .map(|p2p_node| p2p_node.name().bit(next_bit_index) == next_bit)
+            .map(|peer| peer.name().bit(next_bit_index) == next_bit)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
                     (ours + 1, siblings)
@@ -409,7 +409,7 @@ impl SharedState {
 
     // Returns the candidates for elders out of all the nodes in the section, even out of the
     // relocating nodes if there would not be enough instead.
-    fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
+    fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, Peer> {
         self.our_members
             .elder_candidates(elder_size, self.sections.our())
     }
@@ -437,7 +437,7 @@ mod test {
     use super::*;
     use crate::{
         consensus,
-        id::{FullId, P2pNode, PublicId},
+        id::{FullId, Peer, PublicId},
         rng::{self, MainRng},
         section::EldersInfo,
     };
@@ -469,7 +469,7 @@ mod test {
                     let some_id = FullId::within_range(rng, &prefix.range_inclusive());
                     let peer_addr = ([127, 0, 0, 1], 9999).into();
                     let pub_id = *some_id.public_id();
-                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
+                    let _ = members.insert(*pub_id.name(), Peer::new(pub_id, peer_addr));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
                 (EldersInfo::new(members, prefix), full_ids)
@@ -479,7 +479,7 @@ mod test {
                 let some_id = FullId::within_range(rng, &info.prefix.range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let pub_id = *some_id.public_id();
-                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
+                let _ = members.insert(*pub_id.name(), Peer::new(pub_id, peer_addr));
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
                 (EldersInfo::new(members, info.prefix), full_ids)

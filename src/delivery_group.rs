@@ -10,8 +10,8 @@
 
 use crate::{
     error::{Error, Result},
-    id::{P2pNode, PublicId},
     location::DstLocation,
+    peer::Peer,
     section::{SectionMap, SectionMembers},
 };
 
@@ -40,11 +40,11 @@ pub const fn delivery_group_size(n: usize) -> usize {
 ///     - returns the `N/3` closest members of the RT to the target
 pub fn delivery_targets(
     dst: &DstLocation,
-    our_id: &PublicId,
+    our_id: &XorName,
     our_members: &SectionMembers,
     sections: &SectionMap,
-) -> Result<(Vec<P2pNode>, usize)> {
-    if !sections.is_elder(our_id.name()) {
+) -> Result<(Vec<Peer>, usize)> {
+    if !sections.is_elder(our_id) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
         let targets: Vec<_> = sections.our_elders().cloned().collect();
@@ -54,10 +54,10 @@ pub fn delivery_targets(
 
     let (best_section, dg_size) = match dst {
         DstLocation::Node(target_name) => {
-            if target_name == our_id.name() {
+            if target_name == our_id {
                 return Ok((Vec::new(), 0));
             }
-            if let Some(node) = get_p2p_node(target_name, our_members, sections) {
+            if let Some(node) = get_peer(target_name, our_members, sections) {
                 return Ok((vec![*node], 1));
             }
 
@@ -75,7 +75,7 @@ pub fn delivery_targets(
                 let section: Vec<_> = info
                     .elders
                     .values()
-                    .filter(|node| node.name() != our_id.name())
+                    .filter(|node| node.name() != our_id)
                     .cloned()
                     .collect();
                 let dg_size = section.len();
@@ -93,9 +93,9 @@ pub fn delivery_targets(
 // Obtain the delivery group candidates for this target
 fn candidates(
     target_name: &XorName,
-    our_id: &PublicId,
+    our_id: &XorName,
     sections: &SectionMap,
-) -> Result<(Vec<P2pNode>, usize)> {
+) -> Result<(Vec<Peer>, usize)> {
     let filtered_sections = sections
         .sorted_by_distance_to(target_name)
         .into_iter()
@@ -109,7 +109,7 @@ fn candidates(
 
         if *prefix == sections.our().prefix {
             // Send to all connected targets so they can forward the message
-            nodes_to_send.retain(|node| node.name() != our_id.name());
+            nodes_to_send.retain(|node| node.name() != our_id);
             dg_size = nodes_to_send.len();
             break;
         }
@@ -127,23 +127,23 @@ fn candidates(
     }
 }
 
-// Returns a `P2pNode` for a known node.
-fn get_p2p_node<'a>(
+// Returns a `Peer` for a known node.
+fn get_peer<'a>(
     name: &XorName,
     our_members: &'a SectionMembers,
     sections: &'a SectionMap,
-) -> Option<&'a P2pNode> {
+) -> Option<&'a Peer> {
     our_members
         .get(name)
-        .map(|info| &info.p2p_node)
+        .map(|info| &info.peer)
         .or_else(|| sections.get_elder(name))
 }
 
 // Returns the set of peers that are responsible for collecting signatures to verify a message;
 // this may contain us or only other nodes.
-pub fn signature_targets<I>(dst: &DstLocation, our_elders: I) -> Vec<P2pNode>
+pub fn signature_targets<I>(dst: &DstLocation, our_elders: I) -> Vec<Peer>
 where
-    I: IntoIterator<Item = P2pNode>,
+    I: IntoIterator<Item = Peer>,
 {
     let dst_name = match dst {
         DstLocation::Node(name) => *name,

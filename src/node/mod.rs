@@ -18,10 +18,11 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::{executor::Executor, stage::Stage};
 use crate::{
+    crypto::{Keypair, PublicKey, name},
     error::{Error, Result},
-    id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
+    peer::Peer,
     rng::MainRng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
@@ -41,8 +42,8 @@ use std::collections::BTreeSet;
 pub struct NodeConfig {
     /// If true, configures the node to start a new network instead of joining an existing one.
     pub first: bool,
-    /// The ID of the node or `None` for randomly generated one.
-    pub full_id: Option<FullId>,
+    /// The `Keypair` of the node or `None` for randomly generated one.
+    pub keypair: Option<Keypair>,
     /// Configuration for the underlying network transport.
     pub transport_config: TransportConfig,
     /// Global network parameters. Must be identical for all nodes in the network.
@@ -53,7 +54,7 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             first: false,
-            full_id: None,
+            keypair: None,
             transport_config: TransportConfig::default(),
             network_params: NetworkParams::default(),
         }
@@ -80,15 +81,15 @@ impl Node {
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
         let mut rng = MainRng::default();
-        let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
-        let node_name = *full_id.public_id().name();
+        let keypair = config.keypair.unwrap_or_else(|| Keypair::generate(&mut rng));
+        let node_name = name(&keypair.public);
 
         let (stage, incoming_conns, timer_rx, events_rx) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            Stage::first_node(config.transport_config, full_id, config.network_params).await?
+            Stage::first_node(config.transport_config, keypair, config.network_params).await?
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            Stage::bootstrap(config.transport_config, full_id, config.network_params).await?
+            Stage::bootstrap(config.transport_config, keypair, config.network_params).await?
         };
 
         let stage = Arc::new(Mutex::new(stage));
@@ -103,14 +104,14 @@ impl Node {
         Ok((node, event_stream))
     }
 
-    /// Returns the `PublicId` of this node.
-    pub async fn id(&self) -> PublicId {
-        *self.stage.lock().await.full_id().public_id()
+    /// Returns the `PublicKey` of this node.
+    pub async fn public_key(&self) -> PublicKey {
+        self.stage.lock().await.keypair().public
     }
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        *self.id().await.name()
+        self.stage.lock().await.name()
     }
 
     /// Returns connection info of this node.
@@ -143,12 +144,12 @@ impl Node {
                 .sections
                 .our()
                 .elders
-                .contains_key(stage.full_id().public_id().name()),
+                .contains_key(&stage.name()),
         }
     }
 
     /// Returns the information of all the current section elders.
-    pub async fn our_elders(&self) -> Vec<P2pNode> {
+    pub async fn our_elders(&self) -> Vec<Peer> {
         match self.stage.lock().await.approved() {
             Some(stage) => stage.shared_state.sections.our_elders().cloned().collect(),
             None => vec![],
@@ -156,7 +157,7 @@ impl Node {
     }
 
     /// Returns the elders of our section sorted by their distance to `name` (closest first).
-    pub async fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<P2pNode> {
+    pub async fn our_elders_sorted_by_distance_to(&self, name: &XorName) -> Vec<Peer> {
         match self.stage.lock().await.approved() {
             Some(stage) => stage
                 .shared_state
@@ -170,7 +171,7 @@ impl Node {
     }
 
     /// Returns the information of all the current section adults.
-    pub async fn our_adults(&self) -> Vec<P2pNode> {
+    pub async fn our_adults(&self) -> Vec<Peer> {
         match self.stage.lock().await.approved() {
             Some(stage) => stage.shared_state.our_adults().cloned().collect(),
             None => vec![],
@@ -179,7 +180,7 @@ impl Node {
 
     /// Returns the adults of our section sorted by their distance to `name` (closest first).
     /// If we are not elder or if there are no adults in the section, returns empty vec.
-    pub async fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<P2pNode> {
+    pub async fn our_adults_sorted_by_distance_to(&self, name: &XorName) -> Vec<Peer> {
         match self.stage.lock().await.approved() {
             Some(stage) => stage
                 .shared_state
@@ -319,7 +320,7 @@ impl Node {
     }
 
     /// Returns the elders in our and neighbouring sections.
-    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn known_elders(&self) -> impl Iterator<Item = &Peer> {
         self.shared_state()
             .into_iter()
             .flat_map(|state| state.sections.elders())
@@ -340,7 +341,7 @@ impl Node {
     }
 
     /// Returns the members in our section and elders we know.
-    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn known_nodes(&self) -> impl Iterator<Item = &Peer> {
         self.shared_state()
             .into_iter()
             .flat_map(|state| state.known_nodes())
@@ -369,7 +370,7 @@ impl Node {
                 state
                     .sections
                     .our_elders()
-                    .map(|p2p_node| *p2p_node.name())
+                    .map(|peer| *peer.name())
                     .collect(),
             )
         } else {

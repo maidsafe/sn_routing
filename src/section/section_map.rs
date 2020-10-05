@@ -10,7 +10,7 @@ use super::{
     elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap,
     section_proof_chain::SectionProofChain,
 };
-use crate::{consensus::Proven, id::P2pNode, location::DstLocation};
+use crate::{consensus::Proven, location::DstLocation, peer::Peer};
 
 use serde::Serialize;
 use std::{cmp::Ordering, collections::HashSet, iter};
@@ -86,17 +86,17 @@ impl SectionMap {
     }
 
     /// Returns all elders from all known sections.
-    pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn elders(&self) -> impl Iterator<Item = &Peer> {
         self.all().flat_map(|info| info.elders.values())
     }
 
     /// Returns all elders from our section.
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+    pub fn our_elders(&self) -> impl Iterator<Item = &Peer> + ExactSizeIterator {
         self.our().elders.values()
     }
 
-    /// Returns a `P2pNode` of an elder from a known section.
-    pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
+    /// Returns a `Peer` of an elder from a known section.
+    pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
         let elders_info = if self.our.value.prefix.matches(name) {
             &self.our.value
         } else {

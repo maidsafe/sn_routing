@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//! P2PNode implementation for a resilient decentralised network infrastructure.
+//! Peer implementation for a resilient decentralised network infrastructure.
 //!
 //! This is the "engine room" of a hybrid p2p network, where the p2p nodes are built on
 //! top of this library. The features this library gives us is:
@@ -79,7 +79,6 @@ extern crate serde;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
-    id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
     node::{EventStream, Node, NodeConfig},
@@ -124,12 +123,12 @@ mod cancellation;
 mod consensus;
 mod delivery_group;
 mod error;
-mod id;
 mod location;
 mod message_filter;
 mod messages;
 mod network_params;
 mod node;
+mod peer;
 mod relocation;
 mod section;
 mod time;

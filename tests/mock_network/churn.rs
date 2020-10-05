@@ -115,7 +115,7 @@ fn remove_unresponsive_node() {
         .map(|n| &n.inner)
         .filter(|n| {
             n.known_elders()
-                .any(|p2p_node| *p2p_node.name() == non_responsive_name)
+                .any(|peer| *peer.name() == non_responsive_name)
         })
         .map(|n| n.name())
         .collect_vec();
