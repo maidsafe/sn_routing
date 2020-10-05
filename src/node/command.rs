@@ -16,6 +16,8 @@ use bytes::Bytes;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
+    slice,
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -53,6 +55,26 @@ pub(crate) enum Command {
     ScheduleTimeout { duration: Duration, token: u64 },
     /// Transition into the given state.
     Transition(Box<State>),
+}
+
+impl Command {
+    /// Convenience method to create `Command::SendMessage` with a single recipient.
+    pub fn send_message_to_target(recipient: &SocketAddr, message: Bytes) -> Self {
+        Self::send_message_to_targets(slice::from_ref(recipient), 1, message)
+    }
+
+    /// Convenience method to create `Command::SendMessage` with multiple recipients.
+    pub fn send_message_to_targets(
+        recipients: &[SocketAddr],
+        delivery_group_size: usize,
+        message: Bytes,
+    ) -> Self {
+        Self::SendMessage {
+            recipients: recipients.to_vec(),
+            delivery_group_size,
+            message,
+        }
+    }
 }
 
 impl Debug for Command {
@@ -98,4 +120,10 @@ impl Debug for Command {
             Self::Transition(state) => f.debug_tuple("Transition").field(state).finish(),
         }
     }
+}
+
+/// Generate unique timer token.
+pub(crate) fn next_timer_token() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }

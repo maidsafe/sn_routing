@@ -16,7 +16,7 @@ mod elder;
 #[cfg(feature = "mock")]
 mod utils;
 
-use super::{Command, Context, Stage};
+use super::{Command, Stage, State};
 use crate::{
     crypto,
     location::DstLocation,
@@ -43,10 +43,7 @@ async fn send_bootstrap_request() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new();
-
-    let (node, _) = Stage::bootstrap(
-        &mut cx,
+    let (node, _, command) = Stage::bootstrap(
         env.transport_config(),
         gen_keypair(),
         Default::default(),
@@ -55,17 +52,18 @@ async fn send_bootstrap_request() -> Result<()> {
     .await?;
 
     let recipients = assert_matches!(
-        cx.pop_command(),
-        Some(Command::SendBootstrapRequest(recipients)) => recipients
+        command,
+        Command::SendBootstrapRequest(recipients) => recipients
     );
     assert_eq!(recipients, [env.bootstrap_addr]);
-    assert!(cx.pop_command().is_none());
 
-    node.handle_command(&mut cx, Command::SendBootstrapRequest(recipients))
-        .await?;
+    let mut commands = node
+        .handle_command(Command::SendBootstrapRequest(recipients))
+        .await?
+        .into_iter();
 
     let (recipients, delivery_group_size, message) = assert_matches!(
-        cx.pop_command(),
+        commands.next(),
         Some(Command::SendMessage {
             recipients,
             delivery_group_size,
@@ -81,7 +79,7 @@ async fn send_bootstrap_request() -> Result<()> {
         Variant::BootstrapRequest(name) => assert_eq!(*name, node.name().await)
     );
 
-    assert!(cx.pop_command().is_none());
+    assert!(commands.next().is_none());
 
     Ok(())
 }
@@ -91,8 +89,6 @@ async fn receive_bootstrap_request() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new();
-
     let (node, _) = Stage::first_node(
         env.transport_config(),
         gen_keypair(),
@@ -112,17 +108,16 @@ async fn receive_bootstrap_request() -> Result<()> {
         None,
     )?;
 
-    node.handle_command(
-        &mut cx,
-        Command::HandleMessage {
+    let mut commands = node
+        .handle_command(Command::HandleMessage {
             message,
             sender: Some(new_node_addr),
-        },
-    )
-    .await?;
+        })
+        .await?
+        .into_iter();
 
     let (recipients, message) = assert_matches!(
-        cx.pop_command(),
+        commands.next(),
         Some(Command::SendMessage {
             recipients,
             message, ..
@@ -145,18 +140,13 @@ async fn receive_bootstrap_response_join() -> Result<()> {
     let env = Env::new()?;
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let mut cx = Context::new();
-
-    let (node, _) = Stage::bootstrap(
-        &mut cx,
+    let (node, ..) = Stage::bootstrap(
         env.transport_config(),
         gen_keypair(),
         Default::default(),
         event_tx,
     )
     .await?;
-
-    let _ = cx.take_commands();
 
     let message = Message::single_src(
         &env.elder_keypairs[0],
@@ -169,17 +159,19 @@ async fn receive_bootstrap_response_join() -> Result<()> {
         None,
         None,
     )?;
-    node.handle_command(
-        &mut cx,
-        Command::HandleMessage {
+    let mut commands = node
+        .handle_command(Command::HandleMessage {
             sender: Some(*env.elder(0).addr()),
             message,
-        },
-    )
-    .await?;
+        })
+        .await?
+        .into_iter();
+
+    let state = assert_matches!(commands.next(), Some(Command::Transition(state)) => state);
+    assert_matches!(*state, State::Joining(_));
 
     let (recipients, delivery_group_size, message) = assert_matches!(
-        cx.pop_command(),
+        commands.next(),
         Some(Command::SendMessage {
             recipients,
             delivery_group_size,
