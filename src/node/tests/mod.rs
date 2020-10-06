@@ -18,34 +18,36 @@ mod utils;
 
 use super::{Approved, Bootstrapping, Comm, Command, NodeInfo, Stage, State};
 use crate::{
+    consensus::Vote,
     crypto,
     event::Event,
     location::DstLocation,
-    messages::{BootstrapResponse, Message, Variant},
+    messages::{BootstrapResponse, JoinRequest, Message, Variant},
     peer::Peer,
     rng,
-    section::EldersInfo,
+    section::{EldersInfo, PeerState},
     ELDER_SIZE, MIN_AGE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
 use ed25519_dalek::Keypair;
 use itertools::Itertools;
-use std::{collections::HashSet, net::SocketAddr};
+use std::{cell::Cell, collections::HashSet, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 #[tokio::test]
 async fn send_bootstrap_request() -> Result<()> {
+    let bootstrap_addr = create_addr();
     let (node_info, _) = create_node_info();
-    let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr()], node_info);
+    let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let recipients = assert_matches!(
         command,
         Command::SendBootstrapRequest(recipients) => recipients
     );
-    assert_eq!(recipients, [bootstrap_addr()]);
+    assert_eq!(recipients, [bootstrap_addr]);
 
     let mut commands = node
         .handle_command(Command::SendBootstrapRequest(recipients))
@@ -59,7 +61,7 @@ async fn send_bootstrap_request() -> Result<()> {
             message, ..
         }) => (recipients, message)
     );
-    assert_eq!(recipients, [bootstrap_addr()]);
+    assert_eq!(recipients, [bootstrap_addr]);
 
     let message = Message::from_bytes(&message)?;
     assert_matches!(
@@ -81,7 +83,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let node = Stage::new(state.into(), comm);
 
     let new_node_keypair = create_keypair();
-    let new_node_addr = ([192, 0, 2, 0], 2000).into();
+    let new_node_addr = create_addr();
 
     let message = Message::single_src(
         &new_node_keypair,
@@ -122,7 +124,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 #[tokio::test]
 async fn receive_bootstrap_response_join() -> Result<()> {
     let (node_info, _) = create_node_info();
-    let (state, _) = Bootstrapping::new(None, vec![bootstrap_addr()], node_info);
+    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let (elders_info, elder_keypairs) = create_elders_info();
@@ -153,8 +155,9 @@ async fn receive_bootstrap_response_join() -> Result<()> {
         .await?
         .into_iter();
 
-    let state = assert_matches!(commands.next(), Some(Command::Transition(state)) => state);
-    assert_matches!(*state, State::Joining(_));
+    assert_matches!(commands.next(), Some(Command::Transition(state)) => {
+        assert_matches!(*state, State::Joining(_))
+    });
 
     let (recipients, delivery_group_size, message) = assert_matches!(
         commands.next(),
@@ -181,15 +184,13 @@ async fn receive_bootstrap_response_join() -> Result<()> {
 async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
     let (node_info, _) = create_node_info();
     let node_name = node_info.name();
-    let (state, _) = Bootstrapping::new(None, vec![bootstrap_addr()], node_info);
+    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let old_keypair = create_keypair();
-    let old_addr = create_addr(1001);
+    let old_addr = create_addr();
 
-    let new_addrs: Vec<_> = (0..ELDER_SIZE)
-        .map(|index| create_addr(2000 + index as u16))
-        .collect();
+    let new_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| create_addr()).collect();
 
     let message = Message::single_src(
         &old_keypair,
@@ -225,13 +226,70 @@ async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
     Ok(())
 }
 
-// TODO: add more tests here
+#[tokio::test]
+async fn receive_join_request() -> Result<()> {
+    let (node_info, _) = create_node_info();
+    let comm = create_comm()?;
+    let addr = comm.our_connection_info()?;
+    let state = Approved::first_node(node_info, addr)?;
+    let node = Stage::new(state.into(), comm);
 
-fn bootstrap_addr() -> SocketAddr {
-    create_addr(1000)
+    let new_node_keypair = create_keypair();
+    let new_node_addr = create_addr();
+    let section_key = *node
+        .our_history()
+        .await
+        .expect("node has no section chain")
+        .last_key();
+
+    let message = Message::single_src(
+        &new_node_keypair,
+        MIN_AGE,
+        DstLocation::Direct,
+        Variant::JoinRequest(Box::new(JoinRequest {
+            section_key,
+            relocate_payload: None,
+        })),
+        None,
+        None,
+    )?;
+    let mut commands = node
+        .handle_command(Command::HandleMessage {
+            sender: Some(new_node_addr),
+            message,
+        })
+        .await?
+        .into_iter();
+
+    let vote = assert_matches!(
+        commands.next(),
+        Some(Command::HandleVote { vote, .. }) => vote
+    );
+    assert_matches!(
+        vote,
+        Vote::Online { member_info, previous_name, their_knowledge } => {
+            assert_eq!(*member_info.peer.name(), crypto::name(&new_node_keypair.public));
+            assert_eq!(*member_info.peer.addr(), new_node_addr);
+            assert_eq!(member_info.peer.age(), MIN_AGE);
+            assert_eq!(member_info.state, PeerState::Joined);
+            assert_eq!(previous_name, None);
+            assert_eq!(their_knowledge, None);
+        }
+    );
+
+    Ok(())
 }
 
-fn create_addr(port: u16) -> SocketAddr {
+// TODO: add more tests here
+
+// Returns unique SocketAddr
+fn create_addr() -> SocketAddr {
+    thread_local! {
+        static NEXT_PORT: Cell<u16> = Cell::new(1000);
+    }
+
+    let port = NEXT_PORT.with(|cell| cell.replace(cell.get().wrapping_add(1)));
+
     ([192, 0, 2, 0], port).into()
 }
 
@@ -259,12 +317,8 @@ fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
         .collect();
     let elders = keypairs
         .iter()
-        .enumerate()
-        .map(|(index, keypair)| {
-            let addr = create_addr(1001 + index as u16);
-            Peer::new(crypto::name(&keypair.public), addr, MIN_AGE)
-        })
-        .map(|p2p_node| (*p2p_node.name(), p2p_node))
+        .map(|keypair| Peer::new(crypto::name(&keypair.public), create_addr(), MIN_AGE))
+        .map(|peer| (*peer.name(), peer))
         .collect();
     let elders_info = EldersInfo {
         elders,
