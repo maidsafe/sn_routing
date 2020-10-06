@@ -340,6 +340,66 @@ async fn accumulate_votes() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn handle_consensus_on_online() -> Result<()> {
+    let (elders_info, mut full_ids) = create_elders_info();
+    let sk_set = create_secret_key_set();
+    let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    let new_node_name = crypto::name(&create_keypair().public);
+    let new_node_addr = create_addr();
+    let member_info = MemberInfo {
+        peer: Peer::new(new_node_name, new_node_addr, MIN_AGE),
+        state: PeerState::Joined,
+    };
+    let vote = Vote::Online {
+        member_info,
+        previous_name: None,
+        their_knowledge: None,
+    };
+    let proof = create_proof(&sk_set, &vote.as_signable())?;
+
+    let commands = node
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    let mut node_approval_sent = false;
+
+    for command in commands {
+        match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => {
+                let message = Message::from_bytes(&message)?;
+                match message.variant() {
+                    Variant::NodeApproval(proven_elders_info) => {
+                        assert_eq!(proven_elders_info.value, elders_info);
+                        assert_eq!(recipients, [new_node_addr]);
+                        node_approval_sent = true;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(node_approval_sent);
+
+    assert_matches!(event_rx.try_recv(), Ok(Event::InfantJoined { name, age, }) => {
+        assert_eq!(name, new_node_name);
+        assert_eq!(age, MIN_AGE);
+    });
+
+    Ok(())
+}
+
 // TODO: add more tests here
 
 const THRESHOLD: usize = majority_count(ELDER_SIZE) - 1;
@@ -383,7 +443,7 @@ fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
         .collect();
     let elders = keypairs
         .iter()
-        .map(|keypair| Peer::new(crypto::name(&keypair.public), create_addr(), MIN_AGE))
+        .map(|keypair| Peer::new(crypto::name(&keypair.public), create_addr(), MIN_AGE + 1))
         .map(|peer| (*peer.name(), peer))
         .collect();
     let elders_info = EldersInfo {
@@ -422,7 +482,17 @@ fn create_shared_state(
     let section_chain = SectionProofChain::new(pk_set.public_key());
     let elders_info_proof = create_proof(sk_set, elders_info)?;
     let proven_elders_info = Proven::new(elders_info.clone(), elders_info_proof);
-    let shared_state = SharedState::new(section_chain, proven_elders_info);
+
+    let mut shared_state = SharedState::new(section_chain, proven_elders_info);
+
+    for peer in elders_info.elders.values().copied() {
+        let member_info = MemberInfo {
+            peer,
+            state: PeerState::Joined,
+        };
+        let proof = create_proof(sk_set, &member_info)?;
+        let _ = shared_state.update_member(member_info, proof);
+    }
 
     let section_key_share = SectionKeyShare {
         public_key_set: pk_set,
