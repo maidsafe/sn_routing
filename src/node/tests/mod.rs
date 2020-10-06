@@ -16,20 +16,25 @@ mod utils;
 
 use super::{Approved, Bootstrapping, Comm, Command, NodeInfo, Stage, State};
 use crate::{
-    consensus::Vote,
+    consensus::{Proven, Vote},
     crypto,
     event::Event,
     location::DstLocation,
     messages::{BootstrapResponse, JoinRequest, Message, Variant},
     peer::Peer,
     rng,
-    section::{EldersInfo, PeerState},
-    ELDER_SIZE, MIN_AGE,
+    section::{
+        majority_count, EldersInfo, MemberInfo, PeerState, SectionKeyShare, SectionProofChain,
+        SharedState, MIN_AGE,
+    },
+    ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
+use bls_signature_aggregator::Proof;
 use ed25519_dalek::Keypair;
 use itertools::Itertools;
+use serde::Serialize;
 use std::{cell::Cell, collections::HashSet, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
@@ -278,7 +283,66 @@ async fn receive_join_request() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn accumulate_votes() -> Result<()> {
+    let (elders_info, mut full_ids) = create_elders_info();
+    let sk_set = create_secret_key_set();
+    let pk_set = sk_set.public_keys();
+    let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (node_info, _) = create_node_info_for(full_ids.remove(0));
+
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    let new_node_name = crypto::name(&create_keypair().public);
+    let new_node_addr = create_addr();
+    let member_info = MemberInfo {
+        peer: Peer::new(new_node_name, new_node_addr, MIN_AGE),
+        state: PeerState::Joined,
+    };
+    let vote = Vote::Online {
+        member_info,
+        previous_name: None,
+        their_knowledge: None,
+    };
+
+    for index in 0..THRESHOLD {
+        let proof_share = vote.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
+        let commands = node
+            .handle_command(Command::HandleVote {
+                vote: vote.clone(),
+                proof_share,
+            })
+            .await?;
+        assert!(commands.is_empty());
+    }
+
+    let proof_share = vote.prove(
+        pk_set.clone(),
+        THRESHOLD,
+        &sk_set.secret_key_share(THRESHOLD),
+    )?;
+    let mut commands = node
+        .handle_command(Command::HandleVote {
+            vote: vote.clone(),
+            proof_share,
+        })
+        .await?
+        .into_iter();
+
+    assert_matches!(
+        commands.next(),
+        Some(Command::HandleConsensus { vote: consensus, .. }) => {
+            assert_eq!(consensus, vote);
+        }
+    );
+
+    Ok(())
+}
+
 // TODO: add more tests here
+
+const THRESHOLD: usize = majority_count(ELDER_SIZE) - 1;
 
 // Returns unique SocketAddr
 fn create_addr() -> SocketAddr {
@@ -292,8 +356,12 @@ fn create_addr() -> SocketAddr {
 }
 
 fn create_node_info() -> (NodeInfo, mpsc::UnboundedReceiver<Event>) {
+    create_node_info_for(create_keypair())
+}
+
+fn create_node_info_for(keypair: Keypair) -> (NodeInfo, mpsc::UnboundedReceiver<Event>) {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let node_info = NodeInfo::new(create_keypair(), Default::default(), event_tx);
+    let node_info = NodeInfo::new(keypair, Default::default(), event_tx);
     (node_info, event_rx)
 }
 
@@ -324,4 +392,43 @@ fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
     };
 
     (elders_info, keypairs)
+}
+
+fn create_secret_key_set() -> bls::SecretKeySet {
+    bls::SecretKeySet::random(THRESHOLD, &mut rng::new())
+}
+
+fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Result<Proof> {
+    let pk_set = sk_set.public_keys();
+    let bytes = bincode::serialize(payload)?;
+    let signature_shares: Vec<_> = (0..sk_set.threshold() + 1)
+        .map(|index| sk_set.secret_key_share(index).sign(&bytes))
+        .collect();
+    let signature = pk_set
+        .combine_signatures(signature_shares.iter().enumerate())
+        .unwrap();
+
+    Ok(Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    })
+}
+
+fn create_shared_state(
+    elders_info: &EldersInfo,
+    sk_set: &bls::SecretKeySet,
+) -> Result<(SharedState, SectionKeyShare)> {
+    let pk_set = sk_set.public_keys();
+    let section_chain = SectionProofChain::new(pk_set.public_key());
+    let elders_info_proof = create_proof(sk_set, elders_info)?;
+    let proven_elders_info = Proven::new(elders_info.clone(), elders_info_proof);
+    let shared_state = SharedState::new(section_chain, proven_elders_info);
+
+    let section_key_share = SectionKeyShare {
+        public_key_set: pk_set,
+        index: 0,
+        secret_key_share: sk_set.secret_key_share(0),
+    };
+
+    Ok((shared_state, section_key_share))
 }
