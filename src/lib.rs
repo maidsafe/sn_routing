@@ -94,28 +94,6 @@ pub mod log_ident;
 pub mod rng;
 
 // ############################################################################
-// Mock and test API
-// ############################################################################
-
-/// Mocking utilities.
-#[cfg(feature = "mock")]
-pub mod mock;
-
-/// Mock network
-#[cfg(feature = "mock")]
-pub use self::section::quorum_count;
-
-#[cfg(feature = "mock")]
-#[doc(hidden)]
-pub mod test_consts {
-    pub use crate::{
-        consensus::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-        node::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
-        transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
-    };
-}
-
-// ############################################################################
 // Private
 // ############################################################################
 
@@ -131,7 +109,6 @@ mod node;
 mod peer;
 mod relocation;
 mod section;
-mod time;
 mod timer;
 
 // Cryptography

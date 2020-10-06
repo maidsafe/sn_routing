@@ -14,7 +14,7 @@ mod joining;
 use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
 use crate::{
     consensus::{self, Proof, Proven},
-    crypto::{Keypair, name},
+    crypto::{name, Keypair},
     error::{Error, Result},
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
@@ -198,7 +198,7 @@ impl Stage {
     /// Returns the name of the node
     pub fn name(&self) -> XorName {
         self.node_info().name()
-     }
+    }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
@@ -289,10 +289,9 @@ impl Stage {
                 DstLocation::Direct => true,
             },
             State::Approved(stage) => {
-                let is_dst_location = msg.dst().contains(
-                    &stage.node_info.name(),
-                    stage.shared_state.our_prefix(),
-                );
+                let is_dst_location = msg
+                    .dst()
+                    .contains(&stage.node_info.name(), stage.shared_state.our_prefix());
 
                 // Relay a message to the network if the message
                 // is not for us, or if it is for the section.

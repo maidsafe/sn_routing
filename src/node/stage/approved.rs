@@ -283,11 +283,7 @@ impl Approved {
 
     /// Is the node with the given id an elder in our section?
     pub fn is_our_elder(&self, id: &XorName) -> bool {
-        self.shared_state
-            .sections
-            .our()
-            .elders
-            .contains_key(id)
+        self.shared_state.sections.our().elders.contains_key(id)
     }
 
     /// Returns the current BLS public key set
@@ -676,8 +672,7 @@ impl Approved {
     }
 
     async fn handle_sync(&mut self, shared_state: SharedState) -> Result<()> {
-        if !shared_state.our_prefix().matches(&self.node_info.name())
-        {
+        if !shared_state.our_prefix().matches(&self.node_info.name()) {
             trace!("ignore Sync - not our section");
             return Ok(());
         }
@@ -771,11 +766,7 @@ impl Approved {
     // Note: As an adult, we should only give info about our section elders and they would
     // further guide the joining node. However this lead to a loop if the Adult is the new Elder so
     // we use the same code as for Elder and return Join in some cases.
-    async fn handle_bootstrap_request(
-        &mut self,
-        peer: Peer,
-        destination: XorName,
-    ) -> Result<()> {
+    async fn handle_bootstrap_request(&mut self, peer: Peer, destination: XorName) -> Result<()> {
         debug!(
             "Received BootstrapRequest to section at {} from {:?}.",
             destination, peer
@@ -803,11 +794,7 @@ impl Approved {
             .await
     }
 
-    async fn handle_join_request(
-        &mut self,
-        peer: Peer,
-        join_request: JoinRequest,
-    ) -> Result<()> {
+    async fn handle_join_request(&mut self, peer: Peer, join_request: JoinRequest) -> Result<()> {
         debug!("Received {:?} from {:?}", join_request, peer);
 
         if join_request.section_key != *self.shared_state.our_history.last_key() {
@@ -935,10 +922,10 @@ impl Approved {
 
         trace!("accumulated DKG result for {}: {:?}", elders_info, result);
 
-        for info in self.shared_state.promote_and_demote_elders(
-            &self.node_info.network_params,
-            &self.node_info.name(),
-        ) {
+        for info in self
+            .shared_state
+            .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
+        {
             // Check whether the result still corresponds to the current elder candidates.
             if info == elders_info {
                 debug!("handle DKG result for {}: {:?}", info, result);
@@ -989,10 +976,10 @@ impl Approved {
     }
 
     async fn try_relay_message(&mut self, msg: &Message) -> Result<()> {
-        if !msg.dst().contains(
-            &self.node_info.name(),
-            self.shared_state.our_prefix(),
-        ) || msg.dst().is_section()
+        if !msg
+            .dst()
+            .contains(&self.node_info.name(), self.shared_state.our_prefix())
+            || msg.dst().is_section()
         {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.relay_message(msg).await
@@ -1009,10 +996,10 @@ impl Approved {
         // to avoid the duplication.
         self.try_relay_message(&msg).await?;
 
-        if !msg.dst().contains(
-            &self.node_info.name(),
-            self.shared_state.our_prefix(),
-        ) {
+        if !msg
+            .dst()
+            .contains(&self.node_info.name(), self.shared_state.our_prefix())
+        {
             return Ok(());
         }
 
@@ -1049,10 +1036,10 @@ impl Approved {
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     async fn promote_and_demote_elders(&mut self) -> Result<()> {
-        for info in self.shared_state.promote_and_demote_elders(
-            &self.node_info.network_params,
-            &self.node_info.name(),
-        ) {
+        for info in self
+            .shared_state
+            .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
+        {
             self.send_dkg_start(info).await?;
         }
 
@@ -1625,7 +1612,11 @@ impl Approved {
             .values()
             .filter(|peer| peer.name() != &self.node_info.name());
 
-        trace!("Send {:?} to {:?}", variant, recipients.clone().format(", "));
+        trace!(
+            "Send {:?} to {:?}",
+            variant,
+            recipients.clone().format(", ")
+        );
 
         let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
         let message = Message::single_src(
@@ -1673,12 +1664,8 @@ impl Approved {
             .await?;
 
         // TODO: remove the recursion caused by this call.
-        self.handle_dkg_message(
-            dkg_key,
-            dkg_message_bytes,
-            self.node_info.name(),
-        )
-        .await
+        self.handle_dkg_message(dkg_key, dkg_message_bytes, self.node_info.name())
+            .await
     }
 
     // Send message over the network.
@@ -1692,11 +1679,7 @@ impl Approved {
 
         let targets: Vec<_> = targets
             .into_iter()
-            .filter(|peer| {
-                self.msg_filter
-                    .filter_outgoing(msg, peer.name())
-                    .is_new()
-            })
+            .filter(|peer| self.msg_filter.filter_outgoing(msg, peer.name()).is_new())
             .collect();
 
         if targets.is_empty() {
@@ -1938,63 +1921,8 @@ impl Approved {
         self.try_relay_message(&msg).await
     }
 
-    #[cfg(feature = "mock")]
-    // Returns whether node has completed the full joining process
-    pub fn is_ready(&self) -> bool {
-        // TODO: This is mainly to prevent bootstrapping a new node too quickly when the previous
-        //       node is expected to become an elder, which will carry out DKG voting process.
-        //       However, this may hide issue for the tests such as `simultaneous_joining_nodes`.
-        //       Consider using `poll_until_minimal_elder_count` in the testing code to avoid carry
-        //       out internal check here.
-        if self
-            .shared_state
-            .our_members
-            .elder_candidates(
-                self.node_info.network_params.elder_size,
-                self.shared_state.our_info(),
-            )
-            .contains_key(self.node_info.full_id.public_id().name())
-        {
-            self.is_our_elder(self.node_info.full_id.public_id())
-        } else {
-            true
-        }
-    }
-
     fn print_network_stats(&self) {
         self.shared_state.sections.network_stats().print()
-    }
-
-    // Simulate DKG completion for unit tests.
-    #[cfg(all(test, feature = "mock"))]
-    pub(crate) fn complete_dkg(
-        &mut self,
-        core: &mut Core,
-        elders_info: &EldersInfo,
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<bls::SecretKeyShare>,
-    ) -> Result<()> {
-        use bls_dkg::key_gen::outcome::Outcome;
-
-        let public_key = public_key_set.public_key();
-
-        if let Some(secret_key_share) = secret_key_share {
-            self.section_keys_provider.insert_dkg_outcome(
-                core.name(),
-                elders_info,
-                Outcome {
-                    public_key_set,
-                    secret_key_share,
-                },
-            )
-        }
-        let dkg_key = DkgKey::new(elders_info);
-
-        for sender in elders_info.elders.values() {
-            self.handle_dkg_result(core, dkg_key, Ok(public_key), *sender.public_id())?;
-        }
-
-        Ok(())
     }
 }
 

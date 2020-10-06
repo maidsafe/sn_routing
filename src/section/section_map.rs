@@ -237,7 +237,6 @@ impl SectionMap {
             .map(|entry| (&entry.value.0, &entry.value.1))
     }
 
-    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys.iter().any(|entry| entry.value.1 == *key)
     }

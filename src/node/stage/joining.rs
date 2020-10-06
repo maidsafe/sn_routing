@@ -178,10 +178,7 @@ impl Joining {
             return Ok(());
         }
 
-        if new_elders_info
-            .prefix
-            .matches(&self.node_info.name())
-        {
+        if new_elders_info.prefix.matches(&self.node_info.name()) {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
                 new_elders_info, sender

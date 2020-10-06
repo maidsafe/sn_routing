@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::time::{Duration, Instant};
 use std::{
     collections::BTreeMap,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 use tokio::{
     self,
@@ -64,7 +64,6 @@ impl Timer {
         }
     }
 
-    // #[cfg(not(feature = "mock"))]
     async fn run(mut expire_tx: UnboundedSender<u64>, mut schedule_rx: Receiver<Detail>) {
         let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
@@ -111,7 +110,7 @@ fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, tx: &mut Unbou
     }
 }
 
-#[cfg(all(test, not(feature = "mock")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

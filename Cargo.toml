@@ -44,15 +44,3 @@ xor_name = "1.1.0"
 env_logger = "~0.7.1"
 structopt = "~0.3.17"
 anyhow = "1"
-
-[features]
-mock = [
-    "bls/use-insecure-test-only-mock-crypto",
-    "bls_signature_aggregator/mock_timer",
-    "crossbeam-channel",
-    "ctrlc",
-    "env_logger",
-    "lazy_static",
-    "lru_time_cache/sn_fake_clock",
-    "mock-quic-p2p",
-]

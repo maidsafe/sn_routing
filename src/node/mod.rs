@@ -9,16 +9,11 @@
 pub mod event_stream;
 mod executor;
 mod stage;
-#[cfg(all(test, feature = "mock"))]
-mod tests;
 
 pub use self::event_stream::EventStream;
-#[cfg(feature = "mock")]
-pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
-
 use self::{executor::Executor, stage::Stage};
 use crate::{
-    crypto::{Keypair, PublicKey, name},
+    crypto::{name, Keypair, PublicKey},
     error::{Error, Result},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
@@ -32,11 +27,6 @@ use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use xor_name::{Prefix, XorName};
-
-#[cfg(all(test, feature = "mock"))]
-use crate::section::SectionKeyShare;
-#[cfg(feature = "mock")]
-use std::collections::BTreeSet;
 
 /// Node configuration.
 pub struct NodeConfig {
@@ -81,7 +71,9 @@ impl Node {
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
         let mut rng = MainRng::default();
-        let keypair = config.keypair.unwrap_or_else(|| Keypair::generate(&mut rng));
+        let keypair = config
+            .keypair
+            .unwrap_or_else(|| Keypair::generate(&mut rng));
         let node_name = name(&keypair.public);
 
         let (stage, incoming_conns, timer_rx, events_rx) = if config.first {
@@ -282,176 +274,5 @@ impl Node {
             .and_then(|stage| stage.section_key_share())
             .map(|share| share.index)
             .ok_or(Error::InvalidState)
-    }
-}
-
-#[cfg(feature = "mock")]
-impl Node {
-    /// Returns whether the node is approved member of a section.
-    pub fn is_approved(&self) -> bool {
-        self.stage
-            .approved()
-            .map(|stage| stage.is_ready(&self.core))
-            .unwrap_or(false)
-    }
-
-    /// Checks whether the given location represents self.
-    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        src.contains(self.core.name())
-    }
-
-    /// Returns the info about our neighbour sections.
-    pub fn neighbour_sections(&self) -> impl Iterator<Item = &EldersInfo> {
-        self.shared_state()
-            .into_iter()
-            .flat_map(|state| state.sections.neighbours())
-    }
-
-    /// Returns the info about our sections or `None` if we are not joined yet.
-    pub fn our_section(&self) -> Option<&EldersInfo> {
-        self.shared_state().map(|state| state.sections.our())
-    }
-
-    /// Returns the prefixes of all sections known to us
-    pub fn prefixes(&self) -> BTreeSet<Prefix> {
-        self.shared_state()
-            .map(|state| state.sections.prefixes().copied().collect())
-            .unwrap_or_default()
-    }
-
-    /// Returns the elders in our and neighbouring sections.
-    pub fn known_elders(&self) -> impl Iterator<Item = &Peer> {
-        self.shared_state()
-            .into_iter()
-            .flat_map(|state| state.sections.elders())
-    }
-
-    /// Returns whether the given peer is an elder known to us.
-    pub fn is_peer_elder(&self, name: &XorName) -> bool {
-        self.shared_state()
-            .map(|state| state.is_peer_elder(name))
-            .unwrap_or(false)
-    }
-
-    /// Returns whether the given peer is an elder of our section.
-    pub fn is_peer_our_elder(&self, name: &XorName) -> bool {
-        self.shared_state()
-            .map(|state| state.is_peer_our_elder(name))
-            .unwrap_or(false)
-    }
-
-    /// Returns the members in our section and elders we know.
-    pub fn known_nodes(&self) -> impl Iterator<Item = &Peer> {
-        self.shared_state()
-            .into_iter()
-            .flat_map(|state| state.known_nodes())
-    }
-
-    /// Returns whether the given `XorName` is a member of our section.
-    pub fn is_peer_our_member(&self, name: &XorName) -> bool {
-        self.shared_state()
-            .map(|state| state.our_members.is_joined(name))
-            .unwrap_or(false)
-    }
-
-    /// Returns their knowledge
-    pub fn get_their_knowledge(&self, prefix: &Prefix) -> u64 {
-        self.shared_state()
-            .map(|state| state.sections.knowledge_by_section(prefix))
-            .unwrap_or(0)
-    }
-
-    /// If our section is the closest one to `name`, returns all names in our section *including
-    /// ours*, otherwise returns `None`.
-    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        let state = self.shared_state()?;
-        if state.our_prefix().matches(name) {
-            Some(
-                state
-                    .sections
-                    .our_elders()
-                    .map(|peer| *peer.name())
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-
-    /// Returns the number of elders this node is using.
-    pub fn elder_size(&self) -> usize {
-        self.core.network_params().elder_size
-    }
-
-    /// Size at which our section splits. Since this is configurable, this method is used to
-    /// obtain it.
-    pub fn recommended_section_size(&self) -> usize {
-        self.core.network_params().recommended_section_size
-    }
-
-    /// Returns the age of the node with `name` if this node knows it. Otherwise returns `None`.
-    pub fn member_age(&self, name: &XorName) -> Option<u8> {
-        self.stage
-            .approved()
-            .and_then(|stage| stage.shared_state.our_members.get(name))
-            .map(|info| info.age)
-    }
-
-    /// Returns the latest BLS public key of our section or `None` if we are not joined yet.
-    pub fn section_key(&self) -> Option<&bls::PublicKey> {
-        self.shared_state.map(|state| state.our_history.last_key())
-    }
-
-    pub(crate) fn shared_state(&self) -> Option<&SharedState> {
-        self.stage.approved().map(|stage| &stage.shared_state)
-    }
-}
-
-#[cfg(all(test, feature = "mock"))]
-impl Node {
-    // Create new node which is already an approved member of a section.
-    pub(crate) fn approved(
-        config: NodeConfig,
-        shared_state: SharedState,
-        section_key_share: Option<SectionKeyShare>,
-    ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
-        let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
-        let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
-        let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
-
-        let core = Core::new(config, timer_tx, transport_tx, user_event_tx);
-
-        let stage = Approved::new(shared_state, section_key_share).unwrap();
-        let stage = Stage::Approved(stage);
-
-        let node = Self {
-            stage,
-            core,
-            timer_rx,
-            timer_rx_idx: 0,
-            transport_rx: transport_node_rx,
-            transport_rx_idx: 0,
-        };
-
-        (node, user_event_rx, transport_client_rx)
-    }
-
-    // Simulate DKG completion
-    pub(crate) fn complete_dkg(
-        &mut self,
-        elders_info: &EldersInfo,
-        public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<bls::SecretKeyShare>,
-    ) -> Result<()> {
-        if let Some(stage) = self.stage.approved_mut() {
-            stage.complete_dkg(
-                &mut self.core,
-                elders_info,
-                public_key_set,
-                secret_key_share,
-            )
-        } else {
-            Err(Error::InvalidState)
-        }
     }
 }
