@@ -447,30 +447,6 @@ fn add_and_promote_member() {
     assert!(env.is_candidate_elder());
 }
 
-#[test]
-fn remove_elder() {
-    let mut env = Env::new(ELDER_SIZE - 1);
-    let info1 = env.new_elders_info_with_candidate();
-    env.accumulate_online(env.candidate.clone());
-    env.simulate_dkg(&info1).unwrap();
-    env.accumulate_our_key_and_section_info_if_vote(&info1)
-        .unwrap();
-
-    let info2 = env.new_elders_info_without_candidate();
-
-    env.other_ids = info1.new_other_ids;
-    env.elders_info = info1.new_elders_info;
-    env.public_key_set = info1.new_pk_set;
-
-    env.accumulate_offline(env.candidate.clone());
-    env.simulate_dkg(&info2).unwrap();
-    env.accumulate_our_key_and_section_info_if_vote(&info2)
-        .unwrap();
-
-    assert!(!env.is_candidate_member());
-    assert!(!env.is_candidate_elder());
-}
-
 /*
 #[test]
 fn send_genesis_update() {
