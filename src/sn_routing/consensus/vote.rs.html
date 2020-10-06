@@ -180,6 +180,14 @@
 <span id="180">180</span>
 <span id="181">181</span>
 <span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -192,14 +200,15 @@
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">SignatureAggregator</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>},
+    <span class="ident">messages</span>::<span class="ident">PlainMessage</span>,
+    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">SectionProofChain</span>},
 };
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Vote</span> {
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Vote</span> {
     <span class="doccomment">/// Voted for node that is about to join our section</span>
     <span class="ident">Online</span> {
         <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>,
@@ -237,6 +246,12 @@
 
     <span class="comment">// Voted to change the age of the given node.</span>
     <span class="ident">ChangeAge</span>(<span class="ident">MemberInfo</span>),
+
+    <span class="comment">// Voted to send user message on behalf of the whole section.</span>
+    <span class="ident">SendMessage</span> {
+        <span class="ident">message</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">PlainMessage</span><span class="op">&gt;</span>,
+        <span class="ident">proof_chain</span>: <span class="ident">SectionProofChain</span>,
+    },
 }
 
 <span class="kw">impl</span> <span class="ident">Vote</span> {
@@ -258,7 +273,7 @@
 
 <span class="comment">// Accumulator of `Vote`s.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VoteAccumulator</span>(<span class="ident">SignatureAggregator</span>);
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">VoteAccumulator</span>(<span class="ident">SignatureAggregator</span>);
 
 <span class="kw">impl</span> <span class="ident">VoteAccumulator</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add</span>(
@@ -294,6 +309,7 @@
             <span class="ident">Vote</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key_index</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">ChangeAge</span>(<span class="ident">member_info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">member_info</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
+            <span class="ident">Vote</span>::<span class="ident">SendMessage</span> { <span class="ident">message</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">message</span>.<span class="ident">as_signable</span>().<span class="ident">serialize</span>(<span class="ident">serializer</span>),
         }
     }
 }

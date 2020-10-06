@@ -205,8 +205,6 @@
 <span id="205">205</span>
 <span id="206">206</span>
 <span id="207">207</span>
-<span id="208">208</span>
-<span id="209">209</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2019 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -219,13 +217,11 @@
 <span class="doccomment">//! Relocation related types and utilities.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Signature</span>},
+    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Keypair</span>, <span class="ident">Signature</span>, <span class="ident">Verifier</span>},
     <span class="ident">error</span>::<span class="ident">Error</span>,
-    <span class="ident">id</span>::{<span class="ident">FullId</span>, <span class="ident">PublicId</span>},
     <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
 };
 
-<span class="kw">use</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">de</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SerdeDeError</span>, <span class="ident">Deserialize</span>, <span class="ident">Deserializer</span>, <span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
@@ -275,7 +271,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Hash</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RelocateDetails</span> {
     <span class="doccomment">/// Public id of the node to relocate.</span>
-    <span class="kw">pub</span> <span class="ident">pub_id</span>: <span class="ident">PublicId</span>,
+    <span class="kw">pub</span> <span class="ident">pub_id</span>: <span class="ident">XorName</span>,
     <span class="doccomment">/// Relocation destination - the node will be relocated to a section whose prefix matches this</span>
     <span class="doccomment">/// name.</span>
     <span class="kw">pub</span> <span class="ident">destination</span>: <span class="ident">XorName</span>,
@@ -286,7 +282,7 @@
 }
 
 <span class="doccomment">/// SignedSNRoutingMessage with Relocate message content.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">SignedRelocateDetails</span> {
     <span class="doccomment">/// Signed message whose content is Variant::Relocate</span>
     <span class="ident">signed_msg</span>: <span class="ident">Message</span>,
@@ -338,39 +334,39 @@
     }
 }
 
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">RelocatePayload</span> {
     <span class="doccomment">/// The Relocate Signed message.</span>
     <span class="kw">pub</span> <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
-    <span class="doccomment">/// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.</span>
-    <span class="kw">pub</span> <span class="ident">signature_of_new_id_with_old_id</span>: <span class="ident">Signature</span>,
+    <span class="doccomment">/// The new name of the node signed using its old public_key, to prove the node identity.</span>
+    <span class="kw">pub</span> <span class="ident">signature_of_new_name_with_old_key</span>: <span class="ident">Signature</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">RelocatePayload</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
-        <span class="ident">new_pub_id</span>: <span class="kw-2">&amp;</span><span class="ident">PublicId</span>,
-        <span class="ident">old_full_id</span>: <span class="kw-2">&amp;</span><span class="ident">FullId</span>,
+        <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
+        <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">new_id_serialised</span> <span class="op">=</span> <span class="ident">serialize</span>(<span class="ident">new_pub_id</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">signature_of_new_id_with_old_id</span> <span class="op">=</span> <span class="ident">old_full_id</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">new_id_serialised</span>);
+        <span class="kw">let</span> <span class="ident">signature_of_new_name_with_old_key</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">new_name</span>.<span class="number">0</span>, <span class="ident">old_keypair</span>);
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">details</span>,
-            <span class="ident">signature_of_new_id_with_old_id</span>,
+            <span class="ident">signature_of_new_name_with_old_key</span>,
         })
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_pub_id</span>: <span class="kw-2">&amp;</span><span class="ident">PublicId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">new_id_serialised</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">serialize</span>(<span class="ident">new_pub_id</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">buf</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>,
-            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="bool-val">false</span>,
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="kw">let</span> <span class="ident">pub_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">pub_key</span>) <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">pub_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">details</span>.<span class="ident">relocate_details</span>().<span class="ident">pub_id</span>)
+        {
+            <span class="ident">pub_key</span>
+        } <span class="kw">else</span> {
+            <span class="kw">return</span> <span class="bool-val">false</span>;
         };
 
-        <span class="self">self</span>.<span class="ident">details</span>
-            .<span class="ident">relocate_details</span>()
-            .<span class="ident">pub_id</span>
-            .<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">new_id_serialised</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature_of_new_id_with_old_id</span>)
+        <span class="ident">pub_key</span>
+            .<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">new_name</span>.<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature_of_new_name_with_old_key</span>)
+            .<span class="ident">is_ok</span>()
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span> {

@@ -19,9 +19,6 @@
 <span id="19">19</span>
 <span id="20">20</span>
 <span id="21">21</span>
-<span id="22">22</span>
-<span id="23">23</span>
-<span id="24">24</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -38,14 +35,11 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">test_utils</span>;
 <span class="kw">mod</span> <span class="ident">vote</span>;
 
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">vote</span>::{<span class="ident">Vote</span>, <span class="ident">VoteAccumulator</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
     <span class="ident">dkg</span>::{<span class="ident">generate_secret_key_set</span>, <span class="ident">DkgKey</span>, <span class="ident">DkgVoter</span>},
     <span class="ident">proven</span>::<span class="ident">Proven</span>,
-    <span class="ident">vote</span>::{<span class="ident">Vote</span>, <span class="ident">VoteAccumulator</span>},
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">SignatureAggregator</span>};
-
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>)]</span>
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">event_accumulator</span>::{<span class="ident">UNRESPONSIVE_THRESHOLD</span>, <span class="ident">UNRESPONSIVE_WINDOW</span>};
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "sn_routing";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

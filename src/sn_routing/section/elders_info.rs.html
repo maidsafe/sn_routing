@@ -112,6 +112,7 @@
 <span id="112">112</span>
 <span id="113">113</span>
 <span id="114">114</span>
+<span id="115">115</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -122,8 +123,8 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">id</span>::<span class="ident">FullId</span>, <span class="ident">rng</span>::<span class="ident">MainRng</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">id</span>::<span class="ident">P2pNode</span>, <span class="ident">Prefix</span>, <span class="ident">XorName</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">crypto</span>::<span class="ident">Keypair</span>, <span class="ident">rng</span>::<span class="ident">MainRng</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">peer</span>::<span class="ident">Peer</span>, <span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
@@ -137,15 +138,15 @@
 <span class="doccomment">/// change, due to an elder being added or removed, or the section splitting or merging.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Hash</span>, <span class="ident">Clone</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">EldersInfo</span> {
-    <span class="doccomment">/// The section&#39;s complete set of elders as a map from their name to a `P2pNode`.</span>
-    <span class="kw">pub</span> <span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">P2pNode</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// The section&#39;s complete set of elders as a map from their name to a `Peer`.</span>
+    <span class="kw">pub</span> <span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">Peer</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The section prefix. It matches all the members&#39; names.</span>
     <span class="kw">pub</span> <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">EldersInfo</span> {
     <span class="doccomment">/// Creates a new `EldersInfo` with the given members, prefix and version.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">P2pNode</span><span class="op">&gt;</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">Peer</span><span class="op">&gt;</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> { <span class="ident">elders</span>, <span class="ident">prefix</span> }
     }
 
@@ -167,7 +168,7 @@
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="macro">write</span><span class="macro">!</span>(
             <span class="ident">formatter</span>,
-            <span class="string">&quot;EldersInfo {{ prefix: ({:b}), elders: {{{}}} }}&quot;</span>,
+            <span class="string">&quot;EldersInfo {{ prefix: ({:b}), elders: {{{:?}}} }}&quot;</span>,
             <span class="self">self</span>.<span class="ident">prefix</span>,
             <span class="self">self</span>.<span class="ident">elders</span>.<span class="ident">values</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>),
         )
@@ -199,7 +200,8 @@
     <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>,
     <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
     <span class="ident">count</span>: <span class="ident">usize</span>,
-) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">EldersInfo</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">FullId</span><span class="op">&gt;</span>) {
+) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">EldersInfo</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Keypair</span><span class="op">&gt;</span>) {
+    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">crypto</span>::<span class="ident">name</span>;
     <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">Rng</span>;
     <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
 
@@ -209,23 +211,23 @@
         <span class="ident">SocketAddr</span>::<span class="ident">from</span>((<span class="ident">ip</span>, <span class="ident">port</span>))
     }
 
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">full_ids</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">count</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">FullId</span>::<span class="ident">gen</span>(<span class="ident">rng</span>)).<span class="ident">collect</span>();
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">keypairs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">count</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Keypair</span>::<span class="ident">generate</span>(<span class="ident">rng</span>)).<span class="ident">collect</span>();
 
     <span class="comment">// Clippy false positive - https://github.com/rust-lang/rust-clippy/issues/5754</span>
     <span class="comment">// (note the issue is closed, but it probably hasn&#39;t been merged into stable yet)</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">unnecessary_sort_by</span>)]</span>
-    <span class="ident">full_ids</span>.<span class="ident">sort_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">lhs</span>.<span class="ident">public_id</span>().<span class="ident">name</span>().<span class="ident">cmp</span>(<span class="ident">rhs</span>.<span class="ident">public_id</span>().<span class="ident">name</span>()));
+    <span class="ident">keypairs</span>.<span class="ident">sort_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">lhs</span>.<span class="ident">public</span>).<span class="ident">cmp</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">rhs</span>.<span class="ident">public</span>)));
 
-    <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> <span class="ident">full_ids</span>
+    <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> <span class="ident">keypairs</span>
         .<span class="ident">iter</span>()
-        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">full_id</span><span class="op">|</span> {
+        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">keypair</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">gen_socket_addr</span>(<span class="ident">rng</span>);
-            <span class="kw">let</span> <span class="ident">p2p_node</span> <span class="op">=</span> <span class="ident">P2pNode</span>::<span class="ident">new</span>(<span class="kw-2">*</span><span class="ident">full_id</span>.<span class="ident">public_id</span>(), <span class="ident">addr</span>);
-            (<span class="kw-2">*</span><span class="ident">p2p_node</span>.<span class="ident">public_id</span>().<span class="ident">name</span>(), <span class="ident">p2p_node</span>)
+            <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">keypair</span>.<span class="ident">public</span>), <span class="ident">addr</span>);
+            (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">peer</span>)
         })
         .<span class="ident">collect</span>();
 
-    (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">elders</span>, <span class="ident">prefix</span>), <span class="ident">full_ids</span>)
+    (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">elders</span>, <span class="ident">prefix</span>), <span class="ident">keypairs</span>)
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "sn_routing";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

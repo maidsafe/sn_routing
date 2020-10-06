@@ -602,11 +602,6 @@
 <span id="602">602</span>
 <span id="603">603</span>
 <span id="604">604</span>
-<span id="605">605</span>
-<span id="606">606</span>
-<span id="607">607</span>
-<span id="608">608</span>
-<span id="609">609</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -620,10 +615,10 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::{<span class="ident">Proof</span>, <span class="ident">Proven</span>},
     <span class="ident">error</span>::<span class="ident">Error</span>,
-    <span class="ident">id</span>::<span class="ident">P2pNode</span>,
     <span class="ident">location</span>::<span class="ident">DstLocation</span>,
     <span class="ident">messages</span>::<span class="ident">MessageHash</span>,
     <span class="ident">network_params</span>::<span class="ident">NetworkParams</span>,
+    <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">relocation</span>::{<span class="self">self</span>, <span class="ident">RelocateAction</span>, <span class="ident">RelocateDetails</span>, <span class="ident">RelocatePromise</span>},
 };
 
@@ -750,26 +745,21 @@
     }
 
     <span class="doccomment">/// Returns adults from our own section.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">P2pNode</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">our_members</span>
             .<span class="ident">adults</span>()
-            .<span class="ident">filter</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">p2p_node</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">p2p_node</span>.<span class="ident">name</span>()))
+            .<span class="ident">filter</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>()))
     }
 
     <span class="doccomment">/// Returns our members that are either joined or are left but still elders.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">active_members</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">P2pNode</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">active_members</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">our_members</span>
             .<span class="ident">all</span>()
             .<span class="ident">filter</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">info</span><span class="op">|</span> {
-                <span class="self">self</span>.<span class="ident">our_members</span>.<span class="ident">is_joined</span>(<span class="ident">info</span>.<span class="ident">p2p_node</span>.<span class="ident">name</span>())
-                    <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">info</span>.<span class="ident">p2p_node</span>.<span class="ident">name</span>())
+                <span class="self">self</span>.<span class="ident">our_members</span>.<span class="ident">is_joined</span>(<span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">name</span>())
+                    <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">name</span>())
             })
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">p2p_node</span>)
-    }
-
-    <span class="doccomment">/// Checks if given name is an elder in our section or one of our neighbour sections.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_peer_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">is_elder</span>(<span class="ident">name</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">peer</span>)
     }
 
     <span class="doccomment">/// Returns whether the given peer is elder in our section.</span>
@@ -782,11 +772,11 @@
         <span class="self">self</span>.<span class="ident">our_members</span>.<span class="ident">is_adult</span>(<span class="ident">name</span>) <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">name</span>)
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_p2p_node_from_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer_addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">P2pNode</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_peer_from_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer_addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">our_members</span>
             .<span class="ident">all</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">p2p_node</span>.<span class="ident">peer_addr</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">peer_addr</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">p2p_node</span>)
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">addr</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">peer_addr</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">peer</span>)
     }
 
     <span class="doccomment">/// All section keys we know of, including the past keys of our section.</span>
@@ -942,7 +932,7 @@
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">our_history</span>.<span class="ident">first_key</span>());
 
         <span class="ident">RelocateDetails</span> {
-            <span class="ident">pub_id</span>: <span class="kw-2">*</span><span class="ident">info</span>.<span class="ident">p2p_node</span>.<span class="ident">public_id</span>(),
+            <span class="ident">pub_id</span>: <span class="kw-2">*</span><span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">name</span>(),
             <span class="ident">destination</span>,
             <span class="ident">destination_key</span>,
             <span class="ident">age</span>: <span class="ident">info</span>.<span class="ident">age</span>.<span class="ident">saturating_add</span>(<span class="number">1</span>),
@@ -954,11 +944,11 @@
         <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span>,
         <span class="ident">churn_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RelocateAction</span> {
-        <span class="kw">let</span> <span class="ident">destination</span> <span class="op">=</span> <span class="ident">relocation</span>::<span class="ident">compute_destination</span>(<span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">p2p_node</span>.<span class="ident">name</span>(), <span class="ident">churn_name</span>);
+        <span class="kw">let</span> <span class="ident">destination</span> <span class="op">=</span> <span class="ident">relocation</span>::<span class="ident">compute_destination</span>(<span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">churn_name</span>);
 
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">p2p_node</span>.<span class="ident">name</span>()) {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_peer_our_elder</span>(<span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>()) {
             <span class="ident">RelocateAction</span>::<span class="ident">Delayed</span>(<span class="ident">RelocatePromise</span> {
-                <span class="ident">name</span>: <span class="kw-2">*</span><span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">p2p_node</span>.<span class="ident">name</span>(),
+                <span class="ident">name</span>: <span class="kw-2">*</span><span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>(),
                 <span class="ident">destination</span>,
             })
         } <span class="kw">else</span> {
@@ -986,7 +976,7 @@
         <span class="kw">let</span> (<span class="ident">our_new_size</span>, <span class="ident">sibling_new_size</span>) <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">our_members</span>
             .<span class="ident">adults</span>()
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">p2p_node</span><span class="op">|</span> <span class="ident">p2p_node</span>.<span class="ident">name</span>().<span class="ident">bit</span>(<span class="ident">next_bit_index</span>) <span class="op">=</span><span class="op">=</span> <span class="ident">next_bit</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">name</span>().<span class="ident">bit</span>(<span class="ident">next_bit_index</span>) <span class="op">=</span><span class="op">=</span> <span class="ident">next_bit</span>)
             .<span class="ident">fold</span>((<span class="number">0</span>, <span class="number">0</span>), <span class="op">|</span>(<span class="ident">ours</span>, <span class="ident">siblings</span>), <span class="ident">is_our_prefix</span><span class="op">|</span> {
                 <span class="kw">if</span> <span class="ident">is_our_prefix</span> {
                     (<span class="ident">ours</span> <span class="op">+</span> <span class="number">1</span>, <span class="ident">siblings</span>)
@@ -1024,7 +1014,7 @@
 
     <span class="comment">// Returns the candidates for elders out of all the nodes in the section, even out of the</span>
     <span class="comment">// relocating nodes if there would not be enough instead.</span>
-    <span class="kw">fn</span> <span class="ident">elder_candidates</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">P2pNode</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">elder_candidates</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">Peer</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">our_members</span>
             .<span class="ident">elder_candidates</span>(<span class="ident">elder_size</span>, <span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">our</span>())
     }
@@ -1052,7 +1042,8 @@
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
         <span class="ident">consensus</span>,
-        <span class="ident">id</span>::{<span class="ident">FullId</span>, <span class="ident">P2pNode</span>, <span class="ident">PublicId</span>},
+        <span class="ident">crypto</span>::{<span class="ident">keypair_within_range</span>, <span class="ident">name</span>, <span class="ident">Keypair</span>},
+        <span class="ident">peer</span>::<span class="ident">Peer</span>,
         <span class="ident">rng</span>::{<span class="self">self</span>, <span class="ident">MainRng</span>},
         <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
     };
@@ -1062,7 +1053,7 @@
         <span class="ident">collections</span>::{<span class="ident">BTreeMap</span>, <span class="ident">HashMap</span>},
         <span class="ident">str</span>::<span class="ident">FromStr</span>,
     };
-    <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
+    <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
     <span class="comment">// Note: The following tests were move over from the former `chain` module.</span>
 
@@ -1075,29 +1066,29 @@
     <span class="kw">fn</span> <span class="ident">gen_section_info</span>(
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>,
         <span class="ident">gen</span>: <span class="ident">SecInfoGen</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">EldersInfo</span>, <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">PublicId</span>, <span class="ident">FullId</span><span class="op">&gt;</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">EldersInfo</span>, <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">Keypair</span><span class="op">&gt;</span>) {
         <span class="kw">match</span> <span class="ident">gen</span> {
             <span class="ident">SecInfoGen</span>::<span class="ident">New</span>(<span class="ident">prefix</span>, <span class="ident">n</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">full_ids</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="ident">new</span>();
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">keypairs</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="ident">new</span>();
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">members</span> <span class="op">=</span> <span class="ident">BTreeMap</span>::<span class="ident">new</span>();
                 <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">n</span> {
-                    <span class="kw">let</span> <span class="ident">some_id</span> <span class="op">=</span> <span class="ident">FullId</span>::<span class="ident">within_range</span>(<span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">range_inclusive</span>());
+                    <span class="kw">let</span> <span class="ident">some_keypair</span> <span class="op">=</span> <span class="ident">keypair_within_range</span>(<span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">range_inclusive</span>());
                     <span class="kw">let</span> <span class="ident">peer_addr</span> <span class="op">=</span> ([<span class="number">127</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>], <span class="number">9999</span>).<span class="ident">into</span>();
-                    <span class="kw">let</span> <span class="ident">pub_id</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">some_id</span>.<span class="ident">public_id</span>();
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">members</span>.<span class="ident">insert</span>(<span class="kw-2">*</span><span class="ident">pub_id</span>.<span class="ident">name</span>(), <span class="ident">P2pNode</span>::<span class="ident">new</span>(<span class="ident">pub_id</span>, <span class="ident">peer_addr</span>));
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">full_ids</span>.<span class="ident">insert</span>(<span class="kw-2">*</span><span class="ident">some_id</span>.<span class="ident">public_id</span>(), <span class="ident">some_id</span>);
+                    <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">some_keypair</span>.<span class="ident">public</span>);
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">members</span>.<span class="ident">insert</span>(<span class="ident">name</span>, <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="ident">name</span>, <span class="ident">peer_addr</span>));
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">keypairs</span>.<span class="ident">insert</span>(<span class="ident">name</span>, <span class="ident">some_keypair</span>);
                 }
-                (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">members</span>, <span class="ident">prefix</span>), <span class="ident">full_ids</span>)
+                (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">members</span>, <span class="ident">prefix</span>), <span class="ident">keypairs</span>)
             }
             <span class="ident">SecInfoGen</span>::<span class="ident">Add</span>(<span class="ident">info</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">members</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">clone</span>();
-                <span class="kw">let</span> <span class="ident">some_id</span> <span class="op">=</span> <span class="ident">FullId</span>::<span class="ident">within_range</span>(<span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">prefix</span>.<span class="ident">range_inclusive</span>());
+                <span class="kw">let</span> <span class="ident">some_keypair</span> <span class="op">=</span> <span class="ident">keypair_within_range</span>(<span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">prefix</span>.<span class="ident">range_inclusive</span>());
                 <span class="kw">let</span> <span class="ident">peer_addr</span> <span class="op">=</span> ([<span class="number">127</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">1</span>], <span class="number">9999</span>).<span class="ident">into</span>();
-                <span class="kw">let</span> <span class="ident">pub_id</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">some_id</span>.<span class="ident">public_id</span>();
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">members</span>.<span class="ident">insert</span>(<span class="kw-2">*</span><span class="ident">pub_id</span>.<span class="ident">name</span>(), <span class="ident">P2pNode</span>::<span class="ident">new</span>(<span class="ident">pub_id</span>, <span class="ident">peer_addr</span>));
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">full_ids</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="ident">new</span>();
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">full_ids</span>.<span class="ident">insert</span>(<span class="ident">pub_id</span>, <span class="ident">some_id</span>);
-                (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">members</span>, <span class="ident">info</span>.<span class="ident">prefix</span>), <span class="ident">full_ids</span>)
+                <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">some_keypair</span>.<span class="ident">public</span>);
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">members</span>.<span class="ident">insert</span>(<span class="ident">name</span>, <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="ident">name</span>, <span class="ident">peer_addr</span>));
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">keypairs</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="ident">new</span>();
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">keypairs</span>.<span class="ident">insert</span>(<span class="ident">name</span>, <span class="ident">some_keypair</span>);
+                (<span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">members</span>, <span class="ident">info</span>.<span class="ident">prefix</span>), <span class="ident">keypairs</span>)
             }
             <span class="ident">SecInfoGen</span>::<span class="ident">Remove</span>(<span class="ident">info</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">clone</span>();
@@ -1108,17 +1099,17 @@
 
     <span class="kw">fn</span> <span class="ident">add_neighbour_elders_info</span>(
         <span class="ident">state</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">SharedState</span>,
-        <span class="ident">our_id</span>: <span class="kw-2">&amp;</span><span class="ident">PublicId</span>,
+        <span class="ident">our_id</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
         <span class="ident">neighbour_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
     ) {
         <span class="macro">assert</span><span class="macro">!</span>(
-            <span class="op">!</span><span class="ident">neighbour_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="ident">our_id</span>.<span class="ident">name</span>()),
+            <span class="op">!</span><span class="ident">neighbour_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="ident">our_id</span>),
             <span class="string">&quot;Only add neighbours.&quot;</span>
         );
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">sections</span>.<span class="ident">update_neighbour_info</span>(<span class="ident">neighbour_info</span>);
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_state</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>, <span class="ident">sections</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SharedState</span>, <span class="ident">PublicId</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>)
+    <span class="kw">fn</span> <span class="ident">gen_state</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>, <span class="ident">sections</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SharedState</span>, <span class="ident">XorName</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>)
     <span class="kw">where</span>
         <span class="ident">T</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="ident">Prefix</span>, <span class="ident">usize</span>)<span class="op">&gt;</span>,
     {
@@ -1127,14 +1118,13 @@
         <span class="kw">for</span> (<span class="ident">prefix</span>, <span class="ident">size</span>) <span class="kw">in</span> <span class="ident">sections</span> {
             <span class="kw">let</span> (<span class="ident">info</span>, <span class="ident">ids</span>) <span class="op">=</span> <span class="ident">gen_section_info</span>(<span class="ident">rng</span>, <span class="ident">SecInfoGen</span>::<span class="ident">New</span>(<span class="ident">prefix</span>, <span class="ident">size</span>));
             <span class="kw">if</span> <span class="ident">our_id</span>.<span class="ident">is_none</span>() {
-                <span class="ident">our_id</span> <span class="op">=</span> <span class="ident">ids</span>.<span class="ident">values</span>().<span class="ident">next</span>().<span class="ident">cloned</span>();
+                <span class="ident">our_id</span> <span class="op">=</span> <span class="ident">ids</span>.<span class="ident">keys</span>().<span class="ident">next</span>().<span class="ident">cloned</span>();
             }
 
             <span class="ident">section_members</span>.<span class="ident">push</span>(<span class="ident">info</span>);
         }
 
-        <span class="kw">let</span> <span class="ident">our_id</span> <span class="op">=</span> <span class="ident">our_id</span>.<span class="ident">expect</span>(<span class="string">&quot;our id&quot;</span>);
-        <span class="kw">let</span> <span class="ident">our_pub_id</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">our_id</span>.<span class="ident">public_id</span>();
+        <span class="kw">let</span> <span class="ident">our_pub_id</span> <span class="op">=</span> <span class="ident">our_id</span>.<span class="ident">expect</span>(<span class="string">&quot;our id&quot;</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sections_iter</span> <span class="op">=</span> <span class="ident">section_members</span>.<span class="ident">into_iter</span>();
 
         <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">gen_secret_key</span>(<span class="ident">rng</span>);
@@ -1152,7 +1142,7 @@
         (<span class="ident">state</span>, <span class="ident">our_pub_id</span>, <span class="ident">sk</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_00_state</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SharedState</span>, <span class="ident">PublicId</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+    <span class="kw">fn</span> <span class="ident">gen_00_state</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SharedState</span>, <span class="ident">XorName</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
         <span class="kw">let</span> <span class="ident">elder_size</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">7</span>;
         <span class="ident">gen_state</span>(
             <span class="ident">rng</span>,
@@ -1187,7 +1177,7 @@
             <span class="ident">state</span>
                 .<span class="ident">sections</span>
                 .<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">from_str</span>(<span class="string">&quot;00&quot;</span>).<span class="ident">unwrap</span>())
-                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="ident">our_id</span>.<span class="ident">name</span>())),
+                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">our_id</span>)),
             <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)
         );
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">state</span>.<span class="ident">sections</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">from_str</span>(<span class="string">&quot;&quot;</span>).<span class="ident">unwrap</span>()), <span class="prelude-val">None</span>);

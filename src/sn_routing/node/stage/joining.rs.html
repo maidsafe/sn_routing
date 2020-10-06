@@ -282,14 +282,6 @@
 <span id="282">282</span>
 <span id="283">283</span>
 <span id="284">284</span>
-<span id="285">285</span>
-<span id="286">286</span>
-<span id="287">287</span>
-<span id="288">288</span>
-<span id="289">289</span>
-<span id="290">290</span>
-<span id="291">291</span>
-<span id="292">292</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -303,10 +295,8 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">event</span>::{<span class="ident">Connected</span>, <span class="ident">Event</span>},
-    <span class="ident">id</span>::<span class="ident">P2pNode</span>,
-    <span class="ident">messages</span>::{
-        <span class="self">self</span>, <span class="ident">BootstrapResponse</span>, <span class="ident">JoinRequest</span>, <span class="ident">Message</span>, <span class="ident">MessageStatus</span>, <span class="ident">Variant</span>, <span class="ident">VerifyStatus</span>,
-    },
+    <span class="ident">messages</span>::{<span class="ident">BootstrapResponse</span>, <span class="ident">JoinRequest</span>, <span class="ident">Message</span>, <span class="ident">MessageStatus</span>, <span class="ident">Variant</span>, <span class="ident">VerifyStatus</span>},
+    <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">relocation</span>::<span class="ident">RelocatePayload</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SharedState</span>},
     <span class="ident">timer</span>::<span class="ident">Timer</span>,
@@ -450,7 +440,6 @@
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">Sync</span> { .. }
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>)
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">MessageSignature</span>(<span class="kw">_</span>)
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="kw">_</span>)
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUnknownMessage</span> { .. }
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGStart</span> { .. }
@@ -466,7 +455,7 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_bootstrap_response</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">sender</span>: <span class="ident">P2pNode</span>,
+        <span class="ident">sender</span>: <span class="ident">Peer</span>,
         <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">new_section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
@@ -474,10 +463,7 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
 
-        <span class="kw">if</span> <span class="ident">new_elders_info</span>
-            .<span class="ident">prefix</span>
-            .<span class="ident">matches</span>(<span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">full_id</span>.<span class="ident">public_id</span>().<span class="ident">name</span>())
-        {
+        <span class="kw">if</span> <span class="ident">new_elders_info</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">name</span>()) {
             <span class="macro">info</span><span class="macro">!</span>(
                 <span class="string">&quot;Newer Join response for our prefix {:?} from {:?}&quot;</span>,
                 <span class="ident">new_elders_info</span>, <span class="ident">sender</span>
@@ -486,11 +472,9 @@
             <span class="self">self</span>.<span class="ident">section_key</span> <span class="op">=</span> <span class="ident">new_section_key</span>;
             <span class="self">self</span>.<span class="ident">send_join_requests</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         } <span class="kw">else</span> {
-            <span class="macro">log_or_panic</span><span class="macro">!</span>(
-                <span class="ident">log</span>::<span class="ident">Level</span>::<span class="ident">Error</span>,
+            <span class="macro">warn</span><span class="macro">!</span>(
                 <span class="string">&quot;Newer Join response not for our prefix {:?} from {:?}&quot;</span>,
-                <span class="ident">new_elders_info</span>,
-                <span class="ident">sender</span>,
+                <span class="ident">new_elders_info</span>, <span class="ident">sender</span>,
             );
         }
 
@@ -507,7 +491,7 @@
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">join_type</span> {
             <span class="ident">JoinType</span>::<span class="ident">First</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Connected</span>::<span class="ident">First</span>,
             <span class="ident">JoinType</span>::<span class="ident">Relocate</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Connected</span>::<span class="ident">Relocate</span> {
-                <span class="ident">previous_name</span>: <span class="kw-2">*</span><span class="ident">payload</span>.<span class="ident">relocate_details</span>().<span class="ident">pub_id</span>.<span class="ident">name</span>(),
+                <span class="ident">previous_name</span>: <span class="ident">payload</span>.<span class="ident">relocate_details</span>().<span class="ident">pub_id</span>,
             },
         }
     }
@@ -522,7 +506,7 @@
             .<span class="ident">elders_info</span>
             .<span class="ident">elders</span>
             .<span class="ident">values</span>()
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">p2p_node</span><span class="op">|</span> <span class="ident">p2p_node</span>.<span class="ident">peer_addr</span>())
+            .<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>)
             .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
 
@@ -535,7 +519,7 @@
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">join_request</span>));
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">full_id</span>,
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">keypair</span>,
             <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
             <span class="ident">variant</span>,
             <span class="prelude-val">None</span>,
@@ -579,7 +563,7 @@
             (<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UntrustedMessage</span>),
         })
         .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">error</span><span class="op">|</span> {
-            <span class="ident">messages</span>::<span class="ident">log_verify_failure</span>(<span class="ident">msg</span>, <span class="kw-2">&amp;</span><span class="ident">error</span>, <span class="ident">trusted_key</span>.<span class="ident">map</span>(<span class="op">|</span><span class="ident">key</span><span class="op">|</span> (<span class="kw-2">&amp;</span><span class="ident">prefix</span>, <span class="ident">key</span>)));
+            <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;Verification of {:?} failed: {}&quot;</span>, <span class="ident">msg</span>, <span class="ident">error</span>);
             <span class="ident">error</span>
         })
 }

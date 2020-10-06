@@ -412,14 +412,6 @@
 <span id="412">412</span>
 <span id="413">413</span>
 <span id="414">414</span>
-<span id="415">415</span>
-<span id="416">416</span>
-<span id="417">417</span>
-<span id="418">418</span>
-<span id="419">419</span>
-<span id="420">420</span>
-<span id="421">421</span>
-<span id="422">422</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -431,31 +423,28 @@
 
 <span class="kw">mod</span> <span class="ident">accumulating_message</span>;
 <span class="kw">mod</span> <span class="ident">hash</span>;
-<span class="kw">mod</span> <span class="ident">message_accumulator</span>;
 <span class="kw">mod</span> <span class="ident">src_authority</span>;
 <span class="kw">mod</span> <span class="ident">variant</span>;
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::{
-    <span class="ident">accumulating_message</span>::{<span class="ident">AccumulatingMessage</span>, <span class="ident">PlainMessage</span>},
-    <span class="ident">message_accumulator</span>::<span class="ident">MessageAccumulator</span>,
+    <span class="ident">accumulating_message</span>::<span class="ident">PlainMessage</span>,
     <span class="ident">variant</span>::{<span class="ident">BootstrapResponse</span>, <span class="ident">JoinRequest</span>, <span class="ident">Variant</span>},
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{<span class="ident">hash</span>::<span class="ident">MessageHash</span>, <span class="ident">src_authority</span>::<span class="ident">SrcAuthority</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">name</span>, <span class="ident">Keypair</span>, <span class="ident">Verifier</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">id</span>::<span class="ident">FullId</span>,
     <span class="ident">location</span>::<span class="ident">DstLocation</span>,
     <span class="ident">section</span>::{<span class="ident">ExtendError</span>, <span class="ident">SectionProofChain</span>, <span class="ident">TrustStatus</span>},
 };
 
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">err_derive</span>::<span class="ident">Error</span>;
-<span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
 <span class="doccomment">/// Message sent over the network.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Message</span> {
     <span class="doccomment">/// Source authority.</span>
     <span class="doccomment">/// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates</span>
@@ -492,10 +481,10 @@
 
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">msg</span>.<span class="ident">src</span> {
             <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
-                <span class="ident">public_id</span>,
+                <span class="ident">public_key</span>,
                 <span class="ident">signature</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">public_id</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed_bytes</span>, <span class="ident">signature</span>) {
+                <span class="kw">if</span> <span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">signed_bytes</span>, <span class="ident">signature</span>).<span class="ident">is_err</span>() {
                     <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed signature: {:?}&quot;</span>, <span class="ident">msg</span>);
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">CreateError</span>::<span class="ident">FailedSignature</span>);
                 }
@@ -548,7 +537,7 @@
 
     <span class="doccomment">/// Creates a signed message from single node.</span>
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">single_src</span>(
-        <span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="ident">FullId</span>,
+        <span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
         <span class="ident">proof_chain</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span>,
@@ -559,25 +548,35 @@
             <span class="ident">dst_key</span>: <span class="ident">dst_key</span>.<span class="ident">as_ref</span>(),
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="ident">variant</span>,
         })<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">src</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>);
+        <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">serialized</span>, <span class="ident">keypair</span>);
         <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
-            <span class="ident">public_id</span>: <span class="kw-2">*</span><span class="ident">src</span>.<span class="ident">public_id</span>(),
+            <span class="ident">public_key</span>: <span class="ident">keypair</span>.<span class="ident">public</span>,
             <span class="ident">signature</span>,
         };
 
         <span class="self">Self</span>::<span class="ident">new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="ident">proof_chain</span>, <span class="ident">dst_key</span>)
     }
 
-    <span class="doccomment">/// Creates a message but does not enforce that it is valid. Use only for testing.</span>
-    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">all</span>(<span class="ident">test</span>, <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>))]</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">unverified</span>(
-        <span class="ident">src</span>: <span class="ident">SrcAuthority</span>,
+    <span class="doccomment">/// Creates a signed message from a section.</span>
+    <span class="doccomment">/// Note: `signature` isn&#39;t verified and is assumed valid.</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">section_src</span>(
+        <span class="ident">src</span>: <span class="ident">Prefix</span>,
+        <span class="ident">signature</span>: <span class="ident">bls</span>::<span class="ident">Signature</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
-        <span class="ident">proof_chain</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span>,
-        <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+        <span class="ident">proof_chain</span>: <span class="ident">SectionProofChain</span>,
+        <span class="ident">dst_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">CreateError</span><span class="op">&gt;</span> {
-        <span class="self">Self</span>::<span class="ident">new_signed</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="ident">proof_chain</span>, <span class="ident">dst_key</span>)
+        <span class="self">Self</span>::<span class="ident">new_signed</span>(
+            <span class="ident">SrcAuthority</span>::<span class="ident">Section</span> {
+                <span class="ident">prefix</span>: <span class="ident">src</span>,
+                <span class="ident">signature</span>,
+            },
+            <span class="ident">dst</span>,
+            <span class="ident">variant</span>,
+            <span class="prelude-val">Some</span>(<span class="ident">proof_chain</span>),
+            <span class="prelude-val">Some</span>(<span class="ident">dst_key</span>),
+        )
     }
 
     <span class="doccomment">/// Verify this message is properly signed and trusted.</span>
@@ -593,17 +592,17 @@
 
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">src</span> {
             <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> {
-                <span class="ident">public_id</span>,
+                <span class="ident">public_key</span>,
                 <span class="ident">signature</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">public_id</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>, <span class="ident">signature</span>) {
+                <span class="kw">if</span> <span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>, <span class="ident">signature</span>).<span class="ident">is_err</span>() {
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">FailedSignature</span>);
                 }
 
                 <span class="comment">// Variant-specific verification.</span>
                 <span class="kw">let</span> <span class="ident">trusted_keys</span> <span class="op">=</span> <span class="ident">trusted_keys</span>
                     .<span class="ident">into_iter</span>()
-                    .<span class="ident">filter</span>(<span class="op">|</span>(<span class="ident">known_prefix</span>, <span class="kw">_</span>)<span class="op">|</span> <span class="ident">known_prefix</span>.<span class="ident">matches</span>(<span class="ident">public_id</span>.<span class="ident">name</span>()))
+                    .<span class="ident">filter</span>(<span class="op">|</span>(<span class="ident">known_prefix</span>, <span class="kw">_</span>)<span class="op">|</span> <span class="ident">known_prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>(<span class="ident">public_key</span>)))
                     .<span class="ident">map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">key</span>)<span class="op">|</span> <span class="ident">key</span>);
                 <span class="self">self</span>.<span class="ident">variant</span>.<span class="ident">verify</span>(<span class="self">self</span>.<span class="ident">proof_chain</span>.<span class="ident">as_ref</span>(), <span class="ident">trusted_keys</span>)
             }
@@ -669,7 +668,6 @@
 
     <span class="comment">// Extend the current message proof chain so it starts at `new_first_key` while keeping the</span>
     <span class="comment">// last key (and therefore the signature) intact.</span>
-    <span class="attribute">#[<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>, <span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">trivially_copy_pass_by_ref</span>))]</span>
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">extend_proof_chain</span>(
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">new_first_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
@@ -721,20 +719,6 @@
     }
 }
 
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">log_verify_failure</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>, <span class="ident">I</span><span class="op">&gt;</span>(<span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">T</span>, <span class="ident">error</span>: <span class="kw-2">&amp;</span><span class="ident">Error</span>, <span class="ident">their_keys</span>: <span class="ident">I</span>)
-<span class="kw">where</span>
-    <span class="ident">T</span>: <span class="ident">Debug</span>,
-    <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Prefix</span>, <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>,
-{
-    <span class="macro">log_or_panic</span><span class="macro">!</span>(
-        <span class="ident">log</span>::<span class="ident">Level</span>::<span class="ident">Error</span>,
-        <span class="string">&quot;Verification failed: {:?} - {:?} --- [{:?}]&quot;</span>,
-        <span class="ident">msg</span>,
-        <span class="ident">error</span>,
-        <span class="ident">their_keys</span>.<span class="ident">into_iter</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>)
-    )
-}
-
 <span class="doccomment">/// Status of an incomming message.</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">MessageStatus</span> {
     <span class="doccomment">/// Message is useful and should be handled.</span>
@@ -780,22 +764,22 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">SignableView</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="comment">// TODO: why don&#39;t we include also `src`?</span>
-    <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">DstLocation</span>,
-    <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
-    <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Variant</span>,
+    <span class="kw">pub</span> <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">DstLocation</span>,
+    <span class="kw">pub</span> <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Variant</span>,
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>, <span class="ident">rng</span>, <span class="ident">section</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>, <span class="ident">crypto</span>::<span class="ident">Keypair</span>, <span class="ident">rng</span>, <span class="ident">section</span>};
     <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">iter</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">extend_proof_chain</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
 
-        <span class="kw">let</span> <span class="ident">full_id</span> <span class="op">=</span> <span class="ident">FullId</span>::<span class="ident">gen</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+        <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">Keypair</span>::<span class="ident">generate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
 
         <span class="kw">let</span> <span class="ident">sk0</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">gen_secret_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
         <span class="kw">let</span> <span class="ident">pk0</span> <span class="op">=</span> <span class="ident">sk0</span>.<span class="ident">public_key</span>();
@@ -812,7 +796,7 @@
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="ident">elders_info</span>);
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="ident">full_id</span>,
+            <span class="kw-2">&amp;</span><span class="ident">keypair</span>,
             <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
             <span class="ident">variant</span>,
             <span class="prelude-val">Some</span>(<span class="ident">full_proof_chain</span>.<span class="ident">slice</span>(<span class="number">1</span>..)),

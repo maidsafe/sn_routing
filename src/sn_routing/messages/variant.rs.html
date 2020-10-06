@@ -234,10 +234,6 @@
 <span id="234">234</span>
 <span id="235">235</span>
 <span id="236">236</span>
-<span id="237">237</span>
-<span id="238">238</span>
-<span id="239">239</span>
-<span id="240">240</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -247,7 +243,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">AccumulatingMessage</span>, <span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">VerifyStatus</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">VerifyStatus</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::{<span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">Vote</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
@@ -263,7 +259,7 @@
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="doccomment">/// Message variant</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Variant</span> {
@@ -289,9 +285,6 @@
     <span class="doccomment">/// - from a section to a current elder to be relocated after they are demoted.</span>
     <span class="doccomment">/// - from the node to be relocated back to its section after it was demoted.</span>
     <span class="ident">RelocatePromise</span>(<span class="ident">RelocatePromise</span>),
-    <span class="doccomment">/// Sent from members of a section message&#39;s source location to the first hop. The</span>
-    <span class="doccomment">/// message will only be relayed once enough signatures have been accumulated.</span>
-    <span class="ident">MessageSignature</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">AccumulatingMessage</span><span class="op">&gt;</span>),
     <span class="doccomment">/// Sent from a newly connected peer to the bootstrap node to request connection infos of</span>
     <span class="doccomment">/// members of the section matching the given name.</span>
     <span class="ident">BootstrapRequest</span>(<span class="ident">XorName</span>),
@@ -398,7 +391,6 @@
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">Relocate</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Relocate({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">RelocatePromise</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;RelocatePromise({:?})&quot;</span>, <span class="ident">payload</span>),
-            <span class="self">Self</span>::<span class="ident">MessageSignature</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;MessageSignature({:?})&quot;</span>, <span class="ident">payload</span>.<span class="ident">content</span>),
             <span class="self">Self</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;BootstrapRequest({})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;BootstrapResponse({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">JoinRequest</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;JoinRequest({:?})&quot;</span>, <span class="ident">payload</span>),
@@ -456,7 +448,7 @@
 }
 
 <span class="doccomment">/// Request to join a section</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">JoinRequest</span> {
     <span class="doccomment">/// The public key of the section to join</span>
     <span class="kw">pub</span> <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
