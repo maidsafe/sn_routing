@@ -370,14 +370,14 @@ pub(crate) struct SignableView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, rng, section};
+    use crate::{consensus, crypto::Keypair, rng, section};
     use std::iter;
 
     #[test]
     fn extend_proof_chain() {
         let mut rng = rng::new();
 
-        let full_id = FullId::gen(&mut rng);
+        let keypair = Keypair::generate(&mut rng);
 
         let sk0 = consensus::test_utils::gen_secret_key(&mut rng);
         let pk0 = sk0.public_key();
@@ -394,7 +394,7 @@ mod tests {
 
         let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(
-            &full_id,
+            &keypair,
             DstLocation::Direct,
             variant,
             Some(full_proof_chain.slice(1..)),
