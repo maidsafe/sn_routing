@@ -19,10 +19,6 @@ use crate::{
 use std::{iter, net::SocketAddr, sync::Arc};
 use xor_name::Prefix;
 
-// TODO: review if we still need to set a timeout for joining
-/// Time after which bootstrap is cancelled (and possibly returnried).
-// pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
-
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {
     pub node_info: NodeInfo,
@@ -113,7 +109,7 @@ impl Bootstrapping {
                 );
 
                 let relocate_payload = self.join_section(&elders_info)?;
-                let (state, commands) = Joining::new(
+                let (state, command) = Joining::new(
                     elders_info,
                     section_key,
                     relocate_payload,
@@ -121,9 +117,7 @@ impl Bootstrapping {
                 )?;
                 let state = State::Joining(state);
 
-                Ok(iter::once(Command::Transition(Box::new(state)))
-                    .chain(commands)
-                    .collect())
+                Ok(vec![Command::Transition(Box::new(state)), command])
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
                 info!(

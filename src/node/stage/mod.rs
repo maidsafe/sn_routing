@@ -343,17 +343,16 @@ impl Stage {
         msg: Message,
     ) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Bootstrapping(stage) => stage.handle_message(sender, msg),
-            State::Joining(stage) => stage.handle_message(sender, msg),
-            State::Approved(stage) => stage.handle_message(sender, msg),
+            State::Bootstrapping(state) => state.handle_message(sender, msg),
+            State::Joining(state) => state.handle_message(sender, msg),
+            State::Approved(state) => state.handle_message(sender, msg),
         }
     }
 
     async fn handle_timeout(&self, token: u64) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
-            State::Bootstrapping(_) => Ok(vec![]),
-            State::Joining(stage) => stage.handle_timeout(token),
-            State::Approved(stage) => stage.handle_timeout(token),
+            State::Approved(state) => state.handle_timeout(token),
+            _ => Ok(vec![]),
         }
     }
 
