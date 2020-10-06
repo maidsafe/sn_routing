@@ -437,7 +437,8 @@ mod test {
     use super::*;
     use crate::{
         consensus,
-        id::{FullId, Peer, PublicId},
+        crypto::{keypair_within_range, name, Keypair},
+        peer::Peer,
         rng::{self, MainRng},
         section::EldersInfo,
     };
@@ -447,7 +448,7 @@ mod test {
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use xor_name::Prefix;
+    use xor_name::{Prefix, XorName};
 
     // Note: The following tests were move over from the former `chain` module.
 
@@ -460,29 +461,29 @@ mod test {
     fn gen_section_info(
         rng: &mut MainRng,
         gen: SecInfoGen,
-    ) -> (EldersInfo, HashMap<PublicId, FullId>) {
+    ) -> (EldersInfo, HashMap<XorName, Keypair>) {
         match gen {
             SecInfoGen::New(prefix, n) => {
-                let mut full_ids = HashMap::new();
+                let mut keypairs = HashMap::new();
                 let mut members = BTreeMap::new();
                 for _ in 0..n {
-                    let some_id = FullId::within_range(rng, &prefix.range_inclusive());
+                    let some_keypair = keypair_within_range(rng, &prefix.range_inclusive());
                     let peer_addr = ([127, 0, 0, 1], 9999).into();
-                    let pub_id = *some_id.public_id();
-                    let _ = members.insert(*pub_id.name(), Peer::new(pub_id, peer_addr));
-                    let _ = full_ids.insert(*some_id.public_id(), some_id);
+                    let name = name(&some_keypair.public);
+                    let _ = members.insert(name, Peer::new(name, peer_addr));
+                    let _ = keypairs.insert(name, some_keypair);
                 }
-                (EldersInfo::new(members, prefix), full_ids)
+                (EldersInfo::new(members, prefix), keypairs)
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.elders.clone();
-                let some_id = FullId::within_range(rng, &info.prefix.range_inclusive());
+                let some_keypair = keypair_within_range(rng, &info.prefix.range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
-                let pub_id = *some_id.public_id();
-                let _ = members.insert(*pub_id.name(), Peer::new(pub_id, peer_addr));
-                let mut full_ids = HashMap::new();
-                let _ = full_ids.insert(pub_id, some_id);
-                (EldersInfo::new(members, info.prefix), full_ids)
+                let name = name(&some_keypair.public);
+                let _ = members.insert(name, Peer::new(name, peer_addr));
+                let mut keypairs = HashMap::new();
+                let _ = keypairs.insert(name, some_keypair);
+                (EldersInfo::new(members, info.prefix), keypairs)
             }
             SecInfoGen::Remove(info) => {
                 let elders = info.elders.clone();
@@ -493,17 +494,17 @@ mod test {
 
     fn add_neighbour_elders_info(
         state: &mut SharedState,
-        our_id: &PublicId,
+        our_id: &XorName,
         neighbour_info: Proven<EldersInfo>,
     ) {
         assert!(
-            !neighbour_info.value.prefix.matches(our_id.name()),
+            !neighbour_info.value.prefix.matches(our_id),
             "Only add neighbours."
         );
         let _ = state.sections.update_neighbour_info(neighbour_info);
     }
 
-    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, PublicId, bls::SecretKey)
+    fn gen_state<T>(rng: &mut MainRng, sections: T) -> (SharedState, XorName, bls::SecretKey)
     where
         T: IntoIterator<Item = (Prefix, usize)>,
     {
@@ -512,14 +513,13 @@ mod test {
         for (prefix, size) in sections {
             let (info, ids) = gen_section_info(rng, SecInfoGen::New(prefix, size));
             if our_id.is_none() {
-                our_id = ids.values().next().cloned();
+                our_id = ids.keys().next().cloned();
             }
 
             section_members.push(info);
         }
 
-        let our_id = our_id.expect("our id");
-        let our_pub_id = *our_id.public_id();
+        let our_pub_id = our_id.expect("our id");
         let mut sections_iter = section_members.into_iter();
 
         let sk = consensus::test_utils::gen_secret_key(rng);
@@ -537,7 +537,7 @@ mod test {
         (state, our_pub_id, sk)
     }
 
-    fn gen_00_state(rng: &mut MainRng) -> (SharedState, PublicId, bls::SecretKey) {
+    fn gen_00_state(rng: &mut MainRng) -> (SharedState, XorName, bls::SecretKey) {
         let elder_size: usize = 7;
         gen_state(
             rng,
@@ -572,7 +572,7 @@ mod test {
             state
                 .sections
                 .get(&Prefix::from_str("00").unwrap())
-                .map(|info| info.elders.contains_key(our_id.name())),
+                .map(|info| info.elders.contains_key(&our_id)),
             Some(true)
         );
         assert_eq!(state.sections.get(&Prefix::from_str("").unwrap()), None);

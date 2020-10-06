@@ -9,25 +9,27 @@
 mod utils;
 
 use anyhow::{Error, Result};
+use ed25519_dalek::Keypair;
 use futures::future::join_all;
 use sn_routing::{
     event::{Connected, Event},
     rng::MainRng,
-    FullId, Node,
+    Node,
 };
 use utils::*;
 use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
-    let full_id = FullId::gen(&mut MainRng::default());
+    let keypair = Keypair::generate(&mut MainRng::default());
+    let pub_key = keypair.public;
     let (node, mut event_stream) = TestNodeBuilder::new(None)
         .first()
-        .full_id(full_id.clone())
+        .keypair(keypair)
         .create()
         .await?;
 
-    assert_eq!(*full_id.public_id(), node.id().await);
+    assert_eq!(pub_key, node.public_key().await);
 
     assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::PromotedToElder);

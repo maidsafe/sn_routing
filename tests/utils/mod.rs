@@ -11,11 +11,12 @@
 #![allow(unused)]
 
 use anyhow::{bail, format_err, Error, Result};
+use ed25519_dalek::Keypair;
 use futures::future;
 use itertools::Itertools;
 use sn_routing::{
     event::{Connected, Event},
-    log_ident, EventStream, FullId, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
+    log_ident, EventStream, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -83,8 +84,8 @@ impl<'a> TestNodeBuilder {
         self
     }
 
-    pub fn full_id(mut self, full_id: FullId) -> Self {
-        self.config.full_id = Some(full_id);
+    pub fn keypair(mut self, keypair: Keypair) -> Self {
+        self.config.keypair = Some(keypair);
         self
     }
 

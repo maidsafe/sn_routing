@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 #[cfg(test)]
-use crate::{id::FullId, rng::MainRng};
+use crate::{crypto::Keypair, rng::MainRng};
 use crate::{peer::Peer, Prefix, XorName};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -84,7 +84,8 @@ pub(crate) fn gen_elders_info(
     rng: &mut MainRng,
     prefix: Prefix,
     count: usize,
-) -> (EldersInfo, Vec<FullId>) {
+) -> (EldersInfo, Vec<Keypair>) {
+    use crate::crypto::name;
     use rand::Rng;
     use std::net::SocketAddr;
 
@@ -94,21 +95,21 @@ pub(crate) fn gen_elders_info(
         SocketAddr::from((ip, port))
     }
 
-    let mut full_ids: Vec<_> = (0..count).map(|_| FullId::gen(rng)).collect();
+    let mut keypairs: Vec<_> = (0..count).map(|_| Keypair::generate(rng)).collect();
 
     // Clippy false positive - https://github.com/rust-lang/rust-clippy/issues/5754
     // (note the issue is closed, but it probably hasn't been merged into stable yet)
     #[allow(clippy::unnecessary_sort_by)]
-    full_ids.sort_by(|lhs, rhs| lhs.public_id().name().cmp(rhs.public_id().name()));
+    keypairs.sort_by(|lhs, rhs| name(&lhs.public).cmp(&name(&rhs.public)));
 
-    let elders = full_ids
+    let elders = keypairs
         .iter()
-        .map(|full_id| {
+        .map(|keypair| {
             let addr = gen_socket_addr(rng);
-            let peer = Peer::new(*full_id.public_id(), addr);
+            let peer = Peer::new(name(&keypair.public), addr);
             (*peer.name(), peer)
         })
         .collect();
 
-    (EldersInfo::new(elders, prefix), full_ids)
+    (EldersInfo::new(elders, prefix), keypairs)
 }
