@@ -6,21 +6,26 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{majority_count, EldersInfo, MemberInfo, SectionMap, SectionPeers, SectionProofChain};
+use super::{
+    majority_count, EldersInfo, MemberInfo, SectionKeyShare, SectionMap, SectionPeers,
+    SectionProofChain,
+};
 use crate::{
-    consensus::{Proof, Proven},
-    error::Error,
+    consensus::{self, Proof, Proven},
+    error::{Error, Result},
     location::DstLocation,
     messages::MessageHash,
     network_params::NetworkParams,
     peer::Peer,
     relocation::{self, RelocateAction, RelocateDetails, RelocatePromise},
+    rng,
 };
-
+use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::TryInto,
     fmt::Debug,
+    iter,
     net::SocketAddr,
 };
 use xor_name::{Prefix, XorName};
@@ -51,6 +56,39 @@ impl SharedState {
             sections: SectionMap::new(elders_info),
             our_members: SectionPeers::default(),
         }
+    }
+
+    /// Creates `SharedState` for the first node in the network
+    pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare)> {
+        let mut rng = rng::new();
+        let secret_key_set = consensus::generate_secret_key_set(&mut rng, 1);
+        let public_key_set = secret_key_set.public_keys();
+        let secret_key_share = secret_key_set.secret_key_share(0);
+
+        // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
+        // of the network there is no previous key. Sign with the current key instead.
+        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
+
+        let mut state = SharedState::new(
+            SectionProofChain::new(elders_info.proof.public_key),
+            elders_info,
+        );
+
+        for peer in state.sections.our().elders.values() {
+            let member_info = MemberInfo::joined(*peer);
+            let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
+            let _ = state
+                .our_members
+                .update(member_info, proof, &state.our_history);
+        }
+
+        let section_key_share = SectionKeyShare {
+            public_key_set,
+            index: 0,
+            secret_key_share,
+        };
+
+        Ok((state, section_key_share))
     }
 
     // Merge two `SharedState`s into one.
@@ -437,6 +475,37 @@ pub(crate) enum UpdateSectionKnowledgeAction {
     VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
     VoteTheirKnowledge { prefix: Prefix, key_index: u64 },
     SendNeighbourInfo { dst: Prefix, nonce: MessageHash },
+}
+
+// Create `EldersInfo` for the first node.
+fn create_first_elders_info(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    peer: Peer,
+) -> Result<Proven<EldersInfo>> {
+    let elders_info = EldersInfo::new(
+        iter::once((*peer.name(), peer)).collect(),
+        Prefix::default(),
+    );
+    let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
+    Ok(Proven::new(elders_info, proof))
+}
+
+fn create_first_proof<T: Serialize>(
+    pk_set: &bls::PublicKeySet,
+    sk_share: &bls::SecretKeyShare,
+    payload: &T,
+) -> Result<Proof> {
+    let bytes = bincode::serialize(payload)?;
+    let signature_share = sk_share.sign(&bytes);
+    let signature = pk_set
+        .combine_signatures(iter::once((0, &signature_share)))
+        .map_err(|_| Error::InvalidSignatureShare)?;
+
+    Ok(Proof {
+        public_key: pk_set.public_key(),
+        signature,
+    })
 }
 
 #[cfg(test)]
