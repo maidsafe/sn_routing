@@ -206,11 +206,8 @@ impl Bootstrapping {
         let mut rng = crate::rng::MainRng::default();
         let new_keypair = keypair_within_range(&mut rng, &name_prefix.range_inclusive());
         let new_name = name(&new_keypair.public);
-        let relocate_payload = RelocatePayload::new(
-            relocate_details,
-            &new_name,
-            &self.node_info.keypair,
-        )?;
+        let relocate_payload =
+            RelocatePayload::new(relocate_details, &new_name, &self.node_info.keypair)?;
 
         info!("Changing name to {}.", new_name);
         self.node_info.keypair = Arc::new(new_keypair);

@@ -19,6 +19,3 @@ pub use self::{
     proven::Proven,
 };
 pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};
-
-#[cfg(feature = "mock")]
-pub use self::event_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};

@@ -2,4 +2,4 @@
 
 set -x -e
 
-cargo test "$@" --release --features=mock -- --nocapture
+cargo test "$@" --release -- --nocapture

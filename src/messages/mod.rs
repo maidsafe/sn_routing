@@ -164,18 +164,6 @@ impl Message {
         )
     }
 
-    /// Creates a message but does not enforce that it is valid. Use only for testing.
-    #[cfg(all(test, feature = "mock"))]
-    pub(crate) fn unverified(
-        src: SrcAuthority,
-        dst: DstLocation,
-        variant: Variant,
-        proof_chain: Option<SectionProofChain>,
-        dst_key: Option<bls::PublicKey>,
-    ) -> Result<Self, CreateError> {
-        Self::new_signed(src, dst, variant, proof_chain, dst_key)
-    }
-
     /// Verify this message is properly signed and trusted.
     pub(crate) fn verify<'a, I>(&'a self, trusted_keys: I) -> Result<VerifyStatus>
     where
@@ -265,7 +253,6 @@ impl Message {
 
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
     // last key (and therefore the signature) intact.
-    #[cfg_attr(feature = "mock", allow(clippy::trivially_copy_pass_by_ref))]
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
