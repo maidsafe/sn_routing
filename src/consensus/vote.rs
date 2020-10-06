@@ -56,7 +56,7 @@ pub(crate) enum Vote {
     // Voted to change the age of the given node.
     ChangeAge(MemberInfo),
 
-    // Voted to send user message on behalf of the whole section.
+    // Voted to send an user message whose source is our section.
     SendMessage {
         message: Box<PlainMessage>,
         proof_chain: SectionProofChain,

@@ -35,7 +35,12 @@ use bls_signature_aggregator::Proof;
 use ed25519_dalek::Keypair;
 use itertools::Itertools;
 use serde::Serialize;
-use std::{cell::Cell, collections::HashSet, net::SocketAddr};
+use std::{
+    cell::Cell,
+    collections::{BTreeSet, HashSet},
+    iter,
+    net::SocketAddr,
+};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
@@ -294,10 +299,7 @@ async fn accumulate_votes() -> Result<()> {
     let node = Stage::new(state.into(), create_comm()?);
 
     let new_peer = create_peer();
-    let member_info = MemberInfo {
-        peer: new_peer,
-        state: PeerState::Joined,
-    };
+    let member_info = MemberInfo::joined(new_peer);
     let vote = Vote::Online {
         member_info,
         previous_name: None,
@@ -348,10 +350,7 @@ async fn handle_consensus_on_online() -> Result<()> {
     let node = Stage::new(state.into(), create_comm()?);
 
     let new_peer = create_peer();
-    let member_info = MemberInfo {
-        peer: new_peer,
-        state: PeerState::Joined,
-    };
+    let member_info = MemberInfo::joined(new_peer);
     let vote = Vote::Online {
         member_info,
         previous_name: None,
@@ -397,17 +396,14 @@ async fn handle_consensus_on_online() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_offline() -> Result<()> {
+async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let (elders_info, mut full_ids) = create_elders_info();
     let sk_set = create_secret_key_set();
 
     let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
 
     let existing_peer = create_peer();
-    let member_info = MemberInfo {
-        peer: existing_peer,
-        state: PeerState::Joined,
-    };
+    let member_info = MemberInfo::joined(existing_peer);
     let proof = create_proof(&sk_set, &member_info)?;
     let _ = shared_state.update_member(member_info, proof);
 
@@ -430,6 +426,104 @@ async fn handle_consensus_on_offline() -> Result<()> {
         assert_eq!(name, *existing_peer.name());
         assert_eq!(age, MIN_AGE);
     });
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_consensus_on_offline_of_elder() -> Result<()> {
+    let (elders_info, mut full_ids) = create_elders_info();
+    let sk_set = create_secret_key_set();
+
+    let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+
+    let existing_peer = create_peer();
+    let member_info = MemberInfo::joined(existing_peer);
+    let proof = create_proof(&sk_set, &member_info)?;
+    let _ = shared_state.update_member(member_info, proof);
+
+    // Pick the elder to remove.
+    let remove_peer = *elders_info
+        .elders
+        .values()
+        .rev()
+        .next()
+        .expect("elders_info is empty");
+    let remove_member_info = shared_state
+        .our_members
+        .get(remove_peer.name())
+        .expect("member not found")
+        .leave();
+
+    // Create out node
+    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+    let node_name = node_info.name();
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    // Handle the consensus on the Offline vote
+    let vote = Vote::Offline(remove_member_info);
+    let proof = create_proof(&sk_set, &vote.as_signable())?;
+
+    let commands = node
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    // Verify we sent a `DKGStart` message with the expected participants.
+    let mut dkg_start_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+        let message = match message.variant() {
+            Variant::Vote {
+                content: Vote::SendMessage { message, .. },
+                ..
+            } => message,
+            _ => continue,
+        };
+
+        let actual_elders_info = match &message.variant {
+            Variant::DKGStart { elders_info, .. } => elders_info,
+            _ => continue,
+        };
+
+        let expected_new_elders: BTreeSet<_> = elders_info
+            .elders
+            .values()
+            .filter(|peer| **peer != remove_peer)
+            .copied()
+            .chain(iter::once(existing_peer))
+            .collect();
+        itertools::assert_equal(actual_elders_info.elders.values(), &expected_new_elders);
+
+        let expected_dkg_start_recipients: Vec<_> = expected_new_elders
+            .iter()
+            .filter(|peer| *peer.name() != node_name)
+            .map(Peer::addr)
+            .copied()
+            .collect();
+        assert_eq!(recipients, expected_dkg_start_recipients);
+
+        dkg_start_sent = true;
+    }
+
+    assert!(dkg_start_sent);
+
+    assert_matches!(event_rx.try_recv(), Ok(Event::MemberLeft { name, .. }) => {
+        assert_eq!(name, *remove_peer.name());
+    });
+
+    // The removed peer is still our elder because we haven't yet processed the section update.
+    assert!(node.our_elders().await.contains(&remove_peer));
 
     Ok(())
 }
@@ -528,10 +622,7 @@ fn create_shared_state(
     let mut shared_state = SharedState::new(section_chain, proven_elders_info);
 
     for peer in elders_info.elders.values().copied() {
-        let member_info = MemberInfo {
-            peer,
-            state: PeerState::Joined,
-        };
+        let member_info = MemberInfo::joined(peer);
         let proof = create_proof(sk_set, &member_info)?;
         let _ = shared_state.update_member(member_info, proof);
     }
