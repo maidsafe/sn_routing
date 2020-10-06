@@ -112,10 +112,7 @@ impl Node {
         };
 
         let incoming_conns = comm.listen()?;
-
-        let stage = Stage::new(state, comm);
-        let stage = Arc::new(stage);
-
+        let stage = Arc::new(Stage::new(state, comm));
         let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(event_rx);
 
