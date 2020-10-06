@@ -434,15 +434,6 @@ fn construct() {
 }
 
 #[test]
-fn add_member() {
-    let mut env = Env::new(ELDER_SIZE - 1);
-    env.accumulate_online(env.candidate.clone());
-
-    assert!(env.is_candidate_member());
-    assert!(!env.is_candidate_elder());
-}
-
-#[test]
 fn add_and_promote_member() {
     let mut env = Env::new(ELDER_SIZE - 1);
     let new_info = env.new_elders_info_with_candidate();
@@ -497,24 +488,6 @@ fn remove_elder() {
 
     assert!(!env.is_candidate_member());
     assert!(!env.is_candidate_elder());
-}
-
-#[test]
-fn handle_bootstrap() {
-    let mut env = Env::new(ELDER_SIZE);
-    let new_node = OtherNode::new(&mut env.rng);
-
-    let addr = *new_node.addr();
-    let msg = new_node.bootstrap_request().unwrap();
-
-    test_utils::handle_message(&mut env.subject, addr, msg).unwrap();
-    env.poll();
-
-    let response = new_node.expect_bootstrap_response();
-    match response {
-        BootstrapResponse::Join { elders_info, .. } => assert_eq!(elders_info, env.elders_info),
-        BootstrapResponse::Rebootstrap(_) => panic!("Unexpected Rebootstrap response"),
-    }
 }
 
 /*

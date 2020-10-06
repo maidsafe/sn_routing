@@ -78,6 +78,29 @@ impl Vote {
             &bincode::serialize(&SignableView(self))?,
         ))
     }
+
+    #[cfg(test)]
+    pub fn as_signable(&self) -> SignableView {
+        SignableView(self)
+    }
+}
+
+// View of a `Vote` that can be serialized for the purpose of signing.
+pub(crate) struct SignableView<'a>(&'a Vote);
+
+impl<'a> Serialize for SignableView<'a> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Vote::Online { member_info, .. } => member_info.serialize(serializer),
+            Vote::Offline(member_info) => member_info.serialize(serializer),
+            Vote::SectionInfo(info) => info.serialize(serializer),
+            Vote::OurKey { key, .. } => key.serialize(serializer),
+            Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
+            Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
+            Vote::ChangeAge(member_info) => member_info.serialize(serializer),
+            Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
+        }
+    }
 }
 
 // Accumulator of `Vote`s.
@@ -102,24 +125,6 @@ struct SignableWrapper(Vote);
 impl Serialize for SignableWrapper {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         SignableView(&self.0).serialize(serializer)
-    }
-}
-
-// View of a `Vote` that can be serialized for the purpose of signing.
-struct SignableView<'a>(&'a Vote);
-
-impl<'a> Serialize for SignableView<'a> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            Vote::Online { member_info, .. } => member_info.serialize(serializer),
-            Vote::Offline(member_info) => member_info.serialize(serializer),
-            Vote::SectionInfo(info) => info.serialize(serializer),
-            Vote::OurKey { key, .. } => key.serialize(serializer),
-            Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
-            Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
-            Vote::ChangeAge(member_info) => member_info.serialize(serializer),
-            Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
-        }
     }
 }
 
