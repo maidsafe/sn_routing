@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{approved::Approved, command, Command, NodeInfo, State};
+use super::{approved::Approved, Command, NodeInfo, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
@@ -16,11 +16,8 @@ use crate::{
     section::{EldersInfo, SharedState},
     DstLocation, MIN_AGE,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 use xor_name::Prefix;
-
-/// Time after which an attempt to joining a section is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 // The joining stage - node is waiting to be approved by the section.
 pub(crate) struct Joining {
@@ -31,7 +28,6 @@ pub(crate) struct Joining {
     section_key: bls::PublicKey,
     // Whether we are joining as infant or relocating.
     join_type: JoinType,
-    timer_token: u64,
 }
 
 impl Joining {
@@ -40,22 +36,20 @@ impl Joining {
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
         node_info: NodeInfo,
-    ) -> Result<(Self, Vec<Command>)> {
+    ) -> Result<(Self, Command)> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
             None => JoinType::First,
         };
-
-        let mut stage = Self {
+        let state = Self {
             node_info,
             elders_info,
             section_key,
             join_type,
-            timer_token: 0,
         };
-        let commands = stage.send_join_requests()?;
+        let command = state.send_join_requests()?;
 
-        Ok((stage, commands))
+        Ok((state, command))
     }
 
     pub fn handle_message(
@@ -75,11 +69,14 @@ impl Joining {
                 section_key,
             }) => {
                 verify_message(&msg, None)?;
-                self.handle_bootstrap_response(
-                    msg.src().to_sender_node(sender)?,
-                    elders_info.clone(),
-                    *section_key,
-                )
+                Ok(self
+                    .handle_bootstrap_response(
+                        msg.src().to_sender_node(sender)?,
+                        elders_info.clone(),
+                        *section_key,
+                    )?
+                    .into_iter()
+                    .collect())
             }
             Variant::NodeApproval(payload) => {
                 let trusted_key = match &self.join_type {
@@ -114,24 +111,14 @@ impl Joining {
         }
     }
 
-    pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
-        if token == self.timer_token {
-            debug!("Timeout when trying to join a section");
-            // Try again
-            self.send_join_requests()
-        } else {
-            Ok(vec![])
-        }
-    }
-
     fn handle_bootstrap_response(
         &mut self,
         sender: Peer,
         new_elders_info: EldersInfo,
         new_section_key: bls::PublicKey,
-    ) -> Result<Vec<Command>> {
+    ) -> Result<Option<Command>> {
         if new_section_key == self.section_key {
-            return Ok(vec![]);
+            return Ok(None);
         }
 
         if new_elders_info.prefix.matches(&self.node_info.name()) {
@@ -141,13 +128,14 @@ impl Joining {
             );
             self.elders_info = new_elders_info;
             self.section_key = new_section_key;
-            self.send_join_requests()
+
+            Ok(Some(self.send_join_requests()?))
         } else {
             warn!(
                 "Newer Join response not for our prefix {:?} from {:?}",
                 new_elders_info, sender,
             );
-            Ok(vec![])
+            Ok(None)
         }
     }
 
@@ -166,7 +154,7 @@ impl Joining {
         }
     }
 
-    fn send_join_requests(&mut self) -> Result<Vec<Command>> {
+    fn send_join_requests(&self) -> Result<Command> {
         let (relocate_payload, age) = match &self.join_type {
             JoinType::First { .. } => (None, MIN_AGE),
             JoinType::Relocate(payload) => (Some(payload), payload.relocate_details().age),
@@ -197,15 +185,11 @@ impl Joining {
             None,
         )?;
 
-        self.timer_token = command::next_timer_token();
-
-        Ok(vec![
-            Command::send_message_to_targets(&recipients, recipients.len(), message.to_bytes()),
-            Command::ScheduleTimeout {
-                duration: JOIN_TIMEOUT,
-                token: self.timer_token,
-            },
-        ])
+        Ok(Command::send_message_to_targets(
+            &recipients,
+            recipients.len(),
+            message.to_bytes(),
+        ))
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
