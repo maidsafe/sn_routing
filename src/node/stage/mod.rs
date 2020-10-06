@@ -27,6 +27,7 @@ use crate::{
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
 };
+use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::PublicKey;
 use std::{
@@ -299,6 +300,9 @@ impl Stage {
                 Command::HandleVote { vote, proof_share } => {
                     self.handle_vote(vote, proof_share).await
                 }
+                Command::HandleConsensus { vote, proof } => {
+                    self.handle_consensus(vote, proof).await
+                }
                 Command::HandlePeerLost(addr) => self.handle_peer_lost(addr).await,
                 Command::SendMessage {
                     recipients,
@@ -359,6 +363,13 @@ impl Stage {
     async fn handle_vote(&self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
             State::Approved(state) => state.handle_vote(vote, proof_share),
+            _ => Err(Error::InvalidState),
+        }
+    }
+
+    async fn handle_consensus(&self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
+        match &mut *self.state.lock().await {
+            State::Approved(state) => state.handle_consensus(vote, proof),
             _ => Err(Error::InvalidState),
         }
     }

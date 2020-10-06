@@ -150,12 +150,44 @@ impl Approved {
     // Insert the vote into the vote accumulator and handle it if accumulated.
     pub fn handle_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
         match self.vote_accumulator.add(vote, proof_share) {
-            Ok((vote, proof)) => self.handle_consensus(vote, proof),
+            Ok((vote, proof)) => Ok(vec![Command::HandleConsensus { vote, proof }]),
             Err(AccumulationError::NotEnoughShares) => Ok(vec![]),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
                 Err(Error::InvalidSignatureShare)
             }
+        }
+    }
+
+    pub fn handle_consensus(&mut self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
+        debug!("handle consensus on {:?}", vote);
+
+        match vote {
+            Vote::Online {
+                member_info,
+                previous_name,
+                their_knowledge,
+            } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
+            Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
+            Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
+            Vote::OurKey { prefix, key } => self.handle_our_key_event(prefix, key, proof),
+            Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
+            Vote::TheirKnowledge { prefix, key_index } => {
+                self.handle_their_knowledge_event(prefix, key_index, proof);
+                Ok(vec![])
+            }
+            Vote::ChangeAge(member_info) => {
+                self.handle_change_age_event(member_info, proof);
+                Ok(vec![])
+            }
+            Vote::SendMessage {
+                message,
+                proof_chain,
+            } => Ok(vec![self.handle_send_message_event(
+                *message,
+                proof_chain,
+                proof,
+            )?]),
         }
     }
 
@@ -1085,38 +1117,6 @@ impl Approved {
         self.shared_state.our_prefix().is_empty()
             && self.shared_state.our_members.joined().count()
                 <= self.node_info.network_params.recommended_section_size
-    }
-
-    fn handle_consensus(&mut self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
-        debug!("handle consensus on {:?}", vote);
-
-        match vote {
-            Vote::Online {
-                member_info,
-                previous_name,
-                their_knowledge,
-            } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
-            Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
-            Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
-            Vote::OurKey { prefix, key } => self.handle_our_key_event(prefix, key, proof),
-            Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
-            Vote::TheirKnowledge { prefix, key_index } => {
-                self.handle_their_knowledge_event(prefix, key_index, proof);
-                Ok(vec![])
-            }
-            Vote::ChangeAge(member_info) => {
-                self.handle_change_age_event(member_info, proof);
-                Ok(vec![])
-            }
-            Vote::SendMessage {
-                message,
-                proof_chain,
-            } => Ok(vec![self.handle_send_message_event(
-                *message,
-                proof_chain,
-                proof,
-            )?]),
-        }
     }
 
     fn handle_online_event(

@@ -12,6 +12,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::Message,
 };
+use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use std::{
     fmt::{self, Debug, Formatter},
@@ -36,6 +37,8 @@ pub(crate) enum Command {
     HandlePeerLost(SocketAddr),
     /// Handle vote cast either by us or some other peer.
     HandleVote { vote: Vote, proof_share: ProofShare },
+    /// Handle consensus on a vote.
+    HandleConsensus { vote: Vote, proof: Proof },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
         recipients: Vec<SocketAddr>,
@@ -90,7 +93,12 @@ impl Debug for Command {
             Self::HandleVote { vote, proof_share } => f
                 .debug_struct("HandleVote")
                 .field("vote", vote)
-                .field("index", &proof_share.index)
+                .field("proof_share.index", &proof_share.index)
+                .finish(),
+            Self::HandleConsensus { vote, proof } => f
+                .debug_struct("HandleConsensus")
+                .field("vote", vote)
+                .field("proof.public_key", &proof.public_key)
                 .finish(),
             Self::SendMessage {
                 recipients,

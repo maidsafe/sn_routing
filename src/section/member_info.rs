@@ -14,7 +14,7 @@ use xor_name::XorName;
 pub const MIN_AGE: u8 = 4;
 
 /// Information about a member of our section.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
     pub peer: Peer,
     pub state: PeerState,
