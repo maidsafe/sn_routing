@@ -16,16 +16,21 @@ mod tests;
 pub use self::event_stream::EventStream;
 #[cfg(test)]
 use self::stage::State;
-use self::{command::Command, executor::Executor, stage::Stage};
+use self::{
+    command::Command,
+    executor::Executor,
+    stage::{Approved, Bootstrapping, Comm, NodeInfo, Stage},
+};
 #[cfg(all(test, feature = "mock"))]
 use crate::section::SectionKeyShare;
 use crate::{
-    crypto::{name, Keypair, PublicKey},
+    crypto::{Keypair, PublicKey},
     error::{Error, Result},
+    event::{Connected, Event},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
     peer::Peer,
-    rng::MainRng,
+    rng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -79,36 +84,38 @@ impl Node {
 
     /// Create new node using the given config.
     pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
-        let mut rng = MainRng::default();
+        let mut rng = rng::new();
         let keypair = config
             .keypair
             .unwrap_or_else(|| Keypair::generate(&mut rng));
-        let node_name = name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let node_info = NodeInfo::new(keypair, config.network_params, event_tx.clone());
+        let node_name = node_info.name();
 
-        let (stage, incoming_conns, initial_command) = if config.first {
+        let (state, comm, initial_command) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            let (stage, incoming_conns) = Stage::first_node(
-                config.transport_config,
-                keypair,
-                config.network_params,
-                event_tx,
-            )?;
-            (stage, incoming_conns, None)
+            let comm = Comm::new(config.transport_config)?;
+            let addr = comm.our_connection_info()?;
+            let state = Approved::first_node(node_info, addr)?;
+
+            let _ = event_tx.send(Event::Connected(Connected::First));
+            let _ = event_tx.send(Event::PromotedToElder);
+
+            (state.into(), comm, None)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            let (stage, incoming_conns, initial_command) = Stage::bootstrap(
-                config.transport_config,
-                keypair,
-                config.network_params,
-                event_tx,
-            )
-            .await?;
-            (stage, incoming_conns, Some(initial_command))
+            let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
+            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info);
+
+            (state.into(), comm, Some(command))
         };
 
+        let incoming_conns = comm.listen()?;
+
+        let stage = Stage::new(state, comm);
         let stage = Arc::new(stage);
+
         let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(event_rx);
 

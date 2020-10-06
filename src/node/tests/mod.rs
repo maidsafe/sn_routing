@@ -16,9 +16,10 @@ mod elder;
 #[cfg(feature = "mock")]
 mod utils;
 
-use super::{Command, Stage, State};
+use super::{Approved, Bootstrapping, Comm, Command, NodeInfo, Stage, State};
 use crate::{
     crypto,
+    event::Event,
     location::DstLocation,
     messages::{BootstrapResponse, Message, Variant},
     peer::Peer,
@@ -30,48 +31,35 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use ed25519_dalek::Keypair;
 use itertools::Itertools;
-use std::{
-    collections::HashSet,
-    iter,
-    net::{Ipv4Addr, SocketAddr},
-};
+use std::{collections::HashSet, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 #[tokio::test]
 async fn send_bootstrap_request() -> Result<()> {
-    let env = Env::new()?;
-
-    let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let (node, _, command) = Stage::bootstrap(
-        env.transport_config(),
-        gen_keypair(),
-        Default::default(),
-        event_tx,
-    )
-    .await?;
+    let (node_info, _) = create_node_info();
+    let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr()], node_info);
+    let node = Stage::new(state.into(), create_comm()?);
 
     let recipients = assert_matches!(
         command,
         Command::SendBootstrapRequest(recipients) => recipients
     );
-    assert_eq!(recipients, [env.bootstrap_addr]);
+    assert_eq!(recipients, [bootstrap_addr()]);
 
     let mut commands = node
         .handle_command(Command::SendBootstrapRequest(recipients))
         .await?
         .into_iter();
 
-    let (recipients, delivery_group_size, message) = assert_matches!(
+    let (recipients, message) = assert_matches!(
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            delivery_group_size,
-            message,
-        }) => (recipients, delivery_group_size, message)
+            message, ..
+        }) => (recipients, message)
     );
-    assert_eq!(recipients, [env.bootstrap_addr]);
-    assert_eq!(delivery_group_size, 1);
+    assert_eq!(recipients, [bootstrap_addr()]);
 
     let message = Message::from_bytes(&message)?;
     assert_matches!(
@@ -86,15 +74,11 @@ async fn send_bootstrap_request() -> Result<()> {
 
 #[tokio::test]
 async fn receive_bootstrap_request() -> Result<()> {
-    let env = Env::new()?;
-
-    let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let (node, _) = Stage::first_node(
-        env.transport_config(),
-        gen_keypair(),
-        Default::default(),
-        event_tx,
-    )?;
+    let comm = create_comm()?;
+    let addr = comm.our_connection_info()?;
+    let (node_info, _) = create_node_info();
+    let state = Approved::first_node(node_info, addr)?;
+    let node = Stage::new(state.into(), comm);
 
     let new_node_keypair = gen_keypair();
     let new_node_addr = ([192, 0, 2, 0], 2000).into();
@@ -139,14 +123,9 @@ async fn receive_bootstrap_request() -> Result<()> {
 async fn receive_bootstrap_response_join() -> Result<()> {
     let env = Env::new()?;
 
-    let (event_tx, _event_rx) = mpsc::unbounded_channel();
-    let (node, ..) = Stage::bootstrap(
-        env.transport_config(),
-        gen_keypair(),
-        Default::default(),
-        event_tx,
-    )
-    .await?;
+    let (node_info, _) = create_node_info();
+    let (state, _) = Bootstrapping::new(None, vec![bootstrap_addr()], node_info);
+    let node = Stage::new(state.into(), create_comm()?);
 
     let message = Message::single_src(
         &env.elder_keypairs[0],
@@ -193,6 +172,20 @@ async fn receive_bootstrap_response_join() -> Result<()> {
 
 // TODO: add more tests here
 
+fn bootstrap_addr() -> SocketAddr {
+    create_addr(1000)
+}
+
+fn create_addr(port: u16) -> SocketAddr {
+    ([192, 0, 2, 0], port).into()
+}
+
+fn create_node_info() -> (NodeInfo, mpsc::UnboundedReceiver<Event>) {
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
+    let node_info = NodeInfo::new(gen_keypair(), Default::default(), event_tx);
+    (node_info, event_rx)
+}
+
 fn gen_keypair() -> Keypair {
     let mut rng = rng::new();
     Keypair::generate(&mut rng)
@@ -200,10 +193,6 @@ fn gen_keypair() -> Keypair {
 
 // Test environment. Contains info about the rest of the network.
 struct Env {
-    _bootstrap_endpoint: qp2p::Endpoint,
-    // Socket address of the node to bootstrap against.
-    bootstrap_addr: SocketAddr,
-
     // EldersInfo of the assumed section the node under test is a member of.
     elders_info: EldersInfo,
     // Keypairs of all the section elders.
@@ -214,25 +203,12 @@ struct Env {
 
 impl Env {
     fn new() -> Result<Self> {
-        let bootstrap_qp2p = qp2p::QuicP2p::with_config(
-            Some(qp2p::Config {
-                ip: Some(Ipv4Addr::LOCALHOST.into()),
-                ..Default::default()
-            }),
-            Default::default(),
-            false,
-        )?;
-        let bootstrap_endpoint = bootstrap_qp2p.new_endpoint()?;
-        let bootstrap_addr = bootstrap_endpoint.local_addr()?;
-
         let (elders_info, elder_keypairs) = gen_elders_info();
 
         let secret_key = bls::SecretKey::random();
         let public_key = secret_key.public_key();
 
         Ok(Self {
-            _bootstrap_endpoint: bootstrap_endpoint,
-            bootstrap_addr,
             elders_info,
             elder_keypairs,
             section_key: public_key,
@@ -247,14 +223,10 @@ impl Env {
             .nth(index)
             .expect("elder index our of range")
     }
+}
 
-    // Transport config to use by the node under test.
-    fn transport_config(&self) -> qp2p::Config {
-        qp2p::Config {
-            hard_coded_contacts: iter::once(self.bootstrap_addr).collect(),
-            ..Default::default()
-        }
-    }
+fn create_comm() -> Result<Comm> {
+    Ok(Comm::new(Default::default())?)
 }
 
 // Generate random EldersInfo and the corresponding Keypairs.
@@ -268,7 +240,7 @@ fn gen_elders_info() -> (EldersInfo, Vec<Keypair>) {
         .iter()
         .enumerate()
         .map(|(index, keypair)| {
-            let addr = ([192, 0, 2, 0], 1000 + index as u16).into();
+            let addr = create_addr(1001 + index as u16);
             Peer::new(crypto::name(&keypair.public), addr, MIN_AGE)
         })
         .map(|p2p_node| (*p2p_node.name(), p2p_node))

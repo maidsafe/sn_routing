@@ -53,15 +53,23 @@ pub(crate) struct Approved {
 }
 
 impl Approved {
-    // Create the approved stage for a regular node.
+    // Creates the approved state for the first node in the network
+    pub fn first_node(node_info: NodeInfo, our_addr: SocketAddr) -> Result<Self> {
+        let peer = Peer::new(node_info.name(), our_addr, MIN_AGE);
+        let (shared_state, section_key_share) = SharedState::first_node(peer)?;
+
+        Ok(Self::new(shared_state, Some(section_key_share), node_info))
+    }
+
+    // Creates the approved state for a regular node.
     pub fn new(
         shared_state: SharedState,
         section_key_share: Option<SectionKeyShare>,
         node_info: NodeInfo,
-    ) -> Result<Self> {
+    ) -> Self {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
-        Ok(Self {
+        Self {
             node_info,
             shared_state,
             section_keys_provider,
@@ -70,7 +78,7 @@ impl Approved {
             dkg_voter: Default::default(),
             relocate_promise: None,
             msg_filter: MessageFilter::new(),
-        })
+        }
     }
 
     pub fn handle_message(

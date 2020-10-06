@@ -11,29 +11,26 @@ mod bootstrapping;
 mod comm;
 mod joining;
 
-use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm, joining::Joining};
+pub(super) use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm};
+
+use self::joining::Joining;
 use super::{command, Command};
 use crate::{
-    consensus::{self, Proof, ProofShare, Proven, Vote},
+    consensus::{ProofShare, Vote},
     crypto::{name, Keypair},
     error::{Error, Result},
-    event::{Connected, Event},
+    event::Event,
     location::{DstLocation, SrcLocation},
     log_ident,
     messages::Message,
     network_params::NetworkParams,
     peer::Peer,
-    rng::MainRng,
-    section::{EldersInfo, MemberInfo, SectionKeyShare, SectionProofChain, SharedState, MIN_AGE},
-    TransportConfig,
+    section::{EldersInfo, SectionProofChain},
 };
 use bytes::Bytes;
 use ed25519_dalek::PublicKey;
-use qp2p::IncomingConnections;
-use serde::Serialize;
 use std::{
     fmt::{self, Debug, Formatter},
-    iter,
     net::SocketAddr,
     sync::Arc,
     time::Duration,
@@ -64,6 +61,18 @@ impl State {
     }
 }
 
+impl From<Bootstrapping> for State {
+    fn from(state: Bootstrapping) -> Self {
+        Self::Bootstrapping(state)
+    }
+}
+
+impl From<Approved> for State {
+    fn from(state: Approved) -> Self {
+        Self::Approved(state)
+    }
+}
+
 impl Debug for State {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
@@ -85,6 +94,18 @@ pub(crate) struct NodeInfo {
 }
 
 impl NodeInfo {
+    pub(super) fn new(
+        keypair: Keypair,
+        network_params: NetworkParams,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Self {
+        Self {
+            keypair: Arc::new(keypair),
+            network_params,
+            event_tx,
+        }
+    }
+
     pub fn name(&self) -> XorName {
         name(&self.keypair.public)
     }
@@ -105,80 +126,11 @@ pub(crate) struct Stage {
 }
 
 impl Stage {
-    // Private constructor
-    fn new(state: State, comm: Comm) -> Result<(Self, IncomingConnections)> {
-        let incoming_conns = comm.listen()?;
-
-        let stage = Self {
+    pub fn new(state: State, comm: Comm) -> Self {
+        Self {
             state: Mutex::new(state),
             comm,
-        };
-
-        Ok((stage, incoming_conns))
-    }
-
-    // Create the approved stage for the first node in the network.
-    pub fn first_node(
-        transport_config: TransportConfig,
-        keypair: Keypair,
-        network_params: NetworkParams,
-        event_tx: mpsc::UnboundedSender<Event>,
-    ) -> Result<(Self, IncomingConnections)> {
-        let comm = Comm::new(transport_config)?;
-        let connection_info = comm.our_connection_info()?;
-        let peer = Peer::new(name(&keypair.public), connection_info, MIN_AGE);
-
-        let mut rng = MainRng::default();
-        let secret_key_set = consensus::generate_secret_key_set(&mut rng, 1);
-        let public_key_set = secret_key_set.public_keys();
-        let secret_key_share = secret_key_set.secret_key_share(0);
-
-        // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
-        // of the network there is no previous key. Sign with the current key instead.
-        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
-        let shared_state =
-            create_first_shared_state(&public_key_set, &secret_key_share, elders_info)?;
-
-        let section_key_share = SectionKeyShare {
-            public_key_set,
-            index: 0,
-            secret_key_share,
-        };
-
-        let _ = event_tx.send(Event::Connected(Connected::First));
-        let _ = event_tx.send(Event::PromotedToElder);
-
-        let node_info = NodeInfo {
-            keypair: Arc::new(keypair),
-            network_params,
-            event_tx,
-        };
-
-        let state = Approved::new(shared_state, Some(section_key_share), node_info)?;
-        let (stage, incomming_connections) = Self::new(State::Approved(state), comm)?;
-
-        Ok((stage, incomming_connections))
-    }
-
-    pub async fn bootstrap(
-        transport_config: TransportConfig,
-        keypair: Keypair,
-        network_params: NetworkParams,
-        event_tx: mpsc::UnboundedSender<Event>,
-    ) -> Result<(Self, IncomingConnections, Command)> {
-        let (comm, addr) = Comm::from_bootstrapping(transport_config).await?;
-
-        let node_info = NodeInfo {
-            keypair: Arc::new(keypair),
-            network_params,
-            event_tx,
-        };
-
-        let (state, command) = Bootstrapping::new(None, vec![addr], node_info);
-        let state = State::Bootstrapping(state);
-        let (stage, incomming_connections) = Self::new(state, comm)?;
-
-        Ok((stage, incomming_connections, command))
+        }
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream
@@ -489,55 +441,4 @@ impl Stage {
             }
         }
     }
-}
-
-// Create `EldersInfo` for the first node.
-fn create_first_elders_info(
-    pk_set: &bls::PublicKeySet,
-    sk_share: &bls::SecretKeyShare,
-    peer: Peer,
-) -> Result<Proven<EldersInfo>> {
-    let name = *peer.name();
-    let node = (name, peer);
-    let elders_info = EldersInfo::new(iter::once(node).collect(), Prefix::default());
-    let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
-    Ok(Proven::new(elders_info, proof))
-}
-
-fn create_first_shared_state(
-    pk_set: &bls::PublicKeySet,
-    sk_share: &bls::SecretKeyShare,
-    elders_info: Proven<EldersInfo>,
-) -> Result<SharedState> {
-    let mut shared_state = SharedState::new(
-        SectionProofChain::new(elders_info.proof.public_key),
-        elders_info,
-    );
-
-    for peer in shared_state.sections.our().elders.values() {
-        let member_info = MemberInfo::joined(*peer);
-        let proof = create_first_proof(pk_set, sk_share, &member_info)?;
-        let _ = shared_state
-            .our_members
-            .update(member_info, proof, &shared_state.our_history);
-    }
-
-    Ok(shared_state)
-}
-
-fn create_first_proof<T: Serialize>(
-    pk_set: &bls::PublicKeySet,
-    sk_share: &bls::SecretKeyShare,
-    payload: &T,
-) -> Result<Proof> {
-    let bytes = bincode::serialize(payload)?;
-    let signature_share = sk_share.sign(&bytes);
-    let signature = pk_set
-        .combine_signatures(iter::once((0, &signature_share)))
-        .map_err(|_| Error::InvalidSignatureShare)?;
-
-    Ok(Proof {
-        public_key: pk_set.public_key(),
-        signature,
-    })
 }
