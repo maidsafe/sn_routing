@@ -85,14 +85,14 @@ async fn receive_bootstrap_request() -> Result<()> {
     let state = Approved::first_node(node_info, addr)?;
     let node = Stage::new(state.into(), comm);
 
-    let new_node_keypair = create_keypair();
-    let new_node_addr = create_addr();
+    let new_keypair = create_keypair();
+    let new_addr = create_addr();
 
     let message = Message::single_src(
-        &new_node_keypair,
+        &new_keypair,
         MIN_AGE,
         DstLocation::Direct,
-        Variant::BootstrapRequest(crypto::name(&new_node_keypair.public)),
+        Variant::BootstrapRequest(crypto::name(&new_keypair.public)),
         None,
         None,
     )?;
@@ -100,7 +100,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let mut commands = node
         .handle_command(Command::HandleMessage {
             message,
-            sender: Some(new_node_addr),
+            sender: Some(new_addr),
         })
         .await?
         .into_iter();
@@ -113,7 +113,7 @@ async fn receive_bootstrap_request() -> Result<()> {
         }) => (recipients, message)
     );
 
-    assert_eq!(recipients, [new_node_addr]);
+    assert_eq!(recipients, [new_addr]);
 
     let message = Message::from_bytes(&message)?;
     assert_matches!(
@@ -237,8 +237,8 @@ async fn receive_join_request() -> Result<()> {
     let state = Approved::first_node(node_info, addr)?;
     let node = Stage::new(state.into(), comm);
 
-    let new_node_keypair = create_keypair();
-    let new_node_addr = create_addr();
+    let new_keypair = create_keypair();
+    let new_addr = create_addr();
     let section_key = *node
         .our_history()
         .await
@@ -246,7 +246,7 @@ async fn receive_join_request() -> Result<()> {
         .last_key();
 
     let message = Message::single_src(
-        &new_node_keypair,
+        &new_keypair,
         MIN_AGE,
         DstLocation::Direct,
         Variant::JoinRequest(Box::new(JoinRequest {
@@ -258,7 +258,7 @@ async fn receive_join_request() -> Result<()> {
     )?;
     let mut commands = node
         .handle_command(Command::HandleMessage {
-            sender: Some(new_node_addr),
+            sender: Some(new_addr),
             message,
         })
         .await?
@@ -271,8 +271,8 @@ async fn receive_join_request() -> Result<()> {
     assert_matches!(
         vote,
         Vote::Online { member_info, previous_name, their_knowledge } => {
-            assert_eq!(*member_info.peer.name(), crypto::name(&new_node_keypair.public));
-            assert_eq!(*member_info.peer.addr(), new_node_addr);
+            assert_eq!(*member_info.peer.name(), crypto::name(&new_keypair.public));
+            assert_eq!(*member_info.peer.addr(), new_addr);
             assert_eq!(member_info.peer.age(), MIN_AGE);
             assert_eq!(member_info.state, PeerState::Joined);
             assert_eq!(previous_name, None);
@@ -290,14 +290,12 @@ async fn accumulate_votes() -> Result<()> {
     let pk_set = sk_set.public_keys();
     let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
     let (node_info, _) = create_node_info_for(full_ids.remove(0));
-
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
-    let new_node_name = crypto::name(&create_keypair().public);
-    let new_node_addr = create_addr();
+    let new_peer = create_peer();
     let member_info = MemberInfo {
-        peer: Peer::new(new_node_name, new_node_addr, MIN_AGE),
+        peer: new_peer,
         state: PeerState::Joined,
     };
     let vote = Vote::Online {
@@ -346,14 +344,12 @@ async fn handle_consensus_on_online() -> Result<()> {
     let sk_set = create_secret_key_set();
     let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
     let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
-
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
-    let new_node_name = crypto::name(&create_keypair().public);
-    let new_node_addr = create_addr();
+    let new_peer = create_peer();
     let member_info = MemberInfo {
-        peer: Peer::new(new_node_name, new_node_addr, MIN_AGE),
+        peer: new_peer,
         state: PeerState::Joined,
     };
     let vote = Vote::Online {
@@ -380,7 +376,7 @@ async fn handle_consensus_on_online() -> Result<()> {
                 match message.variant() {
                     Variant::NodeApproval(proven_elders_info) => {
                         assert_eq!(proven_elders_info.value, elders_info);
-                        assert_eq!(recipients, [new_node_addr]);
+                        assert_eq!(recipients, [*new_peer.addr()]);
                         node_approval_sent = true;
                     }
                     _ => {}
@@ -393,7 +389,45 @@ async fn handle_consensus_on_online() -> Result<()> {
     assert!(node_approval_sent);
 
     assert_matches!(event_rx.try_recv(), Ok(Event::InfantJoined { name, age, }) => {
-        assert_eq!(name, new_node_name);
+        assert_eq!(name, *new_peer.name());
+        assert_eq!(age, MIN_AGE);
+    });
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_consensus_on_offline() -> Result<()> {
+    let (elders_info, mut full_ids) = create_elders_info();
+    let sk_set = create_secret_key_set();
+
+    let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+
+    let existing_peer = create_peer();
+    let member_info = MemberInfo {
+        peer: existing_peer,
+        state: PeerState::Joined,
+    };
+    let proof = create_proof(&sk_set, &member_info)?;
+    let _ = shared_state.update_member(member_info, proof);
+
+    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    let member_info = MemberInfo {
+        peer: existing_peer,
+        state: PeerState::Left,
+    };
+    let vote = Vote::Offline(member_info);
+    let proof = create_proof(&sk_set, &vote.as_signable())?;
+
+    let _ = node
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    assert_matches!(event_rx.try_recv(), Ok(Event::MemberLeft { name, age, }) => {
+        assert_eq!(name, *existing_peer.name());
         assert_eq!(age, MIN_AGE);
     });
 
@@ -415,6 +449,19 @@ fn create_addr() -> SocketAddr {
     ([192, 0, 2, 0], port).into()
 }
 
+fn create_keypair() -> Keypair {
+    let mut rng = rng::new();
+    Keypair::generate(&mut rng)
+}
+
+fn create_peer() -> Peer {
+    Peer::new(
+        crypto::name(&create_keypair().public),
+        create_addr(),
+        MIN_AGE,
+    )
+}
+
 fn create_node_info() -> (NodeInfo, mpsc::UnboundedReceiver<Event>) {
     create_node_info_for(create_keypair())
 }
@@ -423,11 +470,6 @@ fn create_node_info_for(keypair: Keypair) -> (NodeInfo, mpsc::UnboundedReceiver<
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let node_info = NodeInfo::new(keypair, Default::default(), event_tx);
     (node_info, event_rx)
-}
-
-fn create_keypair() -> Keypair {
-    let mut rng = rng::new();
-    Keypair::generate(&mut rng)
 }
 
 fn create_comm() -> Result<Comm> {
