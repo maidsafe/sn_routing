@@ -114,12 +114,12 @@ mod timer;
 // Cryptography
 mod crypto;
 
-/// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
+/// Majority is defined as having strictly greater than `MAJORITY_NUMERATOR / MAJORITY_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
-/// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
-const QUORUM_NUMERATOR: usize = 2;
+/// `votes * MAJORITY_DENOMINATOR > voters * MAJORITY_NUMERATOR`.
+const MAJORITY_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
-const QUORUM_DENOMINATOR: usize = 3;
+const MAJORITY_DENOMINATOR: usize = 3;
 
 /// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
@@ -132,18 +132,18 @@ const ELDER_SIZE: usize = 7;
 
 #[cfg(test)]
 mod tests {
-    use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+    use super::{MAJORITY_DENOMINATOR, MAJORITY_NUMERATOR};
 
     #[test]
     #[allow(clippy::assertions_on_constants)]
     fn quorum_check() {
         assert!(
-            QUORUM_NUMERATOR < QUORUM_DENOMINATOR,
-            "Quorum impossible to achieve"
+            MAJORITY_NUMERATOR < MAJORITY_DENOMINATOR,
+            "Majority impossible to achieve"
         );
         assert!(
-            QUORUM_NUMERATOR * 2 >= QUORUM_DENOMINATOR,
-            "Quorum does not guarantee agreement"
+            MAJORITY_NUMERATOR * 2 >= MAJORITY_DENOMINATOR,
+            "Majority does not guarantee agreement"
         );
     }
 }

@@ -10,7 +10,7 @@ use crate::{
     crypto::Digest256,
     peer::Peer,
     rng::{self, MainRng},
-    section::{quorum_count, EldersInfo},
+    section::{majority_count, EldersInfo},
 };
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
@@ -26,7 +26,7 @@ pub type DkgMessage = bls_dkg::key_gen::message::Message;
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
 pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
-    let threshold = quorum_count(participants) - 1;
+    let threshold = majority_count(participants) - 1;
     bls::SecretKeySet::random(threshold, rng)
 }
 
@@ -77,7 +77,7 @@ impl Debug for DkgKey {
 /// 7. On DKG completion or failure, the participants send `DKGResult` message to the current
 ///    elders (observers)
 /// 8. The observers call `observe_result` with each received `DKGResult`.
-/// 9. When it returns success, that means we accumulated at least quorum of successful DKG results
+/// 9. When it returns success, that means we accumulated at least majority of successful DKG results
 ///    and can proceed with voting for the section update.
 /// 10. When it fails, the observers restart the process from step 1.
 ///
@@ -116,7 +116,7 @@ impl DkgVoter {
             }
         }
 
-        let threshold = quorum_count(elders_info.elders.len()) - 1;
+        let threshold = majority_count(elders_info.elders.len()) - 1;
         let participants = elders_info
             .elders
             .values()
@@ -296,7 +296,7 @@ impl DkgVoter {
 
         let total: usize = session.accumulator.values().map(|ids| ids.len()).sum();
         let missing = session.elders_info.elders.len() - total;
-        let quorum = quorum_count(session.elders_info.elders.len());
+        let majority = majority_count(session.elders_info.elders.len());
 
         let result = if let Some((public_key, count)) = session
             .accumulator
@@ -306,24 +306,24 @@ impl DkgVoter {
         {
             // At least one successful result
 
-            if count >= quorum {
-                // Successful quorum reached
+            if count >= majority {
+                // Successful majority reached
                 Ok(public_key)
-            } else if count + missing >= quorum {
-                // Successful quorum is still possible
+            } else if count + missing >= majority {
+                // Successful majority is still possible
                 return None;
             } else {
-                // Successful quorum is no longer possible
+                // Successful majority is no longer possible
                 Err(())
             }
         } else {
             // No successful results yet
 
-            if missing >= quorum {
-                // Successful quorum is still possible
+            if missing >= majority {
+                // Successful majority is still possible
                 return None;
             } else {
-                // Successful quorum is no longer possible
+                // Successful majority is no longer possible
                 Err(())
             }
         };

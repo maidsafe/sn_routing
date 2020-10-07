@@ -20,7 +20,7 @@ mod shared_state;
 #[cfg(test)]
 pub(crate) use self::elders_info::gen_elders_info;
 pub use self::{
-    elders_info::{quorum_count, EldersInfo},
+    elders_info::{majority_count, EldersInfo},
     member_info::{MemberInfo, PeerState, MIN_AGE},
     network_stats::NetworkStats,
     section_keys::{SectionKeyShare, SectionKeysProvider},

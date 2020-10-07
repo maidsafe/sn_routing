@@ -11,7 +11,7 @@ use serde::Serialize;
 use std::{borrow::Borrow, fmt::Debug};
 use xor_name::Prefix;
 
-/// A value together with the proof that it was agreed on by the quorum of the section elders.
+/// A value together with the proof that it was agreed on by the majority of the section elders.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct Proven<T: Serialize> {
     pub value: T,
