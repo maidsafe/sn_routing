@@ -10,8 +10,6 @@
 #[cfg(feature = "mock")]
 mod adult;
 #[cfg(feature = "mock")]
-mod elder;
-#[cfg(feature = "mock")]
 mod utils;
 
 use super::{Approved, Bootstrapping, Comm, Command, NodeInfo, Stage, State};
