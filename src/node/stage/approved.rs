@@ -1269,14 +1269,7 @@ impl Approved {
         proof_chain: SectionProofChain,
         proof: Proof,
     ) -> Result<Command> {
-        let message = Message::section_src(
-            message.src,
-            proof.signature,
-            message.dst,
-            message.variant,
-            proof_chain,
-            message.dst_key,
-        )?;
+        let message = Message::section_src(message, proof.signature, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,

@@ -148,22 +148,19 @@ impl Message {
     /// Creates a signed message from a section.
     /// Note: `signature` isn't verified and is assumed valid.
     pub(crate) fn section_src(
-        src: Prefix,
+        plain: PlainMessage,
         signature: bls::Signature,
-        dst: DstLocation,
-        variant: Variant,
         proof_chain: SectionProofChain,
-        dst_key: bls::PublicKey,
     ) -> Result<Self, CreateError> {
         Self::new_signed(
             SrcAuthority::Section {
-                prefix: src,
+                prefix: plain.src,
                 signature,
             },
-            dst,
-            variant,
+            plain.dst,
+            plain.variant,
             Some(proof_chain),
-            Some(dst_key),
+            Some(plain.dst_key),
         )
     }
 

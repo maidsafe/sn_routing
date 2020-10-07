@@ -448,49 +448,6 @@ fn add_and_promote_member() {
 }
 
 #[test]
-fn handle_bounced_untrusted_message() {
-    let mut env = Env::new(ELDER_SIZE);
-    let old_section_key = *env.subject.section_key().expect("subject is not approved");
-
-    // Simulate the section going through the elder change to generate new section key.
-    let new = env.gen_peer().to_p2p_node();
-    let old = env.get_other_elder_p2p_node(0).clone();
-    env.accumulate_online(new.clone());
-    env.perform_offline_and_promote(old, new).unwrap();
-
-    let new_section_key = *env.subject.section_key().expect("subject is not approved");
-
-    let dst = DstLocation::Node(*env.other_ids[0].0.public_id().name());
-    let msg = env.accumulate_message(dst, Variant::UserMessage(b"untrusted message".to_vec()));
-
-    // Pretend that one of the other nodes is lagging behind and doesn't know the new key yet and
-    // so bounces a message to us as untrusted.
-    let other_node = env.create_transport_for_other_elder(0);
-    let bounce_msg = Message::single_src(
-        &env.other_ids[0].0,
-        msg.src().src_location().to_dst(),
-        Variant::BouncedUntrustedMessage(Box::new(msg)),
-        None,
-        Some(old_section_key),
-    )
-    .unwrap();
-
-    test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
-    env.poll();
-
-    let proof_chain = other_node
-        .received_messages()
-        .find_map(|(_, msg)| match (msg.variant(), msg.proof_chain()) {
-            (Variant::UserMessage(_), Ok(proof_chain)) => Some(proof_chain.clone()),
-            _ => None,
-        })
-        .expect("message was not resent");
-
-    assert!(proof_chain.has_key(&old_section_key));
-    assert!(proof_chain.has_key(&new_section_key));
-}
-
-#[test]
 #[should_panic(expected = "FailedSignature")]
 fn receive_message_with_invalid_signature() {
     let mut env = Env::new(ELDER_SIZE);

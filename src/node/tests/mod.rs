@@ -20,7 +20,7 @@ use crate::{
     crypto,
     event::Event,
     location::DstLocation,
-    messages::{BootstrapResponse, JoinRequest, Message, Variant},
+    messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
     peer::Peer,
     rng,
     section::{
@@ -605,6 +605,101 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     assert!(sync_sent);
     assert!(original_message_sent);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_bounced_untrusted_message() -> Result<()> {
+    let (elders_info, mut full_ids) = create_elders_info();
+
+    // Create `SharedState` whose section chain has two keys.
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1_set = SecretKeySet::random();
+    let pk1 = sk1_set.secret_key().public_key();
+    let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let mut chain = SectionProofChain::new(pk0);
+    let _ = chain.push(pk1, pk1_signature);
+
+    let proof = create_proof(&sk0, &elders_info)?;
+    let proven_elders_info = Proven {
+        value: elders_info,
+        proof,
+    };
+    let shared_state = SharedState::new(chain.clone(), proven_elders_info);
+    let section_key_share = create_section_key_share(&sk1_set, 0);
+
+    let (node_info, _) = create_node_info_for(full_ids.remove(0));
+
+    // Create the original message whose bounce we want to test. Attach a proof that starts
+    // at `pk1`.
+    let peer_keypair = create_keypair();
+    let peer_addr = create_addr();
+
+    let original_message_content = Bytes::from_static(b"unknown message");
+    let original_message = PlainMessage {
+        src: Prefix::default(),
+        dst: DstLocation::Node(crypto::name(&peer_keypair.public)),
+        dst_key: pk1,
+        variant: Variant::UserMessage(original_message_content.clone()),
+    };
+    let signature = sk1_set
+        .secret_key()
+        .sign(&bincode::serialize(&original_message.as_signable())?);
+    let proof_chain = chain.slice(1..);
+    let original_message = Message::section_src(original_message, signature, proof_chain)?;
+
+    // Create our node.
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    // Create the bounced message, indicating the last key the peer knows is `pk0`
+    let bounced_message = Message::single_src(
+        &peer_keypair,
+        MIN_AGE,
+        DstLocation::Direct,
+        Variant::BouncedUntrustedMessage(Box::new(original_message)),
+        None,
+        Some(pk0),
+    )?;
+
+    let commands = node
+        .handle_command(Command::HandleMessage {
+            message: bounced_message,
+            sender: Some(peer_addr),
+        })
+        .await?;
+
+    let mut message_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+
+        match message.variant() {
+            Variant::UserMessage(content) => {
+                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(*content, original_message_content);
+                assert_eq!(*message.proof_chain()?, chain);
+
+                message_sent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(message_sent);
 
     Ok(())
 }
