@@ -135,7 +135,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
 
     let message = Message::single_src(
         &elder_keypairs[0],
-        MIN_AGE,
+        MIN_AGE + 1,
         DstLocation::Direct,
         Variant::BootstrapResponse(BootstrapResponse::Join {
             elders_info: elders_info.clone(),
@@ -191,7 +191,7 @@ async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
 
     let message = Message::single_src(
         &old_keypair,
-        MIN_AGE,
+        MIN_AGE + 1,
         DstLocation::Direct,
         Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(new_addrs.clone())),
         None,
