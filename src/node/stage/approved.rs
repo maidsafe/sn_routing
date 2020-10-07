@@ -450,7 +450,7 @@ impl Approved {
                     }) => {
                         // Transition from Approved to Bootstrapping on relocation
                         let (state, command) =
-                            Bootstrapping::new(Some(details), conn_infos, self.node_info.clone());
+                            Bootstrapping::new(Some(details), conn_infos, self.node_info.clone())?;
                         let state = State::Bootstrapping(state);
                         Ok(vec![Command::Transition(Box::new(state)), command])
                     }
