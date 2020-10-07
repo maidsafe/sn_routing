@@ -85,7 +85,7 @@ pub(crate) fn gen_elders_info(
     prefix: Prefix,
     count: usize,
 ) -> (EldersInfo, Vec<Keypair>) {
-    use crate::crypto::name;
+    use crate::{crypto::name, MIN_AGE};
     use rand::Rng;
     use std::net::SocketAddr;
 
@@ -106,7 +106,7 @@ pub(crate) fn gen_elders_info(
         .iter()
         .map(|keypair| {
             let addr = gen_socket_addr(rng);
-            let peer = Peer::new(name(&keypair.public), addr);
+            let peer = Peer::new(name(&keypair.public), addr, MIN_AGE);
             (*peer.name(), peer)
         })
         .collect();

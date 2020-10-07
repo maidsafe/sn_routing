@@ -15,7 +15,7 @@ use crate::{
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     timer::Timer,
-    DstLocation,
+    DstLocation, MIN_AGE,
 };
 use futures::future;
 use std::{iter, net::SocketAddr, sync::Arc};
@@ -162,6 +162,7 @@ impl Bootstrapping {
 
         let message = Message::single_src(
             &self.node_info.keypair,
+            MIN_AGE,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
             None,

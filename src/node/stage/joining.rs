@@ -15,7 +15,7 @@ use crate::{
     relocation::RelocatePayload,
     section::{EldersInfo, SharedState},
     timer::Timer,
-    DstLocation,
+    DstLocation, MIN_AGE,
 };
 use std::{net::SocketAddr, time::Duration};
 use xor_name::Prefix;
@@ -235,6 +235,7 @@ impl Joining {
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(
             &self.node_info.keypair,
+            MIN_AGE,
             DstLocation::Direct,
             variant,
             None,

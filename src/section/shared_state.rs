@@ -174,6 +174,13 @@ impl SharedState {
             .map(|info| &info.peer)
     }
 
+    pub fn find_age_for_peer(&self, name: &XorName) -> Option<u8> {
+        self.our_members
+            .all()
+            .find(|info| info.peer.name() == name)
+            .map(|info| info.peer.age)
+    }
+
     /// All section keys we know of, including the past keys of our section.
     pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
         self.our_history
@@ -306,7 +313,7 @@ impl SharedState {
     ) -> Vec<(MemberInfo, RelocateAction)> {
         self.our_members
             .joined_proven()
-            .filter(|info| relocation::check(info.value.age, churn_signature))
+            .filter(|info| relocation::check(info.value.peer.age, churn_signature))
             .map(|info| {
                 (
                     info.value.clone(),
@@ -330,7 +337,7 @@ impl SharedState {
             pub_id: *info.peer.name(),
             destination,
             destination_key,
-            age: info.age.saturating_add(1),
+            age: info.peer.age.saturating_add(1),
         }
     }
 
@@ -441,6 +448,7 @@ mod test {
         peer::Peer,
         rng::{self, MainRng},
         section::EldersInfo,
+        MIN_AGE,
     };
 
     use rand::{seq::SliceRandom, Rng};
@@ -470,7 +478,7 @@ mod test {
                     let some_keypair = keypair_within_range(rng, &prefix.range_inclusive());
                     let peer_addr = ([127, 0, 0, 1], 9999).into();
                     let name = name(&some_keypair.public);
-                    let _ = members.insert(name, Peer::new(name, peer_addr));
+                    let _ = members.insert(name, Peer::new(name, peer_addr, MIN_AGE));
                     let _ = keypairs.insert(name, some_keypair);
                 }
                 (EldersInfo::new(members, prefix), keypairs)
@@ -480,7 +488,7 @@ mod test {
                 let some_keypair = keypair_within_range(rng, &info.prefix.range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let name = name(&some_keypair.public);
-                let _ = members.insert(name, Peer::new(name, peer_addr));
+                let _ = members.insert(name, Peer::new(name, peer_addr, MIN_AGE));
                 let mut keypairs = HashMap::new();
                 let _ = keypairs.insert(name, some_keypair);
                 (EldersInfo::new(members, info.prefix), keypairs)

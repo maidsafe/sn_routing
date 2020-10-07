@@ -166,6 +166,7 @@ impl Approved {
         let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -453,12 +454,12 @@ impl Approved {
                 Ok(None)
             }
             Variant::DKGMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().as_node()?)
+                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().as_node()?.0)
                     .await?;
                 Ok(None)
             }
             Variant::DKGResult { dkg_key, result } => {
-                self.handle_dkg_result(*dkg_key, *result, msg.src().as_node()?)
+                self.handle_dkg_result(*dkg_key, *result, msg.src().as_node()?.0)
                     .await?;
 
                 Ok(None)
@@ -523,6 +524,7 @@ impl Approved {
 
         let bounce_msg = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             bounce_dst,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
@@ -547,6 +549,7 @@ impl Approved {
     ) -> Result<()> {
         let bounce_msg = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
                 src_key: *self.shared_state.our_history.last_key(),
@@ -871,8 +874,11 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
+        let mut updated_peer = peer;
+        updated_peer.age = age;
+
         self.vote(Vote::Online {
-            member_info: MemberInfo::joined(peer, age),
+            member_info: MemberInfo::joined(updated_peer),
             previous_name,
             their_knowledge,
         })
@@ -1155,7 +1161,7 @@ impl Approved {
         proof: Proof,
     ) -> Result<()> {
         let peer = member_info.peer;
-        let age = member_info.age;
+        let age = peer.age;
         let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
@@ -1187,7 +1193,7 @@ impl Approved {
 
     async fn handle_offline_event(&mut self, member_info: MemberInfo, proof: Proof) -> Result<()> {
         let peer = member_info.peer;
-        let age = member_info.age;
+        let age = peer.age;
         let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
@@ -1496,6 +1502,7 @@ impl Approved {
         trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -1522,6 +1529,7 @@ impl Approved {
             trace!("Send {:?} to {:?}", variant, peer);
             let message = Message::single_src(
                 &self.node_info.keypair,
+                self.age(),
                 DstLocation::Direct,
                 variant,
                 None,
@@ -1621,6 +1629,7 @@ impl Approved {
         let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
         let message = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             variant,
             None,
@@ -1646,6 +1655,7 @@ impl Approved {
         };
         let message = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             variant,
             None,
@@ -1722,7 +1732,14 @@ impl Approved {
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg = Message::single_src(&self.node_info.keypair, dst, variant, None, None)?;
+                let msg = Message::single_src(
+                    &self.node_info.keypair,
+                    self.age(),
+                    dst,
+                    variant,
+                    None,
+                    None,
+                )?;
                 self.relay_message(&msg).await
             }
             SrcLocation::Section(_) => {
@@ -1790,6 +1807,7 @@ impl Approved {
     ) -> Result<()> {
         let message = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Direct,
             variant,
             None,
@@ -1912,6 +1930,7 @@ impl Approved {
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
             &self.node_info.keypair,
+            self.age(),
             DstLocation::Section(dst.name()),
             variant,
             Some(proof_chain),
@@ -1923,6 +1942,12 @@ impl Approved {
 
     fn print_network_stats(&self) {
         self.shared_state.sections.network_stats().print()
+    }
+
+    fn age(&self) -> u8 {
+        self.shared_state
+            .find_age_for_peer(&self.node_info.name())
+            .unwrap_or(MIN_AGE)
     }
 }
 
