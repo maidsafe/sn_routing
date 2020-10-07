@@ -28,6 +28,8 @@ pub enum SrcAuthority {
     Node {
         /// Public key of the source peer.
         public_key: PublicKey,
+        /// Age of the source peer.
+        age: u8,
         /// ed-25519 signature of the message corresponding to the public key of the source peer.
         signature: SimpleSignature,
     },
@@ -60,9 +62,11 @@ impl SrcAuthority {
         matches!(self, Self::Section { .. })
     }
 
-    pub(crate) fn as_node(&self) -> Result<XorName> {
+    pub(crate) fn as_node(&self) -> Result<(XorName, u8)> {
         match self {
-            Self::Node { public_key, .. } => Ok(name(public_key)),
+            Self::Node {
+                public_key, age, ..
+            } => Ok((name(public_key), *age)),
             Self::Section { .. } => Err(Error::BadLocation),
         }
     }
@@ -76,8 +80,8 @@ impl SrcAuthority {
     }
 
     pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<Peer> {
-        let name = self.as_node()?;
+        let (name, age) = self.as_node()?;
         let conn_info = sender.ok_or(Error::InvalidSource)?;
-        Ok(Peer::new(name, conn_info))
+        Ok(Peer::new(name, conn_info, age))
     }
 }

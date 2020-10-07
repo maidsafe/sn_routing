@@ -68,6 +68,7 @@ impl Message {
             SrcAuthority::Node {
                 public_key,
                 signature,
+                ..
             } => {
                 if public_key.verify(&signed_bytes, signature).is_err() {
                     error!("Failed signature: {:?}", msg);
@@ -123,6 +124,7 @@ impl Message {
     /// Creates a signed message from single node.
     pub(crate) fn single_src(
         keypair: &Keypair,
+        age: u8,
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SectionProofChain>,
@@ -136,6 +138,7 @@ impl Message {
         let signature = crypto::sign(&serialized, keypair);
         let src = SrcAuthority::Node {
             public_key: keypair.public,
+            age,
             signature,
         };
 
@@ -179,6 +182,7 @@ impl Message {
             SrcAuthority::Node {
                 public_key,
                 signature,
+                ..
             } => {
                 if public_key.verify(&bytes, signature).is_err() {
                     return Err(Error::FailedSignature);
@@ -357,7 +361,7 @@ pub(crate) struct SignableView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, crypto::Keypair, rng, section};
+    use crate::{consensus, crypto::Keypair, rng, section, MIN_AGE};
     use std::iter;
 
     #[test]
@@ -382,6 +386,7 @@ mod tests {
         let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(
             &keypair,
+            MIN_AGE,
             DstLocation::Direct,
             variant,
             Some(full_proof_chain.slice(1..)),

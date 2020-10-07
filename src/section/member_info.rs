@@ -18,21 +18,19 @@ pub const MIN_AGE: u8 = 4;
 pub struct MemberInfo {
     pub peer: Peer,
     pub state: PeerState,
-    pub age: u8,
 }
 
 impl MemberInfo {
     // Creates a `MemberInfo` in the `Joined` state.
-    pub fn joined(peer: Peer, age: u8) -> Self {
+    pub fn joined(peer: Peer) -> Self {
         Self {
             peer,
             state: PeerState::Joined,
-            age,
         }
     }
 
     pub fn is_adult(&self) -> bool {
-        self.age > MIN_AGE
+        self.peer.age > MIN_AGE
     }
 
     pub fn leave(self) -> Self {
@@ -53,7 +51,7 @@ impl MemberInfo {
     // Converts this info into one with the age increased by one.
     pub fn increment_age(self) -> Self {
         Self {
-            age: self.age.saturating_add(1),
+            peer: self.peer.increment_age(),
             ..self
         }
     }

@@ -15,14 +15,15 @@ use xor_name::XorName;
 /// from being connected at the network layer, which currently is handled by quic-p2p.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Ord, Eq, Serialize, Deserialize)]
 pub struct Peer {
-    pub name: XorName,
-    pub addr: SocketAddr,
+    name: XorName,
+    addr: SocketAddr,
+    pub age: u8,
 }
 
 impl Peer {
-    /// Creates a new `Peer` given a `Name` and a `ConnectionInfo`.
-    pub fn new(name: XorName, addr: SocketAddr) -> Self {
-        Self { name, addr }
+    /// Creates a new `Peer` given `Name`, `ConnectionInfo` and `age`.
+    pub fn new(name: XorName, addr: SocketAddr, age: u8) -> Self {
+        Self { name, addr, age }
     }
 
     /// Returns the `XorName` of the peer.
@@ -33,5 +34,13 @@ impl Peer {
     /// Returns the `SocketAddr`.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
+    }
+
+    // Converts this info into one with the age increased by one.
+    pub fn increment_age(self) -> Self {
+        Self {
+            age: self.age.saturating_add(1),
+            ..self
+        }
     }
 }

@@ -98,7 +98,7 @@ impl Stage {
     )> {
         let comm = Comm::new(transport_config)?;
         let connection_info = comm.our_connection_info()?;
-        let peer = Peer::new(name(&keypair.public), connection_info);
+        let peer = Peer::new(name(&keypair.public), connection_info, MIN_AGE);
 
         let mut rng = MainRng::default();
         let secret_key_set = consensus::generate_secret_key_set(&mut rng, 1);
@@ -384,7 +384,7 @@ fn create_first_shared_state(
     );
 
     for peer in shared_state.sections.our().elders.values() {
-        let member_info = MemberInfo::joined(*peer, MIN_AGE);
+        let member_info = MemberInfo::joined(*peer);
         let proof = create_first_proof(pk_set, sk_share, &member_info)?;
         let _ = shared_state
             .our_members
