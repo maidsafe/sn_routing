@@ -32,6 +32,7 @@ use crate::{
 use anyhow::Result;
 use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
+use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use itertools::Itertools;
 use serde::Serialize;
@@ -40,6 +41,7 @@ use std::{
     collections::{BTreeSet, HashSet},
     iter,
     net::SocketAddr,
+    ops::Deref,
 };
 use tokio::sync::mpsc;
 use xor_name::Prefix;
@@ -290,11 +292,11 @@ async fn receive_join_request() -> Result<()> {
 
 #[tokio::test]
 async fn accumulate_votes() -> Result<()> {
-    let (elders_info, mut full_ids) = create_elders_info();
-    let sk_set = create_secret_key_set();
+    let (elders_info, mut keypairs) = create_elders_info();
+    let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
     let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
-    let (node_info, _) = create_node_info_for(full_ids.remove(0));
+    let (node_info, _) = create_node_info_for(keypairs.remove(0));
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
@@ -342,10 +344,10 @@ async fn accumulate_votes() -> Result<()> {
 
 #[tokio::test]
 async fn handle_consensus_on_online() -> Result<()> {
-    let (elders_info, mut full_ids) = create_elders_info();
-    let sk_set = create_secret_key_set();
+    let (elders_info, mut keypairs) = create_elders_info();
+    let sk_set = SecretKeySet::random();
     let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
-    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+    let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
@@ -356,7 +358,7 @@ async fn handle_consensus_on_online() -> Result<()> {
         previous_name: None,
         their_knowledge: None,
     };
-    let proof = create_proof(&sk_set, &vote.as_signable())?;
+    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
 
     let commands = node
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -397,17 +399,17 @@ async fn handle_consensus_on_online() -> Result<()> {
 
 #[tokio::test]
 async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
-    let (elders_info, mut full_ids) = create_elders_info();
-    let sk_set = create_secret_key_set();
+    let (elders_info, mut keypairs) = create_elders_info();
+    let sk_set = SecretKeySet::random();
 
     let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let proof = create_proof(&sk_set, &member_info)?;
+    let proof = create_proof(sk_set.secret_key(), &member_info)?;
     let _ = shared_state.update_member(member_info, proof);
 
-    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+    let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
@@ -416,7 +418,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
         state: PeerState::Left,
     };
     let vote = Vote::Offline(member_info);
-    let proof = create_proof(&sk_set, &vote.as_signable())?;
+    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
 
     let _ = node
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -432,14 +434,14 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
 #[tokio::test]
 async fn handle_consensus_on_offline_of_elder() -> Result<()> {
-    let (elders_info, mut full_ids) = create_elders_info();
-    let sk_set = create_secret_key_set();
+    let (elders_info, mut keypairs) = create_elders_info();
+    let sk_set = SecretKeySet::random();
 
     let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let proof = create_proof(&sk_set, &member_info)?;
+    let proof = create_proof(sk_set.secret_key(), &member_info)?;
     let _ = shared_state.update_member(member_info, proof);
 
     // Pick the elder to remove.
@@ -456,14 +458,14 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .leave();
 
     // Create out node
-    let (node_info, mut event_rx) = create_node_info_for(full_ids.remove(0));
+    let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let node_name = node_info.name();
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // Handle the consensus on the Offline vote
     let vote = Vote::Offline(remove_member_info);
-    let proof = create_proof(&sk_set, &vote.as_signable())?;
+    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
 
     let commands = node
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -524,6 +526,103 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     // The removed peer is still our elder because we haven't yet processed the section update.
     assert!(node.our_elders().await.contains(&remove_peer));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_bounced_unknown_message() -> Result<()> {
+    let (elders_info, mut keypairs) = create_elders_info();
+
+    // Create `SharedState` whose section chain has two keys.
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1_set = SecretKeySet::random();
+    let pk1 = sk1_set.secret_key().public_key();
+    let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let mut section_chain = SectionProofChain::new(pk0);
+    let _ = section_chain.push(pk1, pk1_signature);
+
+    let proof = create_proof(&sk0, &elders_info)?;
+    let proven_elders_info = Proven {
+        value: elders_info,
+        proof,
+    };
+    let shared_state = SharedState::new(section_chain, proven_elders_info);
+    let section_key_share = create_section_key_share(&sk1_set, 0);
+
+    let (node_info, _) = create_node_info_for(keypairs.remove(0));
+
+    // Create the original message whose bounce we want to test. The content of the message doesn't
+    // matter for the purpose of this test.
+    let peer_keypair = create_keypair();
+    let peer_addr = create_addr();
+    let original_message_content = Bytes::from_static(b"unknown message");
+    let original_message = Message::single_src(
+        &node_info.keypair,
+        MIN_AGE + 1,
+        DstLocation::Node(crypto::name(&peer_keypair.public)),
+        Variant::UserMessage(original_message_content.clone()),
+        None,
+        None,
+    )?;
+
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    let bounced_message = Message::single_src(
+        &peer_keypair,
+        MIN_AGE,
+        DstLocation::Direct,
+        Variant::BouncedUnknownMessage {
+            src_key: pk0,
+            message: original_message.to_bytes(),
+        },
+        None,
+        None,
+    )?;
+
+    let commands = node
+        .handle_command(Command::HandleMessage {
+            message: bounced_message,
+            sender: Some(peer_addr),
+        })
+        .await?;
+
+    let mut sync_sent = false;
+    let mut original_message_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+
+        match message.variant() {
+            Variant::Sync(state) => {
+                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(*state.our_history.last_key(), pk1);
+                sync_sent = true;
+            }
+            Variant::UserMessage(content) => {
+                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(*content, original_message_content);
+                original_message_sent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(sync_sent);
+    assert!(original_message_sent);
 
     Ok(())
 }
@@ -590,48 +689,71 @@ fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
     (elders_info, keypairs)
 }
 
-fn create_secret_key_set() -> bls::SecretKeySet {
-    bls::SecretKeySet::random(THRESHOLD, &mut rng::new())
+fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> SectionKeyShare {
+    SectionKeyShare {
+        public_key_set: sk_set.public_keys(),
+        index,
+        secret_key_share: sk_set.secret_key_share(index),
+    }
 }
 
-fn create_proof<T: Serialize>(sk_set: &bls::SecretKeySet, payload: &T) -> Result<Proof> {
-    let pk_set = sk_set.public_keys();
+fn create_proof<T: Serialize>(sk: &bls::SecretKey, payload: &T) -> Result<Proof> {
     let bytes = bincode::serialize(payload)?;
-    let signature_shares: Vec<_> = (0..sk_set.threshold() + 1)
-        .map(|index| sk_set.secret_key_share(index).sign(&bytes))
-        .collect();
-    let signature = pk_set
-        .combine_signatures(signature_shares.iter().enumerate())
-        .unwrap();
+    let signature = sk.sign(&bytes);
 
     Ok(Proof {
-        public_key: pk_set.public_key(),
+        public_key: sk.public_key(),
         signature,
     })
 }
 
 fn create_shared_state(
     elders_info: &EldersInfo,
-    sk_set: &bls::SecretKeySet,
+    sk_set: &SecretKeySet,
 ) -> Result<(SharedState, SectionKeyShare)> {
-    let pk_set = sk_set.public_keys();
-    let section_chain = SectionProofChain::new(pk_set.public_key());
-    let elders_info_proof = create_proof(sk_set, elders_info)?;
+    let section_chain = SectionProofChain::new(sk_set.secret_key().public_key());
+    let elders_info_proof = create_proof(sk_set.secret_key(), elders_info)?;
     let proven_elders_info = Proven::new(elders_info.clone(), elders_info_proof);
 
     let mut shared_state = SharedState::new(section_chain, proven_elders_info);
 
     for peer in elders_info.elders.values().copied() {
         let member_info = MemberInfo::joined(peer);
-        let proof = create_proof(sk_set, &member_info)?;
+        let proof = create_proof(sk_set.secret_key(), &member_info)?;
         let _ = shared_state.update_member(member_info, proof);
     }
 
-    let section_key_share = SectionKeyShare {
-        public_key_set: pk_set,
-        index: 0,
-        secret_key_share: sk_set.secret_key_share(0),
-    };
+    let section_key_share = create_section_key_share(sk_set, 0);
 
     Ok((shared_state, section_key_share))
+}
+
+// Wrapper for `bls::SecretKeySet` that also allows to retrieve the corresponding `bls::SecretKey`.
+// Note: `bls::SecretKeySet` does have a `secret_key` method, but it's test-only and not available
+// for the consumers of the crate.
+struct SecretKeySet {
+    set: bls::SecretKeySet,
+    key: bls::SecretKey,
+}
+
+impl SecretKeySet {
+    fn random() -> Self {
+        let poly = bls::poly::Poly::random(THRESHOLD, &mut rng::new());
+        let key = bls::SecretKey::from_mut(&mut poly.evaluate(0));
+        let set = bls::SecretKeySet::from(poly);
+
+        Self { set, key }
+    }
+
+    fn secret_key(&self) -> &bls::SecretKey {
+        &self.key
+    }
+}
+
+impl Deref for SecretKeySet {
+    type Target = bls::SecretKeySet;
+
+    fn deref(&self) -> &Self::Target {
+        &self.set
+    }
 }
