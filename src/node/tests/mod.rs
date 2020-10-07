@@ -27,7 +27,7 @@ use crate::{
         majority_count, EldersInfo, MemberInfo, PeerState, SectionKeyShare, SectionProofChain,
         SharedState, MIN_AGE,
     },
-    ELDER_SIZE,
+    Error, ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -795,6 +795,65 @@ async fn handle_sync() -> Result<()> {
             assert_eq!(elders, new_elders);
         }
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn receive_message_with_invalid_proof_chain() -> Result<()> {
+    let sk0_good_set = SecretKeySet::random();
+    let pk0_good = sk0_good_set.secret_key().public_key();
+
+    let (node_info, _) = create_node_info();
+    let comm = create_comm()?;
+    let addr = comm.our_connection_info()?;
+    let peer = Peer::new(node_info.name(), addr, MIN_AGE);
+
+    let chain = SectionProofChain::new(pk0_good);
+    let elders_info = EldersInfo::new(
+        iter::once((*peer.name(), peer)).collect(),
+        Prefix::default(),
+    );
+    let elders_info_proof = create_proof(sk0_good_set.secret_key(), &elders_info)?;
+    let shared_state = SharedState::new(
+        chain,
+        Proven {
+            value: elders_info,
+            proof: elders_info_proof,
+        },
+    );
+    let section_key_share = create_section_key_share(&sk0_good_set, 0);
+
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), comm);
+
+    // Create a message with a valid signature but invalid proof chain (the last key in the chain
+    // not signed with the previous key)
+    let sk0_bad = bls::SecretKey::random();
+    let sk1_bad = bls::SecretKey::random();
+    let pk1_bad = sk1_bad.public_key();
+    let pk1_bad_signature = sk0_bad.sign(&bincode::serialize(&pk1_bad)?);
+
+    let mut bad_chain = SectionProofChain::new(pk0_good);
+    bad_chain.push_without_validation(pk1_bad, pk1_bad_signature);
+
+    let message = PlainMessage {
+        src: Prefix::default(),
+        dst: DstLocation::Node(*peer.name()),
+        dst_key: pk0_good,
+        variant: Variant::UserMessage(Bytes::from_static(b"hello")),
+    };
+    let signature = sk1_bad.sign(&bincode::serialize(&message.as_signable())?);
+    let message = Message::section_src(message, signature, bad_chain)?;
+
+    let result = node
+        .handle_command(Command::HandleMessage {
+            message,
+            sender: Some(create_addr()),
+        })
+        .await;
+
+    assert_matches!(result, Err(Error::UntrustedMessage));
 
     Ok(())
 }
