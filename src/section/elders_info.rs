@@ -70,12 +70,12 @@ impl Display for EldersInfo {
     }
 }
 
-/// Returns the number of vote for a quorum of this section such that:
-/// quorum_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR
+/// Returns the number of vote for a majority of this section such that:
+/// majority_count * MAJORITY_DENOMINATOR > elder_size * MAJORITY_NUMERATOR
 #[inline]
-pub const fn quorum_count(elder_size: usize) -> usize {
-    use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-    1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
+pub const fn majority_count(elder_size: usize) -> usize {
+    use crate::{MAJORITY_DENOMINATOR, MAJORITY_NUMERATOR};
+    1 + (elder_size * MAJORITY_NUMERATOR) / MAJORITY_DENOMINATOR
 }
 
 // Generate random `EldersInfo` for testing purposes.
