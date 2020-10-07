@@ -51,10 +51,8 @@ pub(crate) enum Command {
         dst: DstLocation,
         content: Bytes,
     },
-    /// Send `BootstrapRequest` to the given recipients.
-    SendBootstrapRequest(Vec<SocketAddr>),
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
-    /// command is pushed into the command queue. The token is used to identify the timeout.
+    /// command is raised. The token is used to identify the timeout.
     ScheduleTimeout { duration: Duration, token: u64 },
     /// Transition into the given state.
     Transition(Box<State>),
@@ -115,10 +113,6 @@ impl Debug for Command {
                 .field("src", src)
                 .field("dst", dst)
                 .field("content", &format_args!("{:10}", hex_fmt::HexFmt(content)))
-                .finish(),
-            Self::SendBootstrapRequest(recipients) => f
-                .debug_tuple("SendBootstrapRequest")
-                .field(recipients)
                 .finish(),
             Self::ScheduleTimeout { duration, token } => f
                 .debug_struct("ScheduleTimeout")

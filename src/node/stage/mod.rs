@@ -314,9 +314,6 @@ impl Stage {
                 Command::SendUserMessage { src, dst, content } => {
                     self.send_user_message(src, dst, content).await
                 }
-                Command::SendBootstrapRequest(recipients) => {
-                    Ok(vec![self.send_bootstrap_request(recipients).await?])
-                }
                 Command::ScheduleTimeout { duration, token } => {
                     Ok(vec![self.handle_schedule_timeout(duration, token).await])
                 }
@@ -409,13 +406,6 @@ impl Stage {
     ) -> Result<Vec<Command>> {
         match &mut *self.state.lock().await {
             State::Approved(stage) => stage.send_user_message(src, dst, content),
-            _ => Err(Error::InvalidState),
-        }
-    }
-
-    async fn send_bootstrap_request(&self, recipients: Vec<SocketAddr>) -> Result<Command> {
-        match &*self.state.lock().await {
-            State::Bootstrapping(state) => state.send_bootstrap_request(&recipients),
             _ => Err(Error::InvalidState),
         }
     }

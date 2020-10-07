@@ -106,7 +106,7 @@ impl Node {
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
-            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info);
+            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info)?;
 
             (state.into(), comm, Some(command))
         };

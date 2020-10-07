@@ -50,26 +50,15 @@ use xor_name::Prefix;
 async fn send_bootstrap_request() -> Result<()> {
     let bootstrap_addr = create_addr();
     let (node_info, _) = create_node_info();
-    let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info);
+    let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info)?;
     let node = Stage::new(state.into(), create_comm()?);
 
-    let recipients = assert_matches!(
-        command,
-        Command::SendBootstrapRequest(recipients) => recipients
-    );
-    assert_eq!(recipients, [bootstrap_addr]);
-
-    let mut commands = node
-        .handle_command(Command::SendBootstrapRequest(recipients))
-        .await?
-        .into_iter();
-
     let (recipients, message) = assert_matches!(
-        commands.next(),
-        Some(Command::SendMessage {
+        command,
+        Command::SendMessage {
             recipients,
             message, ..
-        }) => (recipients, message)
+        } => (recipients, message)
     );
     assert_eq!(recipients, [bootstrap_addr]);
 
@@ -78,8 +67,6 @@ async fn send_bootstrap_request() -> Result<()> {
         message.variant(),
         Variant::BootstrapRequest(name) => assert_eq!(*name, node.name().await)
     );
-
-    assert!(commands.next().is_none());
 
     Ok(())
 }
@@ -134,7 +121,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 #[tokio::test]
 async fn receive_bootstrap_response_join() -> Result<()> {
     let (node_info, _) = create_node_info();
-    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info);
+    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info)?;
     let node = Stage::new(state.into(), create_comm()?);
 
     let (elders_info, elder_keypairs) = create_elders_info();
@@ -194,7 +181,7 @@ async fn receive_bootstrap_response_join() -> Result<()> {
 async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
     let (node_info, _) = create_node_info();
     let node_name = node_info.name();
-    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info);
+    let (state, _) = Bootstrapping::new(None, vec![create_addr()], node_info)?;
     let node = Stage::new(state.into(), create_comm()?);
 
     let old_keypair = create_keypair();

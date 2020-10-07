@@ -30,14 +30,14 @@ impl Bootstrapping {
         relocate_details: Option<SignedRelocateDetails>,
         bootstrap_contacts: Vec<SocketAddr>,
         node_info: NodeInfo,
-    ) -> (Self, Command) {
-        (
-            Self {
-                node_info,
-                relocate_details,
-            },
-            Command::SendBootstrapRequest(bootstrap_contacts),
-        )
+    ) -> Result<(Self, Command)> {
+        let state = Self {
+            node_info,
+            relocate_details,
+        };
+        let command = state.send_bootstrap_request(&bootstrap_contacts)?;
+
+        Ok((state, command))
     }
 
     pub fn handle_message(
