@@ -77,7 +77,7 @@ impl Debug for DkgKey {
 /// 7. On DKG completion or failure, the participants send `DKGResult` message to the current
 ///    elders (observers)
 /// 8. The observers call `observe_result` with each received `DKGResult`.
-/// 9. When it returns success, that means we accumulated at least majority of successful DKG results
+/// 9. When it returns success, that means we accumulated majority of successful DKG results
 ///    and can proceed with voting for the section update.
 /// 10. When it fails, the observers restart the process from step 1.
 ///

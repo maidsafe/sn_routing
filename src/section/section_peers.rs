@@ -142,7 +142,7 @@ impl SectionPeers {
                 // - Relocated -> Left (should not happen, but needed for consistency)
                 match (entry.get().value.state, new_info.state) {
                     (PeerState::Joined, PeerState::Joined)
-                        if new_info.peer.age > entry.get().value.peer.age => {}
+                        if new_info.peer.age() > entry.get().value.peer.age() => {}
                     (PeerState::Joined, PeerState::Left)
                     | (PeerState::Joined, PeerState::Relocated(_))
                     | (PeerState::Relocated(_), PeerState::Left) => {}
@@ -217,8 +217,8 @@ fn cmp_elder_candidates(
     // signature and therefore game its chances of promotion.
     rhs.value
         .peer
-        .age
-        .cmp(&lhs.value.peer.age)
+        .age()
+        .cmp(&lhs.value.peer.age())
         .then_with(|| {
             let lhs_is_elder = current_elders.elders.contains_key(lhs.value.peer.name());
             let rhs_is_elder = current_elders.elders.contains_key(rhs.value.peer.name());

@@ -17,11 +17,11 @@ use xor_name::XorName;
 pub struct Peer {
     name: XorName,
     addr: SocketAddr,
-    pub age: u8,
+    age: u8,
 }
 
 impl Peer {
-    /// Creates a new `Peer` given `Name`, `ConnectionInfo` and `age`.
+    /// Creates a new `Peer` given `Name`, `SocketAddr` and `age`.
     pub fn new(name: XorName, addr: SocketAddr, age: u8) -> Self {
         Self { name, addr, age }
     }
@@ -34,6 +34,16 @@ impl Peer {
     /// Returns the `SocketAddr`.
     pub fn addr(&self) -> &SocketAddr {
         &self.addr
+    }
+
+    /// Returns the age.
+    pub fn age(&self) -> u8 {
+        self.age
+    }
+
+    // Converts this info into one with the input age.
+    pub fn with_age(self, age: u8) -> Self {
+        Self { age, ..self }
     }
 
     // Converts this info into one with the age increased by one.

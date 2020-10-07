@@ -874,11 +874,8 @@ impl Approved {
                 (MIN_AGE, None, None)
             };
 
-        let mut updated_peer = peer;
-        updated_peer.age = age;
-
         self.vote(Vote::Online {
-            member_info: MemberInfo::joined(updated_peer),
+            member_info: MemberInfo::joined(peer.with_age(age)),
             previous_name,
             their_knowledge,
         })
@@ -1161,7 +1158,7 @@ impl Approved {
         proof: Proof,
     ) -> Result<()> {
         let peer = member_info.peer;
-        let age = peer.age;
+        let age = peer.age();
         let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
@@ -1193,7 +1190,7 @@ impl Approved {
 
     async fn handle_offline_event(&mut self, member_info: MemberInfo, proof: Proof) -> Result<()> {
         let peer = member_info.peer;
-        let age = peer.age;
+        let age = peer.age();
         let signature = proof.signature.clone();
 
         if !self.shared_state.update_member(member_info, proof) {
