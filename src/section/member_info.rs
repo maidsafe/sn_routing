@@ -30,7 +30,7 @@ impl MemberInfo {
     }
 
     pub fn is_adult(&self) -> bool {
-        self.peer.age > MIN_AGE
+        self.peer.age() > MIN_AGE
     }
 
     pub fn leave(self) -> Self {

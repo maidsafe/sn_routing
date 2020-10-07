@@ -212,9 +212,9 @@ impl Joining {
     }
 
     async fn send_join_requests(&mut self) -> Result<()> {
-        let relocate_payload = match &self.join_type {
-            JoinType::First { .. } => None,
-            JoinType::Relocate(payload) => Some(payload),
+        let (relocate_payload, age) = match &self.join_type {
+            JoinType::First { .. } => (None, MIN_AGE),
+            JoinType::Relocate(payload) => (Some(payload), payload.relocate_details().age),
         };
 
         let recipients: Vec<_> = self
@@ -235,7 +235,7 @@ impl Joining {
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(
             &self.node_info.keypair,
-            MIN_AGE,
+            age,
             DstLocation::Direct,
             variant,
             None,

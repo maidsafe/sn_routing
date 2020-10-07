@@ -155,14 +155,14 @@ impl Bootstrapping {
     }
 
     async fn send_bootstrap_request(&self, dst: SocketAddr) -> Result<()> {
-        let destination = match &self.relocate_details {
-            Some(details) => *details.destination(),
-            None => self.node_info.name(),
+        let (destination, age) = match &self.relocate_details {
+            Some(details) => (*details.destination(), details.relocate_details().age),
+            None => (self.node_info.name(), MIN_AGE),
         };
 
         let message = Message::single_src(
             &self.node_info.keypair,
-            MIN_AGE,
+            age,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
             None,

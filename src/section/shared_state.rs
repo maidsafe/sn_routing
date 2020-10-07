@@ -178,7 +178,7 @@ impl SharedState {
         self.our_members
             .all()
             .find(|info| info.peer.name() == name)
-            .map(|info| info.peer.age)
+            .map(|info| info.peer.age())
     }
 
     /// All section keys we know of, including the past keys of our section.
@@ -313,7 +313,7 @@ impl SharedState {
     ) -> Vec<(MemberInfo, RelocateAction)> {
         self.our_members
             .joined_proven()
-            .filter(|info| relocation::check(info.value.peer.age, churn_signature))
+            .filter(|info| relocation::check(info.value.peer.age(), churn_signature))
             .map(|info| {
                 (
                     info.value.clone(),
@@ -337,7 +337,7 @@ impl SharedState {
             pub_id: *info.peer.name(),
             destination,
             destination_key,
-            age: info.peer.age.saturating_add(1),
+            age: info.peer.age().saturating_add(1),
         }
     }
 
