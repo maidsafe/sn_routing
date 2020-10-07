@@ -40,7 +40,7 @@ use std::{
     cell::Cell,
     collections::{BTreeSet, HashSet},
     iter,
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr},
     ops::Deref,
 };
 use tokio::sync::mpsc;
@@ -666,7 +666,10 @@ fn create_node_info_for(keypair: Keypair) -> (NodeInfo, mpsc::UnboundedReceiver<
 }
 
 fn create_comm() -> Result<Comm> {
-    Ok(Comm::new(Default::default())?)
+    Ok(Comm::new(qp2p::Config {
+        ip: Some(Ipv4Addr::LOCALHOST.into()),
+        ..Default::default()
+    })?)
 }
 
 // Generate random EldersInfo and the corresponding Keypairs.
