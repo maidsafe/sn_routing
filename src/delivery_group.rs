@@ -12,7 +12,7 @@ use crate::{
     error::{Error, Result},
     location::DstLocation,
     peer::Peer,
-    section::{SectionMap, SectionMembers},
+    section::{SectionMap, SectionPeers},
 };
 
 use itertools::Itertools;
@@ -41,7 +41,7 @@ pub const fn delivery_group_size(n: usize) -> usize {
 pub fn delivery_targets(
     dst: &DstLocation,
     our_id: &XorName,
-    our_members: &SectionMembers,
+    our_members: &SectionPeers,
     sections: &SectionMap,
 ) -> Result<(Vec<Peer>, usize)> {
     if !sections.is_elder(our_id) {
@@ -130,7 +130,7 @@ fn candidates(
 // Returns a `Peer` for a known node.
 fn get_peer<'a>(
     name: &XorName,
-    our_members: &'a SectionMembers,
+    our_members: &'a SectionPeers,
     sections: &'a SectionMap,
 ) -> Option<&'a Peer> {
     our_members

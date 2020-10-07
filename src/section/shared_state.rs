@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{quorum_count, EldersInfo, MemberInfo, SectionMap, SectionMembers, SectionProofChain};
+use super::{quorum_count, EldersInfo, MemberInfo, SectionMap, SectionPeers, SectionProofChain};
 use crate::{
     consensus::{Proof, Proven},
     error::Error,
@@ -31,7 +31,7 @@ pub(crate) struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// Info about all members of our section.
-    pub our_members: SectionMembers,
+    pub our_members: SectionPeers,
     /// Info about known sections in the network.
     pub sections: SectionMap,
 }
@@ -49,7 +49,7 @@ impl SharedState {
         Self {
             our_history: section_chain,
             sections: SectionMap::new(elders_info),
-            our_members: SectionMembers::default(),
+            our_members: SectionPeers::default(),
         }
     }
 

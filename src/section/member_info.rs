@@ -17,7 +17,7 @@ pub const MIN_AGE: u8 = 4;
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
     pub peer: Peer,
-    pub state: MemberState,
+    pub state: PeerState,
     pub age: u8,
 }
 
@@ -26,7 +26,7 @@ impl MemberInfo {
     pub fn joined(peer: Peer, age: u8) -> Self {
         Self {
             peer,
-            state: MemberState::Joined,
+            state: PeerState::Joined,
             age,
         }
     }
@@ -37,7 +37,7 @@ impl MemberInfo {
 
     pub fn leave(self) -> Self {
         Self {
-            state: MemberState::Left,
+            state: PeerState::Left,
             ..self
         }
     }
@@ -45,7 +45,7 @@ impl MemberInfo {
     // Convert this info into one with the state changed to `Relocated`.
     pub fn relocate(self, destination: XorName) -> Self {
         Self {
-            state: MemberState::Relocated(destination),
+            state: PeerState::Relocated(destination),
             ..self
         }
     }
@@ -60,7 +60,7 @@ impl MemberInfo {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
-pub enum MemberState {
+pub enum PeerState {
     // Node is active member of the section.
     Joined,
     // Node went offline.
