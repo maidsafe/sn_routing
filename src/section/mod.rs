@@ -12,7 +12,7 @@ mod network_stats;
 mod prefix_map;
 mod section_keys;
 mod section_map;
-mod section_members;
+mod section_peers;
 mod section_proof_chain;
 mod section_update_barrier;
 mod shared_state;
@@ -21,11 +21,11 @@ mod shared_state;
 pub(crate) use self::elders_info::gen_elders_info;
 pub use self::{
     elders_info::{quorum_count, EldersInfo},
-    member_info::{MemberInfo, MemberState, MIN_AGE},
+    member_info::{MemberInfo, PeerState, MIN_AGE},
     network_stats::NetworkStats,
     section_keys::{SectionKeyShare, SectionKeysProvider},
     section_map::SectionMap,
-    section_members::SectionMembers,
+    section_peers::SectionPeers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
 pub(crate) use self::{

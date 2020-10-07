@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    member_info::{MemberInfo, MemberState},
+    member_info::{MemberInfo, PeerState},
     section_proof_chain::SectionProofChain,
     EldersInfo,
 };
@@ -27,11 +27,11 @@ use xor_name::{Prefix, XorName};
 
 /// Container for storing information about members of our section.
 #[derive(Clone, Default, Debug, Eq, Serialize, Deserialize)]
-pub struct SectionMembers {
+pub struct SectionPeers {
     members: BTreeMap<XorName, Proven<MemberInfo>>,
 }
 
-impl SectionMembers {
+impl SectionPeers {
     /// Returns an iterator over all current (joined) and past (left) members.
     pub fn all(&self) -> impl Iterator<Item = &MemberInfo> {
         self.members.values().map(|info| &info.value)
@@ -42,14 +42,14 @@ impl SectionMembers {
         self.members
             .values()
             .map(|info| &info.value)
-            .filter(|member| member.state == MemberState::Joined)
+            .filter(|member| member.state == PeerState::Joined)
     }
 
     /// Returns an iterator over the members that have state == `Joined` together with their proofs.
     pub fn joined_proven(&self) -> impl Iterator<Item = &Proven<MemberInfo>> {
         self.members
             .values()
-            .filter(|member| member.value.state == MemberState::Joined)
+            .filter(|member| member.value.state == PeerState::Joined)
     }
 
     /// Returns nodes from our section with age greater than `MIN_AGE`
@@ -75,7 +75,7 @@ impl SectionMembers {
             current_elders,
             self.members
                 .values()
-                .filter(|info| info.value.state == MemberState::Joined),
+                .filter(|info| info.value.state == PeerState::Joined),
         )
     }
 
@@ -90,7 +90,7 @@ impl SectionMembers {
             elder_size,
             current_elders,
             self.members.values().filter(|info| {
-                info.value.state == MemberState::Joined && prefix.matches(info.value.peer.name())
+                info.value.state == PeerState::Joined && prefix.matches(info.value.peer.name())
             }),
         )
     }
@@ -104,7 +104,7 @@ impl SectionMembers {
     pub fn is_joined(&self, name: &XorName) -> bool {
         self.members
             .get(name)
-            .map(|info| info.value.state == MemberState::Joined)
+            .map(|info| info.value.state == PeerState::Joined)
             .unwrap_or(false)
     }
 
@@ -141,11 +141,11 @@ impl SectionMembers {
                 // - Joined -> Relocated
                 // - Relocated -> Left (should not happen, but needed for consistency)
                 match (entry.get().value.state, new_info.state) {
-                    (MemberState::Joined, MemberState::Joined)
-                        if new_info.age > entry.get().value.age => {}
-                    (MemberState::Joined, MemberState::Left)
-                    | (MemberState::Joined, MemberState::Relocated(_))
-                    | (MemberState::Relocated(_), MemberState::Left) => {}
+                    (PeerState::Joined, PeerState::Joined)
+                        if new_info.peer.age > entry.get().value.peer.age => {}
+                    (PeerState::Joined, PeerState::Left)
+                    | (PeerState::Joined, PeerState::Relocated(_))
+                    | (PeerState::Relocated(_), PeerState::Left) => {}
                     _ => return false,
                 };
 
@@ -168,7 +168,7 @@ impl SectionMembers {
             .collect();
     }
 
-    /// Merge two `SectionMembers` into one.
+    /// Merge two `SectionPeers` into one.
     pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
         for (_, info) in other.members {
             let _ = self.update(info.value, info.proof, section_chain);
@@ -176,13 +176,13 @@ impl SectionMembers {
     }
 }
 
-impl PartialEq for SectionMembers {
+impl PartialEq for SectionPeers {
     fn eq(&self, other: &Self) -> bool {
         self.members == other.members
     }
 }
 
-impl Hash for SectionMembers {
+impl Hash for SectionPeers {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.members.hash(state)
     }
@@ -216,8 +216,9 @@ fn cmp_elder_candidates(
     // it comparing by the proof signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
     rhs.value
+        .peer
         .age
-        .cmp(&lhs.value.age)
+        .cmp(&lhs.value.peer.age)
         .then_with(|| {
             let lhs_is_elder = current_elders.elders.contains_key(lhs.value.peer.name());
             let rhs_is_elder = current_elders.elders.contains_key(rhs.value.peer.name());
