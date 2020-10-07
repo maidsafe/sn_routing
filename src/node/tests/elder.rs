@@ -479,54 +479,6 @@ fn send_genesis_update() {
 */
 
 #[test]
-fn handle_bounced_unknown_message() {
-    let mut env = Env::new(ELDER_SIZE);
-
-    let old_section_key = *env.subject.section_key().expect("subject is not approved");
-
-    // Simulate the section going through the elder change to generate new section key.
-    let new = env.gen_peer().to_p2p_node();
-    let old = env.get_other_elder_p2p_node(0).clone();
-    env.accumulate_online(new.clone());
-    env.perform_offline_and_promote(old, new).unwrap();
-
-    let dst = DstLocation::Section(env.rng.gen());
-    let msg = env.accumulate_message(dst, Variant::UserMessage(b"unknown message".to_vec()));
-
-    // Pretend that one of the other nodes is lagging behind and has not transitioned to elder yet
-    // and so bounces a message to us as unknown.
-    let other_node = env.create_transport_for_other_elder(0);
-    let bounce_msg = Message::single_src(
-        &env.other_ids[0].0,
-        DstLocation::Direct,
-        Variant::BouncedUnknownMessage {
-            src_key: old_section_key,
-            message: msg.to_bytes(),
-        },
-        None,
-        None,
-    )
-    .unwrap();
-
-    test_utils::handle_message(&mut env.subject, *other_node.addr(), bounce_msg).unwrap();
-    env.poll();
-
-    let mut received_sync = false;
-    let mut received_resent_message = false;
-
-    for (_, msg) in other_node.received_messages() {
-        match msg.variant() {
-            Variant::Sync { .. } => received_sync = true,
-            Variant::UserMessage(_) => received_resent_message = true,
-            _ => (),
-        }
-    }
-
-    assert!(received_sync);
-    assert!(received_resent_message);
-}
-
-#[test]
 fn handle_bounced_untrusted_message() {
     let mut env = Env::new(ELDER_SIZE);
     let old_section_key = *env.subject.section_key().expect("subject is not approved");
