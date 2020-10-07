@@ -1392,7 +1392,7 @@ impl Approved {
 
             if new_is_elder {
                 info!(
-                    "Section updated: prefix: ({:b}), key: {:?}, elders: {:?}",
+                    "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
                     self.shared_state.our_prefix(),
                     self.shared_state.our_history.last_key(),
                     self.shared_state.our_info().elders.values().format(", ")

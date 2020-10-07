@@ -447,37 +447,6 @@ fn add_and_promote_member() {
     assert!(env.is_candidate_elder());
 }
 
-/*
-#[test]
-fn send_genesis_update() {
-    let mut env = Env::new(ELDER_SIZE);
-
-    let old_section_key = *env.subject.section_key().expect("subject is not approved");
-
-    let adult0 = env.gen_peer();
-    let adult1 = env.gen_peer();
-
-    env.accumulate_online(adult0.to_p2p_node());
-    env.accumulate_online(adult1.to_p2p_node());
-
-    // Remove one existing elder and promote an adult to take its place. This created new section
-    // key.
-    let dropped_name = *env.other_ids[0].0.public_id().name();
-    env.perform_offline_and_promote(dropped_name, adult0.to_p2p_node())
-        .unwrap();
-    let new_section_key = *env.subject.section_key().expect("subject is not approved");
-
-    // Create `GenesisUpdate` message and check its proof contains the previous key as well as the
-    // new key.
-    let message = utils::exactly_one(env.subject.create_genesis_updates());
-    assert_eq!(message.0, adult1.to_p2p_node());
-
-    let proof_chain = &message.1.proof_chain;
-    assert!(proof_chain.has_key(&old_section_key));
-    assert!(proof_chain.has_key(&new_section_key));
-}
-*/
-
 #[test]
 fn handle_bounced_untrusted_message() {
     let mut env = Env::new(ELDER_SIZE);

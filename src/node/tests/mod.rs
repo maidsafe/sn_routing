@@ -439,7 +439,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .expect("member not found")
         .leave();
 
-    // Create out node
+    // Create our node
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let node_name = node_info.name();
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
@@ -605,6 +605,101 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     assert!(sync_sent);
     assert!(original_message_sent);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_sync() -> Result<()> {
+    // Create first `SharedState` with a chain of length 2
+    let sk0_set = SecretKeySet::random();
+    let pk0 = sk0_set.secret_key().public_key();
+    let sk1_set = SecretKeySet::random();
+    let pk1 = sk1_set.secret_key().public_key();
+    let pk1_signature = sk0_set.secret_key().sign(bincode::serialize(&pk1)?);
+
+    let mut chain = SectionProofChain::new(pk0);
+    assert!(chain.push(pk1, pk1_signature));
+
+    let (old_elders_info, mut keypairs) = create_elders_info();
+    let old_elders_info_proof = create_proof(sk0_set.secret_key(), &old_elders_info)?;
+    let old_shared_state = SharedState::new(
+        chain.clone(),
+        Proven {
+            value: old_elders_info.clone(),
+            proof: old_elders_info_proof,
+        },
+    );
+
+    // Create our node
+    let section_key_share = create_section_key_share(&sk1_set, 0);
+    let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
+    let state = Approved::new(old_shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    // Create new `SharedState` as a successor to the previous one.
+    let sk2 = bls::SecretKey::random();
+    let pk2 = sk2.public_key();
+    let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
+    assert!(chain.push(pk2, pk2_signature));
+
+    let old_peer = *old_elders_info
+        .elders
+        .values()
+        .nth(1)
+        .expect("not enough elders");
+    let old_peer_keypair = keypairs.remove(0);
+
+    // Create the new `EldersInfo` by replacing the last peer with a new one.
+    let new_peer = create_peer();
+    let new_elders_info = EldersInfo::new(
+        old_elders_info
+            .elders
+            .values()
+            .take(old_elders_info.elders.len() - 1)
+            .copied()
+            .chain(iter::once(new_peer))
+            .map(|peer| (*peer.name(), peer))
+            .collect(),
+        old_elders_info.prefix,
+    );
+    let new_elders: BTreeSet<_> = new_elders_info.elders.keys().copied().collect();
+    let new_elders_info_proof = create_proof(sk1_set.secret_key(), &new_elders_info)?;
+
+    let new_shared_state = SharedState::new(
+        chain,
+        Proven {
+            value: new_elders_info,
+            proof: new_elders_info_proof,
+        },
+    );
+
+    // Create the `Sync` message containing the new shared state.
+    let message = Message::single_src(
+        &old_peer_keypair,
+        MIN_AGE + 1,
+        DstLocation::Direct,
+        Variant::Sync(new_shared_state),
+        None,
+        None,
+    )?;
+
+    // Handle the message.
+    let _ = node
+        .handle_command(Command::HandleMessage {
+            message,
+            sender: Some(*old_peer.addr()),
+        })
+        .await?;
+
+    // Verify our `SharedState` got updated.
+    assert_matches!(
+        event_rx.try_recv(),
+        Ok(Event::EldersChanged { key, elders, .. }) => {
+            assert_eq!(key, pk2);
+            assert_eq!(elders, new_elders);
+        }
+    );
 
     Ok(())
 }
