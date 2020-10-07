@@ -44,7 +44,7 @@ use std::{
     ops::Deref,
 };
 use tokio::sync::mpsc;
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 #[tokio::test]
 async fn send_bootstrap_request() -> Result<()> {
@@ -330,7 +330,7 @@ async fn accumulate_votes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online() -> Result<()> {
+async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
@@ -375,6 +375,113 @@ async fn handle_consensus_on_online() -> Result<()> {
         assert_eq!(name, *new_peer.name());
         assert_eq!(age, MIN_AGE);
     });
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
+    let sk_set = SecretKeySet::random();
+    let chain = SectionProofChain::new(sk_set.secret_key().public_key());
+
+    let mut keypairs = create_keypairs_for_elders_info();
+    // Everybody has age 6 except the last peer who as 5.
+    let ages = (0..keypairs.len() - 1)
+        .map(|_| MIN_AGE + 2)
+        .chain(iter::once(MIN_AGE + 1));
+    let elders = keypairs
+        .iter()
+        .zip(ages)
+        .map(|(keypair, age)| Peer::new(crypto::name(&keypair.public), create_addr(), age));
+    let elders_info = EldersInfo::new(
+        elders.map(|peer| (*peer.name(), peer)).collect(),
+        Prefix::default(),
+    );
+    let elders_info_proof = create_proof(sk_set.secret_key(), &elders_info)?;
+
+    let mut shared_state = SharedState::new(
+        chain,
+        Proven {
+            value: elders_info.clone(),
+            proof: elders_info_proof,
+        },
+    );
+
+    for peer in elders_info.elders.values() {
+        let member_info = MemberInfo::joined(*peer);
+        let member_info_proof = create_proof(sk_set.secret_key(), &member_info)?;
+        let _ = shared_state.update_member(member_info, member_info_proof);
+    }
+
+    let (node_info, _) = create_node_info_for(keypairs.remove(0));
+    let node_name = node_info.name();
+    let section_key_share = create_section_key_share(&sk_set, 0);
+    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    // Handle the consensus on Online of a peer that is older than the youngest
+    // current elder - that means this peer is going to be promoted.
+    let new_peer = create_peer().with_age(MIN_AGE + 2);
+    let member_info = MemberInfo::joined(new_peer);
+    let vote = Vote::Online {
+        member_info,
+        previous_name: Some(XorName::random()),
+        their_knowledge: Some(sk_set.secret_key().public_key()),
+    };
+    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
+
+    let commands = node
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    // Verify we sent a `DKGStart` message with the expected participants.
+    let mut dkg_start_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+        let message = match message.variant() {
+            Variant::Vote {
+                content: Vote::SendMessage { message, .. },
+                ..
+            } => message,
+            _ => continue,
+        };
+
+        let actual_elders_info = match &message.variant {
+            Variant::DKGStart { elders_info, .. } => elders_info,
+            _ => continue,
+        };
+
+        let expected_new_elders: BTreeSet<_> = elders_info
+            .elders
+            .values()
+            .take(elders_info.elders.len() - 1)
+            .copied()
+            .chain(iter::once(new_peer))
+            .collect();
+        itertools::assert_equal(actual_elders_info.elders.values(), &expected_new_elders);
+
+        let expected_dkg_start_recipients: Vec<_> = expected_new_elders
+            .iter()
+            .filter(|peer| *peer.name() != node_name)
+            .map(Peer::addr)
+            .copied()
+            .collect();
+        assert_eq!(recipients, expected_dkg_start_recipients);
+
+        dkg_start_sent = true;
+    }
+
+    assert!(dkg_start_sent);
 
     Ok(())
 }
@@ -903,13 +1010,18 @@ fn create_comm() -> Result<Comm> {
     })?)
 }
 
-// Generate random EldersInfo and the corresponding Keypairs.
-fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
+// Create ELDER_SIZE Keypairs sorted by their names.
+fn create_keypairs_for_elders_info() -> Vec<Keypair> {
     let mut rng = rng::new();
-    let keypairs: Vec<_> = (0..ELDER_SIZE)
+    (0..ELDER_SIZE)
         .map(|_| Keypair::generate(&mut rng))
         .sorted_by_key(|keypair| crypto::name(&keypair.public))
-        .collect();
+        .collect()
+}
+
+// Generate random EldersInfo and the corresponding Keypairs.
+fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
+    let keypairs = create_keypairs_for_elders_info();
     let elders = keypairs
         .iter()
         .map(|keypair| Peer::new(crypto::name(&keypair.public), create_addr(), MIN_AGE + 1))
