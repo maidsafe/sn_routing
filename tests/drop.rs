@@ -6,8 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#![type_length_limit = "1965399"]
-
 mod utils;
 
 use self::utils::*;
