@@ -226,30 +226,6 @@ impl Env {
 // }
 
 #[test]
-fn handle_unknown_message() {
-    let mut env = Env::new();
-
-    // adults can't handle messages addressed to sections.
-    let dst = DstLocation::Section(env.rng.gen());
-    let msg = env.create_user_message(dst, b"hello section".to_vec());
-    let transport = env.create_elder_transport(0);
-
-    test_utils::handle_message(&mut env.subject, *transport.addr(), msg).unwrap();
-
-    env.poll();
-
-    for (sender, msg) in transport.received_messages() {
-        if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant(), Variant::BouncedUnknownMessage { .. })
-        {
-            return;
-        }
-    }
-
-    panic!("BouncedUnknownMessage not received")
-}
-
-#[test]
 fn handle_untrusted_accumulated_message() {
     let mut env = Env::new();
 
