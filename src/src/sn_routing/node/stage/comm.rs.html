@@ -440,16 +440,6 @@
 <span id="440">440</span>
 <span id="441">441</span>
 <span id="442">442</span>
-<span id="443">443</span>
-<span id="444">444</span>
-<span id="445">445</span>
-<span id="446">446</span>
-<span id="447">447</span>
-<span id="448">448</span>
-<span id="449">449</span>
-<span id="450">450</span>
-<span id="451">451</span>
-<span id="452">452</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -468,7 +458,7 @@
 };
 <span class="kw">use</span> <span class="ident">lru_time_cache</span>::<span class="ident">LruCache</span>;
 <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">Connection</span>, <span class="ident">Endpoint</span>, <span class="ident">IncomingConnections</span>, <span class="ident">QuicP2p</span>};
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">slice</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 
 <span class="comment">// Number of Connections to maintain in the cache</span>
 <span class="kw">const</span> <span class="ident">CONNECTIONS_CACHE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1024</span>;
@@ -477,9 +467,10 @@
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RESEND_MAX_ATTEMPTS</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">3</span>;
 
 <span class="comment">// Communication component of the node to interact with other nodes.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Comm</span> {
-    <span class="ident">inner</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Inner</span><span class="op">&gt;</span>,
+    <span class="ident">_quic_p2p</span>: <span class="ident">QuicP2p</span>,
+    <span class="ident">endpoint</span>: <span class="ident">Endpoint</span>,
+    <span class="ident">node_conns</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">LruCache</span><span class="op">&lt;</span><span class="ident">SocketAddr</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Connection</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Comm</span> {
@@ -492,11 +483,9 @@
         <span class="kw">let</span> <span class="ident">node_conns</span> <span class="op">=</span> <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">LruCache</span>::<span class="ident">with_capacity</span>(<span class="ident">CONNECTIONS_CACHE_SIZE</span>));
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
-            <span class="ident">inner</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Inner</span> {
-                <span class="ident">_quic_p2p</span>: <span class="ident">quic_p2p</span>,
-                <span class="ident">endpoint</span>,
-                <span class="ident">node_conns</span>,
-            }),
+            <span class="ident">_quic_p2p</span>: <span class="ident">quic_p2p</span>,
+            <span class="ident">endpoint</span>,
+            <span class="ident">node_conns</span>,
         })
     }
 
@@ -513,11 +502,9 @@
 
         <span class="prelude-val">Ok</span>((
             <span class="self">Self</span> {
-                <span class="ident">inner</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Inner</span> {
-                    <span class="ident">_quic_p2p</span>: <span class="ident">quic_p2p</span>,
-                    <span class="ident">endpoint</span>,
-                    <span class="ident">node_conns</span>,
-                }),
+                <span class="ident">_quic_p2p</span>: <span class="ident">quic_p2p</span>,
+                <span class="ident">endpoint</span>,
+                <span class="ident">node_conns</span>,
             },
             <span class="ident">addr</span>,
         ))
@@ -525,11 +512,11 @@
 
     <span class="doccomment">/// Starts listening for connections returning a stream where to read them from.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">listen</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">IncomingConnections</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">endpoint</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>)
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">endpoint</span>.<span class="ident">our_endpoint</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">our_endpoint</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
             <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Failed to retrieve our connection info: {:?}&quot;</span>, <span class="ident">err</span>);
             <span class="ident">err</span>.<span class="ident">into</span>()
         })
@@ -550,6 +537,13 @@
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
         <span class="ident">msg</span>: <span class="ident">Bytes</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">SendError</span><span class="op">&gt;</span> {
+        <span class="macro">trace</span><span class="macro">!</span>(
+            <span class="string">&quot;Sending message ({} bytes) to {} of {:?}&quot;</span>,
+            <span class="ident">msg</span>.<span class="ident">len</span>(),
+            <span class="ident">delivery_group_size</span>,
+            <span class="ident">recipients</span>
+        );
+
         <span class="kw">if</span> <span class="ident">recipients</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">delivery_group_size</span> {
             <span class="macro">warn</span><span class="macro">!</span>(
                 <span class="string">&quot;Less than delivery_group_size valid recipients - delivery_group_size: {}, recipients: {:?}&quot;</span>,
@@ -566,10 +560,9 @@
         <span class="kw">loop</span> {
             <span class="comment">// Start a batch of sends.</span>
             <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">addr</span>) <span class="op">=</span> <span class="ident">state</span>.<span class="ident">next</span>() {
-                <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending message to {}&quot;</span>, <span class="ident">addr</span>);
                 <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">clone</span>();
                 <span class="kw">let</span> <span class="ident">task</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
-                    <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>, <span class="ident">msg</span>).<span class="kw">await</span>;
+                    <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">send_once</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>, <span class="ident">msg</span>).<span class="kw">await</span>;
                     (<span class="ident">addr</span>, <span class="ident">result</span>)
                 };
                 <span class="ident">tasks</span>.<span class="ident">push</span>(<span class="ident">task</span>);
@@ -580,12 +573,14 @@
                 <span class="comment">// Notify `SendState` about the result of the send and potentially start the next</span>
                 <span class="comment">// send, appending to the ones still in progress (if any).</span>
                 <span class="kw">match</span> <span class="ident">result</span> {
-                    <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending message to {} succeeded&quot;</span>, <span class="ident">addr</span>);
-                        <span class="ident">state</span>.<span class="ident">success</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>);
-                    }
+                    <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">state</span>.<span class="ident">success</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>),
                     <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending message to {} failed: {}&quot;</span>, <span class="ident">addr</span>, <span class="ident">err</span>);
+                        <span class="macro">trace</span><span class="macro">!</span>(
+                            <span class="string">&quot;Sending message ({} bytes) to {} failed: {}&quot;</span>,
+                            <span class="ident">msg</span>.<span class="ident">len</span>(),
+                            <span class="ident">addr</span>,
+                            <span class="ident">err</span>
+                        );
                         <span class="ident">state</span>.<span class="ident">failure</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>);
                     }
                 }
@@ -598,7 +593,8 @@
         <span class="kw">let</span> <span class="ident">failed_recipients</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">finish</span>();
 
         <span class="macro">trace</span><span class="macro">!</span>(
-            <span class="string">&quot;Sending message finished to {}/{} recipients (failed: {:?})&quot;</span>,
+            <span class="string">&quot;Sending message ({} bytes) finished to {}/{} recipients (failed: {:?})&quot;</span>,
+            <span class="ident">msg</span>.<span class="ident">len</span>(),
             <span class="ident">delivery_group_size</span> <span class="op">-</span> <span class="ident">failed_recipients</span>.<span class="ident">len</span>(),
             <span class="ident">delivery_group_size</span>,
             <span class="ident">failed_recipients</span>
@@ -611,37 +607,8 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message_to_target</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>,
-        <span class="ident">msg</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">SendError</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">send_message_to_targets</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">recipient</span>), <span class="number">1</span>, <span class="ident">msg</span>)
-            .<span class="kw">await</span>
-    }
-}
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
-<span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Send failed to: {:?}&quot;</span>, <span class="ident">failed_recipients</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SendError</span> {
-    <span class="comment">// Recipients that failed all the send attempts.</span>
-    <span class="kw">pub</span> <span class="ident">failed_recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">SendError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="kw">_</span>: <span class="ident">SendError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="ident">Error</span>::<span class="ident">FailedSend</span>
-    }
-}
-
-<span class="kw">struct</span> <span class="ident">Inner</span> {
-    <span class="ident">_quic_p2p</span>: <span class="ident">QuicP2p</span>,
-    <span class="ident">endpoint</span>: <span class="ident">Endpoint</span>,
-    <span class="ident">node_conns</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">LruCache</span><span class="op">&lt;</span><span class="ident">SocketAddr</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Connection</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">Inner</span> {
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">msg</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">qp2p</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="comment">// Low-level send</span>
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">msg</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">qp2p</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// Cache the Connection to the node or obtain the already cached one</span>
         <span class="comment">// Note: not using the entry API to avoid holding the mutex longer than necessary.</span>
         <span class="kw">let</span> <span class="ident">conn</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">node_conns</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">get</span>(<span class="ident">recipient</span>).<span class="ident">cloned</span>();
@@ -662,6 +629,19 @@
         <span class="ident">conn</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(())
+    }
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
+<span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Send failed to: {:?}&quot;</span>, <span class="ident">failed_recipients</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SendError</span> {
+    <span class="comment">// Recipients that failed all the send attempts.</span>
+    <span class="kw">pub</span> <span class="ident">failed_recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">SendError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="kw">_</span>: <span class="ident">SendError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">Error</span>::<span class="ident">FailedSend</span>
     }
 }
 

@@ -141,12 +141,6 @@
 <span id="141">141</span>
 <span id="142">142</span>
 <span id="143">143</span>
-<span id="144">144</span>
-<span id="145">145</span>
-<span id="146">146</span>
-<span id="147">147</span>
-<span id="148">148</span>
-<span id="149">149</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -213,11 +207,6 @@
     <span class="ident">unused_results</span>,
     <span class="ident">clippy</span>::<span class="ident">needless_borrow</span>
 )]</span>
-<span class="comment">// FIXME: it seems the code in `Comm::send_message_to_targets` is triggering type-length limit</span>
-<span class="comment">// reached error for some reason. This is a quick workaround, but we should probably look into it</span>
-<span class="comment">// closely to find out whether there are any downsides doing this or whether there is another,</span>
-<span class="comment">// more &quot;proper&quot; way.</span>
-<span class="attribute">#![<span class="ident">type_length_limit</span> <span class="op">=</span> <span class="string">&quot;2295944&quot;</span>]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
@@ -259,7 +248,6 @@
 <span class="kw">mod</span> <span class="ident">peer</span>;
 <span class="kw">mod</span> <span class="ident">relocation</span>;
 <span class="kw">mod</span> <span class="ident">section</span>;
-<span class="kw">mod</span> <span class="ident">timer</span>;
 
 <span class="comment">// Cryptography</span>
 <span class="kw">mod</span> <span class="ident">crypto</span>;

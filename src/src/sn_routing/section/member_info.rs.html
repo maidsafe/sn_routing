@@ -83,7 +83,7 @@
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MIN_AGE</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">4</span>;
 
 <span class="doccomment">/// Information about a member of our section.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MemberInfo</span> {
     <span class="kw">pub</span> <span class="ident">peer</span>: <span class="ident">Peer</span>,
     <span class="kw">pub</span> <span class="ident">state</span>: <span class="ident">PeerState</span>,

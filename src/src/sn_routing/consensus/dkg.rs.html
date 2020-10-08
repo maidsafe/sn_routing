@@ -373,9 +373,6 @@
 <span id="373">373</span>
 <span id="374">374</span>
 <span id="375">375</span>
-<span id="376">376</span>
-<span id="377">377</span>
-<span id="378">378</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -484,7 +481,7 @@
     <span class="comment">// to the other DKG participants.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start_participating</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">our_id</span>: <span class="ident">XorName</span>,
+        <span class="ident">our_name</span>: <span class="ident">XorName</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">DkgMessage</span><span class="op">&gt;</span> {
@@ -503,7 +500,7 @@
             .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
 
-        <span class="kw">match</span> <span class="ident">KeyGen</span>::<span class="ident">initialize</span>(<span class="ident">our_id</span>, <span class="ident">threshold</span>, <span class="ident">participants</span>) {
+        <span class="kw">match</span> <span class="ident">KeyGen</span>::<span class="ident">initialize</span>(<span class="ident">our_name</span>, <span class="ident">threshold</span>, <span class="ident">participants</span>) {
             <span class="prelude-val">Ok</span>((<span class="ident">key_gen</span>, <span class="ident">message</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;DKG for {} starting&quot;</span>, <span class="ident">elders_info</span>);
 
@@ -561,10 +558,7 @@
         <span class="comment">// This is OK to `unwrap` because we already checked it is `Some`.</span>
         <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">session</span>.<span class="ident">elders_info</span>.<span class="ident">take</span>().<span class="ident">unwrap</span>();
 
-        <span class="kw">if</span> <span class="ident">participants</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">eq</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">values</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">name</span>))
-        {
+        <span class="kw">if</span> <span class="ident">participants</span>.<span class="ident">iter</span>().<span class="ident">eq</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">keys</span>()) {
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;DKG for {} complete: {:?}&quot;</span>,
                 <span class="ident">elders_info</span>,

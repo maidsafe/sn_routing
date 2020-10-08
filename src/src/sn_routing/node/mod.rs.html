@@ -251,31 +251,6 @@
 <span id="251">251</span>
 <span id="252">252</span>
 <span id="253">253</span>
-<span id="254">254</span>
-<span id="255">255</span>
-<span id="256">256</span>
-<span id="257">257</span>
-<span id="258">258</span>
-<span id="259">259</span>
-<span id="260">260</span>
-<span id="261">261</span>
-<span id="262">262</span>
-<span id="263">263</span>
-<span id="264">264</span>
-<span id="265">265</span>
-<span id="266">266</span>
-<span id="267">267</span>
-<span id="268">268</span>
-<span id="269">269</span>
-<span id="270">270</span>
-<span id="271">271</span>
-<span id="272">272</span>
-<span id="273">273</span>
-<span id="274">274</span>
-<span id="275">275</span>
-<span id="276">276</span>
-<span id="277">277</span>
-<span id="278">278</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -285,26 +260,40 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">mod</span> <span class="ident">command</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">event_stream</span>;
 <span class="kw">mod</span> <span class="ident">executor</span>;
 <span class="kw">mod</span> <span class="ident">stage</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+<span class="kw">mod</span> <span class="ident">tests</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">event_stream</span>::<span class="ident">EventStream</span>;
-<span class="kw">use</span> <span class="self">self</span>::{<span class="ident">executor</span>::<span class="ident">Executor</span>, <span class="ident">stage</span>::<span class="ident">Stage</span>};
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+<span class="kw">use</span> <span class="self">self</span>::<span class="ident">stage</span>::<span class="ident">State</span>;
+<span class="kw">use</span> <span class="self">self</span>::{
+    <span class="ident">command</span>::<span class="ident">Command</span>,
+    <span class="ident">executor</span>::<span class="ident">Executor</span>,
+    <span class="ident">stage</span>::{<span class="ident">Approved</span>, <span class="ident">Bootstrapping</span>, <span class="ident">Comm</span>, <span class="ident">NodeInfo</span>, <span class="ident">Stage</span>},
+};
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">all</span>(<span class="ident">test</span>, <span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>))]</span>
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">section</span>::<span class="ident">SectionKeyShare</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="ident">name</span>, <span class="ident">Keypair</span>, <span class="ident">PublicKey</span>},
+    <span class="ident">crypto</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
+    <span class="ident">event</span>::{<span class="ident">Connected</span>, <span class="ident">Event</span>},
     <span class="ident">location</span>::{<span class="ident">DstLocation</span>, <span class="ident">SrcLocation</span>},
     <span class="ident">network_params</span>::<span class="ident">NetworkParams</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">rng</span>::<span class="ident">MainRng</span>,
+    <span class="ident">rng</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
     <span class="ident">TransportConfig</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>)]</span>
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">collections</span>::<span class="ident">BTreeSet</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
-<span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">Mutex</span>;
+<span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="doccomment">/// Node configuration.</span>
@@ -338,7 +327,7 @@
 <span class="doccomment">/// `Node` or as a part of a section or group location. Their `src` argument indicates that</span>
 <span class="doccomment">/// role, and can be any [`SrcLocation`](enum.SrcLocation.html).</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Node</span> {
-    <span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>,
     <span class="ident">_executor</span>: <span class="ident">Executor</span>,
 }
 
@@ -349,23 +338,42 @@
 
     <span class="doccomment">/// Create new node using the given config.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">config</span>: <span class="ident">NodeConfig</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">EventStream</span>)<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">MainRng</span>::<span class="ident">default</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">config</span>
             .<span class="ident">keypair</span>
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">Keypair</span>::<span class="ident">generate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>));
-        <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">keypair</span>.<span class="ident">public</span>);
 
-        <span class="kw">let</span> (<span class="ident">stage</span>, <span class="ident">incoming_conns</span>, <span class="ident">timer_rx</span>, <span class="ident">events_rx</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
+        <span class="kw">let</span> (<span class="ident">event_tx</span>, <span class="ident">event_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">unbounded_channel</span>();
+        <span class="kw">let</span> <span class="ident">node_info</span> <span class="op">=</span> <span class="ident">NodeInfo</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>.<span class="ident">clone</span>());
+        <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">node_info</span>.<span class="ident">name</span>();
+
+        <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">initial_command</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the seed node.&quot;</span>, <span class="ident">node_name</span>);
-            <span class="ident">Stage</span>::<span class="ident">first_node</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">keypair</span>, <span class="ident">config</span>.<span class="ident">network_params</span>).<span class="kw">await</span><span class="question-mark">?</span>
+            <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node_info</span>, <span class="ident">addr</span>)<span class="question-mark">?</span>;
+
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
+
+            (<span class="ident">state</span>.<span class="ident">into</span>(), <span class="ident">comm</span>, <span class="prelude-val">None</span>)
         } <span class="kw">else</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Bootstrapping a new node.&quot;</span>, <span class="ident">node_name</span>);
-            <span class="ident">Stage</span>::<span class="ident">bootstrap</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">keypair</span>, <span class="ident">config</span>.<span class="ident">network_params</span>).<span class="kw">await</span><span class="question-mark">?</span>
+            <span class="kw">let</span> (<span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>) <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">from_bootstrapping</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">command</span>) <span class="op">=</span> <span class="ident">Bootstrapping</span>::<span class="ident">new</span>(<span class="prelude-val">None</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="ident">node_info</span>)<span class="question-mark">?</span>;
+
+            (<span class="ident">state</span>.<span class="ident">into</span>(), <span class="ident">comm</span>, <span class="prelude-val">Some</span>(<span class="ident">command</span>))
         };
 
-        <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">stage</span>));
-        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">Arc</span>::<span class="ident">clone</span>(<span class="kw-2">&amp;</span><span class="ident">stage</span>), <span class="ident">incoming_conns</span>, <span class="ident">timer_rx</span>);
-        <span class="kw">let</span> <span class="ident">event_stream</span> <span class="op">=</span> <span class="ident">EventStream</span>::<span class="ident">new</span>(<span class="ident">events_rx</span>);
+        <span class="kw">let</span> <span class="ident">incoming_conns</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stage</span>::<span class="ident">new</span>(<span class="ident">state</span>, <span class="ident">comm</span>));
+        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">incoming_conns</span>);
+        <span class="kw">let</span> <span class="ident">event_stream</span> <span class="op">=</span> <span class="ident">EventStream</span>::<span class="ident">new</span>(<span class="ident">event_rx</span>);
+
+        <span class="comment">// Process the initial command.</span>
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">command</span>) <span class="op">=</span> <span class="ident">initial_command</span> {
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+        }
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="self">Self</span> {
             <span class="ident">stage</span>,
@@ -377,22 +385,22 @@
 
     <span class="doccomment">/// Returns the `PublicKey` of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PublicKey</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">keypair</span>().<span class="ident">public</span>
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">public_key</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// The name of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">name</span>()
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">name</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns connection info of this node.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">our_connection_info</span>()
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_connection_info</span>()
     }
 
     <span class="doccomment">/// Our `Prefix` once we are a part of the section.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Prefix</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">our_prefix</span>().<span class="ident">cloned</span>()
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_prefix</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Finds out if the given XorName matches our prefix. Returns error</span>
@@ -407,152 +415,94 @@
 
     <span class="doccomment">/// Returns whether the node is Elder.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
-        <span class="kw">match</span> <span class="ident">stage</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="bool-val">false</span>,
-            <span class="prelude-val">Some</span>(<span class="ident">state</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">state</span>
-                .<span class="ident">shared_state</span>
-                .<span class="ident">sections</span>
-                .<span class="ident">our</span>()
-                .<span class="ident">elders</span>
-                .<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">stage</span>.<span class="ident">name</span>()),
-        }
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">is_elder</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the information of all the current section elders.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">stage</span>.<span class="ident">shared_state</span>.<span class="ident">sections</span>.<span class="ident">our_elders</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>(),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-        }
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_elders</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the elders of our section sorted by their distance to `name` (closest first).</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_elders_sorted_by_distance_to</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">stage</span>
-                .<span class="ident">shared_state</span>
-                .<span class="ident">sections</span>
-                .<span class="ident">our_elders</span>()
-                .<span class="ident">sorted_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">name</span>.<span class="ident">cmp_distance</span>(<span class="ident">lhs</span>.<span class="ident">name</span>(), <span class="ident">rhs</span>.<span class="ident">name</span>()))
-                .<span class="ident">cloned</span>()
-                .<span class="ident">collect</span>(),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-        }
+        <span class="self">self</span>.<span class="ident">our_elders</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">into_iter</span>()
+            .<span class="ident">sorted_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">name</span>.<span class="ident">cmp_distance</span>(<span class="ident">lhs</span>.<span class="ident">name</span>(), <span class="ident">rhs</span>.<span class="ident">name</span>()))
+            .<span class="ident">collect</span>()
     }
 
     <span class="doccomment">/// Returns the information of all the current section adults.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">stage</span>.<span class="ident">shared_state</span>.<span class="ident">our_adults</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>(),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-        }
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_adults</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the adults of our section sorted by their distance to `name` (closest first).</span>
     <span class="doccomment">/// If we are not elder or if there are no adults in the section, returns empty vec.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_adults_sorted_by_distance_to</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">stage</span>
-                .<span class="ident">shared_state</span>
-                .<span class="ident">our_adults</span>()
-                .<span class="ident">sorted_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">name</span>.<span class="ident">cmp_distance</span>(<span class="ident">lhs</span>.<span class="ident">name</span>(), <span class="ident">rhs</span>.<span class="ident">name</span>()))
-                .<span class="ident">cloned</span>()
-                .<span class="ident">collect</span>(),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-        }
+        <span class="self">self</span>.<span class="ident">our_adults</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">into_iter</span>()
+            .<span class="ident">sorted_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">name</span>.<span class="ident">cmp_distance</span>(<span class="ident">lhs</span>.<span class="ident">name</span>(), <span class="ident">rhs</span>.<span class="ident">name</span>()))
+            .<span class="ident">collect</span>()
     }
 
     <span class="doccomment">/// Returns the info about our section or `None` if we are not joined yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">stage</span>.<span class="ident">shared_state</span>.<span class="ident">sections</span>.<span class="ident">our</span>().<span class="ident">clone</span>()),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
-        }
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_section</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the info about our neighbour sections.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">neighbour_sections</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">approved</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">stage</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">stage</span>.<span class="ident">shared_state</span>.<span class="ident">sections</span>.<span class="ident">neighbours</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>(),
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-        }
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">neighbour_sections</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Send a message.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">content</span>: <span class="ident">Bytes</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">DstLocation</span>::<span class="ident">Direct</span> <span class="op">=</span> <span class="ident">dst</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadLocation</span>);
-        }
-
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">send_message</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span>)
-            .<span class="kw">await</span>
+        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> };
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Send a message to a client peer.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message_to_client</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">peer_addr</span>: <span class="ident">SocketAddr</span>,
-        <span class="ident">msg</span>: <span class="ident">Bytes</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">recipient</span>: <span class="ident">SocketAddr</span>,
+        <span class="ident">message</span>: <span class="ident">Bytes</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">send_message_to_target</span>(<span class="kw-2">&amp;</span><span class="ident">peer_addr</span>, <span class="ident">msg</span>)
-            .<span class="kw">await</span>
+        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
+            <span class="ident">recipients</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">recipient</span>],
+            <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
+            <span class="ident">message</span>,
+        };
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the current BLS public key set or `Error::InvalidState` if we are not joined</span>
     <span class="doccomment">/// yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKeySet</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">approved</span>()
-            .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">stage</span><span class="op">|</span> <span class="ident">stage</span>.<span class="ident">section_key_share</span>())
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">public_key_set</span>.<span class="ident">clone</span>())
-            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">public_key_set</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the current BLS secret key share or `Error::InvalidState` if we are not</span>
     <span class="doccomment">/// elder.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">secret_key_share</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">SecretKeyShare</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">approved</span>()
-            .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">stage</span><span class="op">|</span> <span class="ident">stage</span>.<span class="ident">section_key_share</span>())
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">secret_key_share</span>.<span class="ident">clone</span>())
-            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">secret_key_share</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns our section proof chain, or `None` if we are not joined yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">approved</span>()
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">stage</span><span class="op">|</span> <span class="ident">stage</span>.<span class="ident">shared_state</span>.<span class="ident">our_history</span>.<span class="ident">clone</span>())
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_history</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns our index in the current BLS group or `Error::InvalidState` if section key was</span>
     <span class="doccomment">/// not generated yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">lock</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">approved</span>()
-            .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">stage</span><span class="op">|</span> <span class="ident">stage</span>.<span class="ident">section_key_share</span>())
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">index</span>)
-            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_index</span>().<span class="kw">await</span>
     }
 }
 </pre></div>

@@ -166,62 +166,6 @@
 <span id="166">166</span>
 <span id="167">167</span>
 <span id="168">168</span>
-<span id="169">169</span>
-<span id="170">170</span>
-<span id="171">171</span>
-<span id="172">172</span>
-<span id="173">173</span>
-<span id="174">174</span>
-<span id="175">175</span>
-<span id="176">176</span>
-<span id="177">177</span>
-<span id="178">178</span>
-<span id="179">179</span>
-<span id="180">180</span>
-<span id="181">181</span>
-<span id="182">182</span>
-<span id="183">183</span>
-<span id="184">184</span>
-<span id="185">185</span>
-<span id="186">186</span>
-<span id="187">187</span>
-<span id="188">188</span>
-<span id="189">189</span>
-<span id="190">190</span>
-<span id="191">191</span>
-<span id="192">192</span>
-<span id="193">193</span>
-<span id="194">194</span>
-<span id="195">195</span>
-<span id="196">196</span>
-<span id="197">197</span>
-<span id="198">198</span>
-<span id="199">199</span>
-<span id="200">200</span>
-<span id="201">201</span>
-<span id="202">202</span>
-<span id="203">203</span>
-<span id="204">204</span>
-<span id="205">205</span>
-<span id="206">206</span>
-<span id="207">207</span>
-<span id="208">208</span>
-<span id="209">209</span>
-<span id="210">210</span>
-<span id="211">211</span>
-<span id="212">212</span>
-<span id="213">213</span>
-<span id="214">214</span>
-<span id="215">215</span>
-<span id="216">216</span>
-<span id="217">217</span>
-<span id="218">218</span>
-<span id="219">219</span>
-<span id="220">220</span>
-<span id="221">221</span>
-<span id="222">222</span>
-<span id="223">223</span>
-<span id="224">224</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -231,7 +175,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">Comm</span>, <span class="ident">joining</span>::<span class="ident">Joining</span>, <span class="ident">NodeInfo</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">joining</span>::<span class="ident">Joining</span>, <span class="ident">Command</span>, <span class="ident">NodeInfo</span>, <span class="ident">State</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>::{<span class="ident">keypair_within_range</span>, <span class="ident">name</span>},
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
@@ -239,147 +183,62 @@
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">relocation</span>::{<span class="ident">RelocatePayload</span>, <span class="ident">SignedRelocateDetails</span>},
     <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
-    <span class="ident">timer</span>::<span class="ident">Timer</span>,
     <span class="ident">DstLocation</span>, <span class="ident">MIN_AGE</span>,
 };
-<span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">iter</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
-
-<span class="comment">// TODO: review if we still need to set a timeout for joining</span>
-<span class="doccomment">/// Time after which bootstrap is cancelled (and possibly returnried).</span>
-<span class="comment">// pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);</span>
 
 <span class="comment">// The bootstrapping stage - node is trying to find the section to join.</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Bootstrapping</span> {
     <span class="kw">pub</span> <span class="ident">node_info</span>: <span class="ident">NodeInfo</span>,
     <span class="ident">relocate_details</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SignedRelocateDetails</span><span class="op">&gt;</span>,
-    <span class="ident">comm</span>: <span class="ident">Comm</span>,
-    <span class="ident">timer</span>: <span class="ident">Timer</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Bootstrapping</span> {
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
         <span class="ident">relocate_details</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SignedRelocateDetails</span><span class="op">&gt;</span>,
         <span class="ident">bootstrap_contacts</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-        <span class="ident">comm</span>: <span class="ident">Comm</span>,
         <span class="ident">node_info</span>: <span class="ident">NodeInfo</span>,
-        <span class="ident">timer</span>: <span class="ident">Timer</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="self">Self</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">Command</span>)<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">Self</span> {
             <span class="ident">node_info</span>,
             <span class="ident">relocate_details</span>,
-            <span class="ident">comm</span>,
-            <span class="ident">timer</span>,
         };
+        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">send_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="ident">bootstrap_contacts</span>)<span class="question-mark">?</span>;
 
-        <span class="kw">for</span> <span class="ident">addr</span> <span class="kw">in</span> <span class="ident">bootstrap_contacts</span> {
-            <span class="ident">stage</span>.<span class="ident">send_bootstrap_request</span>(<span class="ident">addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-        }
-
-        <span class="prelude-val">Ok</span>(<span class="ident">stage</span>)
+        <span class="prelude-val">Ok</span>((<span class="ident">state</span>, <span class="ident">command</span>))
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">process_message</span>(
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">sender</span>: <span class="ident">SocketAddr</span>,
-        <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Joining</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
+        <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
+        <span class="ident">message</span>: <span class="ident">Message</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Got {:?}&quot;</span>, <span class="ident">message</span>);
+
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">in_dst_location</span>(<span class="ident">message</span>.<span class="ident">dst</span>()) {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="kw">match</span> <span class="ident">message</span>.<span class="ident">variant</span>() {
             <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">response</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">msg</span>.<span class="ident">verify</span>(<span class="ident">iter</span>::<span class="ident">empty</span>())
+                <span class="ident">message</span>
+                    .<span class="ident">verify</span>(<span class="ident">iter</span>::<span class="ident">empty</span>())
                     .<span class="ident">and_then</span>(<span class="ident">VerifyStatus</span>::<span class="ident">require_full</span>)<span class="question-mark">?</span>;
 
-                <span class="kw">match</span> <span class="self">self</span>
-                    .<span class="ident">handle_bootstrap_response</span>(
-                        <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_sender_node</span>(<span class="prelude-val">Some</span>(<span class="ident">sender</span>))<span class="question-mark">?</span>,
-                        <span class="ident">response</span>.<span class="ident">clone</span>(),
-                    )
-                    .<span class="kw">await</span><span class="question-mark">?</span>
-                {
-                    <span class="prelude-val">Some</span>(<span class="ident">JoinParams</span> {
-                        <span class="ident">elders_info</span>,
-                        <span class="ident">section_key</span>,
-                        <span class="ident">relocate_payload</span>,
-                    }) <span class="op">=</span><span class="op">&gt;</span> {
-                        <span class="kw">let</span> <span class="ident">joining</span> <span class="op">=</span> <span class="ident">Joining</span>::<span class="ident">new</span>(
-                            <span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">clone</span>(),
-                            <span class="ident">elders_info</span>,
-                            <span class="ident">section_key</span>,
-                            <span class="ident">relocate_payload</span>,
-                            <span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">clone</span>(),
-                            <span class="self">self</span>.<span class="ident">timer</span>.<span class="ident">clone</span>(),
-                        )
-                        .<span class="kw">await</span><span class="question-mark">?</span>;
-
-                        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">joining</span>))
-                    }
-                    <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
-                }
+                <span class="self">self</span>.<span class="ident">handle_bootstrap_response</span>(
+                    <span class="ident">message</span>.<span class="ident">src</span>().<span class="ident">to_sender_node</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>,
+                    <span class="ident">response</span>.<span class="ident">clone</span>(),
+                )
             }
-
-            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Unknown message from {}: {:?} &quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
-                <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
-            }
-
-            <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">Sync</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="kw">_</span>)
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUnknownMessage</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">Vote</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGStart</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Useless message from {}: {:?}&quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
-                <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Useless message from {:?}: {:?} &quot;</span>, <span class="ident">sender</span>, <span class="ident">message</span>);
+                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
             }
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">process_timeout</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_token</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="macro">todo</span><span class="macro">!</span>()
-    }
-
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_bootstrap_response</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">sender</span>: <span class="ident">Peer</span>,
-        <span class="ident">response</span>: <span class="ident">BootstrapResponse</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">JoinParams</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">match</span> <span class="ident">response</span> {
-            <span class="ident">BootstrapResponse</span>::<span class="ident">Join</span> {
-                <span class="ident">elders_info</span>,
-                <span class="ident">section_key</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">info</span><span class="macro">!</span>(
-                    <span class="string">&quot;Joining a section {:?} (given by {:?})&quot;</span>,
-                    <span class="ident">elders_info</span>, <span class="ident">sender</span>
-                );
-
-                <span class="kw">let</span> <span class="ident">relocate_payload</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">join_section</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>)<span class="question-mark">?</span>;
-                <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">JoinParams</span> {
-                    <span class="ident">elders_info</span>,
-                    <span class="ident">section_key</span>,
-                    <span class="ident">relocate_payload</span>,
-                }))
-            }
-            <span class="ident">BootstrapResponse</span>::<span class="ident">Rebootstrap</span>(<span class="ident">new_conn_infos</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">info</span><span class="macro">!</span>(
-                    <span class="string">&quot;Bootstrapping redirected to another set of peers: {:?}&quot;</span>,
-                    <span class="ident">new_conn_infos</span>
-                );
-                <span class="self">self</span>.<span class="ident">reconnect_to_new_section</span>(<span class="ident">new_conn_infos</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-                <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
-            }
-        }
-    }
-
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">SocketAddr</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">destination</span>, <span class="ident">age</span>) <span class="op">=</span> <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">relocate_details</span> {
             <span class="prelude-val">Some</span>(<span class="ident">details</span>) <span class="op">=</span><span class="op">&gt;</span> (<span class="kw-2">*</span><span class="ident">details</span>.<span class="ident">destination</span>(), <span class="ident">details</span>.<span class="ident">relocate_details</span>().<span class="ident">age</span>),
             <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> (<span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">name</span>(), <span class="ident">MIN_AGE</span>),
@@ -394,22 +253,49 @@
             <span class="prelude-val">None</span>,
         )<span class="question-mark">?</span>;
 
-        <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Sending BootstrapRequest to {}&quot;</span>, <span class="ident">dst</span>);
-        <span class="self">self</span>.<span class="ident">comm</span>
-            .<span class="ident">send_message_to_target</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>, <span class="ident">message</span>.<span class="ident">to_bytes</span>())
-            .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Sending BootstrapRequest to {:?}&quot;</span>, <span class="ident">recipients</span>);
 
-        <span class="prelude-val">Ok</span>(())
+        <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_targets</span>(
+            <span class="ident">recipients</span>,
+            <span class="ident">recipients</span>.<span class="ident">len</span>(),
+            <span class="ident">message</span>.<span class="ident">to_bytes</span>(),
+        ))
     }
 
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">reconnect_to_new_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_conn_infos</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="ident">future</span>::<span class="ident">try_join_all</span>(
-            <span class="ident">new_conn_infos</span>
-                .<span class="ident">into_iter</span>()
-                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">addr</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">send_bootstrap_request</span>(<span class="ident">addr</span>)),
-        )
-        .<span class="kw">await</span>
-        .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> ())
+    <span class="kw">fn</span> <span class="ident">handle_bootstrap_response</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">sender</span>: <span class="ident">Peer</span>,
+        <span class="ident">response</span>: <span class="ident">BootstrapResponse</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">match</span> <span class="ident">response</span> {
+            <span class="ident">BootstrapResponse</span>::<span class="ident">Join</span> {
+                <span class="ident">elders_info</span>,
+                <span class="ident">section_key</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">info</span><span class="macro">!</span>(
+                    <span class="string">&quot;Joining a section {:?} (given by {:?})&quot;</span>,
+                    <span class="ident">elders_info</span>, <span class="ident">sender</span>
+                );
+
+                <span class="kw">let</span> <span class="ident">relocate_payload</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">join_section</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">command</span>) <span class="op">=</span> <span class="ident">Joining</span>::<span class="ident">new</span>(
+                    <span class="ident">elders_info</span>,
+                    <span class="ident">section_key</span>,
+                    <span class="ident">relocate_payload</span>,
+                    <span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">clone</span>(),
+                )<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">Joining</span>(<span class="ident">state</span>);
+
+                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">Transition</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">state</span>)), <span class="ident">command</span>])
+            }
+            <span class="ident">BootstrapResponse</span>::<span class="ident">Rebootstrap</span>(<span class="ident">new_conn_infos</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">info</span><span class="macro">!</span>(
+                    <span class="string">&quot;Bootstrapping redirected to another set of peers: {:?}&quot;</span>,
+                    <span class="ident">new_conn_infos</span>
+                );
+                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="ident">new_conn_infos</span>)<span class="question-mark">?</span>])
+            }
+        }
     }
 
     <span class="kw">fn</span> <span class="ident">join_section</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span><span class="op">&gt;</span> {
@@ -440,12 +326,14 @@
 
         <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">relocate_payload</span>))
     }
-}
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">JoinParams</span> {
-    <span class="kw">pub</span> <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
-    <span class="kw">pub</span> <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    <span class="kw">pub</span> <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
+    <span class="kw">fn</span> <span class="ident">in_dst_location</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="kw">match</span> <span class="ident">dst</span> {
+            <span class="ident">DstLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">name</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">node_info</span>.<span class="ident">name</span>(),
+            <span class="ident">DstLocation</span>::<span class="ident">Section</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="bool-val">false</span>,
+            <span class="ident">DstLocation</span>::<span class="ident">Direct</span> <span class="op">=</span><span class="op">&gt;</span> <span class="bool-val">true</span>,
+        }
+    }
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "sn_routing";</script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
