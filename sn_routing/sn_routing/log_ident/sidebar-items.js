@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["get","Get the current log identifier."],["set","Set the log identifier for the current task."]]});

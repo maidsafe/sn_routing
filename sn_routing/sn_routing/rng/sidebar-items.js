@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["new","Create new rng instance."]],"struct":[["MainRng","A random number generator that retrieves randomness from from the operating system."]]});

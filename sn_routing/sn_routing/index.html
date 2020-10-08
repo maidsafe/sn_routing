@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `sn_routing` crate."><meta name="keywords" content="rust, rustlang, rust-lang, sn_routing"><title>sn_routing - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../dark.css"><link rel="stylesheet" type="text/css" href="../light.css" id="themeStyle"><script src="../storage.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../down-arrow.svg");}</style></head><body class="rustdoc mod"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a><p class='location'>Crate sn_routing</p><div class="sidebar-elems"><a id='all-types' href='all.html'><p>See all sn_routing's items</p></a><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#constants">Constants</a></li><li><a href="#types">Type Definitions</a></li></ul></div><p class='location'></p><script>window.sidebarCurrent = {name: 'sn_routing', ty: 'mod', relpath: '../'};</script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><a id="settings-menu" href="../settings.html"><img src="../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class='fqn'><span class='out-of-band'><span id='render-detail'><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class='inner'>&#x2212;</span>]</a></span><a class='srclink' href='../src/sn_routing/lib.rs.html#9-149' title='goto source code'>[src]</a></span><span class='in-band'>Crate <a class="mod" href=''>sn_routing</a></span></h1><div class='docblock'><p>Peer implementation for a resilient decentralised network infrastructure.</p>
+<p>This is the &quot;engine room&quot; of a hybrid p2p network, where the p2p nodes are built on
+top of this library. The features this library gives us is:</p>
+<ul>
+<li>Sybil resistant p2p nodes</li>
+<li>Sharded network with up to approx 200 p2p nodes per shard</li>
+<li>All data encrypted at network level with TLS 1.3</li>
+<li>Network level <code>quic</code> compatibility, satisfying industry standards and further
+obfuscating the p2p network data.</li>
+<li>Upgrade capable nodes.</li>
+<li>All network messages signed via ED25519 and/or BLS</li>
+<li>Section consensus via an ABFT algorithm (PARSEC)</li>
+</ul>
+</div><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table><tr class='module-item'><td><a class="mod" href="event/index.html" title='sn_routing::event mod'>event</a></td><td class='docblock-short'><p>sn_routing events.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="log_ident/index.html" title='sn_routing::log_ident mod'>log_ident</a></td><td class='docblock-short'><p>Log identifier - a short string that is prefixed in front of every log message.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="rng/index.html" title='sn_routing::rng mod'>rng</a></td><td class='docblock-short'><p>Random number generation
+Random number generation utilities.</p>
+</td></tr></table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table><tr class='module-item'><td><a class="struct" href="struct.EventStream.html" title='sn_routing::EventStream struct'>EventStream</a></td><td class='docblock-short'><p>Stream of routing node events</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.NetworkParams.html" title='sn_routing::NetworkParams struct'>NetworkParams</a></td><td class='docblock-short'><p>Network parameters: number of elders, recommended section size</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.Node.html" title='sn_routing::Node struct'>Node</a></td><td class='docblock-short'><p>Interface for sending and receiving messages to and from other nodes, in the role of a full
+sn_routing node.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.NodeConfig.html" title='sn_routing::NodeConfig struct'>NodeConfig</a></td><td class='docblock-short'><p>Node configuration.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.Prefix.html" title='sn_routing::Prefix struct'>Prefix</a></td><td class='docblock-short'><p>A section prefix, i.e. a sequence of bits specifying the part of the network's name space
+consisting of all names that start with this sequence.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.SectionProofChain.html" title='sn_routing::SectionProofChain struct'>SectionProofChain</a></td><td class='docblock-short'><p>Chain of section BLS keys where every key is proven (signed) by the previous key, except the
+first one.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.TransportConfig.html" title='sn_routing::TransportConfig struct'>TransportConfig</a></td><td class='docblock-short'><p>QuicP2p configurations</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.XorName.html" title='sn_routing::XorName struct'>XorName</a></td><td class='docblock-short'><p>A 256-bit number, viewed as a point in XOR space.</p>
+</td></tr></table><h2 id='enums' class='section-header'><a href="#enums">Enums</a></h2>
+<table><tr class='module-item'><td><a class="enum" href="enum.DstLocation.html" title='sn_routing::DstLocation enum'>DstLocation</a></td><td class='docblock-short'><p>Message destination location.</p>
+</td></tr><tr class='module-item'><td><a class="enum" href="enum.Error.html" title='sn_routing::Error enum'>Error</a></td><td class='docblock-short'><p>Internal error.</p>
+</td></tr><tr class='module-item'><td><a class="enum" href="enum.SrcLocation.html" title='sn_routing::SrcLocation enum'>SrcLocation</a></td><td class='docblock-short'><p>Message source location.</p>
+</td></tr></table><h2 id='constants' class='section-header'><a href="#constants">Constants</a></h2>
+<table><tr class='module-item'><td><a class="constant" href="constant.MIN_AGE.html" title='sn_routing::MIN_AGE constant'>MIN_AGE</a></td><td class='docblock-short'><p>The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
+relocations during the beginning of a node's lifetime.</p>
+</td></tr><tr class='module-item'><td><a class="constant" href="constant.XOR_NAME_LEN.html" title='sn_routing::XOR_NAME_LEN constant'>XOR_NAME_LEN</a></td><td class='docblock-short'><p>Constant byte length of <code>XorName</code>.</p>
+</td></tr></table><h2 id='types' class='section-header'><a href="#types">Type Definitions</a></h2>
+<table><tr class='module-item'><td><a class="type" href="type.Result.html" title='sn_routing::Result type'>Result</a></td><td class='docblock-short'><p>The type returned by the sn_routing message handling methods.</p>
+</td></tr></table></section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../";window.currentCrate = "sn_routing";</script><script src="../main.js"></script><script defer src="../search-index.js"></script></body></html>
