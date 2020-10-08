@@ -6,12 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// TODO: convert the tests in these module to use the Command paradigm.
-#[cfg(feature = "mock")]
-mod adult;
-#[cfg(feature = "mock")]
-mod utils;
-
 use super::{Approved, Bootstrapping, Comm, Command, NodeInfo, Stage, State};
 use crate::{
     consensus::{Proven, Vote},
@@ -1093,6 +1087,8 @@ async fn handle_sync() -> Result<()> {
 
     Ok(())
 }
+
+// TODO: add test that untrusted `Sync` is not applied
 
 #[tokio::test]
 async fn receive_message_with_invalid_proof_chain() -> Result<()> {
