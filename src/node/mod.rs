@@ -21,8 +21,6 @@ use self::{
     executor::Executor,
     stage::{Approved, Bootstrapping, Comm, NodeInfo, Stage},
 };
-#[cfg(all(test, feature = "mock"))]
-use crate::section::SectionKeyShare;
 use crate::{
     crypto::{Keypair, PublicKey},
     error::{Error, Result},
@@ -36,8 +34,6 @@ use crate::{
 };
 use bytes::Bytes;
 use itertools::Itertools;
-#[cfg(feature = "mock")]
-use std::collections::BTreeSet;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};

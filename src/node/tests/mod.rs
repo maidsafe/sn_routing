@@ -354,23 +354,18 @@ async fn handle_consensus_on_online() -> Result<()> {
     let mut node_approval_sent = false;
 
     for command in commands {
-        match command {
-            Command::SendMessage {
-                recipients,
-                message,
-                ..
-            } => {
-                let message = Message::from_bytes(&message)?;
-                match message.variant() {
-                    Variant::NodeApproval(proven_elders_info) => {
-                        assert_eq!(proven_elders_info.value, elders_info);
-                        assert_eq!(recipients, [*new_peer.addr()]);
-                        node_approval_sent = true;
-                    }
-                    _ => {}
-                }
+        if let Command::SendMessage {
+            recipients,
+            message,
+            ..
+        } = command
+        {
+            let message = Message::from_bytes(&message)?;
+            if let Variant::NodeApproval(proven_elders_info) = message.variant() {
+                assert_eq!(proven_elders_info.value, elders_info);
+                assert_eq!(recipients, [*new_peer.addr()]);
+                node_approval_sent = true;
             }
-            _ => {}
         }
     }
 
