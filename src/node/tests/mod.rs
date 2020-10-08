@@ -613,40 +613,48 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
 #[tokio::test]
 async fn handle_unknown_message_from_our_elder() -> Result<()> {
-    handle_unknown_message(true).await
+    handle_unknown_message(UnknownMessageSource::OurElder).await
 }
 
 #[tokio::test]
 async fn handle_unknown_message_from_non_elder() -> Result<()> {
-    handle_unknown_message(false).await
+    handle_unknown_message(UnknownMessageSource::NonElder).await
 }
 
-async fn handle_unknown_message(from_elder: bool) -> Result<()> {
+enum UnknownMessageSource {
+    OurElder,
+    NonElder,
+}
+
+async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
 
-    let (sender_keypair, sender_addr, expected_recipients) = if from_elder {
-        // When the unknown message is sent from one of our elders, we should bounce it back to
-        // that elder only.
-        let addr = *elders_info
-            .elders
-            .values()
-            .next()
-            .expect("elders_info is empty")
-            .addr();
-        (keypairs.remove(0), addr, vec![addr])
-    } else {
-        // When the unknown message is sent from a peer that is not our elder (including peers from
-        // other sections), bounce it to our elders.
-        (
-            create_keypair(),
-            create_addr(),
-            elders_info
+    let (sender_keypair, sender_addr, expected_recipients) = match source {
+        UnknownMessageSource::OurElder => {
+            // When the unknown message is sent from one of our elders, we should bounce it back to
+            // that elder only.
+            let addr = *elders_info
                 .elders
                 .values()
-                .map(Peer::addr)
-                .copied()
-                .collect(),
-        )
+                .next()
+                .expect("elders_info is empty")
+                .addr();
+            (keypairs.remove(0), addr, vec![addr])
+        }
+        UnknownMessageSource::NonElder => {
+            // When the unknown message is sent from a peer that is not our elder (including peers
+            // from other sections), bounce it to our elders.
+            (
+                create_keypair(),
+                create_addr(),
+                elders_info
+                    .elders
+                    .values()
+                    .map(Peer::addr)
+                    .copied()
+                    .collect(),
+            )
+        }
     };
 
     let sk = bls::SecretKey::random();
@@ -706,6 +714,113 @@ async fn handle_unknown_message(from_elder: bool) -> Result<()> {
         assert_eq!(*message, original_message_bytes);
 
         bounce_sent = true;
+    }
+
+    assert!(bounce_sent);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_untrusted_message_from_peer() -> Result<()> {
+    handle_untrusted_message(UntrustedMessageSource::Peer).await
+}
+
+#[tokio::test]
+async fn handle_untrusted_accumulated_message() -> Result<()> {
+    handle_untrusted_message(UntrustedMessageSource::Accumulation).await
+}
+
+enum UntrustedMessageSource {
+    Peer,
+    Accumulation,
+}
+
+async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> {
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+    let chain = SectionProofChain::new(pk0);
+
+    let (elders_info, _) = create_elders_info();
+
+    let (sender, expected_recipients) = match source {
+        UntrustedMessageSource::Peer => {
+            // When the untrusted message is sent from a single peer, we should bounce it back to
+            // that peer.
+            let sender = *elders_info
+                .elders
+                .values()
+                .next()
+                .expect("elders_info is empty")
+                .addr();
+            (Some(sender), vec![sender])
+        }
+        UntrustedMessageSource::Accumulation => {
+            // When the untrusted message is the result of message accumulation, we should bounce
+            // it to our elders.
+            (
+                None,
+                elders_info
+                    .elders
+                    .values()
+                    .map(Peer::addr)
+                    .copied()
+                    .collect(),
+            )
+        }
+    };
+
+    let proven_elders_info = create_proven(&sk0, elders_info)?;
+    let shared_state = SharedState::new(chain.clone(), proven_elders_info);
+
+    let (node_info, _) = create_node_info();
+    let node_name = node_info.name();
+    let state = Approved::new(shared_state, None, node_info);
+    let node = Stage::new(state.into(), create_comm()?);
+
+    let sk1 = bls::SecretKey::random();
+    let pk1 = sk1.public_key();
+
+    // Create a message signed by a key now known to the node.
+    let message = PlainMessage {
+        src: Prefix::default(),
+        dst: DstLocation::Node(node_name),
+        dst_key: pk1,
+        variant: Variant::UserMessage(Bytes::from_static(b"hello")),
+    };
+    let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
+    let original_message = Message::section_src(message, signature, SectionProofChain::new(pk1))?;
+
+    let commands = node
+        .handle_command(Command::HandleMessage {
+            message: original_message.clone(),
+            sender,
+        })
+        .await?;
+
+    let mut bounce_sent = false;
+
+    for command in commands {
+        let (recipients, message) = if let Command::SendMessage {
+            recipients,
+            message,
+            ..
+        } = command
+        {
+            (recipients, message)
+        } else {
+            continue;
+        };
+
+        let message = Message::from_bytes(&message)?;
+
+        if let Variant::BouncedUntrustedMessage(bounced_message) = message.variant() {
+            assert_eq!(recipients, expected_recipients);
+            assert_eq!(**bounced_message, original_message);
+            assert_eq!(*message.dst_key(), Some(pk0));
+
+            bounce_sent = true;
+        }
     }
 
     assert!(bounce_sent);

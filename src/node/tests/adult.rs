@@ -224,30 +224,3 @@ impl Env {
 //     assert_eq!(env.subject.parsec_last_version(), 0);
 //     assert_eq!(env.subject.section_key(), old_pk.as_ref());
 // }
-
-#[test]
-fn handle_untrusted_accumulated_message() {
-    let mut env = Env::new();
-
-    // Generate new section key which the adult is not yet aware of.
-    env.sk_set = consensus::generate_secret_key_set(&mut env.rng, ELDER_SIZE);
-
-    // This message is signed with the new key so won't be trusted by the adult yet.
-    let dst = DstLocation::Node(*env.subject.name());
-    let msg = env.create_user_message(dst, b"hello node".to_vec());
-    let transport = env.create_elder_transport(0);
-
-    test_utils::handle_message(&mut env.subject, *transport.addr(), msg).unwrap();
-
-    env.poll();
-
-    for (sender, msg) in transport.received_messages() {
-        if sender == env.subject.our_connection_info().unwrap()
-            && matches!(msg.variant(), Variant::BouncedUntrustedMessage(_))
-        {
-            return;
-        }
-    }
-
-    panic!("BouncedUntrustedMessage not received")
-}

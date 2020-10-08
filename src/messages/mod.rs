@@ -29,7 +29,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 
 /// Message sent over the network.
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Eq, Serialize, Deserialize)]
 pub(crate) struct Message {
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
@@ -272,6 +272,18 @@ impl Message {
             self.proof_chain,
             self.dst_key,
         )?)
+    }
+}
+
+// Ignore `serialized` and `hash` fields because they are only computed from the other fields and
+// in some cases might be even absent.
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        self.src == other.src
+            && self.dst == other.dst
+            && self.variant == other.variant
+            && self.proof_chain == other.proof_chain
+            && self.dst_key == other.dst_key
     }
 }
 
