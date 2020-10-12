@@ -352,12 +352,7 @@ impl SharedState {
         self.our_members
             .joined_proven()
             .filter(|info| relocation::check(info.value.peer.age(), churn_signature))
-            .map(|info| {
-                (
-                    info.value.clone(),
-                    self.create_relocation_action(info, churn_name),
-                )
-            })
+            .map(|info| (info.value, self.create_relocation_action(info, churn_name)))
             .collect()
     }
 

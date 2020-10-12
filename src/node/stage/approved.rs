@@ -1269,14 +1269,7 @@ impl Approved {
         proof_chain: SectionProofChain,
         proof: Proof,
     ) -> Result<Command> {
-        let message = Message::section_src(
-            message.src,
-            proof.signature,
-            message.dst,
-            message.variant,
-            proof_chain,
-            message.dst_key,
-        )?;
+        let message = Message::section_src(message, proof.signature, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,
@@ -1392,7 +1385,7 @@ impl Approved {
 
             if new_is_elder {
                 info!(
-                    "Section updated: prefix: ({:b}), key: {:?}, elders: {:?}",
+                    "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
                     self.shared_state.our_prefix(),
                     self.shared_state.our_history.last_key(),
                     self.shared_state.our_info().elders.values().format(", ")
