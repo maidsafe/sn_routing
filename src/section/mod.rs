@@ -8,10 +8,12 @@
 
 mod elders_info;
 mod member_info;
+mod network;
 mod network_stats;
 mod prefix_map;
+#[allow(clippy::module_inception)]
+mod section;
 mod section_keys;
-mod section_map;
 mod section_peers;
 mod section_proof_chain;
 mod section_update_barrier;
@@ -24,11 +26,12 @@ pub use self::{
     member_info::{MemberInfo, PeerState, MIN_AGE},
     network_stats::NetworkStats,
     section_keys::{SectionKeyShare, SectionKeysProvider},
-    section_map::SectionMap,
     section_peers::SectionPeers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
 pub(crate) use self::{
+    network::Network,
+    section::Section,
     section_update_barrier::SectionUpdateBarrier,
     shared_state::{SharedState, UpdateSectionKnowledgeAction},
 };

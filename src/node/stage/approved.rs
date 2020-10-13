@@ -91,7 +91,7 @@ impl Approved {
         // Check if the message is for us.
         let in_dst_location = msg
             .dst()
-            .contains(&self.node_info.name(), self.shared_state.our_prefix());
+            .contains(&self.node_info.name(), self.shared_state.section.prefix());
         if !in_dst_location || msg.dst().is_section() {
             // Relay closer to the destination or
             // broadcast to the rest of our section.
@@ -191,12 +191,12 @@ impl Approved {
         }
     }
 
-    pub fn handle_peer_lost(&self, peer_addr: &SocketAddr) -> Result<Vec<Command>> {
-        let name = if let Some(peer) = self.shared_state.find_peer_from_addr(peer_addr) {
+    pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
+        let name = if let Some(peer) = self.shared_state.section.find_member_from_addr(addr) {
             debug!("Lost known peer {}", peer);
             *peer.name()
         } else {
-            trace!("Lost unknown peer {}", peer_addr);
+            trace!("Lost unknown peer {}", addr);
             return Ok(vec![]);
         };
 
@@ -204,7 +204,7 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        if let Some(info) = self.shared_state.our_members.get(&name) {
+        if let Some(info) = self.shared_state.section.members().get(&name) {
             let info = info.clone().leave();
             self.vote(Vote::Offline(info))
         } else {
@@ -216,9 +216,9 @@ impl Approved {
     fn vote(&self, vote: Vote) -> Result<Vec<Command>> {
         let elders: Vec<_> = self
             .shared_state
-            .our_info()
-            .elders
-            .values()
+            .section
+            .elders_info()
+            .peers()
             .copied()
             .collect();
         self.send_vote(&elders, vote)
@@ -245,14 +245,17 @@ impl Approved {
             content: vote.clone(),
             proof_share: proof_share.clone(),
         };
-        let proof_chain = self.shared_state.create_proof_chain_for_our_info(None);
+        let proof_chain = self
+            .shared_state
+            .section
+            .create_proof_chain_for_our_info(None);
         let message = Message::single_src(
             &self.node_info.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
             Some(proof_chain),
-            Some(*self.shared_state.our_history.last_key()),
+            Some(*self.shared_state.section.chain().last_key()),
         )?;
 
         let mut others = Vec::new();
@@ -290,8 +293,8 @@ impl Approved {
     ) -> Result<Option<Command>> {
         let public_key = proof_share.public_key_set.public_key();
 
-        if self.shared_state.our_history.has_key(&public_key)
-            && public_key != *self.shared_state.our_history.last_key()
+        if self.shared_state.section.chain().has_key(&public_key)
+            && public_key != *self.shared_state.section.chain().last_key()
         {
             // The key is recognized as non-last, indicating the peer is lagging.
             Ok(Some(self.send_direct_message(
@@ -343,11 +346,7 @@ impl Approved {
 
     /// Is this node an elder?
     pub fn is_elder(&self) -> bool {
-        self.shared_state
-            .sections
-            .our()
-            .elders
-            .contains_key(&self.node_info.name())
+        self.shared_state.section.is_elder(&self.node_info.name())
     }
 
     /// Returns the current BLS public key set
@@ -406,7 +405,7 @@ impl Approved {
                         return Ok(MessageStatus::Useless);
                     }
 
-                    if self.shared_state.is_peer_our_elder(&promise.name) {
+                    if self.shared_state.section.is_elder(&promise.name) {
                         // If the peer is honest and is still elder then we probably haven't yet
                         // processed its demotion. Bounce the message back and try again on resend.
                         return Ok(MessageStatus::Unknown);
@@ -519,7 +518,7 @@ impl Approved {
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
-        self.is_elder() || req.section_key != *self.shared_state.our_history.last_key()
+        self.is_elder() || req.section_key != *self.shared_state.section.chain().last_key()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
@@ -531,7 +530,8 @@ impl Approved {
     // Handle `Vote` message only if signed with known key, otherwise bounce.
     fn should_handle_vote(&self, proof_share: &ProofShare) -> bool {
         self.shared_state
-            .our_history
+            .section
+            .chain()
             .has_key(&proof_share.public_key_set.public_key())
     }
 
@@ -587,7 +587,7 @@ impl Approved {
             self.age(),
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
-                src_key: *self.shared_state.our_history.last_key(),
+                src_key: *self.shared_state.section.chain().last_key(),
                 message: msg_bytes,
             },
             None,
@@ -599,8 +599,9 @@ impl Approved {
         // explosion.
         let our_elder_sender = sender.filter(|sender| {
             self.shared_state
-                .sections
-                .our_elders()
+                .section
+                .elders_info()
+                .peers()
                 .any(|peer| peer.addr() == sender)
         });
 
@@ -625,7 +626,7 @@ impl Approved {
 
         if let Some(dst_key) = dst_key {
             let resend_msg =
-                match bounced_msg.extend_proof_chain(&dst_key, &self.shared_state.our_history) {
+                match bounced_msg.extend_proof_chain(&dst_key, self.shared_state.section.chain()) {
                     Ok(msg) => msg,
                     Err(err) => {
                         trace!("...extending proof failed, discarding: {:?}", err);
@@ -650,8 +651,8 @@ impl Approved {
         bounced_msg_bytes: Bytes,
         sender_last_key: &bls::PublicKey,
     ) -> Result<Vec<Command>> {
-        if !self.shared_state.our_history.has_key(sender_last_key)
-            || sender_last_key == self.shared_state.our_history.last_key()
+        if !self.shared_state.section.chain().has_key(sender_last_key)
+            || sender_last_key == self.shared_state.section.chain().last_key()
         {
             trace!(
                 "Received BouncedUnknownMessage({:?}) from {:?} \
@@ -684,7 +685,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        if !self.shared_state.sections.has_key(&src_key) {
+        if !self.shared_state.network.has_key(&src_key) {
             commands.extend(self.vote(Vote::TheirKey {
                 prefix: elders_info.prefix,
                 key: src_key,
@@ -700,7 +701,7 @@ impl Approved {
 
         if elders_info
             .prefix
-            .is_neighbour(self.shared_state.our_prefix())
+            .is_neighbour(self.shared_state.section.prefix())
         {
             commands.extend(self.vote(Vote::SectionInfo(elders_info))?);
         }
@@ -714,7 +715,11 @@ impl Approved {
     }
 
     fn handle_sync(&mut self, shared_state: SharedState) -> Result<Vec<Command>> {
-        if !shared_state.our_prefix().matches(&self.node_info.name()) {
+        if !shared_state
+            .section
+            .prefix()
+            .matches(&self.node_info.name())
+        {
             trace!("ignore Sync - not our section");
             return Ok(vec![]);
         }
@@ -742,8 +747,9 @@ impl Approved {
 
         let conn_infos: Vec<_> = self
             .shared_state
-            .sections
-            .our_elders()
+            .section
+            .elders_info()
+            .peers()
             .map(Peer::addr)
             .copied()
             .collect();
@@ -781,7 +787,7 @@ impl Approved {
             return Ok(commands);
         }
 
-        if self.shared_state.is_peer_our_elder(&promise.name) {
+        if self.shared_state.section.is_elder(&promise.name) {
             error!(
                 "ignore returned RelocatePromise from {} - node is still elder",
                 promise.name
@@ -789,7 +795,7 @@ impl Approved {
             return Ok(commands);
         }
 
-        if let Some(info) = self.shared_state.our_members.get(&promise.name) {
+        if let Some(info) = self.shared_state.section.members().get(&promise.name) {
             let details = self
                 .shared_state
                 .create_relocation_details(info, promise.destination);
@@ -814,21 +820,16 @@ impl Approved {
             destination, peer
         );
 
-        let response = if self.shared_state.our_prefix().matches(&destination) {
+        let response = if self.shared_state.section.prefix().matches(&destination) {
             BootstrapResponse::Join {
-                elders_info: self.shared_state.our_info().clone(),
-                section_key: *self.shared_state.our_history.last_key(),
+                elders_info: self.shared_state.section.elders_info().clone(),
+                section_key: *self.shared_state.section.chain().last_key(),
             }
-        } else {
-            let conn_infos: Vec<_> = self
-                .shared_state
-                .sections
-                .closest(&destination)
-                .elders
-                .values()
-                .map(|peer| *peer.addr())
-                .collect();
+        } else if let Some(section) = self.shared_state.network.closest(&destination) {
+            let conn_infos = section.peers().map(Peer::addr).copied().collect();
             BootstrapResponse::Rebootstrap(conn_infos)
+        } else {
+            return Err(Error::InvalidDestination);
         };
 
         debug!("Sending BootstrapResponse {:?} to {}", response, peer);
@@ -838,10 +839,10 @@ impl Approved {
     fn handle_join_request(&self, peer: Peer, join_request: JoinRequest) -> Result<Vec<Command>> {
         debug!("Received {:?} from {}", join_request, peer);
 
-        if join_request.section_key != *self.shared_state.our_history.last_key() {
+        if join_request.section_key != *self.shared_state.section.chain().last_key() {
             let response = BootstrapResponse::Join {
-                elders_info: self.shared_state.our_info().clone(),
-                section_key: *self.shared_state.our_history.last_key(),
+                elders_info: self.shared_state.section.elders_info().clone(),
+                section_key: *self.shared_state.section.chain().last_key(),
             };
             trace!("Resending BootstrapResponse {:?} to {}", response, peer,);
             return Ok(vec![self.send_direct_message(
@@ -851,16 +852,16 @@ impl Approved {
         }
 
         let pub_id = *peer.name();
-        if !self.shared_state.our_prefix().matches(&pub_id) {
+        if !self.shared_state.section.prefix().matches(&pub_id) {
             debug!(
                 "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 pub_id,
-                self.shared_state.our_prefix()
+                self.shared_state.section.prefix()
             );
             return Ok(vec![]);
         }
 
-        if self.shared_state.our_members.is_joined(&pub_id) {
+        if self.shared_state.section.members().is_joined(&pub_id) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -882,13 +883,18 @@ impl Approved {
                 // FIXME: this might panic if the payload is malformed.
                 let details = payload.relocate_details();
 
-                if !self.shared_state.our_prefix().matches(&details.destination) {
+                if !self
+                    .shared_state
+                    .section
+                    .prefix()
+                    .matches(&details.destination)
+                {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
                         pub_id,
                         details.destination,
-                        self.shared_state.our_prefix()
+                        self.shared_state.section.prefix()
                     );
                     return Ok(vec![]);
                 }
@@ -973,6 +979,7 @@ impl Approved {
 
         for info in self
             .shared_state
+            .section
             .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
         {
             // Check whether the result still corresponds to the current elder candidates.
@@ -1043,6 +1050,7 @@ impl Approved {
 
         for info in self
             .shared_state
+            .section
             .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
         {
             commands.extend(self.send_dkg_start(info)?);
@@ -1063,7 +1071,8 @@ impl Approved {
             // (excluding the new node).
             let votes: Vec<_> = self
                 .shared_state
-                .our_members
+                .section
+                .members()
                 .joined()
                 .filter(|info| info.peer.name() != churn_name)
                 .map(|info| Vote::ChangeAge(info.clone().increment_age()))
@@ -1077,7 +1086,7 @@ impl Approved {
         }
 
         // As a measure against sybil attacks, don't relocate on infant churn.
-        if !self.shared_state.is_peer_adult_or_elder(churn_name) {
+        if !self.shared_state.section.is_adult_or_elder(churn_name) {
             trace!("Skip relocation on infant churn");
             return Ok(commands);
         }
@@ -1114,8 +1123,8 @@ impl Approved {
     // Are we in the startup phase? Startup phase is when the network consists of only one section
     // and it has no more than `recommended_section_size` members.
     fn is_in_startup_phase(&self) -> bool {
-        self.shared_state.our_prefix().is_empty()
-            && self.shared_state.our_members.joined().count()
+        self.shared_state.section.prefix().is_empty()
+            && self.shared_state.section.members().joined().count()
                 <= self.node_info.network_params.recommended_section_size
     }
 
@@ -1132,7 +1141,7 @@ impl Approved {
         let age = peer.age();
         let signature = proof.signature.clone();
 
-        if !self.shared_state.update_member(member_info, proof) {
+        if !self.shared_state.section.update_member(member_info, proof) {
             info!("ignore Online: {:?}", peer);
             return Ok(commands);
         }
@@ -1172,7 +1181,7 @@ impl Approved {
         let age = peer.age();
         let signature = proof.signature.clone();
 
-        if !self.shared_state.update_member(member_info, proof) {
+        if !self.shared_state.section.update_member(member_info, proof) {
             info!("ignore Offline: {:?}", peer);
             return Ok(commands);
         }
@@ -1197,11 +1206,11 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let elders_info = Proven::new(elders_info, proof);
 
-        if elders_info.value.prefix == *self.shared_state.our_prefix()
+        if elders_info.value.prefix == *self.shared_state.section.prefix()
             || elders_info
                 .value
                 .prefix
-                .is_extension_of(self.shared_state.our_prefix())
+                .is_extension_of(self.shared_state.section.prefix())
         {
             self.section_update_barrier.handle_section_info(
                 &self.shared_state,
@@ -1241,7 +1250,11 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let key = Proven::new((prefix, key), proof);
 
-        if key.value.0.is_extension_of(self.shared_state.our_prefix()) {
+        if key
+            .value
+            .0
+            .is_extension_of(self.shared_state.section.prefix())
+        {
             self.section_update_barrier.handle_their_key(
                 &self.shared_state,
                 &self.node_info.name(),
@@ -1256,11 +1269,11 @@ impl Approved {
 
     fn handle_their_knowledge_event(&mut self, prefix: Prefix, knowledge: u64, proof: Proof) {
         let knowledge = Proven::new((prefix, knowledge), proof);
-        self.shared_state.sections.update_knowledge(knowledge)
+        self.shared_state.network.update_knowledge(knowledge)
     }
 
     fn handle_change_age_event(&mut self, member_info: MemberInfo, proof: Proof) {
-        let _ = self.shared_state.update_member(member_info, proof);
+        let _ = self.shared_state.section.update_member(member_info, proof);
     }
 
     fn handle_send_message_event(
@@ -1284,7 +1297,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        if self.shared_state.our_history.has_key(&public_key) {
+        if self.shared_state.section.chain().has_key(&public_key) {
             // Our shared state is already up to date, so no need to vote. Just finalize the DKG so
             // we can start using the new secret key share.
             self.section_keys_provider.finalise_dkg(&public_key);
@@ -1307,7 +1320,7 @@ impl Approved {
 
         if elders_info
             .prefix
-            .is_extension_of(self.shared_state.our_prefix())
+            .is_extension_of(self.shared_state.section.prefix())
         {
             commands.extend(self.vote(Vote::TheirKey {
                 prefix: elders_info.prefix,
@@ -1325,22 +1338,25 @@ impl Approved {
 
         let (our, sibling) = self
             .section_update_barrier
-            .take(self.shared_state.our_prefix());
+            .take(self.shared_state.section.prefix());
 
         if let Some(our) = our {
-            trace!("update our section: {:?}", our.our_info());
+            trace!("update our section: {:?}", our.section.elders_info());
             commands.extend(self.update_shared_state(our)?);
         }
 
         if let Some(sibling) = sibling {
-            trace!("update sibling section: {:?}", sibling.our_info());
+            trace!(
+                "update sibling section: {:?}",
+                sibling.section.elders_info()
+            );
 
             // We can update the sibling knowledge already because we know they also reached consensus
             // on our `OurKey` so they know our latest key. Need to vote for it first though, to
             // accumulate the signatures.
             commands.extend(self.vote(Vote::TheirKnowledge {
-                prefix: *sibling.our_prefix(),
-                key_index: self.shared_state.our_history.last_key_index(),
+                prefix: *sibling.section.prefix(),
+                key_index: self.shared_state.section.chain().last_key_index(),
             })?);
             commands.extend(self.send_sync(sibling)?);
         }
@@ -1352,19 +1368,19 @@ impl Approved {
         let mut commands = vec![];
 
         let old_is_elder = self.is_elder();
-        let old_last_key_index = self.shared_state.our_history.last_key_index();
-        let old_prefix = *self.shared_state.our_prefix();
+        let old_last_key_index = self.shared_state.section.chain().last_key_index();
+        let old_prefix = *self.shared_state.section.prefix();
 
         self.shared_state.merge(update)?;
 
         self.section_keys_provider
-            .finalise_dkg(self.shared_state.our_history.last_key());
+            .finalise_dkg(self.shared_state.section.chain().last_key());
         self.dkg_voter
-            .stop_observing(self.shared_state.our_history.last_key_index());
+            .stop_observing(self.shared_state.section.chain().last_key_index());
 
         let new_is_elder = self.is_elder();
-        let new_last_key_index = self.shared_state.our_history.last_key_index();
-        let new_prefix = *self.shared_state.our_prefix();
+        let new_last_key_index = self.shared_state.section.chain().last_key_index();
+        let new_prefix = *self.shared_state.section.prefix();
 
         if new_prefix != old_prefix {
             info!("Split");
@@ -1386,9 +1402,9 @@ impl Approved {
             if new_is_elder {
                 info!(
                     "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
-                    self.shared_state.our_prefix(),
-                    self.shared_state.our_history.last_key(),
-                    self.shared_state.our_info().elders.values().format(", ")
+                    self.shared_state.section.prefix(),
+                    self.shared_state.section.chain().last_key(),
+                    self.shared_state.section.elders_info().peers().format(", ")
                 );
 
                 commands.extend(self.promote_and_demote_elders()?);
@@ -1400,11 +1416,12 @@ impl Approved {
             }
 
             self.node_info.send_event(Event::EldersChanged {
-                prefix: *self.shared_state.our_prefix(),
-                key: *self.shared_state.our_history.last_key(),
+                prefix: *self.shared_state.section.prefix(),
+                key: *self.shared_state.section.chain().last_key(),
                 elders: self
                     .shared_state
-                    .our_info()
+                    .section
+                    .elders_info()
                     .elders
                     .keys()
                     .copied()
@@ -1463,17 +1480,18 @@ impl Approved {
     ) -> Result<Command> {
         info!(
             "Our section with {:?} has approved candidate {:?}.",
-            self.shared_state.our_prefix(),
+            self.shared_state.section.prefix(),
             peer
         );
 
         let their_knowledge =
-            their_knowledge.and_then(|key| self.shared_state.our_history.index_of(&key));
+            their_knowledge.and_then(|key| self.shared_state.section.chain().index_of(&key));
         let proof_chain = self
             .shared_state
+            .section
             .create_proof_chain_for_our_info(their_knowledge);
 
-        let variant = Variant::NodeApproval(self.shared_state.sections.proven_our().clone());
+        let variant = Variant::NodeApproval(self.shared_state.section.proven_elders_info().clone());
 
         trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
@@ -1499,7 +1517,7 @@ impl Approved {
                 continue;
             }
 
-            let shared_state = if shared_state.is_peer_our_elder(peer.name()) {
+            let shared_state = if shared_state.section.is_elder(peer.name()) {
                 shared_state.clone()
             } else {
                 shared_state.to_minimal()
@@ -1528,7 +1546,7 @@ impl Approved {
         // We need to construct a proof that would be trusted by the destination section.
         let knowledge_index = self
             .shared_state
-            .sections
+            .network
             .knowledge_by_location(&DstLocation::Section(details.destination));
 
         let dst = DstLocation::Node(details.pub_id);
@@ -1583,7 +1601,7 @@ impl Approved {
         self.dkg_voter.start_observing(
             dkg_key,
             new_elders_info,
-            self.shared_state.our_history.last_key_index(),
+            self.shared_state.section.chain().last_key_index(),
         );
 
         Ok(commands)
@@ -1598,9 +1616,9 @@ impl Approved {
 
         let recipients = self
             .shared_state
-            .our_info()
-            .elders
-            .values()
+            .section
+            .elders_info()
+            .peers()
             .filter(|peer| peer.name() != &self.node_info.name());
 
         trace!(
@@ -1675,8 +1693,8 @@ impl Approved {
         let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node_info.name(),
-            &self.shared_state.our_members,
-            &self.shared_state.sections,
+            &self.shared_state.section,
+            &self.shared_state.network,
         )?;
 
         let targets: Vec<_> = targets
@@ -1737,7 +1755,7 @@ impl Approved {
                 let vote = self.create_send_message_vote(dst, variant, None)?;
                 let recipients = delivery_group::signature_targets(
                     &dst,
-                    self.shared_state.our_info().elders.values().copied(),
+                    self.shared_state.section.elders_info().peers().copied(),
                 );
                 self.send_vote(&recipients, vote)
             }
@@ -1753,7 +1771,7 @@ impl Approved {
         let proof_chain = self.create_proof_chain(&dst, proof_chain_first_index)?;
         let dst_key = *self.shared_state.section_key_by_location(&dst);
         let message = PlainMessage {
-            src: *self.shared_state.our_prefix(),
+            src: *self.shared_state.section.prefix(),
             dst,
             dst_key,
             variant,
@@ -1771,7 +1789,7 @@ impl Approved {
         first_index: Option<u64>,
     ) -> Result<SectionProofChain> {
         let first_index =
-            first_index.unwrap_or_else(|| self.shared_state.sections.knowledge_by_location(dst));
+            first_index.unwrap_or_else(|| self.shared_state.network.knowledge_by_location(dst));
 
         let last_key = self
             .section_keys_provider
@@ -1780,13 +1798,15 @@ impl Approved {
             .public_key();
         let last_index = self
             .shared_state
-            .our_history
+            .section
+            .chain()
             .index_of(&last_key)
-            .unwrap_or_else(|| self.shared_state.our_history.last_key_index());
+            .unwrap_or_else(|| self.shared_state.section.chain().last_key_index());
 
         Ok(self
             .shared_state
-            .our_history
+            .section
+            .chain()
             .slice(first_index..=last_index))
     }
 
@@ -1810,8 +1830,9 @@ impl Approved {
     fn send_message_to_our_elders(&self, msg_bytes: Bytes) -> Command {
         let targets: Vec<_> = self
             .shared_state
-            .sections
-            .our_elders()
+            .section
+            .elders_info()
+            .peers()
             .map(Peer::addr)
             .copied()
             .collect();
@@ -1864,7 +1885,7 @@ impl Approved {
                 SendNeighbourInfo { dst, nonce } => commands.extend(self.send_neighbour_info(
                     dst,
                     nonce,
-                    self.shared_state.sections.key_by_name(&dst.name()).cloned(),
+                    self.shared_state.network.key_by_name(&dst.name()).cloned(),
                 )?),
             }
         }
@@ -1878,11 +1899,14 @@ impl Approved {
         nonce: MessageHash,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Option<Command>> {
-        let proof_chain = self.shared_state.create_proof_chain_for_our_info(Some(
-            self.shared_state.sections.knowledge_by_section(&dst),
-        ));
+        let proof_chain = self
+            .shared_state
+            .section
+            .create_proof_chain_for_our_info(Some(
+                self.shared_state.network.knowledge_by_section(&dst),
+            ));
         let variant = Variant::NeighbourInfo {
-            elders_info: self.shared_state.sections.proven_our().clone(),
+            elders_info: self.shared_state.section.proven_elders_info().clone(),
             nonce,
         };
         trace!("sending NeighbourInfo {:?}", variant);
@@ -1899,13 +1923,14 @@ impl Approved {
     }
 
     fn print_network_stats(&self) {
-        self.shared_state.sections.network_stats().print()
+        self.shared_state
+            .network
+            .network_stats(self.shared_state.section.elders_info())
+            .print()
     }
 
     fn age(&self) -> u8 {
-        self.shared_state
-            .find_age_for_peer(&self.node_info.name())
-            .unwrap_or(MIN_AGE)
+        self.shared_state.section.member_age(&self.node_info.name())
     }
 }
 

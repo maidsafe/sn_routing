@@ -191,7 +191,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.our_prefix())
+            .map(|state| state.shared_state.section.prefix())
             .cloned()
     }
 
@@ -216,7 +216,15 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.sections.our_elders().copied().collect())
+            .map(|state| {
+                state
+                    .shared_state
+                    .section
+                    .elders_info()
+                    .peers()
+                    .copied()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -236,7 +244,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.sections.our().clone())
+            .map(|state| state.shared_state.section.elders_info().clone())
     }
 
     /// Returns the info about our neighbour sections.
@@ -245,7 +253,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.sections.neighbours().cloned().collect())
+            .map(|state| state.shared_state.network.all().cloned().collect())
             .unwrap_or_default()
     }
 
@@ -279,7 +287,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|stage| stage.shared_state.our_history.clone())
+            .map(|stage| stage.shared_state.section.chain().clone())
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
@@ -446,14 +454,14 @@ impl Stage {
                     format!(
                         "{}({:b}v{}!) ",
                         state.node_info.name(),
-                        state.shared_state.our_prefix(),
-                        state.shared_state.our_history.last_key_index()
+                        state.shared_state.section.prefix(),
+                        state.shared_state.section.chain().last_key_index()
                     )
                 } else {
                     format!(
                         "{}({:b}) ",
                         state.node_info.name(),
-                        state.shared_state.our_prefix()
+                        state.shared_state.section.prefix()
                     )
                 }
             }

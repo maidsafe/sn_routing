@@ -23,13 +23,6 @@ use xor_name::XorName;
 
 pub type DkgMessage = bls_dkg::key_gen::message::Message;
 
-/// Generate a BLS SecretKeySet for the given number of participants.
-/// Used for generating first node, or for test.
-pub fn generate_secret_key_set(rng: &mut MainRng, participants: usize) -> bls::SecretKeySet {
-    let threshold = majority_count(participants) - 1;
-    bls::SecretKeySet::random(threshold, rng)
-}
-
 /// Unique identified of a DKG session.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct DkgKey(Digest256);

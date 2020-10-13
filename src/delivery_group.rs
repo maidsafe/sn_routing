@@ -12,14 +12,15 @@ use crate::{
     error::{Error, Result},
     location::DstLocation,
     peer::Peer,
-    section::{SectionMap, SectionPeers},
+    section::{Network, Section},
 };
+use std::iter;
 
 use itertools::Itertools;
 use xor_name::XorName;
 
 /// Returns the delivery group size based on the section size `n`
-pub const fn delivery_group_size(n: usize) -> usize {
+const fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
     (n + 2) / 3
 }
@@ -38,51 +39,53 @@ pub const fn delivery_group_size(n: usize) -> usize {
 ///     - if our name *is* the destination, returns an empty set; otherwise
 ///     - if the destination name is an entry in the routing table, returns it; otherwise
 ///     - returns the `N/3` closest members of the RT to the target
-pub fn delivery_targets(
+pub(crate) fn delivery_targets(
     dst: &DstLocation,
-    our_id: &XorName,
-    our_members: &SectionPeers,
-    sections: &SectionMap,
+    our_name: &XorName,
+    section: &Section,
+    network: &Network,
 ) -> Result<(Vec<Peer>, usize)> {
-    if !sections.is_elder(our_id) {
+    if !section.is_elder(our_name) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
-        let targets: Vec<_> = sections.our_elders().cloned().collect();
+        let targets: Vec<_> = section.elders_info().peers().copied().collect();
         let dg_size = targets.len();
         return Ok((targets, dg_size));
     }
 
     let (best_section, dg_size) = match dst {
         DstLocation::Node(target_name) => {
-            if target_name == our_id {
+            if target_name == our_name {
                 return Ok((Vec::new(), 0));
             }
-            if let Some(node) = get_peer(target_name, our_members, sections) {
+            if let Some(node) = get_peer(target_name, section, network) {
                 return Ok((vec![*node], 1));
             }
 
-            candidates(target_name, our_id, sections)?
+            candidates(target_name, our_name, section, network)?
         }
         DstLocation::Section(target_name) => {
-            let info = sections.closest(target_name);
-            if info.prefix == sections.our().prefix
-                || info.prefix.is_neighbour(&sections.our().prefix)
-            {
+            // Find closest section to `target_name` out of the ones we know (including our own)
+            let info = iter::once(section.elders_info())
+                .chain(network.all())
+                .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
+                .unwrap_or_else(|| section.elders_info());
+
+            if info.prefix == *section.prefix() || info.prefix.is_neighbour(section.prefix()) {
                 // Exclude our name since we don't need to send to ourself
 
                 // FIXME: only doing this for now to match RT.
                 // should confirm if needed esp after msg_relay changes.
                 let section: Vec<_> = info
-                    .elders
-                    .values()
-                    .filter(|node| node.name() != our_id)
-                    .cloned()
+                    .peers()
+                    .filter(|node| node.name() != our_name)
+                    .copied()
                     .collect();
                 let dg_size = section.len();
                 return Ok((section, dg_size));
             }
 
-            candidates(target_name, our_id, sections)?
+            candidates(target_name, our_name, section, network)?
         }
         DstLocation::Direct => return Err(Error::CannotRoute),
     };
@@ -93,23 +96,25 @@ pub fn delivery_targets(
 // Obtain the delivery group candidates for this target
 fn candidates(
     target_name: &XorName,
-    our_id: &XorName,
-    sections: &SectionMap,
+    our_name: &XorName,
+    section: &Section,
+    network: &Network,
 ) -> Result<(Vec<Peer>, usize)> {
-    let filtered_sections = sections
-        .sorted_by_distance_to(target_name)
-        .into_iter()
+    // All sections we know (including our own), sorted by distance to `target_name`.
+    let sections = iter::once(section.elders_info())
+        .chain(network.all())
+        .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
     let mut dg_size = 0;
     let mut nodes_to_send = Vec::new();
-    for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
+    for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
         dg_size = delivery_group_size(len);
 
-        if *prefix == sections.our().prefix {
+        if prefix == section.prefix() {
             // Send to all connected targets so they can forward the message
-            nodes_to_send.retain(|node| node.name() != our_id);
+            nodes_to_send.retain(|node| node.name() != our_name);
             dg_size = nodes_to_send.len();
             break;
         }
@@ -128,15 +133,12 @@ fn candidates(
 }
 
 // Returns a `Peer` for a known node.
-fn get_peer<'a>(
-    name: &XorName,
-    our_members: &'a SectionPeers,
-    sections: &'a SectionMap,
-) -> Option<&'a Peer> {
-    our_members
+fn get_peer<'a>(name: &XorName, section: &'a Section, network: &'a Network) -> Option<&'a Peer> {
+    section
+        .members()
         .get(name)
         .map(|info| &info.peer)
-        .or_else(|| sections.get_elder(name))
+        .or_else(|| network.get_elder(name))
 }
 
 // Returns the set of peers that are responsible for collecting signatures to verify a message;

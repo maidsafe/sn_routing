@@ -54,7 +54,7 @@ impl SectionUpdateBarrier {
         if elders_info
             .value
             .prefix
-            .is_extension_of(current.our_prefix())
+            .is_extension_of(current.section.prefix())
         {
             if elders_info.value.prefix.matches(our_name) {
                 update(&mut self.our, current, |state| {
@@ -123,9 +123,9 @@ impl SectionUpdateBarrier {
             return (None, None);
         }
 
-        if our.our_prefix() == current_prefix {
+        if our.section.prefix() == current_prefix {
             if let Some(sibling) = &self.sibling {
-                if sibling.our_prefix().is_extension_of(current_prefix) {
+                if sibling.section.prefix().is_extension_of(current_prefix) {
                     return (None, None);
                 }
             } else {
@@ -145,19 +145,19 @@ impl SectionUpdateBarrier {
             return (None, None);
         }
 
-        if !our.sections.has_key(sibling.our_history.last_key()) {
+        if !our.network.has_key(sibling.section.chain().last_key()) {
             return (None, None);
         }
 
-        if our.sections.get(sibling.our_prefix()) != Some(sibling.our_info()) {
+        if our.network.get(sibling.section.prefix()) != Some(sibling.section.elders_info()) {
             return (None, None);
         }
 
-        if !sibling.sections.has_key(our.our_history.last_key()) {
+        if !sibling.network.has_key(our.section.chain().last_key()) {
             return (None, None);
         }
 
-        if sibling.sections.get(our.our_prefix()) != Some(our.our_info()) {
+        if sibling.network.get(our.section.prefix()) != Some(our.section.elders_info()) {
             return (None, None);
         }
 
@@ -185,14 +185,17 @@ fn update(
 fn is_our_info_in_sync_with_our_key(state: &SharedState) -> bool {
     // Note: the first key in the chain is signed with itself, so we need to special-case this to
     // avoid returning incomplete state prematurely when there is only one node in the network.
-    if state.our_info().prefix == Prefix::default() && state.our_info().elders.len() <= 1 {
+    if state.section.elders_info().prefix == Prefix::default()
+        && state.section.elders_info().elders.len() <= 1
+    {
         return false;
     }
 
     state
-        .our_history
-        .index_of(&state.sections.proven_our().proof.public_key)
-        .map(|index| index + 1 == state.our_history.last_key_index())
+        .section
+        .chain()
+        .index_of(&state.section.proven_elders_info().proof.public_key)
+        .map(|index| index + 1 == state.section.chain().last_key_index())
         .unwrap_or(false)
 }
 
