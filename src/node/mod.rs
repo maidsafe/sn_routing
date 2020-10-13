@@ -33,6 +33,7 @@ use crate::{
     TransportConfig,
 };
 use bytes::Bytes;
+use ed25519_dalek::Signature;
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
@@ -128,6 +129,16 @@ impl Node {
     /// Returns the `PublicKey` of this node.
     pub async fn public_key(&self) -> PublicKey {
         self.stage.public_key().await
+    }
+
+    /// Sign any data with the key of this node.
+    pub async fn sign(&self, data: &[u8]) -> Signature {
+        self.stage.sign(data).await
+    }
+
+    /// Verify any signed data with the key of this node.
+    pub async fn verify(&self, data: &[u8], signature: &Signature) -> bool {
+        self.stage.verify(data, signature).await
     }
 
     /// The name of this node.

@@ -29,7 +29,7 @@ use crate::{
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
-use ed25519_dalek::PublicKey;
+use ed25519_dalek::{PublicKey, Signature, Signer};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -165,6 +165,24 @@ impl Stage {
         };
 
         node_info.keypair.public
+    }
+
+    pub async fn sign(&self, msg: &[u8]) -> Signature {
+        let state = self.state.lock().await;
+        match &*state {
+            State::Bootstrapping(state) => state.node_info.keypair.sign(msg),
+            State::Joining(state) => state.node_info.keypair.sign(msg),
+            State::Approved(state) => state.node_info.keypair.sign(msg),
+        }
+    }
+
+    pub async fn verify(&self, msg: &[u8], signature: &Signature) -> bool {
+        let state = self.state.lock().await;
+        match &*state {
+            State::Bootstrapping(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
+            State::Joining(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
+            State::Approved(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
+        }
     }
 
     /// Our `Prefix` once we are a part of the section.
