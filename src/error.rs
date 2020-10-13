@@ -27,8 +27,10 @@ pub enum Error {
     InvalidState,
     #[error(display = "Bincode error: {}", _0)]
     Bincode(#[error(source)] bincode::Error),
-    #[error(display = "Invalid Source.")]
+    #[error(display = "Invalid source.")]
     InvalidSource,
+    #[error(display = "Invalid destination.")]
+    InvalidDestination,
     #[error(display = "Content of a received message is inconsistent.")]
     InvalidMessage,
     #[error(display = "A signed message could not be trusted.")]

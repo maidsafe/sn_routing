@@ -15,7 +15,7 @@ mod vote;
 
 pub(crate) use self::vote::{Vote, VoteAccumulator};
 pub use self::{
-    dkg::{generate_secret_key_set, DkgKey, DkgVoter},
+    dkg::{DkgKey, DkgVoter},
     proven::Proven,
 };
 pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};

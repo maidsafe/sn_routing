@@ -396,7 +396,9 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     for peer in elders_info.elders.values() {
         let member_info = MemberInfo::joined(*peer);
         let member_info_proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = shared_state.update_member(member_info, member_info_proof);
+        let _ = shared_state
+            .section
+            .update_member(member_info, member_info_proof);
     }
 
     let (node_info, _) = create_node_info_for(keypairs.remove(0));
@@ -482,7 +484,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
     let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = shared_state.update_member(member_info, proof);
+    let _ = shared_state.section.update_member(member_info, proof);
 
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let state = Approved::new(shared_state, Some(section_key_share), node_info);
@@ -517,7 +519,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
     let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = shared_state.update_member(member_info, proof);
+    let _ = shared_state.section.update_member(member_info, proof);
 
     // Pick the elder to remove.
     let remove_peer = *elders_info
@@ -527,7 +529,8 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .next()
         .expect("elders_info is empty");
     let remove_member_info = shared_state
-        .our_members
+        .section
+        .members()
         .get(remove_peer.name())
         .expect("member not found")
         .leave();
@@ -897,7 +900,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         match message.variant() {
             Variant::Sync(state) => {
                 assert_eq!(recipients, [peer_addr]);
-                assert_eq!(*state.our_history.last_key(), pk1);
+                assert_eq!(*state.section.chain().last_key(), pk1);
                 sync_sent = true;
             }
             Variant::UserMessage(content) => {
@@ -1251,7 +1254,7 @@ fn create_shared_state(
     for peer in elders_info.elders.values().copied() {
         let member_info = MemberInfo::joined(peer);
         let proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = shared_state.update_member(member_info, proof);
+        let _ = shared_state.section.update_member(member_info, proof);
     }
 
     let section_key_share = create_section_key_share(sk_set, 0);

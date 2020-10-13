@@ -34,6 +34,12 @@ impl EldersInfo {
         Self { elders, prefix }
     }
 
+    pub(crate) fn peers(
+        &self,
+    ) -> impl Iterator<Item = &Peer> + DoubleEndedIterator + ExactSizeIterator + Clone {
+        self.elders.values()
+    }
+
     /// Returns the index of the elder with `name` in this set of elders.
     /// This is useful for BLS signatures where the signature share needs to be mapped to a
     /// "field element" which is typically a numeric index.

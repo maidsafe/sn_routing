@@ -149,8 +149,8 @@ impl Debug for Variant {
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
             Self::Sync(shared_state) => f
                 .debug_struct("Sync")
-                .field("elders_info", shared_state.sections.our())
-                .field("section_key", shared_state.our_history.last_key())
+                .field("elders_info", shared_state.section.elders_info())
+                .field("section_key", shared_state.section.chain().last_key())
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),

@@ -13,14 +13,12 @@ use super::{
 use crate::{consensus::Proven, location::DstLocation, peer::Peer};
 
 use serde::Serialize;
-use std::{cmp::Ordering, collections::HashSet, iter};
+use std::{collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 
-/// Container for storing information about sections in the network.
+/// Container for storing information about other sections in the network.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SectionMap {
-    // Our section.
-    our: Proven<EldersInfo>,
+pub struct Network {
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
     neighbours: PrefixMap<Proven<EldersInfo>>,
     // BLS public keys of known sections excluding ours.
@@ -29,55 +27,30 @@ pub struct SectionMap {
     knowledge: PrefixMap<Proven<(Prefix, u64)>>,
 }
 
-impl SectionMap {
-    pub fn new(our_info: Proven<EldersInfo>) -> Self {
+impl Network {
+    pub fn new() -> Self {
         Self {
-            our: our_info,
             neighbours: Default::default(),
             keys: Default::default(),
             knowledge: Default::default(),
         }
     }
 
-    /// Get our section info
-    pub fn our(&self) -> &EldersInfo {
-        &self.our.value
-    }
-
-    /// Get our section info with its proof.
-    pub fn proven_our(&self) -> &Proven<EldersInfo> {
-        &self.our
-    }
-
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
-    pub fn closest(&self, name: &XorName) -> &EldersInfo {
+    pub fn closest(&self, name: &XorName) -> Option<&EldersInfo> {
         self.all()
             .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name))
-            .unwrap_or(&self.our.value)
     }
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        iter::once(&self.our)
-            .chain(self.neighbours.iter())
-            .map(|info| &info.value)
-    }
-
-    /// Returns the known sections sorted by the distance from a given XorName.
-    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<&EldersInfo> {
-        let mut result: Vec<_> = self.all().collect();
-        result.sort_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name));
-        result
+        self.neighbours.iter().map(|info| &info.value)
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
-        if *prefix == self.our.value.prefix {
-            Some(&self.our.value)
-        } else {
-            self.neighbours.get(prefix).map(|info| &info.value)
-        }
+        self.neighbours.get(prefix).map(|info| &info.value)
     }
 
     /// Returns prefixes of all known sections.
@@ -90,47 +63,15 @@ impl SectionMap {
         self.all().flat_map(|info| info.elders.values())
     }
 
-    /// Returns all elders from our section.
-    pub fn our_elders(&self) -> impl Iterator<Item = &Peer> + ExactSizeIterator {
-        self.our().elders.values()
-    }
-
     /// Returns a `Peer` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
-        let elders_info = if self.our.value.prefix.matches(name) {
-            &self.our.value
-        } else {
-            &self.neighbours.get_matching(name)?.value
-        };
-
-        elders_info.elders.get(name)
+        self.neighbours.get_matching(name)?.value.elders.get(name)
     }
 
-    /// Returns whether the given peer is elder in a known sections.
-    pub fn is_elder(&self, name: &XorName) -> bool {
-        self.get_elder(name).is_some()
-    }
-
-    /// Merge two `SectionMap`s into one.
+    /// Merge two `Network`s into one.
     /// TODO: make this operation commutative, associative and idempotent (CRDT)
     /// TODO: return bool indicating whether anything changed.
     pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
-        match cmp_section_chain_position(&self.our, &other.our, section_chain) {
-            Some(Ordering::Less) => {
-                self.our = other.our;
-            }
-            Some(Ordering::Equal) if self.our.value.elders.len() < other.our.value.elders.len() => {
-                // Note: our `EldersInfo` is normally signed with the previous key, except the very
-                // first one which is signed with the latest key. This means that the first and
-                // second `EldersInfo`s are signed with the same key and so comparing only the keys
-                // is not enough to decide which one is newer. To break the ties, we use the fact
-                // that the first `EldersInfo` always has only one elder and the second one has
-                // two.
-                self.our = other.our;
-            }
-            Some(Ordering::Greater) | Some(Ordering::Equal) | None => (),
-        }
-
         // FIXME: these operations are not commutative:
 
         for entry in other.neighbours {
@@ -152,25 +93,6 @@ impl SectionMap {
         }
     }
 
-    /// Update the `EldersInfo` of our section.
-    pub fn update_our_info(
-        &mut self,
-        elders_info: Proven<EldersInfo>,
-        section_chain: &SectionProofChain,
-    ) -> bool {
-        if !elders_info.verify(section_chain) {
-            return false;
-        }
-
-        if elders_info != self.our {
-            self.our = elders_info;
-            self.prune_neighbours();
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
         // TODO: verify
         // if !elders_info.verify(section_chain) {
@@ -182,8 +104,6 @@ impl SectionMap {
                 return false;
             }
         }
-
-        self.prune_neighbours();
 
         true
     }
@@ -207,9 +127,8 @@ impl SectionMap {
         true
     }
 
-    // Remove sections that are no longer our neighbours.
-    fn prune_neighbours(&mut self) {
-        let our_prefix = &self.our.value.prefix;
+    /// Remove sections that are no longer our neighbours.
+    pub fn prune_neighbours(&mut self, our_prefix: &Prefix) {
         let to_remove: Vec<_> = self
             .neighbours
             .prefixes()
@@ -255,7 +174,7 @@ impl SectionMap {
             .unwrap_or(0)
     }
 
-    /// Returns the index of the public key in our_history that will be trusted by the given
+    /// Returns the index of the public key in our chain that will be trusted by the given
     /// location
     pub fn knowledge_by_location(&self, dst: &DstLocation) -> u64 {
         let name = if let Some(name) = dst.name() {
@@ -295,13 +214,24 @@ impl SectionMap {
         let _ = self.knowledge.insert(new_index);
     }
 
-    /// Compute an estimate of the total number of elders in the network from the size of our
-    /// sn_routing table.
-    ///
-    /// Return (estimate, exact), with exact = true iff we have the whole network in our
-    /// sn_routing table.
-    pub fn network_elder_count_estimate(&self) -> (u64, bool) {
-        let known_prefixes = self.prefixes();
+    /// Returns network statistics.
+    pub fn network_stats(&self, our: &EldersInfo) -> NetworkStats {
+        let (known_elders, total_elders, total_elders_exact) = self.network_elder_counts(our);
+
+        NetworkStats {
+            known_elders,
+            total_elders,
+            total_elders_exact,
+        }
+    }
+
+    // Compute an estimate of the total number of elders in the network from the size of our
+    // routing table.
+    //
+    // Return (known, total, exact), where `exact` indicates whether `total` is an exact number of
+    // an estimate.
+    fn network_elder_counts(&self, our: &EldersInfo) -> (u64, u64, bool) {
+        let known_prefixes = iter::once(&our.prefix).chain(self.prefixes());
         let is_exact = Prefix::default().is_covered_by(known_prefixes.clone());
 
         // Estimated fraction of the network that we have in our RT.
@@ -310,26 +240,10 @@ impl SectionMap {
             .map(|p| 1.0 / (p.bit_count() as f64).exp2())
             .sum();
 
-        // Total size estimate = known_nodes / network_fraction
-        let network_size = self.elders().count() as f64 / network_fraction;
+        let known = our.elders.len() + self.elders().count();
+        let total = known as f64 / network_fraction;
 
-        (network_size.ceil() as u64, is_exact)
-    }
-
-    /// Returns network statistics.
-    pub fn network_stats(&self) -> NetworkStats {
-        let (total_elders, total_elders_exact) = self.network_elder_count_estimate();
-
-        NetworkStats {
-            known_elders: self.elders().count() as u64,
-            total_elders,
-            total_elders_exact,
-        }
-    }
-
-    /// Returns iterator over all neighbours sections.
-    pub fn neighbours(&self) -> impl Iterator<Item = &EldersInfo> {
-        self.neighbours.iter().map(|info| &info.value)
+        (known as u64, total.ceil() as u64, is_exact)
     }
 }
 
@@ -381,29 +295,6 @@ where
     check(our, other, &known)
 }
 
-fn cmp_section_chain_position<T: Serialize>(
-    lhs: &Proven<T>,
-    rhs: &Proven<T>,
-    section_chain: &SectionProofChain,
-) -> Option<Ordering> {
-    match (lhs.self_verify(), rhs.self_verify()) {
-        (true, true) => (),
-        (true, false) => return Some(Ordering::Greater),
-        (false, true) => return Some(Ordering::Less),
-        (false, false) => return None,
-    }
-
-    let lhs_index = section_chain.index_of(&lhs.proof.public_key);
-    let rhs_index = section_chain.index_of(&rhs.proof.public_key);
-
-    match (lhs_index, rhs_index) {
-        (Some(lhs_index), Some(rhs_index)) => Some(lhs_index.cmp(&rhs_index)),
-        (Some(_), None) => Some(Ordering::Greater),
-        (None, Some(_)) => Some(Ordering::Less),
-        (None, None) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,7 +315,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![("1", &k0), ("1", &k1), ("1", &k2)],
             vec![("1", &k2)],
         );
@@ -438,7 +328,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![("1", &k0), ("1", &k1), ("1", &k0)],
             vec![("1", &k0)],
         );
@@ -453,7 +342,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![("1", &k0), ("10", &k1), ("11", &k2)],
             vec![("10", &k1), ("11", &k2)],
         );
@@ -467,7 +355,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![("1", &k0), ("10", &k1)],
             vec![("1", &k0), ("10", &k1)],
         );
@@ -484,7 +371,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![
                 ("1", &k0),
                 ("100", &k1),
@@ -505,7 +391,6 @@ mod tests {
 
         update_keys_and_check(
             &mut rng::new(),
-            "0",
             vec![("1", &k0), ("100", &k1), ("101", &k2)],
             vec![("1", &k0), ("100", &k1), ("101", &k2)],
         );
@@ -523,7 +408,6 @@ mod tests {
         // Late keys ignored
         update_keys_and_check(
             &mut rng,
-            "0",
             vec![
                 ("1", &k0),
                 ("10", &k1),
@@ -560,25 +444,22 @@ mod tests {
         let mut rng = rng::new();
         let sk = consensus::test_utils::gen_secret_key(&mut rng);
 
-        let p00: Prefix = "00".parse().unwrap();
         let p01: Prefix = "01".parse().unwrap();
         let p10: Prefix = "10".parse().unwrap();
         let p11: Prefix = "11".parse().unwrap();
 
         // Create map containing sections (00), (01) and (10)
-        let mut map = SectionMap::new(gen_proven_elders_info(&mut rng, &sk, p00));
+        let mut map = Network::new();
         let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p01));
         let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p10));
 
-        let n00 = p00.substituted_in(rng.gen());
         let n01 = p01.substituted_in(rng.gen());
         let n10 = p10.substituted_in(rng.gen());
         let n11 = p11.substituted_in(rng.gen());
 
-        assert_eq!(map.closest(&n00).prefix, p00);
-        assert_eq!(map.closest(&n01).prefix, p01);
-        assert_eq!(map.closest(&n10).prefix, p10);
-        assert_eq!(map.closest(&n11).prefix, p10);
+        assert_eq!(map.closest(&n01).map(|i| &i.prefix), Some(&p01));
+        assert_eq!(map.closest(&n10).map(|i| &i.prefix), Some(&p10));
+        assert_eq!(map.closest(&n11).map(|i| &i.prefix), Some(&p10));
     }
 
     #[test]
@@ -587,12 +468,12 @@ mod tests {
         let sk = consensus::test_utils::gen_secret_key(&mut rng);
 
         let p00 = "00".parse().unwrap();
-        let section00 = gen_proven_elders_info(&mut rng, &sk, p00);
-        let mut map = SectionMap::new(section00);
+        let mut map = Network::new();
 
         let p1 = "1".parse().unwrap();
         let section1 = gen_proven_elders_info(&mut rng, &sk, p1);
         let _ = map.update_neighbour_info(section1);
+        map.prune_neighbours(&p00);
 
         assert!(map.prefixes().any(|&prefix| prefix == p1));
 
@@ -601,28 +482,27 @@ mod tests {
         let p10 = "10".parse().unwrap();
         let section10 = gen_proven_elders_info(&mut rng, &sk, p10);
         let _ = map.update_neighbour_info(section10);
+        map.prune_neighbours(&p00);
 
         assert!(map.prefixes().any(|&prefix| prefix == p10));
         assert!(map.prefixes().all(|&prefix| prefix != p1));
     }
 
-    // Create a `SectionMap` and apply a series of `update_keys` calls to it, then verify the stored
+    // Create a `Network` and apply a series of `update_keys` calls to it, then verify the stored
     // keys are as expected.
     //
-    // updates:  updates to `SectionMap::keys` as a sequence of (prefix, key) pairs that are
+    // updates:  updates to `Network::keys` as a sequence of (prefix, key) pairs that are
     //           applied in sequence by calling `update_keys`
     // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
     //           order.
     fn update_keys_and_check(
         rng: &mut MainRng,
-        our_prefix: &str,
         updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
         let sk = consensus::test_utils::gen_secret_key(rng);
-        let elders_info = gen_proven_elders_info(rng, &sk, our_prefix.parse().unwrap());
 
-        let mut map = SectionMap::new(elders_info);
+        let mut map = Network::new();
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
@@ -651,9 +531,8 @@ mod tests {
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
         let sk = consensus::test_utils::gen_secret_key(rng);
-        let elders_info = gen_proven_elders_info(rng, &sk, Default::default());
 
-        let mut map = SectionMap::new(elders_info);
+        let mut map = Network::new();
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
