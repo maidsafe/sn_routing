@@ -18,13 +18,11 @@ use self::{joining::Joining, update_barrier::UpdateBarrier};
 use super::{command, Command};
 use crate::{
     consensus::{ProofShare, Vote},
-    crypto::{name, Keypair},
     error::{Error, Result},
     event::Event,
     location::{DstLocation, SrcLocation},
     log_ident,
     messages::Message,
-    network_params::NetworkParams,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
 };
@@ -37,10 +35,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{
-    sync::{mpsc, Mutex},
-    time,
-};
+use tokio::{sync::Mutex, time};
 use xor_name::{Prefix, XorName};
 
 #[cfg(feature = "mock")]
@@ -85,41 +80,6 @@ impl Debug for State {
     }
 }
 
-// Node's information.
-#[derive(Clone)]
-pub(crate) struct NodeInfo {
-    // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
-    // memory which might be insecure.
-    pub keypair: Arc<Keypair>,
-    pub network_params: NetworkParams,
-    event_tx: mpsc::UnboundedSender<Event>,
-}
-
-impl NodeInfo {
-    pub(super) fn new(
-        keypair: Keypair,
-        network_params: NetworkParams,
-        event_tx: mpsc::UnboundedSender<Event>,
-    ) -> Self {
-        Self {
-            keypair: Arc::new(keypair),
-            network_params,
-            event_tx,
-        }
-    }
-
-    pub fn name(&self) -> XorName {
-        name(&self.keypair.public)
-    }
-
-    pub fn send_event(&self, event: Event) {
-        // Note: cloning the sender to avoid mutable access. Should have negligible cost.
-        if self.event_tx.clone().send(event).is_err() {
-            error!("Event receiver has been closed");
-        }
-    }
-}
-
 // Node's current stage whcich is responsible
 // for accessing current info and trigger operations.
 pub(crate) struct Stage {
@@ -138,9 +98,9 @@ impl Stage {
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
         match &*self.state.lock().await {
-            State::Bootstrapping(state) => state.node_info.send_event(event),
-            State::Joining(state) => state.node_info.send_event(event),
-            State::Approved(state) => state.node_info().send_event(event),
+            State::Bootstrapping(state) => state.node.send_event(event),
+            State::Joining(state) => state.node.send_event(event),
+            State::Approved(state) => state.node().send_event(event),
         }
     }
 
@@ -148,9 +108,9 @@ impl Stage {
     pub async fn name(&self) -> XorName {
         let state = self.state.lock().await;
         let node_info = match &*state {
-            State::Bootstrapping(state) => &state.node_info,
-            State::Joining(state) => &state.node_info,
-            State::Approved(state) => state.node_info(),
+            State::Bootstrapping(state) => &state.node,
+            State::Joining(state) => &state.node,
+            State::Approved(state) => state.node(),
         };
 
         node_info.name()
@@ -159,30 +119,30 @@ impl Stage {
     /// Returns the public key of the node
     pub async fn public_key(&self) -> PublicKey {
         let state = self.state.lock().await;
-        let node_info = match &*state {
-            State::Bootstrapping(state) => &state.node_info,
-            State::Joining(state) => &state.node_info,
-            State::Approved(state) => state.node_info(),
+        let node = match &*state {
+            State::Bootstrapping(state) => &state.node,
+            State::Joining(state) => &state.node,
+            State::Approved(state) => state.node(),
         };
 
-        node_info.keypair.public
+        node.keypair.public
     }
 
     pub async fn sign(&self, msg: &[u8]) -> Signature {
         let state = self.state.lock().await;
         match &*state {
-            State::Bootstrapping(state) => state.node_info.keypair.sign(msg),
-            State::Joining(state) => state.node_info.keypair.sign(msg),
-            State::Approved(state) => state.node_info().keypair.sign(msg),
+            State::Bootstrapping(state) => state.node.keypair.sign(msg),
+            State::Joining(state) => state.node.keypair.sign(msg),
+            State::Approved(state) => state.node().keypair.sign(msg),
         }
     }
 
     pub async fn verify(&self, msg: &[u8], signature: &Signature) -> bool {
         let state = self.state.lock().await;
         match &*state {
-            State::Bootstrapping(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
-            State::Joining(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
-            State::Approved(state) => state.node_info().keypair.verify(msg, signature).is_ok(),
+            State::Bootstrapping(state) => state.node.keypair.verify(msg, signature).is_ok(),
+            State::Joining(state) => state.node.keypair.verify(msg, signature).is_ok(),
+            State::Approved(state) => state.node().keypair.verify(msg, signature).is_ok(),
         }
     }
 
@@ -436,26 +396,22 @@ impl Stage {
 
     async fn log_ident(&self) -> String {
         match &*self.state.lock().await {
-            State::Bootstrapping(state) => format!("{}(?) ", state.node_info.name()),
+            State::Bootstrapping(state) => format!("{}(?) ", state.node.name()),
             State::Joining(state) => format!(
                 "{}({:b}?) ",
-                state.node_info.name(),
+                state.node.name(),
                 state.target_section_elders_info().prefix,
             ),
             State::Approved(state) => {
                 if state.is_elder() {
                     format!(
                         "{}({:b}v{}!) ",
-                        state.node_info().name(),
+                        state.node().name(),
                         state.section().prefix(),
                         state.section().chain().last_key_index()
                     )
                 } else {
-                    format!(
-                        "{}({:b}) ",
-                        state.node_info().name(),
-                        state.section().prefix()
-                    )
+                    format!("{}({:b}) ", state.node().name(), state.section().prefix())
                 }
             }
         }

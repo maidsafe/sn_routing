@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{command, Bootstrapping, Command, NodeInfo, State, UpdateBarrier};
+use super::{command, Bootstrapping, Command, State, UpdateBarrier};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -21,6 +21,7 @@ use crate::{
         VerifyStatus,
     },
     network::Network,
+    node::Node,
     peer::Peer,
     relocation::{self, RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
@@ -40,7 +41,7 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub(crate) struct Approved {
-    node_info: NodeInfo,
+    node: Node,
     section: Section,
     network: Network,
     section_keys_provider: SectionKeysProvider,
@@ -56,23 +57,19 @@ pub(crate) struct Approved {
 
 impl Approved {
     // Creates the approved state for the first node in the network
-    pub fn first_node(node_info: NodeInfo, our_addr: SocketAddr) -> Result<Self> {
-        let peer = Peer::new(node_info.name(), our_addr, MIN_AGE);
+    pub fn first_node(node: Node, our_addr: SocketAddr) -> Result<Self> {
+        let peer = Peer::new(node.name(), our_addr, MIN_AGE);
         let (section, section_key_share) = Section::first_node(peer)?;
 
-        Ok(Self::new(section, Some(section_key_share), node_info))
+        Ok(Self::new(section, Some(section_key_share), node))
     }
 
     // Creates the approved state for a regular node.
-    pub fn new(
-        section: Section,
-        section_key_share: Option<SectionKeyShare>,
-        node_info: NodeInfo,
-    ) -> Self {
+    pub fn new(section: Section, section_key_share: Option<SectionKeyShare>, node: Node) -> Self {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
         Self {
-            node_info,
+            node,
             section,
             network: Network::new(),
             section_keys_provider,
@@ -84,8 +81,8 @@ impl Approved {
         }
     }
 
-    pub fn node_info(&self) -> &NodeInfo {
-        &self.node_info
+    pub fn node(&self) -> &Node {
+        &self.node
     }
 
     pub fn section(&self) -> &Section {
@@ -104,9 +101,7 @@ impl Approved {
         let mut commands = vec![];
 
         // Check if the message is for us.
-        let in_dst_location = msg
-            .dst()
-            .contains(&self.node_info.name(), self.section.prefix());
+        let in_dst_location = msg.dst().contains(&self.node.name(), self.section.prefix());
         if !in_dst_location || msg.dst().is_section() {
             // Relay closer to the destination or
             // broadcast to the rest of our section.
@@ -256,7 +251,7 @@ impl Approved {
         };
         let proof_chain = self.section.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
@@ -268,7 +263,7 @@ impl Approved {
         let mut handle = false;
 
         for recipient in recipients {
-            if recipient.name() == &self.node_info.name() {
+            if recipient.name() == &self.node.name() {
                 handle = true;
             } else {
                 others.push(*recipient.addr());
@@ -322,13 +317,13 @@ impl Approved {
             Some(Ok((elders_info, outcome))) => {
                 let public_key = outcome.public_key_set.public_key();
                 self.section_keys_provider.insert_dkg_outcome(
-                    &self.node_info.name(),
+                    &self.node.name(),
                     &elders_info,
                     outcome,
                 );
-                self.handle_dkg_result(dkg_key, Ok(public_key), self.node_info.name())
+                self.handle_dkg_result(dkg_key, Ok(public_key), self.node.name())
             }
-            Some(Err(())) => self.handle_dkg_result(dkg_key, Err(()), self.node_info.name()),
+            Some(Err(())) => self.handle_dkg_result(dkg_key, Err(()), self.node.name()),
             None => Ok(vec![]),
         }
     }
@@ -345,7 +340,7 @@ impl Approved {
                 commands.extend(self.check_dkg(dkg_key)?)
             }
             Some((dkg_key, Err(()))) => {
-                commands.extend(self.handle_dkg_result(dkg_key, Err(()), self.node_info.name())?)
+                commands.extend(self.handle_dkg_result(dkg_key, Err(()), self.node.name())?)
             }
             None => {}
         }
@@ -355,7 +350,7 @@ impl Approved {
 
     /// Is this node an elder?
     pub fn is_elder(&self) -> bool {
-        self.section.is_elder(&self.node_info.name())
+        self.section.is_elder(&self.node.name())
     }
 
     /// Returns the current BLS public key set
@@ -390,7 +385,7 @@ impl Approved {
                 }
             }
             Variant::DKGStart { elders_info, .. } => {
-                if !elders_info.elders.contains_key(&self.node_info.name()) {
+                if !elders_info.elders.contains_key(&self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }
@@ -409,7 +404,7 @@ impl Approved {
                 }
             }
             Variant::RelocatePromise(promise) => {
-                if promise.name != self.node_info.name() {
+                if promise.name != self.node.name() {
                     if !self.is_elder() {
                         return Ok(MessageStatus::Useless);
                     }
@@ -460,7 +455,7 @@ impl Approved {
                     }) => {
                         // Transition from Approved to Bootstrapping on relocation
                         let (state, command) =
-                            Bootstrapping::new(Some(details), conn_infos, self.node_info.clone())?;
+                            Bootstrapping::new(Some(details), conn_infos, self.node.clone())?;
                         let state = State::Bootstrapping(state);
                         Ok(vec![Command::Transition(Box::new(state)), command])
                     }
@@ -535,7 +530,7 @@ impl Approved {
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
     fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
-        self.is_elder() || dst.as_node().ok() == Some(&self.node_info.name())
+        self.is_elder() || dst.as_node().ok() == Some(&self.node.name())
     }
 
     // Handle `Vote` message only if signed with known key, otherwise bounce.
@@ -584,7 +579,7 @@ impl Approved {
         };
 
         let bounce_msg = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             bounce_dst,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
@@ -609,7 +604,7 @@ impl Approved {
         msg_bytes: Bytes,
     ) -> Result<Command> {
         let bounce_msg = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
@@ -737,12 +732,12 @@ impl Approved {
     }
 
     fn handle_user_message(&self, src: SrcLocation, dst: DstLocation, content: Bytes) {
-        self.node_info
+        self.node
             .send_event(Event::MessageReceived { content, src, dst })
     }
 
     fn handle_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
-        if !section.prefix().matches(&self.node_info.name()) {
+        if !section.prefix().matches(&self.node.name()) {
             trace!("ignore Sync - not our section");
             return Ok(vec![]);
         }
@@ -751,7 +746,7 @@ impl Approved {
     }
 
     fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
-        if signed_msg.relocate_details().pub_id != self.node_info.name() {
+        if signed_msg.relocate_details().pub_id != self.node.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
             return None;
@@ -763,8 +758,8 @@ impl Approved {
         );
 
         if self.relocate_promise.is_none() {
-            self.node_info.send_event(Event::RelocationStarted {
-                previous_name: self.node_info.name(),
+            self.node.send_event(Event::RelocationStarted {
+                previous_name: self.node.name(),
             });
         }
 
@@ -789,13 +784,13 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        if promise.name == self.node_info.name() {
+        if promise.name == self.node.name() {
             // Store the `RelocatePromise` message and send it back after we are demoted.
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             if self.relocate_promise.is_none() {
                 self.relocate_promise = Some(msg_bytes.clone());
-                self.node_info.send_event(Event::RelocationStarted {
-                    previous_name: self.node_info.name(),
+                self.node.send_event(Event::RelocationStarted {
+                    previous_name: self.node.name(),
                 });
             } else {
                 trace!("ignore RelocatePromise - already have one");
@@ -953,7 +948,7 @@ impl Approved {
 
         if let Some(message) =
             self.dkg_voter
-                .start_participating(self.node_info.name(), dkg_key, new_elders_info)
+                .start_participating(self.node.name(), dkg_key, new_elders_info)
         {
             let token = command::next_timer_token();
             self.dkg_voter.set_timer_token(token);
@@ -976,7 +971,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        if sender == self.node_info.name() {
+        if sender == self.node.name() {
             commands.push(self.send_dkg_result(dkg_key, result)?);
         }
 
@@ -995,7 +990,7 @@ impl Approved {
 
         for info in self
             .section
-            .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
+            .promote_and_demote_elders(&self.node.network_params, &self.node.name())
         {
             // Check whether the result still corresponds to the current elder candidates.
             if info == elders_info {
@@ -1065,7 +1060,7 @@ impl Approved {
 
         for info in self
             .section
-            .promote_and_demote_elders(&self.node_info.network_params, &self.node_info.name())
+            .promote_and_demote_elders(&self.node.network_params, &self.node.name())
         {
             commands.extend(self.send_dkg_start(info)?);
         }
@@ -1137,7 +1132,7 @@ impl Approved {
     fn is_in_startup_phase(&self) -> bool {
         self.section.prefix().is_empty()
             && self.section.members().joined().count()
-                <= self.node_info.network_params.recommended_section_size
+                <= self.node.network_params.recommended_section_size
     }
 
     fn handle_online_event(
@@ -1165,13 +1160,13 @@ impl Approved {
         commands.push(self.send_node_approval(&peer, their_knowledge)?);
 
         if let Some(previous_name) = previous_name {
-            self.node_info.send_event(Event::MemberJoined {
+            self.node.send_event(Event::MemberJoined {
                 name: *peer.name(),
                 previous_name,
                 age,
             });
         } else {
-            self.node_info.send_event(Event::InfantJoined {
+            self.node.send_event(Event::InfantJoined {
                 name: *peer.name(),
                 age,
             });
@@ -1203,7 +1198,7 @@ impl Approved {
         commands.extend(self.increment_ages(peer.name(), &signature)?);
         commands.extend(self.promote_and_demote_elders()?);
 
-        self.node_info.send_event(Event::MemberLeft {
+        self.node.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
         });
@@ -1225,7 +1220,7 @@ impl Approved {
                 .is_extension_of(self.section.prefix())
         {
             self.update_barrier.handle_section_info(
-                &self.node_info.name(),
+                &self.node.name(),
                 &self.section,
                 &self.network,
                 elders_info,
@@ -1249,7 +1244,7 @@ impl Approved {
         let key = Proven::new(key, proof);
 
         self.update_barrier.handle_our_key(
-            &self.node_info.name(),
+            &self.node.name(),
             &self.section,
             &self.network,
             &prefix,
@@ -1268,7 +1263,7 @@ impl Approved {
 
         if key.value.0.is_extension_of(self.section.prefix()) {
             self.update_barrier.handle_their_key(
-                &self.node_info.name(),
+                &self.node.name(),
                 &self.section,
                 &self.network,
                 key,
@@ -1427,7 +1422,7 @@ impl Approved {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            self.node_info.send_event(Event::EldersChanged {
+            self.node.send_event(Event::EldersChanged {
                 prefix: *self.section.prefix(),
                 key: *self.section.chain().last_key(),
                 elders: self.section.elders_info().elders.keys().copied().collect(),
@@ -1436,7 +1431,7 @@ impl Approved {
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            self.node_info.send_event(Event::PromotedToElder);
+            self.node.send_event(Event::PromotedToElder);
         }
 
         if old_is_elder && !new_is_elder {
@@ -1444,7 +1439,7 @@ impl Approved {
             self.section = self.section.to_minimal();
             self.network = Network::new();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            self.node_info.send_event(Event::Demoted);
+            self.node.send_event(Event::Demoted);
         }
 
         if !new_is_elder {
@@ -1499,7 +1494,7 @@ impl Approved {
 
         trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
@@ -1517,7 +1512,7 @@ impl Approved {
         let mut commands = vec![];
 
         for peer in section.active_members() {
-            if peer.name() == &self.node_info.name() {
+            if peer.name() == &self.node.name() {
                 continue;
             }
 
@@ -1535,7 +1530,7 @@ impl Approved {
 
             trace!("Send {:?} to {:?}", variant, peer);
             let message = Message::single_src(
-                &self.node_info.keypair,
+                &self.node.keypair,
                 self.age(),
                 DstLocation::Direct,
                 variant,
@@ -1607,7 +1602,7 @@ impl Approved {
         };
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Section(dst.name()),
             variant,
@@ -1652,7 +1647,7 @@ impl Approved {
             .section
             .elders_info()
             .peers()
-            .filter(|peer| peer.name() != &self.node_info.name());
+            .filter(|peer| peer.name() != &self.node.name());
 
         trace!(
             "Send {:?} to {:?}",
@@ -1662,7 +1657,7 @@ impl Approved {
 
         let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
@@ -1689,7 +1684,7 @@ impl Approved {
             message: dkg_message_bytes.clone(),
         };
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
@@ -1700,7 +1695,7 @@ impl Approved {
         let recipients: Vec<_> = self
             .dkg_voter
             .participants()
-            .filter(|peer| peer.name() != &self.node_info.name())
+            .filter(|peer| peer.name() != &self.node.name())
             .map(Peer::addr)
             .copied()
             .collect();
@@ -1712,11 +1707,7 @@ impl Approved {
             message.to_bytes(),
         ));
 
-        commands.extend(self.handle_dkg_message(
-            dkg_key,
-            dkg_message_bytes,
-            self.node_info.name(),
-        )?);
+        commands.extend(self.handle_dkg_message(dkg_key, dkg_message_bytes, self.node.name())?);
 
         Ok(commands)
     }
@@ -1725,7 +1716,7 @@ impl Approved {
     pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
         let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
-            &self.node_info.name(),
+            &self.node.name(),
             &self.section,
             &self.network,
         )?;
@@ -1753,7 +1744,7 @@ impl Approved {
         dst: DstLocation,
         content: Bytes,
     ) -> Result<Vec<Command>> {
-        if !src.contains(&self.node_info.name()) {
+        if !src.contains(&self.node.name()) {
             error!(
                 "Not sending user message {:?} -> {:?}: not part of the source location",
                 src, dst
@@ -1774,14 +1765,8 @@ impl Approved {
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg = Message::single_src(
-                    &self.node_info.keypair,
-                    self.age(),
-                    dst,
-                    variant,
-                    None,
-                    None,
-                )?;
+                let msg =
+                    Message::single_src(&self.node.keypair, self.age(), dst, variant, None, None)?;
                 Ok(self.relay_message(&msg)?.into_iter().collect())
             }
             SrcLocation::Section(_) => {
@@ -1847,7 +1832,7 @@ impl Approved {
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             self.age(),
             DstLocation::Direct,
             variant,
@@ -1900,7 +1885,7 @@ impl Approved {
         let mut commands = Vec::new();
         let mut vote_send_neighbour_info = false;
 
-        if !src_prefix.matches(&self.node_info.name()) && !self.network.has_key(src_key) {
+        if !src_prefix.matches(&self.node.name()) && !self.network.has_key(src_key) {
             // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
             // via `NeighbourInfo`.
             if is_neighbour {
@@ -1957,7 +1942,7 @@ impl Approved {
     }
 
     fn age(&self) -> u8 {
-        self.section.member_age(&self.node_info.name())
+        self.section.member_age(&self.node.name())
     }
 }
 

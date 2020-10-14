@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{approved::Approved, Command, NodeInfo, State};
+use super::{approved::Approved, Command, State};
 use crate::{
     error::{Error, Result},
     event::{Connected, Event},
     messages::{BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
+    node::Node,
     peer::Peer,
     relocation::RelocatePayload,
     section::{EldersInfo, Section},
@@ -21,7 +22,7 @@ use xor_name::Prefix;
 
 // The joining stage - node is waiting to be approved by the section.
 pub(crate) struct Joining {
-    pub node_info: NodeInfo,
+    pub node: Node,
     // EldersInfo of the section we are joining.
     elders_info: EldersInfo,
     // PublicKey of the section we are joining.
@@ -35,14 +36,14 @@ impl Joining {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
-        node_info: NodeInfo,
+        node: Node,
     ) -> Result<(Self, Command)> {
         let join_type = match relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
             None => JoinType::First,
         };
         let state = Self {
-            node_info,
+            node,
             elders_info,
             section_key,
             join_type,
@@ -97,10 +98,10 @@ impl Joining {
                 );
 
                 let section = Section::new(section_chain, payload.clone());
-                let state = Approved::new(section, None, self.node_info.clone());
+                let state = Approved::new(section, None, self.node.clone());
                 let state = State::Approved(state);
 
-                self.node_info.send_event(Event::Connected(connect_type));
+                self.node.send_event(Event::Connected(connect_type));
 
                 Ok(vec![Command::Transition(Box::new(state))])
             }
@@ -121,7 +122,7 @@ impl Joining {
             return Ok(None);
         }
 
-        if new_elders_info.prefix.matches(&self.node_info.name()) {
+        if new_elders_info.prefix.matches(&self.node.name()) {
             info!(
                 "Newer Join response for our prefix {:?} from {:?}",
                 new_elders_info, sender
@@ -177,7 +178,7 @@ impl Joining {
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             age,
             DstLocation::Direct,
             variant,
@@ -194,7 +195,7 @@ impl Joining {
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match dst {
-            DstLocation::Node(name) => *name == self.node_info.name(),
+            DstLocation::Node(name) => *name == self.node.name(),
             DstLocation::Section(_) => false,
             DstLocation::Direct => true,
         }
