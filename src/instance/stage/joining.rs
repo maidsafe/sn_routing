@@ -72,7 +72,7 @@ impl Joining {
                 verify_message(&msg, None)?;
                 Ok(self
                     .handle_bootstrap_response(
-                        msg.src().to_sender_node(sender)?,
+                        msg.src().to_node_peer(sender)?,
                         elders_info.clone(),
                         *section_key,
                     )?

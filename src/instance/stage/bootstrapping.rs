@@ -59,7 +59,7 @@ impl Bootstrapping {
                     .and_then(VerifyStatus::require_full)?;
 
                 self.handle_bootstrap_response(
-                    message.src().to_sender_node(sender)?,
+                    message.src().to_node_peer(sender)?,
                     response.clone(),
                 )
             }
