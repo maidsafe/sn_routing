@@ -6,8 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, Section};
-use crate::{consensus::Proven, network::Network};
+use crate::{
+    consensus::Proven,
+    network::Network,
+    section::{EldersInfo, Section},
+};
 use serde::Serialize;
 use std::fmt::Debug;
 use xor_name::Prefix;

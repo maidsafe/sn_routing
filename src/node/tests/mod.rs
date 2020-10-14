@@ -14,11 +14,12 @@ use crate::{
     location::DstLocation,
     messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
     network::Network,
+    node::SharedState,
     peer::Peer,
     rng,
     section::{
         majority_count, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
-        SectionProofChain, SharedState, MIN_AGE,
+        SectionProofChain, MIN_AGE,
     },
     Error, ELDER_SIZE,
 };
