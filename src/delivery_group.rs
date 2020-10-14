@@ -11,8 +11,9 @@
 use crate::{
     error::{Error, Result},
     location::DstLocation,
+    network::Network,
     peer::Peer,
-    section::{Network, Section},
+    section::Section,
 };
 use std::iter;
 

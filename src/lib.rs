@@ -99,6 +99,7 @@ mod error;
 mod location;
 mod message_filter;
 mod messages;
+mod network;
 mod network_params;
 mod node;
 mod peer;

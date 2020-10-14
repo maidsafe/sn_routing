@@ -6,11 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    elders_info::EldersInfo, network_stats::NetworkStats, prefix_map::PrefixMap,
-    section_proof_chain::SectionProofChain,
+mod prefix_map;
+mod stats;
+
+use self::{prefix_map::PrefixMap, stats::NetworkStats};
+use crate::{
+    consensus::Proven,
+    location::DstLocation,
+    peer::Peer,
+    section::{EldersInfo, SectionProofChain},
 };
-use crate::{consensus::Proven, location::DstLocation, peer::Peer};
 
 use serde::Serialize;
 use std::{collections::HashSet, iter};
