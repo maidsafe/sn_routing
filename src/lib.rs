@@ -74,9 +74,9 @@ extern crate serde;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
+    instance::{Config, EventStream, Instance},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
-    node::{EventStream, Node, NodeConfig},
     section::{SectionProofChain, MIN_AGE},
 };
 pub use qp2p::Config as TransportConfig;
@@ -96,12 +96,12 @@ mod cancellation;
 mod consensus;
 mod delivery_group;
 mod error;
+mod instance;
 mod location;
 mod message_filter;
 mod messages;
 mod network;
 mod network_params;
-mod node;
 mod peer;
 mod relocation;
 mod section;
