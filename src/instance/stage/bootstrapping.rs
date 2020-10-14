@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{joining::Joining, Command, NodeInfo, State};
+use super::{joining::Joining, Command, State};
 use crate::{
     crypto::{keypair_within_range, name},
     error::Result,
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
+    node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
@@ -21,7 +22,7 @@ use xor_name::Prefix;
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub(crate) struct Bootstrapping {
-    pub node_info: NodeInfo,
+    pub node: Node,
     relocate_details: Option<SignedRelocateDetails>,
 }
 
@@ -29,10 +30,10 @@ impl Bootstrapping {
     pub fn new(
         relocate_details: Option<SignedRelocateDetails>,
         bootstrap_contacts: Vec<SocketAddr>,
-        node_info: NodeInfo,
+        node: Node,
     ) -> Result<(Self, Command)> {
         let state = Self {
-            node_info,
+            node,
             relocate_details,
         };
         let command = state.send_bootstrap_request(&bootstrap_contacts)?;
@@ -72,11 +73,11 @@ impl Bootstrapping {
     pub fn send_bootstrap_request(&self, recipients: &[SocketAddr]) -> Result<Command> {
         let (destination, age) = match &self.relocate_details {
             Some(details) => (*details.destination(), details.relocate_details().age),
-            None => (self.node_info.name(), MIN_AGE),
+            None => (self.node.name(), MIN_AGE),
         };
 
         let message = Message::single_src(
-            &self.node_info.keypair,
+            &self.node.keypair,
             age,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
@@ -113,7 +114,7 @@ impl Bootstrapping {
                     elders_info,
                     section_key,
                     relocate_payload,
-                    self.node_info.clone(),
+                    self.node.clone(),
                 )?;
                 let state = State::Joining(state);
 
@@ -150,17 +151,17 @@ impl Bootstrapping {
         let new_keypair = keypair_within_range(&mut rng, &name_prefix.range_inclusive());
         let new_name = name(&new_keypair.public);
         let relocate_payload =
-            RelocatePayload::new(relocate_details, &new_name, &self.node_info.keypair)?;
+            RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
 
         info!("Changing name to {}.", new_name);
-        self.node_info.keypair = Arc::new(new_keypair);
+        self.node.keypair = Arc::new(new_keypair);
 
         Ok(Some(relocate_payload))
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match dst {
-            DstLocation::Node(name) => *name == self.node_info.name(),
+            DstLocation::Node(name) => *name == self.node.name(),
             DstLocation::Section(_) => false,
             DstLocation::Direct => true,
         }

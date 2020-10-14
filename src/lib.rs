@@ -102,6 +102,7 @@ mod message_filter;
 mod messages;
 mod network;
 mod network_params;
+mod node;
 mod peer;
 mod relocation;
 mod section;

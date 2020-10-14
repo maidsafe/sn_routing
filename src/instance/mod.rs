@@ -19,7 +19,7 @@ use self::stage::State;
 use self::{
     command::Command,
     executor::Executor,
-    stage::{Approved, Bootstrapping, Comm, NodeInfo, Stage},
+    stage::{Approved, Bootstrapping, Comm, Stage},
 };
 use crate::{
     crypto::{Keypair, PublicKey},
@@ -27,6 +27,7 @@ use crate::{
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
+    node::Node,
     peer::Peer,
     rng,
     section::{EldersInfo, SectionProofChain},
@@ -87,14 +88,14 @@ impl Instance {
             .unwrap_or_else(|| Keypair::generate(&mut rng));
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let node_info = NodeInfo::new(keypair, config.network_params, event_tx.clone());
-        let node_name = node_info.name();
+        let node = Node::new(keypair, config.network_params, event_tx.clone());
+        let node_name = node.name();
 
         let (state, comm, initial_command) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
             let addr = comm.our_connection_info()?;
-            let state = Approved::first_node(node_info, addr)?;
+            let state = Approved::first_node(node, addr)?;
 
             let _ = event_tx.send(Event::Connected(Connected::First));
             let _ = event_tx.send(Event::PromotedToElder);
@@ -103,7 +104,7 @@ impl Instance {
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
-            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node_info)?;
+            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node)?;
 
             (state.into(), comm, Some(command))
         };
