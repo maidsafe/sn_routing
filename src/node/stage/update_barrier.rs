@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, SharedState};
-use crate::consensus::Proven;
+use super::SharedState;
+use crate::{consensus::Proven, section::EldersInfo};
 use std::collections::HashSet;
 use xor_name::{Prefix, XorName};
 
@@ -25,13 +25,13 @@ use xor_name::{Prefix, XorName};
 /// TODO: this whole machinery might not be necessary. It's possible the above invariants are not
 /// really needed. Investigate whether that is the case.
 #[derive(Default)]
-pub(crate) struct SectionUpdateBarrier {
+pub(crate) struct UpdateBarrier {
     our: Option<SharedState>,
     sibling: Option<SharedState>,
     pending_updates: HashSet<Prefix>,
 }
 
-impl SectionUpdateBarrier {
+impl UpdateBarrier {
     // Mark the section update for the given prefix as started. This prevents starting another
     // update while one is still in progress.
     //

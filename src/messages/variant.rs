@@ -10,8 +10,9 @@ use super::{Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
     error::{Error, Result},
+    node::SharedState,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, SectionProofChain, SharedState, TrustStatus},
+    section::{EldersInfo, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;

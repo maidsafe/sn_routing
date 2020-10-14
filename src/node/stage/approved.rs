@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{command, Bootstrapping, Command, NodeInfo, State};
+use super::{command, Bootstrapping, Command, NodeInfo, SharedState, State, UpdateBarrier};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -25,7 +25,7 @@ use crate::{
     relocation::{self, RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
         EldersInfo, MemberInfo, Section, SectionKeyShare, SectionKeysProvider, SectionProofChain,
-        SectionUpdateBarrier, SharedState, MIN_AGE,
+        MIN_AGE,
     },
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
@@ -44,7 +44,7 @@ pub(crate) struct Approved {
     pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     vote_accumulator: VoteAccumulator,
-    section_update_barrier: SectionUpdateBarrier,
+    section_update_barrier: UpdateBarrier,
     // Voter for DKG
     dkg_voter: DkgVoter,
     // Serialized `RelocatePromise` message that we received from our section. To be sent back to

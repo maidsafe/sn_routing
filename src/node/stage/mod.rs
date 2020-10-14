@@ -10,10 +10,13 @@ mod approved;
 mod bootstrapping;
 mod comm;
 mod joining;
+mod shared_state;
+mod update_barrier;
 
+pub(crate) use self::shared_state::SharedState;
 pub(super) use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm};
 
-use self::joining::Joining;
+use self::{joining::Joining, update_barrier::UpdateBarrier};
 use super::{command, Command};
 use crate::{
     consensus::{ProofShare, Vote},

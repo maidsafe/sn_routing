@@ -11,8 +11,6 @@ mod member_info;
 mod section_keys;
 mod section_peers;
 mod section_proof_chain;
-mod section_update_barrier;
-mod shared_state;
 
 #[cfg(test)]
 pub(crate) use self::elders_info::gen_elders_info;
@@ -23,7 +21,6 @@ pub use self::{
     section_peers::SectionPeers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
-pub(crate) use self::{section_update_barrier::SectionUpdateBarrier, shared_state::SharedState};
 
 use crate::{
     consensus::Proven,

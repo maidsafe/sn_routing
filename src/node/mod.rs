@@ -14,6 +14,7 @@ mod stage;
 mod tests;
 
 pub use self::event_stream::EventStream;
+pub(crate) use self::stage::SharedState;
 #[cfg(test)]
 use self::stage::State;
 use self::{
