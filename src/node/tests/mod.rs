@@ -827,7 +827,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 async fn handle_bounced_unknown_message() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
 
-    // Create `SharedState` whose section chain has two keys.
+    // Create section chain with two keys.
     let sk0 = bls::SecretKey::random();
     let pk0 = sk0.public_key();
 
@@ -920,7 +920,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 async fn handle_bounced_untrusted_message() -> Result<()> {
     let (elders_info, mut full_ids) = create_elders_info();
 
-    // Create `SharedState` whose section chain has two keys.
+    // Create section chain with two keys.
     let sk0 = bls::SecretKey::random();
     let pk0 = sk0.public_key();
 
@@ -1009,7 +1009,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
 #[tokio::test]
 async fn handle_sync() -> Result<()> {
-    // Create first `SharedState` with a chain of length 2
+    // Create first `Section` with a chain of length 2
     let sk0_set = SecretKeySet::random();
     let pk0 = sk0_set.secret_key().public_key();
     let sk1_set = SecretKeySet::random();
@@ -1029,7 +1029,7 @@ async fn handle_sync() -> Result<()> {
     let state = Approved::new(old_section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
-    // Create new `SharedState` as a successor to the previous one.
+    // Create new `Section` as a successor to the previous one.
     let sk2 = bls::SecretKey::random();
     let pk2 = sk2.public_key();
     let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
@@ -1080,7 +1080,7 @@ async fn handle_sync() -> Result<()> {
         })
         .await?;
 
-    // Verify our `SharedState` got updated.
+    // Verify our `Section` got updated.
     assert_matches!(
         event_rx.try_recv(),
         Ok(Event::EldersChanged { key, elders, .. }) => {
