@@ -22,6 +22,7 @@ pub(crate) struct Node {
     pub addr: SocketAddr,
     pub age: u8,
     pub network_params: NetworkParams,
+    // TODO: move this event sender somewhere else. This is not an approprate place for it.
     event_tx: mpsc::UnboundedSender<Event>,
 }
 

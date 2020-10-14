@@ -297,7 +297,7 @@ impl Stage {
                     Ok(vec![self.handle_schedule_timeout(duration, token).await])
                 }
                 Command::Transition(state) => {
-                    *self.state.lock().await = *state;
+                    self.handle_transition(*state).await;
                     Ok(vec![])
                 }
             }
@@ -392,6 +392,18 @@ impl Stage {
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Command {
         time::delay_for(duration).await;
         Command::HandleTimeout(token)
+    }
+
+    async fn handle_transition(&self, new_state: State) {
+        let mut old_state = self.state.lock().await;
+
+        // Sending `Event::Connected` here to make sure the transition is complete by the time the
+        // event is received.
+        if let (State::Joining(old), State::Approved(_)) = (&*old_state, &new_state) {
+            old.node.send_event(Event::Connected(old.connect_type()));
+        }
+
+        *old_state = new_state
     }
 
     async fn log_ident(&self) -> String {

@@ -9,7 +9,7 @@
 use super::{approved::Approved, Command, State};
 use crate::{
     error::{Error, Result},
-    event::{Connected, Event},
+    event::Connected,
     messages::{BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
@@ -89,7 +89,6 @@ impl Joining {
                 verify_message(&msg, trusted_key)?;
 
                 // Transition from Joining to Approved
-                let connect_type = self.connect_type();
                 let section_chain = msg.proof_chain()?.clone();
 
                 info!(
@@ -100,8 +99,6 @@ impl Joining {
                 let section = Section::new(section_chain, payload.clone());
                 let state = Approved::new(section, None, self.node.clone());
                 let state = State::Approved(state);
-
-                self.node.send_event(Event::Connected(connect_type));
 
                 Ok(vec![Command::Transition(Box::new(state))])
             }
@@ -146,7 +143,7 @@ impl Joining {
     }
 
     // Are we relocating or joining for the first time?
-    fn connect_type(&self) -> Connected {
+    pub fn connect_type(&self) -> Connected {
         match &self.join_type {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(payload) => Connected::Relocate {
