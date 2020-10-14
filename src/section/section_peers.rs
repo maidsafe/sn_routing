@@ -8,18 +8,17 @@
 
 use super::{
     member_info::{MemberInfo, PeerState},
-    section_proof_chain::SectionProofChain,
     EldersInfo,
 };
-use crate::{
-    consensus::{Proof, Proven},
-    peer::Peer,
-};
+use crate::{consensus::Proven, peer::Peer};
 
 use itertools::Itertools;
 use std::{
     cmp::Ordering,
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{
+        btree_map::{self, Entry},
+        BTreeMap,
+    },
     hash::{Hash, Hasher},
     mem,
 };
@@ -27,7 +26,7 @@ use xor_name::{Prefix, XorName};
 
 /// Container for storing information about members of our section.
 #[derive(Clone, Default, Debug, Eq, Serialize, Deserialize)]
-pub struct SectionPeers {
+pub(crate) struct SectionPeers {
     members: BTreeMap<XorName, Proven<MemberInfo>>,
 }
 
@@ -46,7 +45,7 @@ impl SectionPeers {
     }
 
     /// Returns an iterator over the members that have state == `Joined` together with their proofs.
-    pub fn joined_proven(&self) -> impl Iterator<Item = &Proven<MemberInfo>> {
+    pub fn proven_joined(&self) -> impl Iterator<Item = &Proven<MemberInfo>> {
         self.members
             .values()
             .filter(|member| member.value.state == PeerState::Joined)
@@ -118,21 +117,11 @@ impl SectionPeers {
 
     /// Update a member of our section.
     /// Returns whether anything actually changed.
-    pub fn update(
-        &mut self,
-        new_info: MemberInfo,
-        proof: Proof,
-        section_chain: &SectionProofChain,
-    ) -> bool {
-        match self.members.entry(*new_info.peer.name()) {
+    pub fn update(&mut self, new_info: Proven<MemberInfo>) -> bool {
+        match self.members.entry(*new_info.value.peer.name()) {
             Entry::Vacant(entry) => {
-                let new_info = Proven::new(new_info, proof);
-                if new_info.verify(section_chain) {
-                    let _ = entry.insert(new_info);
-                    true
-                } else {
-                    false
-                }
+                let _ = entry.insert(new_info);
+                true
             }
             Entry::Occupied(mut entry) => {
                 // To maintain commutativity, the only allowed transitions are:
@@ -140,39 +129,27 @@ impl SectionPeers {
                 // - Joined -> Left
                 // - Joined -> Relocated
                 // - Relocated -> Left (should not happen, but needed for consistency)
-                match (entry.get().value.state, new_info.state) {
+                match (entry.get().value.state, new_info.value.state) {
                     (PeerState::Joined, PeerState::Joined)
-                        if new_info.peer.age() > entry.get().value.peer.age() => {}
+                        if new_info.value.peer.age() > entry.get().value.peer.age() => {}
                     (PeerState::Joined, PeerState::Left)
                     | (PeerState::Joined, PeerState::Relocated(_))
                     | (PeerState::Relocated(_), PeerState::Left) => {}
                     _ => return false,
                 };
 
-                let new_info = Proven::new(new_info, proof);
-                if new_info.verify(section_chain) {
-                    let _ = entry.insert(new_info);
-                    true
-                } else {
-                    false
-                }
+                let _ = entry.insert(new_info);
+                true
             }
         }
     }
 
-    /// Remove all members whose name does not match our prefix.
-    pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix) {
+    /// Remove all members whose name does not match `prefix`.
+    pub fn prune_not_matching(&mut self, prefix: &Prefix) {
         self.members = mem::take(&mut self.members)
             .into_iter()
             .filter(|(name, _)| prefix.matches(name))
             .collect();
-    }
-
-    /// Merge two `SectionPeers` into one.
-    pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
-        for (_, info) in other.members {
-            let _ = self.update(info.value, info.proof, section_chain);
-        }
     }
 }
 
@@ -185,6 +162,25 @@ impl PartialEq for SectionPeers {
 impl Hash for SectionPeers {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.members.hash(state)
+    }
+}
+
+pub struct IntoIter(btree_map::IntoIter<XorName, Proven<MemberInfo>>);
+
+impl Iterator for IntoIter {
+    type Item = Proven<MemberInfo>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, info)| info)
+    }
+}
+
+impl IntoIterator for SectionPeers {
+    type IntoIter = IntoIter;
+    type Item = <Self::IntoIter as Iterator>::Item;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter(self.members.into_iter())
     }
 }
 

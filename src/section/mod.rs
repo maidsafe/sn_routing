@@ -14,11 +14,11 @@ mod section_proof_chain;
 
 #[cfg(test)]
 pub(crate) use self::elders_info::gen_elders_info;
+pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
     elders_info::{majority_count, EldersInfo},
     member_info::{MemberInfo, PeerState, MIN_AGE},
     section_keys::{SectionKeyShare, SectionKeysProvider},
-    section_peers::SectionPeers,
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
 
@@ -82,7 +82,10 @@ impl Section {
         for peer in section.elders_info.value.peers() {
             let member_info = MemberInfo::joined(*peer);
             let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
-            let _ = section.members.update(member_info, proof, &section.chain);
+            let _ = section.members.update(Proven {
+                value: member_info,
+                proof,
+            });
         }
 
         let section_key_share = SectionKeyShare {
@@ -121,9 +124,12 @@ impl Section {
             Some(Ordering::Greater) | Some(Ordering::Equal) | None => (),
         }
 
-        self.members.merge(other.members, &self.chain);
+        for info in other.members {
+            let _ = self.update_member(info);
+        }
+
         self.members
-            .remove_not_matching_our_prefix(&self.elders_info.value.prefix);
+            .prune_not_matching(&self.elders_info.value.prefix);
 
         Ok(())
     }
@@ -137,7 +143,7 @@ impl Section {
         if new_elders_info != self.elders_info {
             self.elders_info = new_elders_info;
             self.members
-                .remove_not_matching_our_prefix(&self.elders_info.value.prefix);
+                .prune_not_matching(&self.elders_info.value.prefix);
 
             true
         } else {
@@ -150,8 +156,12 @@ impl Section {
     }
 
     /// Update the member. Returns whether it actually changed anything.
-    pub fn update_member(&mut self, member_info: MemberInfo, proof: Proof) -> bool {
-        self.members.update(member_info, proof, &self.chain)
+    pub fn update_member(&mut self, member_info: Proven<MemberInfo>) -> bool {
+        if !member_info.verify(&self.chain) {
+            return false;
+        }
+
+        self.members.update(member_info)
     }
 
     pub fn to_minimal(&self) -> Self {
