@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, MemberInfo, Network, Section, SectionKeyShare, SectionProofChain};
+use super::{EldersInfo, MemberInfo, Section, SectionKeyShare, SectionProofChain};
 use crate::{
     consensus::Proven,
     error::{Error, Result},
     location::DstLocation,
     messages::MessageHash,
+    network::Network,
     peer::Peer,
     relocation::{self, RelocateAction, RelocateDetails, RelocatePromise},
 };
