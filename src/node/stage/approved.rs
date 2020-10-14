@@ -304,9 +304,12 @@ impl Approved {
             // The key is recognized as non-last, indicating the peer is lagging.
             Ok(Some(self.send_direct_message(
                 peer,
-                // TODO: consider sending only those parts of the shared state that are new
+                // TODO: consider sending only those parts of section that are new
                 // since `public_key` was the latest key.
-                Variant::Sync(self.shared_state.clone()),
+                Variant::Sync {
+                    section: self.shared_state.section.clone(),
+                    network: Network::new(),
+                },
             )?))
         } else {
             Ok(None)
@@ -443,7 +446,9 @@ impl Approved {
                 msg.dst().check_is_section()?;
                 self.handle_neighbour_info(elders_info.value.clone(), *msg.proof_chain_last_key()?)
             }
-            Variant::Sync(shared_state) => self.handle_sync(shared_state.clone()),
+            Variant::Sync { section, network } => {
+                self.handle_sync(section.clone(), network.clone())
+            }
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
@@ -695,7 +700,13 @@ impl Approved {
         // arrive in the same order they were sent, the Sync should update the peer so it will then
         // be able to handle the resent message. If not, the peer will bounce the message again.
         Ok(vec![
-            self.send_direct_message(sender.addr(), Variant::Sync(self.shared_state.clone()))?,
+            self.send_direct_message(
+                sender.addr(),
+                Variant::Sync {
+                    section: self.shared_state.section.clone(),
+                    network: Network::new(),
+                },
+            )?,
             Command::send_message_to_target(sender.addr(), bounced_msg_bytes),
         ])
     }
@@ -736,17 +747,13 @@ impl Approved {
             .send_event(Event::MessageReceived { content, src, dst })
     }
 
-    fn handle_sync(&mut self, shared_state: SharedState) -> Result<Vec<Command>> {
-        if !shared_state
-            .section
-            .prefix()
-            .matches(&self.node_info.name())
-        {
+    fn handle_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
+        if !section.prefix().matches(&self.node_info.name()) {
             trace!("ignore Sync - not our section");
             return Ok(vec![]);
         }
 
-        self.update_shared_state(shared_state)
+        self.update_shared_state(section, network)
     }
 
     fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
@@ -1370,7 +1377,7 @@ impl Approved {
 
         if let Some(our) = our {
             trace!("update our section: {:?}", our.section.elders_info());
-            commands.extend(self.update_shared_state(our)?);
+            commands.extend(self.update_shared_state(our.section, our.network)?);
         }
 
         if let Some(sibling) = sibling {
@@ -1392,17 +1399,17 @@ impl Approved {
         Ok(commands)
     }
 
-    fn update_shared_state(&mut self, update: SharedState) -> Result<Vec<Command>> {
+    fn update_shared_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
         let old_is_elder = self.is_elder();
         let old_last_key_index = self.shared_state.section.chain().last_key_index();
         let old_prefix = *self.shared_state.section.prefix();
 
-        self.shared_state.section.merge(update.section)?;
+        self.shared_state.section.merge(section)?;
         self.shared_state
             .network
-            .merge(update.network, self.shared_state.section.chain());
+            .merge(network, self.shared_state.section.chain());
 
         self.section_keys_provider
             .finalise_dkg(self.shared_state.section.chain().last_key());
@@ -1552,12 +1559,15 @@ impl Approved {
             }
 
             let variant = if shared_state.section.is_elder(peer.name()) {
-                Variant::Sync(shared_state.clone())
+                Variant::Sync {
+                    section: shared_state.section.clone(),
+                    network: shared_state.network.clone(),
+                }
             } else {
-                Variant::Sync(SharedState {
+                Variant::Sync {
                     section: shared_state.section.to_minimal(),
                     network: Network::new(),
-                })
+                }
             };
 
             trace!("Send {:?} to {:?}", variant, peer);

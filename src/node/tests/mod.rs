@@ -14,7 +14,6 @@ use crate::{
     location::DstLocation,
     messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
     network::Network,
-    node::SharedState,
     peer::Peer,
     rng,
     section::{
@@ -897,9 +896,9 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         let message = Message::from_bytes(&message)?;
 
         match message.variant() {
-            Variant::Sync(state) => {
+            Variant::Sync { section, .. } => {
                 assert_eq!(recipients, [peer_addr]);
-                assert_eq!(*state.section.chain().last_key(), pk1);
+                assert_eq!(*section.chain().last_key(), pk1);
                 sync_sent = true;
             }
             Variant::UserMessage(content) => {
@@ -1065,10 +1064,10 @@ async fn handle_sync() -> Result<()> {
         &old_peer_keypair,
         MIN_AGE + 1,
         DstLocation::Direct,
-        Variant::Sync(SharedState {
+        Variant::Sync {
             section: new_section,
             network: Network::new(),
-        }),
+        },
         None,
         None,
     )?;
