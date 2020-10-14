@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, event::Event, NetworkParams};
+use crate::{crypto, event::Event, peer::Peer, NetworkParams};
 use ed25519_dalek::Keypair;
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::XorName;
 
@@ -19,6 +19,8 @@ pub(crate) struct Node {
     // memory which might be insecure.
     // TODO: find a way to not require `Clone`.
     pub keypair: Arc<Keypair>,
+    pub addr: SocketAddr,
+    pub age: u8,
     pub network_params: NetworkParams,
     event_tx: mpsc::UnboundedSender<Event>,
 }
@@ -26,14 +28,22 @@ pub(crate) struct Node {
 impl Node {
     pub(super) fn new(
         keypair: Keypair,
+        addr: SocketAddr,
+        age: u8,
         network_params: NetworkParams,
         event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
         Self {
             keypair: Arc::new(keypair),
+            addr,
+            age,
             network_params,
             event_tx,
         }
+    }
+
+    pub fn peer(&self) -> Peer {
+        Peer::new(self.name(), self.addr, self.age)
     }
 
     pub fn name(&self) -> XorName {

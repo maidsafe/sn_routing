@@ -22,7 +22,7 @@ use self::{
     stage::{Approved, Bootstrapping, Comm, Stage},
 };
 use crate::{
-    crypto::{Keypair, PublicKey},
+    crypto::{self, Keypair, PublicKey},
     error::{Error, Result},
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
@@ -31,7 +31,7 @@ use crate::{
     peer::Peer,
     rng,
     section::{EldersInfo, SectionProofChain},
-    TransportConfig,
+    TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
 use ed25519_dalek::Signature;
@@ -86,16 +86,22 @@ impl Instance {
         let keypair = config
             .keypair
             .unwrap_or_else(|| Keypair::generate(&mut rng));
+        let node_name = crypto::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let node = Node::new(keypair, config.network_params, event_tx.clone());
-        let node_name = node.name();
 
         let (state, comm, initial_command) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
             let addr = comm.our_connection_info()?;
-            let state = Approved::first_node(node, addr)?;
+            let node = Node::new(
+                keypair,
+                addr,
+                MIN_AGE,
+                config.network_params,
+                event_tx.clone(),
+            );
+            let state = Approved::first_node(node)?;
 
             let _ = event_tx.send(Event::Connected(Connected::First));
             let _ = event_tx.send(Event::PromotedToElder);
@@ -104,6 +110,8 @@ impl Instance {
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
+            let addr = comm.our_connection_info()?;
+            let node = Node::new(keypair, addr, MIN_AGE, config.network_params, event_tx);
             let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node)?;
 
             (state.into(), comm, Some(command))

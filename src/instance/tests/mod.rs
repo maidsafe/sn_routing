@@ -68,11 +68,9 @@ async fn send_bootstrap_request() -> Result<()> {
 
 #[tokio::test]
 async fn receive_bootstrap_request() -> Result<()> {
-    let comm = create_comm()?;
-    let addr = comm.our_connection_info()?;
     let (node, _) = create_node();
-    let state = Approved::first_node(node, addr)?;
-    let stage = Stage::new(state.into(), comm);
+    let state = Approved::first_node(node)?;
+    let stage = Stage::new(state.into(), create_comm()?);
 
     let new_keypair = create_keypair();
     let new_addr = create_addr();
@@ -221,10 +219,8 @@ async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request() -> Result<()> {
     let (node, _) = create_node();
-    let comm = create_comm()?;
-    let addr = comm.our_connection_info()?;
-    let state = Approved::first_node(node, addr)?;
-    let stage = Stage::new(state.into(), comm);
+    let state = Approved::first_node(node)?;
+    let stage = Stage::new(state.into(), create_comm()?);
 
     let new_keypair = create_keypair();
     let new_addr = create_addr();
@@ -1182,7 +1178,13 @@ fn create_node() -> (Node, mpsc::UnboundedReceiver<Event>) {
 
 fn create_node_for(keypair: Keypair) -> (Node, mpsc::UnboundedReceiver<Event>) {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let node = Node::new(keypair, Default::default(), event_tx);
+    let node = Node::new(
+        keypair,
+        create_addr(),
+        MIN_AGE,
+        Default::default(),
+        event_tx,
+    );
     (node, event_rx)
 }
 

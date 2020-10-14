@@ -62,12 +62,22 @@ impl SrcAuthority {
         matches!(self, Self::Section { .. })
     }
 
-    pub(crate) fn as_node(&self) -> Result<(XorName, u8)> {
+    pub(crate) fn to_node_name(&self) -> Result<XorName> {
         match self {
+            Self::Node { public_key, .. } => Ok(name(public_key)),
+            Self::Section { .. } => Err(Error::BadLocation),
+        }
+    }
+
+    pub(crate) fn to_node_peer(&self, addr: Option<SocketAddr>) -> Result<Peer> {
+        match self {
+            Self::Section { .. } => Err(Error::BadLocation),
             Self::Node {
                 public_key, age, ..
-            } => Ok((name(public_key), *age)),
-            Self::Section { .. } => Err(Error::BadLocation),
+            } => {
+                let addr = addr.ok_or(Error::InvalidSource)?;
+                Ok(Peer::new(name(public_key), addr, *age))
+            }
         }
     }
 
@@ -77,11 +87,5 @@ impl SrcAuthority {
             Self::Section { prefix, .. } => Ok(prefix),
             Self::Node { .. } => Err(Error::BadLocation),
         }
-    }
-
-    pub(crate) fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<Peer> {
-        let (name, age) = self.as_node()?;
-        let conn_info = sender.ok_or(Error::InvalidSource)?;
-        Ok(Peer::new(name, conn_info, age))
     }
 }

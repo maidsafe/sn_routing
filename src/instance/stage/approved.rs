@@ -57,10 +57,8 @@ pub(crate) struct Approved {
 
 impl Approved {
     // Creates the approved state for the first node in the network
-    pub fn first_node(node: Node, our_addr: SocketAddr) -> Result<Self> {
-        let peer = Peer::new(node.name(), our_addr, MIN_AGE);
-        let (section, section_key_share) = Section::first_node(peer)?;
-
+    pub fn first_node(node: Node) -> Result<Self> {
+        let (section, section_key_share) = Section::first_node(node.peer())?;
         Ok(Self::new(section, Some(section_key_share), node))
     }
 
@@ -467,13 +465,13 @@ impl Approved {
             }
             Variant::BootstrapRequest(name) => {
                 Ok(vec![self.handle_bootstrap_request(
-                    msg.src().to_sender_node(sender)?,
+                    msg.src().to_node_peer(sender)?,
                     *name,
                 )?])
             }
 
             Variant::JoinRequest(join_request) => {
-                self.handle_join_request(msg.src().to_sender_node(sender)?, *join_request.clone())
+                self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
                 self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
@@ -481,7 +479,7 @@ impl Approved {
             }
             Variant::BouncedUntrustedMessage(message) => Ok(self
                 .handle_bounced_untrusted_message(
-                    msg.src().to_sender_node(sender)?,
+                    msg.src().to_node_peer(sender)?,
                     *msg.dst_key(),
                     *message.clone(),
                 )
@@ -489,7 +487,7 @@ impl Approved {
                 .collect()),
             Variant::BouncedUnknownMessage { src_key, message } => self
                 .handle_bounced_unknown_message(
-                    msg.src().to_sender_node(sender)?,
+                    msg.src().to_node_peer(sender)?,
                     message.clone(),
                     src_key,
                 ),
@@ -498,10 +496,10 @@ impl Approved {
                 elders_info,
             } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DKGMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().as_node()?.0)
+                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
             Variant::DKGResult { dkg_key, result } => {
-                self.handle_dkg_result(*dkg_key, *result, msg.src().as_node()?.0)
+                self.handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)
             }
             Variant::Vote {
                 content,
