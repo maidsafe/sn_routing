@@ -10,9 +10,9 @@ use super::{Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
     error::{Error, Result},
-    node::SharedState,
+    network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, SectionProofChain, TrustStatus},
+    section::{EldersInfo, Section, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -42,7 +42,7 @@ pub(crate) enum Variant {
     /// section.
     NodeApproval(Proven<EldersInfo>),
     /// Message sent to all members to update them about the state of our section.
-    Sync(SharedState),
+    Sync { section: Section, network: Network },
     /// Send from a section to the node to be immediately relocated.
     Relocate(RelocateDetails),
     /// Send:
@@ -148,10 +148,10 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
-            Self::Sync(shared_state) => f
+            Self::Sync { section, .. } => f
                 .debug_struct("Sync")
-                .field("elders_info", shared_state.section.elders_info())
-                .field("section_key", shared_state.section.chain().last_key())
+                .field("elders_info", section.elders_info())
+                .field("section_key", section.chain().last_key())
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
