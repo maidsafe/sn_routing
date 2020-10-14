@@ -16,7 +16,7 @@ use futures::future;
 use itertools::Itertools;
 use sn_routing::{
     event::{Connected, Event},
-    log_ident, EventStream, NetworkParams, Node, NodeConfig, TransportConfig, MIN_AGE,
+    log_ident, Config, EventStream, Instance, NetworkParams, TransportConfig, MIN_AGE,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -29,14 +29,12 @@ use std::{
 
 static LOG_INIT: Once = Once::new();
 
-// -----  TestNode and builder  -----
-
-pub struct TestNodeBuilder {
-    config: NodeConfig,
+pub struct InstanceBuilder {
+    config: Config,
 }
 
-impl<'a> TestNodeBuilder {
-    pub fn new(config: Option<NodeConfig>) -> Self {
+impl<'a> InstanceBuilder {
+    pub fn new(config: Option<Config>) -> Self {
         // We initialise the logger but only once for all tests
         LOG_INIT.call_once(|| {
             env_logger::builder()
@@ -57,7 +55,7 @@ impl<'a> TestNodeBuilder {
                 .init()
         });
 
-        let config = config.unwrap_or_else(NodeConfig::default);
+        let config = config.unwrap_or_else(Config::default);
 
         Self { config }
     }
@@ -89,7 +87,7 @@ impl<'a> TestNodeBuilder {
         self
     }
 
-    pub async fn create(self) -> Result<(Node, EventStream)> {
+    pub async fn create(self) -> Result<(Instance, EventStream)> {
         // make sure we set 127.0.0.1 as the IP if was not set
         let config = if self.config.transport_config.ip.is_none() {
             let mut config = self.config;
@@ -99,7 +97,7 @@ impl<'a> TestNodeBuilder {
             self.config
         };
 
-        Ok(Node::new(config).await?)
+        Ok(Instance::new(config).await?)
     }
 }
 
@@ -124,11 +122,11 @@ macro_rules! assert_next_event {
 pub async fn create_connected_nodes(
     count: usize,
     network_params: NetworkParams,
-) -> Result<Vec<(Node, EventStream)>> {
+) -> Result<Vec<(Instance, EventStream)>> {
     let mut nodes = vec![];
 
     // Create the first node
-    let (node, mut event_stream) = TestNodeBuilder::new(None)
+    let (node, mut event_stream) = InstanceBuilder::new(None)
         .first()
         .network_params(network_params)
         .create()
@@ -142,7 +140,7 @@ pub async fn create_connected_nodes(
 
     // Create the other nodes bootstrapping off the first node.
     let other_nodes = (1..count).map(|_| async {
-        let (node, mut event_stream) = TestNodeBuilder::new(None)
+        let (node, mut event_stream) = InstanceBuilder::new(None)
             .network_params(network_params)
             .with_contact(bootstrap_contact)
             .create()
@@ -183,7 +181,7 @@ pub async fn create_connected_nodes(
     Ok(nodes)
 }
 
-pub async fn verify_invariants_for_node(node: &Node, elder_size: usize) -> Result<()> {
+pub async fn verify_invariants_for_node(node: &Instance, elder_size: usize) -> Result<()> {
     let our_name = node.name().await;
     assert!(node.matches_our_prefix(&our_name).await?);
 

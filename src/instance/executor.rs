@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Command;
+use super::{Command, Stage};
 use crate::{
     cancellation::{cancellable, CancellationHandle, CancellationToken},
     event::Event,
     messages::Message,
-    node::stage::Stage,
 };
 use bytes::Bytes;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};

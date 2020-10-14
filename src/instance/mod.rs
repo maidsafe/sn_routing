@@ -39,8 +39,8 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
-/// Node configuration.
-pub struct NodeConfig {
+/// Instance configuration.
+pub struct Config {
     /// If true, configures the node to start a new network instead of joining an existing one.
     pub first: bool,
     /// The `Keypair` of the node or `None` for randomly generated one.
@@ -51,7 +51,7 @@ pub struct NodeConfig {
     pub network_params: NetworkParams,
 }
 
-impl Default for NodeConfig {
+impl Default for Config {
     fn default() -> Self {
         Self {
             first: false,
@@ -63,24 +63,24 @@ impl Default for NodeConfig {
 }
 
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
-/// sn_routing node.
+/// routing node.
 ///
 /// A node is a part of the network that can route messages and be a member of a section or group
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
-pub struct Node {
+pub struct Instance {
     stage: Arc<Stage>,
     _executor: Executor,
 }
 
-impl Node {
+impl Instance {
     ////////////////////////////////////////////////////////////////////////////
     // Public API
     ////////////////////////////////////////////////////////////////////////////
 
     /// Create new node using the given config.
-    pub async fn new(config: NodeConfig) -> Result<(Self, EventStream)> {
+    pub async fn new(config: Config) -> Result<(Self, EventStream)> {
         let mut rng = rng::new();
         let keypair = config
             .keypair
