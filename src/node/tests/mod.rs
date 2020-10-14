@@ -13,11 +13,12 @@ use crate::{
     event::Event,
     location::DstLocation,
     messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
+    network::Network,
     peer::Peer,
     rng,
     section::{
-        majority_count, EldersInfo, MemberInfo, PeerState, SectionKeyShare, SectionProofChain,
-        SharedState, MIN_AGE,
+        majority_count, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
+        SectionProofChain, SharedState, MIN_AGE,
     },
     Error, ELDER_SIZE,
 };
@@ -275,9 +276,9 @@ async fn accumulate_votes() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
-    let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
     let (node_info, _) = create_node_info_for(keypairs.remove(0));
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let new_peer = create_peer();
@@ -326,9 +327,9 @@ async fn accumulate_votes() -> Result<()> {
 async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
     let sk_set = SecretKeySet::random();
-    let (shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let new_peer = create_peer();
@@ -391,20 +392,18 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         Prefix::default(),
     );
     let proven_elders_info = create_proven(sk_set.secret_key(), elders_info.clone())?;
-    let mut shared_state = SharedState::new(chain, proven_elders_info);
+    let mut section = Section::new(chain, proven_elders_info);
 
     for peer in elders_info.elders.values() {
         let member_info = MemberInfo::joined(*peer);
         let member_info_proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = shared_state
-            .section
-            .update_member(member_info, member_info_proof);
+        let _ = section.update_member(member_info, member_info_proof);
     }
 
     let (node_info, _) = create_node_info_for(keypairs.remove(0));
     let node_name = node_info.name();
     let section_key_share = create_section_key_share(&sk_set, 0);
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // Handle the consensus on Online of a peer that is older than the youngest
@@ -479,15 +478,15 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
-    let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
     let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = shared_state.section.update_member(member_info, proof);
+    let _ = section.update_member(member_info, proof);
 
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let member_info = MemberInfo {
@@ -514,12 +513,12 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
-    let (mut shared_state, section_key_share) = create_shared_state(&elders_info, &sk_set)?;
+    let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
     let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = shared_state.section.update_member(member_info, proof);
+    let _ = section.update_member(member_info, proof);
 
     // Pick the elder to remove.
     let remove_peer = *elders_info
@@ -528,8 +527,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .rev()
         .next()
         .expect("elders_info is empty");
-    let remove_member_info = shared_state
-        .section
+    let remove_member_info = section
         .members()
         .get(remove_peer.name())
         .expect("member not found")
@@ -538,7 +536,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     // Create our node
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
     let node_name = node_info.name();
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // Handle the consensus on the Offline vote
@@ -658,10 +656,10 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let chain = SectionProofChain::new(sk.public_key());
 
     let proven_elders_info = create_proven(&sk, elders_info)?;
-    let shared_state = SharedState::new(chain, proven_elders_info);
+    let section = Section::new(chain, proven_elders_info);
 
     let (node_info, _) = create_node_info();
-    let state = Approved::new(shared_state, None, node_info);
+    let state = Approved::new(section, None, node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // non-elders can't handle messages addressed to sections.
@@ -768,11 +766,11 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     };
 
     let proven_elders_info = create_proven(&sk0, elders_info)?;
-    let shared_state = SharedState::new(chain.clone(), proven_elders_info);
+    let section = Section::new(chain.clone(), proven_elders_info);
 
     let (node_info, _) = create_node_info();
     let node_name = node_info.name();
-    let state = Approved::new(shared_state, None, node_info);
+    let state = Approved::new(section, None, node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let sk1 = bls::SecretKey::random();
@@ -841,7 +839,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let _ = section_chain.push(pk1, pk1_signature);
 
     let proven_elders_info = create_proven(&sk0, elders_info)?;
-    let shared_state = SharedState::new(section_chain, proven_elders_info);
+    let section = Section::new(section_chain, proven_elders_info);
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
     let (node_info, _) = create_node_info_for(keypairs.remove(0));
@@ -860,7 +858,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         None,
     )?;
 
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     let bounced_message = Message::single_src(
@@ -934,7 +932,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let _ = chain.push(pk1, pk1_signature);
 
     let proven_elders_info = create_proven(&sk0, elders_info)?;
-    let shared_state = SharedState::new(chain.clone(), proven_elders_info);
+    let section = Section::new(chain.clone(), proven_elders_info);
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
     let (node_info, _) = create_node_info_for(full_ids.remove(0));
@@ -958,7 +956,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let original_message = Message::section_src(original_message, signature, proof_chain)?;
 
     // Create our node.
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // Create the bounced message, indicating the last key the peer knows is `pk0`
@@ -1023,12 +1021,12 @@ async fn handle_sync() -> Result<()> {
 
     let (old_elders_info, mut keypairs) = create_elders_info();
     let proven_old_elders_info = create_proven(sk0_set.secret_key(), old_elders_info.clone())?;
-    let old_shared_state = SharedState::new(chain.clone(), proven_old_elders_info);
+    let old_section = Section::new(chain.clone(), proven_old_elders_info);
 
     // Create our node
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let (node_info, mut event_rx) = create_node_info_for(keypairs.remove(0));
-    let state = Approved::new(old_shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(old_section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), create_comm()?);
 
     // Create new `SharedState` as a successor to the previous one.
@@ -1059,14 +1057,17 @@ async fn handle_sync() -> Result<()> {
     );
     let new_elders: BTreeSet<_> = new_elders_info.elders.keys().copied().collect();
     let proven_new_elders_info = create_proven(sk1_set.secret_key(), new_elders_info)?;
-    let new_shared_state = SharedState::new(chain, proven_new_elders_info);
+    let new_section = Section::new(chain, proven_new_elders_info);
 
     // Create the `Sync` message containing the new shared state.
     let message = Message::single_src(
         &old_peer_keypair,
         MIN_AGE + 1,
         DstLocation::Direct,
-        Variant::Sync(new_shared_state),
+        Variant::Sync(SharedState {
+            section: new_section,
+            network: Network::new(),
+        }),
         None,
         None,
     )?;
@@ -1109,10 +1110,10 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         Prefix::default(),
     );
     let proven_elders_info = create_proven(sk0_good_set.secret_key(), elders_info)?;
-    let shared_state = SharedState::new(chain, proven_elders_info);
+    let section = Section::new(chain, proven_elders_info);
     let section_key_share = create_section_key_share(&sk0_good_set, 0);
 
-    let state = Approved::new(shared_state, Some(section_key_share), node_info);
+    let state = Approved::new(section, Some(section_key_share), node_info);
     let node = Stage::new(state.into(), comm);
 
     // Create a message with a valid signature but invalid proof chain (the last key in the chain
@@ -1242,24 +1243,24 @@ fn create_proven<T: Serialize>(sk: &bls::SecretKey, payload: T) -> Result<Proven
     })
 }
 
-fn create_shared_state(
+fn create_section(
     elders_info: &EldersInfo,
     sk_set: &SecretKeySet,
-) -> Result<(SharedState, SectionKeyShare)> {
+) -> Result<(Section, SectionKeyShare)> {
     let section_chain = SectionProofChain::new(sk_set.secret_key().public_key());
     let proven_elders_info = create_proven(sk_set.secret_key(), elders_info.clone())?;
 
-    let mut shared_state = SharedState::new(section_chain, proven_elders_info);
+    let mut section = Section::new(section_chain, proven_elders_info);
 
     for peer in elders_info.elders.values().copied() {
         let member_info = MemberInfo::joined(peer);
         let proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = shared_state.section.update_member(member_info, proof);
+        let _ = section.update_member(member_info, proof);
     }
 
     let section_key_share = create_section_key_share(sk_set, 0);
 
-    Ok((shared_state, section_key_share))
+    Ok((section, section_key_share))
 }
 
 // Wrapper for `bls::SecretKeySet` that also allows to retrieve the corresponding `bls::SecretKey`.

@@ -6,19 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, MemberInfo, Section, SectionKeyShare, SectionProofChain};
-use crate::{
-    consensus::Proven,
-    error::{Error, Result},
-    location::DstLocation,
-    messages::MessageHash,
-    network::Network,
-    peer::Peer,
-    relocation::{self, RelocateAction, RelocateDetails, RelocatePromise},
-};
+use super::{EldersInfo, Section};
+use crate::{consensus::Proven, network::Network};
 use serde::Serialize;
 use std::fmt::Debug;
-use xor_name::{Prefix, XorName};
+use xor_name::Prefix;
 
 /// Section state that is shared among all elders of a section via consensus.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -30,45 +22,6 @@ pub(crate) struct SharedState {
 }
 
 impl SharedState {
-    /// Creates a minimal `SharedState` initially containing only info about our section elders
-    /// (`elders_info`).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the key used to sign `elders_info` is not present in `section_chain`.
-    pub fn new(section_chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Self {
-        Self {
-            section: Section::new(section_chain, elders_info),
-            network: Network::new(),
-        }
-    }
-
-    /// Creates `SharedState` for the first node in the network
-    pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare)> {
-        let (section, section_key_share) = Section::first_node(peer)?;
-
-        let state = Self {
-            section,
-            network: Network::new(),
-        };
-
-        Ok((state, section_key_share))
-    }
-
-    // Merge two `SharedState`s into one.
-    // TODO: return `bool` indicating whether anything changed.
-    pub fn merge(&mut self, other: Self) -> Result<(), Error> {
-        self.section.merge(other.section)?;
-        self.network.merge(other.network, self.section.chain());
-
-        Ok(())
-    }
-
-    // Clear all data except that which is needed for non-elders.
-    pub fn demote(&mut self) {
-        *self = self.to_minimal();
-    }
-
     pub fn update_our_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
         if self.section.update_elders(elders_info) {
             self.network.prune_neighbours(self.section.prefix());
@@ -87,10 +40,6 @@ impl SharedState {
         }
     }
 
-    pub fn update_our_key(&mut self, key: Proven<bls::PublicKey>) -> bool {
-        self.section.update_chain(key.value, key.proof.signature)
-    }
-
     pub fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
         if key.value.0 == *self.section.prefix() {
             // Ignore our keys. Use `update_our_key` for that.
@@ -99,172 +48,6 @@ impl SharedState {
 
         self.network.update_their_key(key)
     }
-
-    pub fn to_minimal(&self) -> Self {
-        Self {
-            section: self.section.to_minimal(),
-            network: Network::new(),
-        }
-    }
-
-    /// Returns adults from our own section.
-    pub fn our_adults(&self) -> impl Iterator<Item = &Peer> {
-        self.section.adults()
-    }
-
-    /// Returns our members that are either joined or are left but still elders.
-    pub fn active_members(&self) -> impl Iterator<Item = &Peer> {
-        self.section.active_members()
-    }
-
-    /// All section keys we know of, including the past keys of our section.
-    pub fn section_keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
-        self.section
-            .chain()
-            .keys()
-            .map(move |key| (self.section.prefix(), key))
-            .chain(self.network.keys())
-    }
-
-    pub fn section_key_by_location(&self, dst: &DstLocation) -> &bls::PublicKey {
-        if let Some(name) = dst.name() {
-            self.section_key_by_name(name)
-        } else {
-            // We don't know the section if `dst` is `Direct`, so return the root key which should
-            // be trusted by everyone.
-            self.section.chain().first_key()
-        }
-    }
-
-    pub fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
-        if self.section.prefix().matches(name) {
-            self.section.chain().last_key()
-        } else {
-            self.network
-                .key_by_name(name)
-                .unwrap_or_else(|| self.section.chain().first_key())
-        }
-    }
-
-    /// Update our knowledge of their section and their knowledge of ours. Returns the actions to
-    /// perform (if any).
-    pub fn update_section_knowledge(
-        &self,
-        our_name: &XorName,
-        src_prefix: &Prefix,
-        src_key: &bls::PublicKey,
-        dst_key: Option<&bls::PublicKey>,
-        hash: &MessageHash,
-    ) -> Vec<UpdateSectionKnowledgeAction> {
-        use UpdateSectionKnowledgeAction::*;
-
-        let is_neighbour = self.section.prefix().is_neighbour(src_prefix);
-
-        // There will be at most two actions returned because the only possible action combinations
-        // are these:
-        // - `[]`
-        // - `[VoteTheirKey]`
-        // - `[VoteTheirKey, VoteTheirKnowledge]`
-        // - `[SendNeighbourInfo]`
-        // - `[SendNeighbourInfo, VoteTheirKnowledge]`
-        let mut actions = Vec::with_capacity(2);
-        let mut vote_send_neighbour_info = false;
-
-        if !src_prefix.matches(our_name) && !self.network.has_key(src_key) {
-            // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
-            // via `NeighbourInfo`.
-            if is_neighbour {
-                vote_send_neighbour_info = true;
-            } else {
-                actions.push(VoteTheirKey {
-                    prefix: *src_prefix,
-                    key: *src_key,
-                });
-            }
-        }
-
-        if let Some(dst_key) = dst_key {
-            let old = self.network.knowledge_by_section(src_prefix);
-            let new = self.section.chain().index_of(dst_key).unwrap_or(0);
-
-            if new > old {
-                actions.push(VoteTheirKnowledge {
-                    prefix: *src_prefix,
-                    key_index: new,
-                })
-            }
-
-            if is_neighbour && new < self.section.chain().last_key_index() {
-                vote_send_neighbour_info = true;
-            }
-        }
-
-        if vote_send_neighbour_info {
-            // TODO: if src has split, consider sending to all child prefixes that are still our
-            // neighbours.
-            actions.push(SendNeighbourInfo {
-                dst: *src_prefix,
-                nonce: *hash,
-            })
-        }
-
-        actions
-    }
-
-    pub fn compute_relocations(
-        &self,
-        churn_name: &XorName,
-        churn_signature: &bls::Signature,
-    ) -> Vec<(MemberInfo, RelocateAction)> {
-        self.section
-            .members()
-            .joined_proven()
-            .filter(|info| relocation::check(info.value.peer.age(), churn_signature))
-            .map(|info| (info.value, self.create_relocation_action(info, churn_name)))
-            .collect()
-    }
-
-    pub fn create_relocation_details(
-        &self,
-        info: &MemberInfo,
-        destination: XorName,
-    ) -> RelocateDetails {
-        let destination_key = *self
-            .network
-            .key_by_name(&destination)
-            .unwrap_or_else(|| self.section.chain().first_key());
-
-        RelocateDetails {
-            pub_id: *info.peer.name(),
-            destination,
-            destination_key,
-            age: info.peer.age().saturating_add(1),
-        }
-    }
-
-    fn create_relocation_action(
-        &self,
-        info: &Proven<MemberInfo>,
-        churn_name: &XorName,
-    ) -> RelocateAction {
-        let destination = relocation::compute_destination(info.value.peer.name(), churn_name);
-
-        if self.section.is_elder(info.value.peer.name()) {
-            RelocateAction::Delayed(RelocatePromise {
-                name: *info.value.peer.name(),
-                destination,
-            })
-        } else {
-            RelocateAction::Instant(self.create_relocation_details(&info.value, destination))
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum UpdateSectionKnowledgeAction {
-    VoteTheirKey { prefix: Prefix, key: bls::PublicKey },
-    VoteTheirKnowledge { prefix: Prefix, key_index: u64 },
-    SendNeighbourInfo { dst: Prefix, nonce: MessageHash },
 }
 
 #[cfg(test)]
@@ -276,6 +59,7 @@ mod test {
         peer::Peer,
         rng::{self, MainRng},
         section::EldersInfo,
+        section::SectionProofChain,
         MIN_AGE,
     };
 
@@ -364,7 +148,10 @@ mod test {
         let elders_info = sections_iter.next().expect("section members");
         let elders_info = consensus::test_utils::proven(&sk, elders_info);
 
-        let mut state = SharedState::new(SectionProofChain::new(sk.public_key()), elders_info);
+        let mut state = SharedState {
+            section: Section::new(SectionProofChain::new(sk.public_key()), elders_info),
+            network: Network::new(),
+        };
 
         for info in sections_iter {
             let info = consensus::test_utils::proven(&sk, info);

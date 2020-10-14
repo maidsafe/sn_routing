@@ -86,10 +86,12 @@ impl SectionUpdateBarrier {
         key: Proven<bls::PublicKey>,
     ) {
         if prefix.matches(our_name) {
-            update(&mut self.our, current, |state| state.update_our_key(key))
+            update(&mut self.our, current, |state| {
+                state.section.update_chain(key)
+            })
         } else {
             update(&mut self.sibling, current, |state| {
-                state.update_our_key(key)
+                state.section.update_chain(key)
             })
         }
     }

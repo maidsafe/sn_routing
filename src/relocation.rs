@@ -9,53 +9,35 @@
 //! Relocation related types and utilities.
 
 use crate::{
+    consensus::Proven,
     crypto::{self, Keypair, Signature, Verifier},
     error::Error,
     messages::{Message, Variant},
+    network::Network,
+    section::{MemberInfo, Section},
 };
 
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use xor_name::XorName;
 
-/// Relocation check - returns whether a member with the given age is a candidate for relocation on
-/// a churn event with the given signature.
-pub fn check(age: u8, churn_signature: &bls::Signature) -> bool {
-    // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
-    // has at least `age` trailing zero bits.
-    trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
-}
-
-// Returns the number of trailing zero bits of the byte slice.
-fn trailing_zeros(bytes: &[u8]) -> u32 {
-    let mut output = 0;
-
-    for &byte in bytes.iter().rev() {
-        if byte == 0 {
-            output += 8;
-        } else {
-            output += byte.trailing_zeros();
-            break;
-        }
-    }
-
-    output
-}
-
-/// Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
-/// the name of the joined/left node that triggered the relocation.
-pub fn compute_destination(relocating_name: &XorName, churn_name: &XorName) -> XorName {
-    let combined_name = xor(relocating_name, churn_name);
-    XorName(crypto::sha3_256(&combined_name.0))
-}
-
-// TODO: move this to the xor-name crate as `BitXor` impl.
-fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
-    let mut output = XorName::default();
-    for (o, (l, r)) in output.0.iter_mut().zip(lhs.0.iter().zip(rhs.0.iter())) {
-        *o = l ^ r;
-    }
-
-    output
+/// Find all nodes to relocate after a churn even and create the relocate actions for them.
+pub(crate) fn actions(
+    section: &Section,
+    network: &Network,
+    churn_name: &XorName,
+    churn_signature: &bls::Signature,
+) -> Vec<(MemberInfo, RelocateAction)> {
+    section
+        .members()
+        .joined_proven()
+        .filter(|info| check(info.value.peer.age(), churn_signature))
+        .map(|info| {
+            (
+                info.value,
+                RelocateAction::new(section, network, info, churn_name),
+            )
+        })
+        .collect()
 }
 
 /// Details of a relocation: which node to relocate, where to relocate it to and what age it should
@@ -71,6 +53,26 @@ pub struct RelocateDetails {
     pub destination_key: bls::PublicKey,
     /// The age the node will have post-relocation.
     pub age: u8,
+}
+
+impl RelocateDetails {
+    pub(crate) fn new(
+        section: &Section,
+        network: &Network,
+        info: &MemberInfo,
+        destination: XorName,
+    ) -> Self {
+        let destination_key = *network
+            .key_by_name(&destination)
+            .unwrap_or_else(|| section.chain().first_key());
+
+        Self {
+            pub_id: *info.peer.name(),
+            destination,
+            destination_key,
+            age: info.peer.age().saturating_add(1),
+        }
+    }
 }
 
 /// SignedSNRoutingMessage with Relocate message content.
@@ -181,12 +183,76 @@ pub(crate) enum RelocateAction {
 }
 
 impl RelocateAction {
+    pub fn new(
+        section: &Section,
+        network: &Network,
+        info: &Proven<MemberInfo>,
+        churn_name: &XorName,
+    ) -> Self {
+        let destination = destination(info.value.peer.name(), churn_name);
+
+        if section.is_elder(info.value.peer.name()) {
+            RelocateAction::Delayed(RelocatePromise {
+                name: *info.value.peer.name(),
+                destination,
+            })
+        } else {
+            RelocateAction::Instant(RelocateDetails::new(
+                section,
+                network,
+                &info.value,
+                destination,
+            ))
+        }
+    }
+
     pub fn destination(&self) -> &XorName {
         match self {
             Self::Instant(details) => &details.destination,
             Self::Delayed(promise) => &promise.destination,
         }
     }
+}
+
+// Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
+// the name of the joined/left node that triggered the relocation.
+fn destination(relocating_name: &XorName, churn_name: &XorName) -> XorName {
+    let combined_name = xor(relocating_name, churn_name);
+    XorName(crypto::sha3_256(&combined_name.0))
+}
+
+// TODO: move this to the xor-name crate as `BitXor` impl.
+fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
+    let mut output = XorName::default();
+    for (o, (l, r)) in output.0.iter_mut().zip(lhs.0.iter().zip(rhs.0.iter())) {
+        *o = l ^ r;
+    }
+
+    output
+}
+
+// Relocation check - returns whether a member with the given age is a candidate for relocation on
+// a churn event with the given signature.
+fn check(age: u8, churn_signature: &bls::Signature) -> bool {
+    // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
+    // has at least `age` trailing zero bits.
+    trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
+}
+
+// Returns the number of trailing zero bits of the byte slice.
+fn trailing_zeros(bytes: &[u8]) -> u32 {
+    let mut output = 0;
+
+    for &byte in bytes.iter().rev() {
+        if byte == 0 {
+            output += 8;
+        } else {
+            output += byte.trailing_zeros();
+            break;
+        }
+    }
+
+    output
 }
 
 #[cfg(test)]
