@@ -6,18 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::SharedState;
-use crate::{consensus::Proven, section::EldersInfo};
+use crate::{
+    consensus::Proven,
+    network::Network,
+    section::{EldersInfo, Section},
+};
 use std::collections::HashSet;
 use xor_name::{Prefix, XorName};
 
-/// Helper structure to synchronize updates to `SharedState` in order to keep certain useful
-/// invariants:
+/// Helper structure to synchronize updates to `Section` and `Network` in order to keep certain
+/// useful invariants:
 ///
 /// - our `EldersInfo` corresponds to the latest section chain key.
 /// - in case of split, both siblings know each others latest keys
 ///
-/// Usage: each mutation to be applied to our `SharedState` must pass through this barrier first.
+/// Usage: each mutation to be applied to our `Section` or `Network` must pass through this barrier
+/// first.
 /// Call the corresponding handler (`handle_section_info`, `handle_our_key`, ...) and then call
 /// `take`. If it returns `Some` for our and/or sibling section, apply it to the corresponding
 /// state, otherwise do nothing.
@@ -26,8 +30,8 @@ use xor_name::{Prefix, XorName};
 /// really needed. Investigate whether that is the case.
 #[derive(Default)]
 pub(crate) struct UpdateBarrier {
-    our: Option<SharedState>,
-    sibling: Option<SharedState>,
+    our: Option<State>,
+    sibling: Option<State>,
     pending_updates: HashSet<Prefix>,
 }
 
@@ -47,32 +51,39 @@ impl UpdateBarrier {
 
     pub fn handle_section_info(
         &mut self,
-        current: &SharedState,
         our_name: &XorName,
+        current_section: &Section,
+        current_network: &Network,
         elders_info: Proven<EldersInfo>,
     ) {
         if elders_info
             .value
             .prefix
-            .is_extension_of(current.section.prefix())
+            .is_extension_of(current_section.prefix())
         {
             if elders_info.value.prefix.matches(our_name) {
-                update(&mut self.our, current, |state| {
+                update(&mut self.our, current_section, current_network, |state| {
                     state.update_our_info(elders_info.clone())
                 });
-                update(&mut self.sibling, current, |state| {
-                    state.update_neighbour_info(elders_info)
-                });
+                update(
+                    &mut self.sibling,
+                    current_section,
+                    current_network,
+                    |state| state.update_neighbour_info(elders_info),
+                );
             } else {
-                update(&mut self.sibling, current, |state| {
-                    state.update_our_info(elders_info.clone())
-                });
-                update(&mut self.our, current, |state| {
+                update(
+                    &mut self.sibling,
+                    current_section,
+                    current_network,
+                    |state| state.update_our_info(elders_info.clone()),
+                );
+                update(&mut self.our, current_section, current_network, |state| {
                     state.update_neighbour_info(elders_info)
                 });
             }
         } else {
-            update(&mut self.our, current, |state| {
+            update(&mut self.our, current_section, current_network, |state| {
                 state.update_our_info(elders_info.clone())
             });
         }
@@ -80,48 +91,58 @@ impl UpdateBarrier {
 
     pub fn handle_our_key(
         &mut self,
-        current: &SharedState,
         our_name: &XorName,
+        current_section: &Section,
+        current_network: &Network,
         prefix: &Prefix,
         key: Proven<bls::PublicKey>,
     ) {
         if prefix.matches(our_name) {
-            update(&mut self.our, current, |state| {
+            update(&mut self.our, current_section, current_network, |state| {
                 state.section.update_chain(key)
             })
         } else {
-            update(&mut self.sibling, current, |state| {
-                state.section.update_chain(key)
-            })
+            update(
+                &mut self.sibling,
+                current_section,
+                current_network,
+                |state| state.section.update_chain(key),
+            )
         }
     }
 
     pub fn handle_their_key(
         &mut self,
-        current: &SharedState,
         our_name: &XorName,
+        current_section: &Section,
+        current_network: &Network,
         key: Proven<(Prefix, bls::PublicKey)>,
     ) {
         if key.value.0.matches(our_name) {
-            update(&mut self.sibling, current, |state| {
+            update(
+                &mut self.sibling,
+                current_section,
+                current_network,
+                |state| state.update_their_key(key),
+            )
+        } else {
+            update(&mut self.our, current_section, current_network, |state| {
                 state.update_their_key(key)
             })
-        } else {
-            update(&mut self.our, current, |state| state.update_their_key(key))
         }
     }
 
-    // Takes out the `SharedState` diffs to be applied to our (and siblings, in case of a split)
-    // shared state if the invariants described above are met.
+    // Takes out the `State` diffs to be applied to our (and siblings, in case of a split)
+    // `Section` and `Network` if the invariants described above are met.
     // Returns `(our_state, sibling_state)`.
-    pub fn take(&mut self, current_prefix: &Prefix) -> (Option<SharedState>, Option<SharedState>) {
+    pub fn take(&mut self, current_prefix: &Prefix) -> (Option<State>, Option<State>) {
         let our = if let Some(state) = &self.our {
             state
         } else {
             return (None, None);
         };
 
-        if !is_our_info_in_sync_with_our_key(our) {
+        if !is_our_info_in_sync_with_our_key(&our.section) {
             return (None, None);
         }
 
@@ -143,7 +164,7 @@ impl UpdateBarrier {
             return (None, None);
         };
 
-        if !is_our_info_in_sync_with_our_key(sibling) {
+        if !is_our_info_in_sync_with_our_key(&sibling.section) {
             return (None, None);
         }
 
@@ -169,35 +190,73 @@ impl UpdateBarrier {
     }
 }
 
+pub(crate) struct State {
+    /// Info about our section.
+    pub section: Section,
+    /// Info about the rest of the network.
+    pub network: Network,
+}
+
+impl State {
+    fn update_our_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
+        if self.section.update_elders(elders_info) {
+            self.network.prune_neighbours(self.section.prefix());
+            true
+        } else {
+            false
+        }
+    }
+
+    fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
+        if self.network.update_neighbour_info(elders_info) {
+            self.network.prune_neighbours(self.section.prefix());
+            true
+        } else {
+            false
+        }
+    }
+
+    fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
+        if key.value.0 == *self.section.prefix() {
+            // Ignore our keys. Use `update_our_key` for that.
+            return false;
+        }
+
+        self.network.update_their_key(key)
+    }
+}
+
 fn update(
-    barrier_state: &mut Option<SharedState>,
-    current: &SharedState,
-    f: impl FnOnce(&mut SharedState) -> bool,
+    barrier_state: &mut Option<State>,
+    current_section: &Section,
+    current_network: &Network,
+    f: impl FnOnce(&mut State) -> bool,
 ) {
     if let Some(state) = barrier_state {
         let _ = f(state);
     } else {
-        let mut state = current.clone();
+        let mut state = State {
+            section: current_section.clone(),
+            network: current_network.clone(),
+        };
         if f(&mut state) {
             *barrier_state = Some(state);
         }
     }
 }
 
-fn is_our_info_in_sync_with_our_key(state: &SharedState) -> bool {
+fn is_our_info_in_sync_with_our_key(section: &Section) -> bool {
     // Note: the first key in the chain is signed with itself, so we need to special-case this to
     // avoid returning incomplete state prematurely when there is only one node in the network.
-    if state.section.elders_info().prefix == Prefix::default()
-        && state.section.elders_info().elders.len() <= 1
+    if section.elders_info().prefix == Prefix::default() && section.elders_info().elders.len() <= 1
     {
         return false;
     }
 
-    state
-        .section
+    section
         .chain()
-        .index_of(&state.section.proven_elders_info().proof.public_key)
-        .map(|index| index + 1 == state.section.chain().last_key_index())
+        .index_of(&section.proven_elders_info().proof.public_key)
+        .map(|index| index + 1 == section.chain().last_key_index())
         .unwrap_or(false)
 }
 

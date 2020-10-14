@@ -10,10 +10,8 @@ mod approved;
 mod bootstrapping;
 mod comm;
 mod joining;
-mod shared_state;
 mod update_barrier;
 
-pub(crate) use self::shared_state::SharedState;
 pub(super) use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm};
 
 use self::{joining::Joining, update_barrier::UpdateBarrier};
@@ -142,7 +140,7 @@ impl Stage {
         match &*self.state.lock().await {
             State::Bootstrapping(state) => state.node_info.send_event(event),
             State::Joining(state) => state.node_info.send_event(event),
-            State::Approved(state) => state.node_info.send_event(event),
+            State::Approved(state) => state.node_info().send_event(event),
         }
     }
 
@@ -152,7 +150,7 @@ impl Stage {
         let node_info = match &*state {
             State::Bootstrapping(state) => &state.node_info,
             State::Joining(state) => &state.node_info,
-            State::Approved(state) => &state.node_info,
+            State::Approved(state) => state.node_info(),
         };
 
         node_info.name()
@@ -164,7 +162,7 @@ impl Stage {
         let node_info = match &*state {
             State::Bootstrapping(state) => &state.node_info,
             State::Joining(state) => &state.node_info,
-            State::Approved(state) => &state.node_info,
+            State::Approved(state) => state.node_info(),
         };
 
         node_info.keypair.public
@@ -175,7 +173,7 @@ impl Stage {
         match &*state {
             State::Bootstrapping(state) => state.node_info.keypair.sign(msg),
             State::Joining(state) => state.node_info.keypair.sign(msg),
-            State::Approved(state) => state.node_info.keypair.sign(msg),
+            State::Approved(state) => state.node_info().keypair.sign(msg),
         }
     }
 
@@ -184,7 +182,7 @@ impl Stage {
         match &*state {
             State::Bootstrapping(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
             State::Joining(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
-            State::Approved(state) => state.node_info.keypair.verify(msg, signature).is_ok(),
+            State::Approved(state) => state.node_info().keypair.verify(msg, signature).is_ok(),
         }
     }
 
@@ -194,7 +192,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.section.prefix())
+            .map(|state| state.section().prefix())
             .cloned()
     }
 
@@ -219,15 +217,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| {
-                state
-                    .shared_state
-                    .section
-                    .elders_info()
-                    .peers()
-                    .copied()
-                    .collect()
-            })
+            .map(|state| state.section().elders_info().peers().copied().collect())
             .unwrap_or_default()
     }
 
@@ -237,7 +227,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.section.adults().copied().collect())
+            .map(|state| state.section().adults().copied().collect())
             .unwrap_or_default()
     }
 
@@ -247,7 +237,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.section.elders_info().clone())
+            .map(|state| state.section().elders_info().clone())
     }
 
     /// Returns the info about our neighbour sections.
@@ -256,7 +246,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.network.all().cloned().collect())
+            .map(|state| state.network().all().cloned().collect())
             .unwrap_or_default()
     }
 
@@ -290,7 +280,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|stage| stage.shared_state.section.chain().clone())
+            .map(|stage| stage.section().chain().clone())
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
@@ -456,15 +446,15 @@ impl Stage {
                 if state.is_elder() {
                     format!(
                         "{}({:b}v{}!) ",
-                        state.node_info.name(),
-                        state.shared_state.section.prefix(),
-                        state.shared_state.section.chain().last_key_index()
+                        state.node_info().name(),
+                        state.section().prefix(),
+                        state.section().chain().last_key_index()
                     )
                 } else {
                     format!(
                         "{}({:b}) ",
-                        state.node_info.name(),
-                        state.shared_state.section.prefix()
+                        state.node_info().name(),
+                        state.section().prefix()
                     )
                 }
             }
