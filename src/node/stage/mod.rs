@@ -234,7 +234,7 @@ impl Stage {
             .lock()
             .await
             .approved()
-            .map(|state| state.shared_state.our_adults().copied().collect())
+            .map(|state| state.shared_state.section.adults().copied().collect())
             .unwrap_or_default()
     }
 

@@ -13,7 +13,7 @@ use crate::{
     messages::{BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
     peer::Peer,
     relocation::RelocatePayload,
-    section::{EldersInfo, SharedState},
+    section::{EldersInfo, Section},
     DstLocation, MIN_AGE,
 };
 use std::net::SocketAddr;
@@ -96,8 +96,8 @@ impl Joining {
                     payload.value.prefix,
                 );
 
-                let shared_state = SharedState::new(section_chain, payload.clone());
-                let state = Approved::new(shared_state, None, self.node_info.clone());
+                let section = Section::new(section_chain, payload.clone());
+                let state = Approved::new(section, None, self.node_info.clone());
                 let state = State::Approved(state);
 
                 self.node_info.send_event(Event::Connected(connect_type));

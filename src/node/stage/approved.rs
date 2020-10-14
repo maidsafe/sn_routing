@@ -20,10 +20,11 @@ use crate::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, Variant,
         VerifyStatus,
     },
+    network::Network,
     peer::Peer,
-    relocation::{RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
+    relocation::{self, RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
     section::{
-        EldersInfo, MemberInfo, SectionKeyShare, SectionKeysProvider, SectionProofChain,
+        EldersInfo, MemberInfo, Section, SectionKeyShare, SectionKeysProvider, SectionProofChain,
         SectionUpdateBarrier, SharedState, MIN_AGE,
     },
 };
@@ -56,17 +57,21 @@ impl Approved {
     // Creates the approved state for the first node in the network
     pub fn first_node(node_info: NodeInfo, our_addr: SocketAddr) -> Result<Self> {
         let peer = Peer::new(node_info.name(), our_addr, MIN_AGE);
-        let (shared_state, section_key_share) = SharedState::first_node(peer)?;
+        let (section, section_key_share) = Section::first_node(peer)?;
 
-        Ok(Self::new(shared_state, Some(section_key_share), node_info))
+        Ok(Self::new(section, Some(section_key_share), node_info))
     }
 
     // Creates the approved state for a regular node.
     pub fn new(
-        shared_state: SharedState,
+        section: Section,
         section_key_share: Option<SectionKeyShare>,
         node_info: NodeInfo,
     ) -> Self {
+        let shared_state = SharedState {
+            section,
+            network: Network::new(),
+        };
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
         Self {
@@ -536,7 +541,15 @@ impl Approved {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.shared_state.section_keys()) {
+        let known_keys = self
+            .shared_state
+            .section
+            .chain()
+            .keys()
+            .map(move |key| (self.shared_state.section.prefix(), key))
+            .chain(self.shared_state.network.keys());
+
+        match msg.verify(known_keys) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::Unknown) => Ok(false),
             Err(error) => {
@@ -554,8 +567,17 @@ impl Approved {
         msg: Message,
     ) -> Result<Command> {
         let src = msg.src().src_location();
-        let bounce_dst = src.to_dst();
-        let bounce_dst_key = *self.shared_state.section_key_by_location(&bounce_dst);
+        let src_name = match src {
+            SrcLocation::Node(name) => name,
+            SrcLocation::Section(prefix) => prefix.name(),
+        };
+
+        let bounce_dst_key = *self.section_key_by_name(&src_name);
+        let bounce_dst = if src.is_section() {
+            DstLocation::Section(src_name)
+        } else {
+            DstLocation::Node(src_name)
+        };
 
         let bounce_msg = Message::single_src(
             &self.node_info.keypair,
@@ -796,9 +818,12 @@ impl Approved {
         }
 
         if let Some(info) = self.shared_state.section.members().get(&promise.name) {
-            let details = self
-                .shared_state
-                .create_relocation_details(info, promise.destination);
+            let details = RelocateDetails::new(
+                &self.shared_state.section,
+                &self.shared_state.network,
+                info,
+                promise.destination,
+            );
             let peer = info.peer;
             commands.extend(self.send_relocate(&peer, details)?);
         } else {
@@ -1091,9 +1116,12 @@ impl Approved {
             return Ok(commands);
         }
 
-        let relocations = self
-            .shared_state
-            .compute_relocations(churn_name, churn_signature);
+        let relocations = relocation::actions(
+            &self.shared_state.section,
+            &self.shared_state.network,
+            churn_name,
+            churn_signature,
+        );
 
         for (info, action) in relocations {
             debug!(
@@ -1371,7 +1399,10 @@ impl Approved {
         let old_last_key_index = self.shared_state.section.chain().last_key_index();
         let old_prefix = *self.shared_state.section.prefix();
 
-        self.shared_state.merge(update)?;
+        self.shared_state.section.merge(update.section)?;
+        self.shared_state
+            .network
+            .merge(update.network, self.shared_state.section.chain());
 
         self.section_keys_provider
             .finalise_dkg(self.shared_state.section.chain().last_key());
@@ -1436,7 +1467,10 @@ impl Approved {
 
         if old_is_elder && !new_is_elder {
             info!("Demoted");
-            self.shared_state.demote();
+            self.shared_state = SharedState {
+                section: self.shared_state.section.to_minimal(),
+                network: Network::new(),
+            };
             self.section_keys_provider = SectionKeysProvider::new(None);
             self.node_info.send_event(Event::Demoted);
         }
@@ -1512,17 +1546,19 @@ impl Approved {
     fn send_sync(&mut self, shared_state: SharedState) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        for peer in shared_state.active_members() {
+        for peer in shared_state.section.active_members() {
             if peer.name() == &self.node_info.name() {
                 continue;
             }
 
-            let shared_state = if shared_state.section.is_elder(peer.name()) {
-                shared_state.clone()
+            let variant = if shared_state.section.is_elder(peer.name()) {
+                Variant::Sync(shared_state.clone())
             } else {
-                shared_state.to_minimal()
+                Variant::Sync(SharedState {
+                    section: shared_state.section.to_minimal(),
+                    network: Network::new(),
+                })
             };
-            let variant = Variant::Sync(shared_state);
 
             trace!("Send {:?} to {:?}", variant, peer);
             let message = Message::single_src(
@@ -1582,6 +1618,35 @@ impl Approved {
         } else {
             None
         }
+    }
+
+    fn send_neighbour_info(
+        &mut self,
+        dst: Prefix,
+        nonce: MessageHash,
+        dst_key: Option<bls::PublicKey>,
+    ) -> Result<Option<Command>> {
+        let proof_chain = self
+            .shared_state
+            .section
+            .create_proof_chain_for_our_info(Some(
+                self.shared_state.network.knowledge_by_section(&dst),
+            ));
+        let variant = Variant::NeighbourInfo {
+            elders_info: self.shared_state.section.proven_elders_info().clone(),
+            nonce,
+        };
+        trace!("sending NeighbourInfo {:?}", variant);
+        let msg = Message::single_src(
+            &self.node_info.keypair,
+            self.age(),
+            DstLocation::Section(dst.name()),
+            variant,
+            Some(proof_chain),
+            dst_key,
+        )?;
+
+        self.relay_message(&msg)
     }
 
     fn send_dkg_start(&mut self, new_elders_info: EldersInfo) -> Result<Vec<Command>> {
@@ -1769,7 +1834,15 @@ impl Approved {
         proof_chain_first_index: Option<u64>,
     ) -> Result<Vote> {
         let proof_chain = self.create_proof_chain(&dst, proof_chain_first_index)?;
-        let dst_key = *self.shared_state.section_key_by_location(&dst);
+        let dst_key = if let Some(name) = dst.name() {
+            *self.section_key_by_name(name)
+        } else {
+            // NOTE: `dst` is `Direct`. We use this when we want the message to accumulate at the
+            // destination and also be handled only there. We only do this if the recipient is in
+            // our section, so it's OK to use our latest key as the `dst_key`.
+            *self.shared_state.section.chain().last_key()
+        };
+
         let message = PlainMessage {
             src: *self.shared_state.section.prefix(),
             dst,
@@ -1845,8 +1918,6 @@ impl Approved {
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
     fn update_section_knowledge(&mut self, msg: &Message) -> Result<Vec<Command>> {
-        use crate::section::UpdateSectionKnowledgeAction::*;
-
         if !self.is_elder() {
             return Ok(vec![]);
         }
@@ -1863,63 +1934,71 @@ impl Approved {
             return Ok(vec![]);
         };
 
-        let hash = msg.hash();
-        let actions = self.shared_state.update_section_knowledge(
-            &self.node_info.name(),
-            src_prefix,
-            src_key,
-            msg.dst_key().as_ref(),
-            hash,
-        );
+        let is_neighbour = self.shared_state.section.prefix().is_neighbour(src_prefix);
 
-        let mut commands = vec![];
+        let mut commands = Vec::new();
+        let mut vote_send_neighbour_info = false;
 
-        for action in actions {
-            match action {
-                VoteTheirKey { prefix, key } => {
-                    commands.extend(self.vote(Vote::TheirKey { prefix, key })?);
-                }
-                VoteTheirKnowledge { prefix, key_index } => {
-                    commands.extend(self.vote(Vote::TheirKnowledge { prefix, key_index })?);
-                }
-                SendNeighbourInfo { dst, nonce } => commands.extend(self.send_neighbour_info(
-                    dst,
-                    nonce,
-                    self.shared_state.network.key_by_name(&dst.name()).cloned(),
-                )?),
+        if !src_prefix.matches(&self.node_info.name())
+            && !self.shared_state.network.has_key(src_key)
+        {
+            // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
+            // via `NeighbourInfo`.
+            if is_neighbour {
+                vote_send_neighbour_info = true;
+            } else {
+                commands.extend(self.vote(Vote::TheirKey {
+                    prefix: *src_prefix,
+                    key: *src_key,
+                })?);
             }
+        }
+
+        if let Some(dst_key) = msg.dst_key() {
+            let old = self.shared_state.network.knowledge_by_section(src_prefix);
+            let new = self
+                .shared_state
+                .section
+                .chain()
+                .index_of(dst_key)
+                .unwrap_or(0);
+
+            if new > old {
+                commands.extend(self.vote(Vote::TheirKnowledge {
+                    prefix: *src_prefix,
+                    key_index: new,
+                })?);
+            }
+
+            if is_neighbour && new < self.shared_state.section.chain().last_key_index() {
+                vote_send_neighbour_info = true;
+            }
+        }
+
+        if vote_send_neighbour_info {
+            // TODO: if src has split, consider sending to all child prefixes that are still our
+            // neighbours.
+            let dst_key = self
+                .shared_state
+                .network
+                .key_by_name(&src_prefix.name())
+                .cloned();
+
+            commands.extend(self.send_neighbour_info(*src_prefix, *msg.hash(), dst_key)?)
         }
 
         Ok(commands)
     }
 
-    fn send_neighbour_info(
-        &mut self,
-        dst: Prefix,
-        nonce: MessageHash,
-        dst_key: Option<bls::PublicKey>,
-    ) -> Result<Option<Command>> {
-        let proof_chain = self
-            .shared_state
-            .section
-            .create_proof_chain_for_our_info(Some(
-                self.shared_state.network.knowledge_by_section(&dst),
-            ));
-        let variant = Variant::NeighbourInfo {
-            elders_info: self.shared_state.section.proven_elders_info().clone(),
-            nonce,
-        };
-        trace!("sending NeighbourInfo {:?}", variant);
-        let msg = Message::single_src(
-            &self.node_info.keypair,
-            self.age(),
-            DstLocation::Section(dst.name()),
-            variant,
-            Some(proof_chain),
-            dst_key,
-        )?;
-
-        self.relay_message(&msg)
+    fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
+        if self.shared_state.section.prefix().matches(name) {
+            self.shared_state.section.chain().last_key()
+        } else {
+            self.shared_state
+                .network
+                .key_by_name(name)
+                .unwrap_or_else(|| self.shared_state.section.chain().first_key())
+        }
     }
 
     fn print_network_stats(&self) {
