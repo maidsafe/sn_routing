@@ -1146,7 +1146,10 @@ impl Approved {
         let age = peer.age();
         let signature = proof.signature.clone();
 
-        if !self.section.update_member(member_info, proof) {
+        if !self.section.update_member(Proven {
+            value: member_info,
+            proof,
+        }) {
             info!("ignore Online: {:?}", peer);
             return Ok(commands);
         }
@@ -1186,7 +1189,10 @@ impl Approved {
         let age = peer.age();
         let signature = proof.signature.clone();
 
-        if !self.section.update_member(member_info, proof) {
+        if !self.section.update_member(Proven {
+            value: member_info,
+            proof,
+        }) {
             info!("ignore Offline: {:?}", peer);
             return Ok(commands);
         }
@@ -1282,7 +1288,10 @@ impl Approved {
     }
 
     fn handle_change_age_event(&mut self, member_info: MemberInfo, proof: Proof) {
-        let _ = self.section.update_member(member_info, proof);
+        let _ = self.section.update_member(Proven {
+            value: member_info,
+            proof,
+        });
     }
 
     fn handle_send_message_event(

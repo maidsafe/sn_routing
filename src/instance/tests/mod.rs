@@ -393,8 +393,11 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
     for peer in elders_info.elders.values() {
         let member_info = MemberInfo::joined(*peer);
-        let member_info_proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = section.update_member(member_info, member_info_proof);
+        let proof = create_proof(sk_set.secret_key(), &member_info)?;
+        let _ = section.update_member(Proven {
+            value: member_info,
+            proof,
+        });
     }
 
     let (node, _) = create_node_for(keypairs.remove(0));
@@ -479,8 +482,8 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = section.update_member(member_info, proof);
+    let member_info = create_proven(sk_set.secret_key(), member_info)?;
+    let _ = section.update_member(member_info);
 
     let (node, mut event_rx) = create_node_for(keypairs.remove(0));
     let state = Approved::new(section, Some(section_key_share), node);
@@ -514,8 +517,8 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let proof = create_proof(sk_set.secret_key(), &member_info)?;
-    let _ = section.update_member(member_info, proof);
+    let member_info = create_proven(sk_set.secret_key(), member_info)?;
+    let _ = section.update_member(member_info);
 
     // Pick the elder to remove.
     let remove_peer = *elders_info
@@ -1257,8 +1260,8 @@ fn create_section(
 
     for peer in elders_info.elders.values().copied() {
         let member_info = MemberInfo::joined(peer);
-        let proof = create_proof(sk_set.secret_key(), &member_info)?;
-        let _ = section.update_member(member_info, proof);
+        let member_info = create_proven(sk_set.secret_key(), member_info)?;
+        let _ = section.update_member(member_info);
     }
 
     let section_key_share = create_section_key_share(sk_set, 0);

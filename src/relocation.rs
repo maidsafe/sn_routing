@@ -29,7 +29,7 @@ pub(crate) fn actions(
 ) -> Vec<(MemberInfo, RelocateAction)> {
     section
         .members()
-        .joined_proven()
+        .proven_joined()
         .filter(|info| check(info.value.peer.age(), churn_signature))
         .map(|info| {
             (
