@@ -21,8 +21,8 @@ use self::{
     stage::{Approved, Comm, Stage},
 };
 use crate::{
-    crypto::{self, Keypair, PublicKey},
-    error::Result,
+    crypto,
+    error::{Error, Result},
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
@@ -33,7 +33,7 @@ use crate::{
     TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
-use ed25519_dalek::Signature;
+use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
@@ -116,7 +116,7 @@ impl Routing {
                 event_tx.clone(),
             );
             let (node, section) = bootstrap::infant(node, &comm, bootstrap_addr).await?;
-            let state = Approved::new(section, None, node);
+            let state = Approved::new(node, section, None);
 
             let _ = event_tx.send(Event::Connected(Connected::First));
 
@@ -138,32 +138,39 @@ impl Routing {
 
     /// Returns the `PublicKey` of this node.
     pub async fn public_key(&self) -> PublicKey {
-        self.stage.public_key().await
+        self.stage.state.lock().await.node().keypair.public
     }
 
     /// Sign any data with the key of this node.
     pub async fn sign(&self, data: &[u8]) -> Signature {
-        self.stage.sign(data).await
+        self.stage.state.lock().await.node().keypair.sign(data)
     }
 
     /// Verify any signed data with the key of this node.
     pub async fn verify(&self, data: &[u8], signature: &Signature) -> bool {
-        self.stage.verify(data, signature).await
+        self.stage
+            .state
+            .lock()
+            .await
+            .node()
+            .keypair
+            .verify(data, signature)
+            .is_ok()
     }
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        self.stage.name().await
+        self.stage.state.lock().await.node().name()
     }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.stage.our_connection_info()
+        self.stage.comm.our_connection_info()
     }
 
     /// Prefix of our section
     pub async fn our_prefix(&self) -> Prefix {
-        self.stage.our_prefix().await
+        *self.stage.state.lock().await.section().prefix()
     }
 
     /// Finds out if the given XorName matches our prefix.
@@ -173,12 +180,20 @@ impl Routing {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.stage.is_elder().await
+        self.stage.state.lock().await.is_elder()
     }
 
     /// Returns the information of all the current section elders.
     pub async fn our_elders(&self) -> Vec<Peer> {
-        self.stage.our_elders().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .elders_info()
+            .peers()
+            .copied()
+            .collect()
     }
 
     /// Returns the elders of our section sorted by their distance to `name` (closest first).
@@ -192,7 +207,14 @@ impl Routing {
 
     /// Returns the information of all the current section adults.
     pub async fn our_adults(&self) -> Vec<Peer> {
-        self.stage.our_adults().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .adults()
+            .copied()
+            .collect()
     }
 
     /// Returns the adults of our section sorted by their distance to `name` (closest first).
@@ -207,12 +229,25 @@ impl Routing {
 
     /// Returns the info about our section or `None` if we are not joined yet.
     pub async fn our_section(&self) -> EldersInfo {
-        self.stage.our_section().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .elders_info()
+            .clone()
     }
 
     /// Returns the info about our neighbour sections.
     pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
-        self.stage.neighbour_sections().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .network()
+            .all()
+            .cloned()
+            .collect()
     }
 
     /// Send a message.
@@ -243,23 +278,41 @@ impl Routing {
     /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
     /// yet.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.stage.public_key_set().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.public_key_set.clone())
+            .ok_or(Error::InvalidState)
     }
 
     /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
     /// elder.
     pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
-        self.stage.secret_key_share().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.secret_key_share.clone())
+            .ok_or(Error::InvalidState)
     }
 
     /// Returns our section proof chain, or `None` if we are not joined yet.
     pub async fn our_history(&self) -> SectionProofChain {
-        self.stage.our_history().await
+        self.stage.state.lock().await.section().chain().clone()
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
     /// not generated yet.
     pub async fn our_index(&self) -> Result<usize> {
-        self.stage.our_index().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.index)
+            .ok_or(Error::InvalidState)
     }
 }

@@ -15,28 +15,21 @@ pub(super) use self::{approved::Approved, comm::Comm};
 use self::update_barrier::UpdateBarrier;
 use super::{bootstrap, command, Command};
 use crate::{
-    consensus::{ProofShare, Vote},
-    error::{Error, Result},
+    error::Result,
     event::{Connected, Event},
-    location::{DstLocation, SrcLocation},
     log_ident,
     messages::Message,
-    peer::Peer,
     relocation::SignedRelocateDetails,
-    section::{EldersInfo, SectionProofChain},
 };
-use bls_signature_aggregator::Proof;
 use bytes::Bytes;
-use ed25519_dalek::{PublicKey, Signature, Signer};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{sync::mpsc, sync::Mutex, time};
-use xor_name::{Prefix, XorName};
 
 // Node's current stage which is responsible
 // for accessing current info and trigger operations.
 pub(crate) struct Stage {
-    state: Mutex<Approved>,
-    comm: Comm,
+    pub(super) state: Mutex<Approved>,
+    pub(super) comm: Comm,
 }
 
 impl Stage {
@@ -50,115 +43,6 @@ impl Stage {
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
         self.state.lock().await.node().send_event(event)
-    }
-
-    /// Returns the name of the node
-    pub async fn name(&self) -> XorName {
-        self.state.lock().await.node().name()
-    }
-
-    /// Returns the public key of the node
-    pub async fn public_key(&self) -> PublicKey {
-        self.state.lock().await.node().keypair.public
-    }
-
-    pub async fn sign(&self, msg: &[u8]) -> Signature {
-        self.state.lock().await.node().keypair.sign(msg)
-    }
-
-    pub async fn verify(&self, msg: &[u8], signature: &Signature) -> bool {
-        self.state
-            .lock()
-            .await
-            .node()
-            .keypair
-            .verify(msg, signature)
-            .is_ok()
-    }
-
-    /// `Prefix` of our section.
-    pub async fn our_prefix(&self) -> Prefix {
-        *self.state.lock().await.section().prefix()
-    }
-
-    /// Returns connection info of this node.
-    pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.comm.our_connection_info()
-    }
-
-    /// Returns whether the node is Elder.
-    pub async fn is_elder(&self) -> bool {
-        self.state.lock().await.is_elder()
-    }
-
-    /// Returns the information of all the current section elders.
-    pub async fn our_elders(&self) -> Vec<Peer> {
-        self.state
-            .lock()
-            .await
-            .section()
-            .elders_info()
-            .peers()
-            .copied()
-            .collect()
-    }
-
-    /// Returns the information of all the current section adults.
-    pub async fn our_adults(&self) -> Vec<Peer> {
-        self.state
-            .lock()
-            .await
-            .section()
-            .adults()
-            .copied()
-            .collect()
-    }
-
-    /// Returns the info about our section.
-    pub async fn our_section(&self) -> EldersInfo {
-        self.state.lock().await.section().elders_info().clone()
-    }
-
-    /// Returns the info about our neighbour sections.
-    pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
-        self.state.lock().await.network().all().cloned().collect()
-    }
-
-    /// Returns the current BLS public key set or `Error::InvalidState` if we are not elder.
-    pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.public_key_set.clone())
-            .ok_or(Error::InvalidState)
-    }
-
-    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
-    /// elder.
-    pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
-        self.state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.secret_key_share.clone())
-            .ok_or(Error::InvalidState)
-    }
-
-    /// Returns our section proof chain.
-    pub async fn our_history(&self) -> SectionProofChain {
-        self.state.lock().await.section().chain().clone()
-    }
-
-    /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
-    /// not generated yet.
-    pub async fn our_index(&self) -> Result<usize> {
-        self.state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.index)
-            .ok_or(Error::InvalidState)
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
@@ -179,16 +63,20 @@ impl Stage {
 
             match command {
                 Command::HandleMessage { message, sender } => {
-                    self.handle_message(sender, message).await
+                    self.state
+                        .lock()
+                        .await
+                        .handle_message(sender, message)
+                        .await
                 }
-                Command::HandleTimeout(token) => self.handle_timeout(token).await,
+                Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
                 Command::HandleVote { vote, proof_share } => {
-                    self.handle_vote(vote, proof_share).await
+                    self.state.lock().await.handle_vote(vote, proof_share)
                 }
                 Command::HandleConsensus { vote, proof } => {
-                    self.handle_consensus(vote, proof).await
+                    self.state.lock().await.handle_consensus(vote, proof)
                 }
-                Command::HandlePeerLost(addr) => self.handle_peer_lost(addr).await,
+                Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,
@@ -197,7 +85,7 @@ impl Stage {
                     .send_message(&recipients, delivery_group_size, message)
                     .await),
                 Command::SendUserMessage { src, dst, content } => {
-                    self.send_user_message(src, dst, content).await
+                    self.state.lock().await.send_user_message(src, dst, content)
                 }
                 Command::ScheduleTimeout { duration, token } => {
                     Ok(vec![self.handle_schedule_timeout(duration, token).await])
@@ -228,30 +116,6 @@ impl Stage {
         let _ = tokio::spawn(self.handle_commands(command));
     }
 
-    async fn handle_message(
-        &self,
-        sender: Option<SocketAddr>,
-        msg: Message,
-    ) -> Result<Vec<Command>> {
-        self.state.lock().await.handle_message(sender, msg).await
-    }
-
-    async fn handle_timeout(&self, token: u64) -> Result<Vec<Command>> {
-        self.state.lock().await.handle_timeout(token)
-    }
-
-    async fn handle_vote(&self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
-        self.state.lock().await.handle_vote(vote, proof_share)
-    }
-
-    async fn handle_consensus(&self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
-        self.state.lock().await.handle_consensus(vote, proof)
-    }
-
-    async fn handle_peer_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
-        self.state.lock().await.handle_peer_lost(&addr)
-    }
-
     async fn send_message(
         &self,
         recipients: &[SocketAddr],
@@ -272,15 +136,6 @@ impl Stage {
         }
     }
 
-    async fn send_user_message(
-        &self,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    ) -> Result<Vec<Command>> {
-        self.state.lock().await.send_user_message(src, dst, content)
-    }
-
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Command {
         time::delay_for(duration).await;
         Command::HandleTimeout(token)
@@ -298,7 +153,7 @@ impl Stage {
         let (node, section) =
             bootstrap::relocate(node, &self.comm, message_rx, bootstrap_addrs, details).await?;
 
-        *self.state.lock().await = Approved::new(section, None, node);
+        *self.state.lock().await = Approved::new(node, section, None);
         self.send_event(Event::Connected(Connected::Relocate { previous_name }))
             .await;
 

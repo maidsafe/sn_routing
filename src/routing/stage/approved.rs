@@ -61,11 +61,11 @@ impl Approved {
     // Creates the approved state for the first node in the network
     pub fn first_node(node: Node) -> Result<Self> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
-        Ok(Self::new(section, Some(section_key_share), node))
+        Ok(Self::new(node, section, Some(section_key_share)))
     }
 
     // Creates the approved state for a regular node.
-    pub fn new(section: Section, section_key_share: Option<SectionKeyShare>, node: Node) -> Self {
+    pub fn new(node: Node, section: Section, section_key_share: Option<SectionKeyShare>) -> Self {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
         Self {

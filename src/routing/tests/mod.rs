@@ -224,7 +224,7 @@ async fn receive_join_request() -> Result<()> {
 
     let new_keypair = create_keypair();
     let new_addr = create_addr();
-    let section_key = *stage.our_history().await.last_key();
+    let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
         &new_keypair,
@@ -271,7 +271,7 @@ async fn accumulate_votes() -> Result<()> {
     let pk_set = sk_set.public_keys();
     let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
     let (node, _) = create_node_for(keypairs.remove(0));
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     let new_peer = create_peer();
@@ -322,7 +322,7 @@ async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
     let (node, mut event_rx) = create_node_for(keypairs.remove(0));
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     let new_peer = create_peer();
@@ -399,7 +399,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let (node, _) = create_node_for(keypairs.remove(0));
     let node_name = node.name();
     let section_key_share = create_section_key_share(&sk_set, 0);
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     // Handle the consensus on Online of a peer that is older than the youngest
@@ -482,7 +482,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let _ = section.update_member(member_info);
 
     let (node, mut event_rx) = create_node_for(keypairs.remove(0));
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     let member_info = MemberInfo {
@@ -532,7 +532,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     // Create our node
     let (node, mut event_rx) = create_node_for(keypairs.remove(0));
     let node_name = node.name();
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     // Handle the consensus on the Offline vote
@@ -597,7 +597,14 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     });
 
     // The removed peer is still our elder because we haven't yet processed the section update.
-    assert!(stage.our_elders().await.contains(&remove_peer));
+    assert!(stage
+        .state
+        .lock()
+        .await
+        .section()
+        .elders_info()
+        .elders
+        .contains_key(remove_peer.name()));
 
     Ok(())
 }
@@ -655,7 +662,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let section = Section::new(chain, proven_elders_info);
 
     let (node, _) = create_node();
-    let state = Approved::new(section, None, node);
+    let state = Approved::new(node, section, None);
     let stage = Stage::new(state, create_comm()?);
 
     // non-elders can't handle messages addressed to sections.
@@ -766,7 +773,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let (node, _) = create_node();
     let node_name = node.name();
-    let state = Approved::new(section, None, node);
+    let state = Approved::new(node, section, None);
     let stage = Stage::new(state, create_comm()?);
 
     let sk1 = bls::SecretKey::random();
@@ -854,7 +861,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         None,
     )?;
 
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     let bounced_message = Message::single_src(
@@ -952,7 +959,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let original_message = Message::section_src(original_message, signature, proof_chain)?;
 
     // Create our node.
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     // Create the bounced message, indicating the last key the peer knows is `pk0`
@@ -1022,7 +1029,7 @@ async fn handle_sync() -> Result<()> {
     // Create our node
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let (node, mut event_rx) = create_node_for(keypairs.remove(0));
-    let state = Approved::new(old_section, Some(section_key_share), node);
+    let state = Approved::new(node, old_section, Some(section_key_share));
     let stage = Stage::new(state, create_comm()?);
 
     // Create new `Section` as a successor to the previous one.
@@ -1109,7 +1116,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let section = Section::new(chain, proven_elders_info);
     let section_key_share = create_section_key_share(&sk0_good_set, 0);
 
-    let state = Approved::new(section, Some(section_key_share), node);
+    let state = Approved::new(node, section, Some(section_key_share));
     let stage = Stage::new(state, comm);
 
     // Create a message with a valid signature but invalid proof chain (the last key in the chain
