@@ -40,7 +40,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
-/// Instance configuration.
+/// Routing configuration.
 pub struct Config {
     /// If true, configures the node to start a new network instead of joining an existing one.
     pub first: bool,
@@ -70,12 +70,12 @@ impl Default for Config {
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
-pub struct Instance {
+pub struct Routing {
     stage: Arc<Stage>,
     _executor: Executor,
 }
 
-impl Instance {
+impl Routing {
     ////////////////////////////////////////////////////////////////////////////
     // Public API
     ////////////////////////////////////////////////////////////////////////////
