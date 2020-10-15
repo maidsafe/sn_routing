@@ -8,7 +8,11 @@
 
 use crate::{crypto, event::Event, peer::Peer, NetworkParams};
 use ed25519_dalek::Keypair;
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    fmt::{self, Display, Formatter},
+    net::SocketAddr,
+    sync::Arc,
+};
 use tokio::sync::mpsc;
 use xor_name::XorName;
 
@@ -56,5 +60,11 @@ impl Node {
         if self.event_tx.clone().send(event).is_err() {
             error!("Event receiver has been closed");
         }
+    }
+}
+
+impl Display for Node {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:<8}", hex_fmt::HexFmt(self.keypair.public.as_bytes()))
     }
 }

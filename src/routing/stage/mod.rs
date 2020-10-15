@@ -7,88 +7,40 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod approved;
-mod bootstrapping;
 mod comm;
-mod joining;
 mod update_barrier;
 
-pub(super) use self::{approved::Approved, bootstrapping::Bootstrapping, comm::Comm};
+pub(super) use self::{approved::Approved, comm::Comm};
 
-use self::{joining::Joining, update_barrier::UpdateBarrier};
-use super::{command, Command};
+use self::update_barrier::UpdateBarrier;
+use super::{bootstrap, command, Command};
 use crate::{
     consensus::{ProofShare, Vote},
     error::{Error, Result},
-    event::Event,
+    event::{Connected, Event},
     location::{DstLocation, SrcLocation},
     log_ident,
     messages::Message,
     peer::Peer,
+    relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionProofChain},
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::{PublicKey, Signature, Signer};
-use std::{
-    fmt::{self, Debug, Formatter},
-    net::SocketAddr,
-    sync::Arc,
-    time::Duration,
-};
-use tokio::{sync::Mutex, time};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::{sync::mpsc, sync::Mutex, time};
 use xor_name::{Prefix, XorName};
 
-#[cfg(feature = "mock")]
-pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
-
-// Type to hold the various states a node goes through during its lifetime.
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum State {
-    Bootstrapping(Bootstrapping),
-    Joining(Joining),
-    Approved(Approved),
-}
-
-impl State {
-    fn approved(&self) -> Option<&Approved> {
-        match self {
-            Self::Approved(state) => Some(state),
-            _ => None,
-        }
-    }
-}
-
-impl From<Bootstrapping> for State {
-    fn from(state: Bootstrapping) -> Self {
-        Self::Bootstrapping(state)
-    }
-}
-
-impl From<Approved> for State {
-    fn from(state: Approved) -> Self {
-        Self::Approved(state)
-    }
-}
-
-impl Debug for State {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Self::Bootstrapping(_) => write!(f, "Bootstrapping"),
-            Self::Joining(_) => write!(f, "Joining"),
-            Self::Approved(_) => write!(f, "Approved"),
-        }
-    }
-}
-
-// Node's current stage whcich is responsible
+// Node's current stage which is responsible
 // for accessing current info and trigger operations.
 pub(crate) struct Stage {
-    state: Mutex<State>,
+    state: Mutex<Approved>,
     comm: Comm,
 }
 
 impl Stage {
-    pub fn new(state: State, comm: Comm) -> Self {
+    pub fn new(state: Approved, comm: Comm) -> Self {
         Self {
             state: Mutex::new(state),
             comm,
@@ -97,63 +49,36 @@ impl Stage {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
-        match &*self.state.lock().await {
-            State::Bootstrapping(state) => state.node.send_event(event),
-            State::Joining(state) => state.node.send_event(event),
-            State::Approved(state) => state.node().send_event(event),
-        }
+        self.state.lock().await.node().send_event(event)
     }
 
     /// Returns the name of the node
     pub async fn name(&self) -> XorName {
-        let state = self.state.lock().await;
-        let node_info = match &*state {
-            State::Bootstrapping(state) => &state.node,
-            State::Joining(state) => &state.node,
-            State::Approved(state) => state.node(),
-        };
-
-        node_info.name()
+        self.state.lock().await.node().name()
     }
 
     /// Returns the public key of the node
     pub async fn public_key(&self) -> PublicKey {
-        let state = self.state.lock().await;
-        let node = match &*state {
-            State::Bootstrapping(state) => &state.node,
-            State::Joining(state) => &state.node,
-            State::Approved(state) => state.node(),
-        };
-
-        node.keypair.public
+        self.state.lock().await.node().keypair.public
     }
 
     pub async fn sign(&self, msg: &[u8]) -> Signature {
-        let state = self.state.lock().await;
-        match &*state {
-            State::Bootstrapping(state) => state.node.keypair.sign(msg),
-            State::Joining(state) => state.node.keypair.sign(msg),
-            State::Approved(state) => state.node().keypair.sign(msg),
-        }
+        self.state.lock().await.node().keypair.sign(msg)
     }
 
     pub async fn verify(&self, msg: &[u8], signature: &Signature) -> bool {
-        let state = self.state.lock().await;
-        match &*state {
-            State::Bootstrapping(state) => state.node.keypair.verify(msg, signature).is_ok(),
-            State::Joining(state) => state.node.keypair.verify(msg, signature).is_ok(),
-            State::Approved(state) => state.node().keypair.verify(msg, signature).is_ok(),
-        }
-    }
-
-    /// Our `Prefix` once we are a part of the section.
-    pub async fn our_prefix(&self) -> Option<Prefix> {
         self.state
             .lock()
             .await
-            .approved()
-            .map(|state| state.section().prefix())
-            .cloned()
+            .node()
+            .keypair
+            .verify(msg, signature)
+            .is_ok()
+    }
+
+    /// `Prefix` of our section.
+    pub async fn our_prefix(&self) -> Prefix {
+        *self.state.lock().await.section().prefix()
     }
 
     /// Returns connection info of this node.
@@ -163,12 +88,7 @@ impl Stage {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.state
-            .lock()
-            .await
-            .approved()
-            .map(|state| state.is_elder())
-            .unwrap_or(false)
+        self.state.lock().await.is_elder()
     }
 
     /// Returns the information of all the current section elders.
@@ -176,9 +96,11 @@ impl Stage {
         self.state
             .lock()
             .await
-            .approved()
-            .map(|state| state.section().elders_info().peers().copied().collect())
-            .unwrap_or_default()
+            .section()
+            .elders_info()
+            .peers()
+            .copied()
+            .collect()
     }
 
     /// Returns the information of all the current section adults.
@@ -186,38 +108,28 @@ impl Stage {
         self.state
             .lock()
             .await
-            .approved()
-            .map(|state| state.section().adults().copied().collect())
-            .unwrap_or_default()
+            .section()
+            .adults()
+            .copied()
+            .collect()
     }
 
-    /// Returns the info about our section or `None` if we are not joined yet.
-    pub async fn our_section(&self) -> Option<EldersInfo> {
-        self.state
-            .lock()
-            .await
-            .approved()
-            .map(|state| state.section().elders_info().clone())
+    /// Returns the info about our section.
+    pub async fn our_section(&self) -> EldersInfo {
+        self.state.lock().await.section().elders_info().clone()
     }
 
     /// Returns the info about our neighbour sections.
     pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
-        self.state
-            .lock()
-            .await
-            .approved()
-            .map(|state| state.network().all().cloned().collect())
-            .unwrap_or_default()
+        self.state.lock().await.network().all().cloned().collect()
     }
 
-    /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
-    /// yet.
+    /// Returns the current BLS public key set or `Error::InvalidState` if we are not elder.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
         self.state
             .lock()
             .await
-            .approved()
-            .and_then(|state| state.section_key_share())
+            .section_key_share()
             .map(|share| share.public_key_set.clone())
             .ok_or(Error::InvalidState)
     }
@@ -228,19 +140,14 @@ impl Stage {
         self.state
             .lock()
             .await
-            .approved()
-            .and_then(|stage| stage.section_key_share())
+            .section_key_share()
             .map(|share| share.secret_key_share.clone())
             .ok_or(Error::InvalidState)
     }
 
-    /// Returns our section proof chain, or `None` if we are not joined yet.
-    pub async fn our_history(&self) -> Option<SectionProofChain> {
-        self.state
-            .lock()
-            .await
-            .approved()
-            .map(|stage| stage.section().chain().clone())
+    /// Returns our section proof chain.
+    pub async fn our_history(&self) -> SectionProofChain {
+        self.state.lock().await.section().chain().clone()
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
@@ -249,8 +156,7 @@ impl Stage {
         self.state
             .lock()
             .await
-            .approved()
-            .and_then(|stage| stage.section_key_share())
+            .section_key_share()
             .map(|share| share.index)
             .ok_or(Error::InvalidState)
     }
@@ -296,8 +202,13 @@ impl Stage {
                 Command::ScheduleTimeout { duration, token } => {
                     Ok(vec![self.handle_schedule_timeout(duration, token).await])
                 }
-                Command::Transition(state) => {
-                    self.handle_transition(*state).await;
+                Command::Relocate {
+                    bootstrap_addrs,
+                    details,
+                    message_rx,
+                } => {
+                    self.handle_relocate(bootstrap_addrs, details, message_rx)
+                        .await?;
                     Ok(vec![])
                 }
             }
@@ -322,39 +233,23 @@ impl Stage {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Vec<Command>> {
-        match &mut *self.state.lock().await {
-            State::Bootstrapping(state) => state.handle_message(sender, msg),
-            State::Joining(state) => state.handle_message(sender, msg),
-            State::Approved(state) => state.handle_message(sender, msg),
-        }
+        self.state.lock().await.handle_message(sender, msg).await
     }
 
     async fn handle_timeout(&self, token: u64) -> Result<Vec<Command>> {
-        match &mut *self.state.lock().await {
-            State::Approved(state) => state.handle_timeout(token),
-            _ => Ok(vec![]),
-        }
+        self.state.lock().await.handle_timeout(token)
     }
 
     async fn handle_vote(&self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
-        match &mut *self.state.lock().await {
-            State::Approved(state) => state.handle_vote(vote, proof_share),
-            _ => Err(Error::InvalidState),
-        }
+        self.state.lock().await.handle_vote(vote, proof_share)
     }
 
     async fn handle_consensus(&self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
-        match &mut *self.state.lock().await {
-            State::Approved(state) => state.handle_consensus(vote, proof),
-            _ => Err(Error::InvalidState),
-        }
+        self.state.lock().await.handle_consensus(vote, proof)
     }
 
     async fn handle_peer_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
-        match &*self.state.lock().await {
-            State::Approved(state) => state.handle_peer_lost(&addr),
-            _ => Ok(vec![]),
-        }
+        self.state.lock().await.handle_peer_lost(&addr)
     }
 
     async fn send_message(
@@ -383,10 +278,7 @@ impl Stage {
         dst: DstLocation,
         content: Bytes,
     ) -> Result<Vec<Command>> {
-        match &mut *self.state.lock().await {
-            State::Approved(stage) => stage.send_user_message(src, dst, content),
-            _ => Err(Error::InvalidState),
-        }
+        self.state.lock().await.send_user_message(src, dst, content)
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Command {
@@ -394,38 +286,37 @@ impl Stage {
         Command::HandleTimeout(token)
     }
 
-    async fn handle_transition(&self, new_state: State) {
-        let mut old_state = self.state.lock().await;
+    async fn handle_relocate(
+        &self,
+        bootstrap_addrs: Vec<SocketAddr>,
+        details: SignedRelocateDetails,
+        message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+    ) -> Result<()> {
+        let node = self.state.lock().await.node().clone();
+        let previous_name = node.name();
 
-        // Sending `Event::Connected` here to make sure the transition is complete by the time the
-        // event is received.
-        if let (State::Joining(old), State::Approved(_)) = (&*old_state, &new_state) {
-            old.node.send_event(Event::Connected(old.connect_type()));
-        }
+        let (node, section) =
+            bootstrap::relocate(node, &self.comm, message_rx, bootstrap_addrs, details).await?;
 
-        *old_state = new_state
+        *self.state.lock().await = Approved::new(section, None, node);
+        self.send_event(Event::Connected(Connected::Relocate { previous_name }))
+            .await;
+
+        Ok(())
     }
 
     async fn log_ident(&self) -> String {
-        match &*self.state.lock().await {
-            State::Bootstrapping(state) => format!("{}(?) ", state.node.name()),
-            State::Joining(state) => format!(
-                "{}({:b}?) ",
-                state.node.name(),
-                state.target_section_elders_info().prefix,
-            ),
-            State::Approved(state) => {
-                if state.is_elder() {
-                    format!(
-                        "{}({:b}v{}!) ",
-                        state.node().name(),
-                        state.section().prefix(),
-                        state.section().chain().last_key_index()
-                    )
-                } else {
-                    format!("{}({:b}) ", state.node().name(), state.section().prefix())
-                }
-            }
+        let state = self.state.lock().await;
+
+        if state.is_elder() {
+            format!(
+                "{}({:b}v{}!) ",
+                state.node().name(),
+                state.section().prefix(),
+                state.section().chain().last_key_index()
+            )
+        } else {
+            format!("{}({:b}) ", state.node().name(), state.section().prefix())
         }
     }
 }

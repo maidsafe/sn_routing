@@ -308,15 +308,6 @@ pub enum VerifyStatus {
     Unknown,
 }
 
-impl VerifyStatus {
-    pub fn require_full(self) -> Result<(), Error> {
-        match self {
-            Self::Full => Ok(()),
-            Self::Unknown => Err(Error::UntrustedMessage),
-        }
-    }
-}
-
 /// Status of an incomming message.
 pub enum MessageStatus {
     /// Message is useful and should be handled.

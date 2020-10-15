@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod bootstrap;
 mod command;
 pub mod event_stream;
 mod executor;
@@ -14,16 +15,14 @@ mod stage;
 mod tests;
 
 pub use self::event_stream::EventStream;
-#[cfg(test)]
-use self::stage::State;
 use self::{
     command::Command,
     executor::Executor,
-    stage::{Approved, Bootstrapping, Comm, Stage},
+    stage::{Approved, Comm, Stage},
 };
 use crate::{
     crypto::{self, Keypair, PublicKey},
-    error::{Error, Result},
+    error::Result,
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
     network_params::NetworkParams,
@@ -90,13 +89,12 @@ impl Routing {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let (state, comm, initial_command) = if config.first {
+        let (state, comm) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
-            let addr = comm.our_connection_info()?;
             let node = Node::new(
                 keypair,
-                addr,
+                comm.our_connection_info()?,
                 MIN_AGE,
                 config.network_params,
                 event_tx.clone(),
@@ -106,26 +104,29 @@ impl Routing {
             let _ = event_tx.send(Event::Connected(Connected::First));
             let _ = event_tx.send(Event::PromotedToElder);
 
-            (state.into(), comm, None)
+            (state, comm)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
-            let addr = comm.our_connection_info()?;
-            let node = Node::new(keypair, addr, MIN_AGE, config.network_params, event_tx);
-            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node)?;
+            let node = Node::new(
+                keypair,
+                comm.our_connection_info()?,
+                MIN_AGE,
+                config.network_params,
+                event_tx.clone(),
+            );
+            let (node, section) = bootstrap::infant(node, &comm, bootstrap_addr).await?;
+            let state = Approved::new(section, None, node);
 
-            (state.into(), comm, Some(command))
+            let _ = event_tx.send(Event::Connected(Connected::First));
+
+            (state, comm)
         };
 
         let incoming_conns = comm.listen()?;
         let stage = Arc::new(Stage::new(state, comm));
         let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(event_rx);
-
-        // Process the initial command.
-        if let Some(command) = initial_command {
-            let _ = tokio::spawn(stage.clone().handle_commands(command));
-        }
 
         let routing = Self {
             stage,
@@ -160,19 +161,14 @@ impl Routing {
         self.stage.our_connection_info()
     }
 
-    /// Our `Prefix` once we are a part of the section.
-    pub async fn our_prefix(&self) -> Option<Prefix> {
+    /// Prefix of our section
+    pub async fn our_prefix(&self) -> Prefix {
         self.stage.our_prefix().await
     }
 
-    /// Finds out if the given XorName matches our prefix. Returns error
-    /// if we don't have a prefix because we haven't joined any section yet.
-    pub async fn matches_our_prefix(&self, name: &XorName) -> Result<bool> {
-        if let Some(prefix) = self.our_prefix().await {
-            Ok(prefix.matches(name))
-        } else {
-            Err(Error::InvalidState)
-        }
+    /// Finds out if the given XorName matches our prefix.
+    pub async fn matches_our_prefix(&self, name: &XorName) -> bool {
+        self.our_prefix().await.matches(name)
     }
 
     /// Returns whether the node is Elder.
@@ -210,7 +206,7 @@ impl Routing {
     }
 
     /// Returns the info about our section or `None` if we are not joined yet.
-    pub async fn our_section(&self) -> Option<EldersInfo> {
+    pub async fn our_section(&self) -> EldersInfo {
         self.stage.our_section().await
     }
 
@@ -257,7 +253,7 @@ impl Routing {
     }
 
     /// Returns our section proof chain, or `None` if we are not joined yet.
-    pub async fn our_history(&self) -> Option<SectionProofChain> {
+    pub async fn our_history(&self) -> SectionProofChain {
         self.stage.our_history().await
     }
 

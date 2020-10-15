@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{command, Bootstrapping, Command, State, UpdateBarrier};
+use super::{command, Command, UpdateBarrier};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -23,7 +23,10 @@ use crate::{
     network::Network,
     node::Node,
     peer::Peer,
-    relocation::{self, RelocateAction, RelocateDetails, RelocatePromise, SignedRelocateDetails},
+    relocation::{
+        self, RelocateAction, RelocateDetails, RelocatePromise, RelocateState,
+        SignedRelocateDetails,
+    },
     section::{
         EldersInfo, MemberInfo, Section, SectionKeyShare, SectionKeysProvider, SectionProofChain,
         MIN_AGE,
@@ -33,6 +36,7 @@ use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{net::SocketAddr, slice, time::Duration};
+use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 // Interval to progress DKG timed phase
@@ -49,9 +53,7 @@ pub(crate) struct Approved {
     update_barrier: UpdateBarrier,
     // Voter for DKG
     dkg_voter: DkgVoter,
-    // Serialized `RelocatePromise` message that we received from our section. To be sent back to
-    // them after we are demoted.
-    relocate_promise: Option<Bytes>,
+    relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,
 }
 
@@ -74,7 +76,7 @@ impl Approved {
             vote_accumulator: Default::default(),
             update_barrier: Default::default(),
             dkg_voter: Default::default(),
-            relocate_promise: None,
+            relocate_state: None,
             msg_filter: MessageFilter::new(),
         }
     }
@@ -91,7 +93,7 @@ impl Approved {
         &self.network
     }
 
-    pub fn handle_message(
+    pub async fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
@@ -120,7 +122,7 @@ impl Approved {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 commands.extend(self.update_section_knowledge(&msg)?);
-                commands.extend(self.handle_useful_message(sender, msg)?);
+                commands.extend(self.handle_useful_message(sender, msg).await?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -393,7 +395,8 @@ impl Approved {
                 }
             }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
-                return Ok(MessageStatus::Useless)
+                // Skip validation of these. We will validate them inside the bootstrap task.
+                return Ok(MessageStatus::Useful);
             }
             Variant::Vote { proof_share, .. } => {
                 if !self.should_handle_vote(proof_share) {
@@ -429,7 +432,7 @@ impl Approved {
         }
     }
 
-    fn handle_useful_message(
+    async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
@@ -446,19 +449,7 @@ impl Approved {
             Variant::Relocate(_) => {
                 msg.src().check_is_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
-                match self.handle_relocate(signed_relocate) {
-                    Some(RelocateParams {
-                        conn_infos,
-                        details,
-                    }) => {
-                        // Transition from Approved to Bootstrapping on relocation
-                        let (state, command) =
-                            Bootstrapping::new(Some(details), conn_infos, self.node.clone())?;
-                        let state = State::Bootstrapping(state);
-                        Ok(vec![Command::Transition(Box::new(state)), command])
-                    }
-                    None => Ok(vec![]),
-                }
+                Ok(self.handle_relocate(signed_relocate).into_iter().collect())
             }
             Variant::RelocatePromise(promise) => {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
@@ -522,7 +513,18 @@ impl Approved {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => unreachable!(),
+            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
+                if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
+                    if let Some(sender) = sender {
+                        trace!("Forwarding {:?} to the bootstrap task", msg);
+                        let _ = message_tx.send((msg, sender)).await;
+                    } else {
+                        error!("Missig sender of {:?}", msg);
+                    }
+                }
+
+                Ok(vec![])
+            }
         }
     }
 
@@ -750,8 +752,8 @@ impl Approved {
         self.update_state(section, network)
     }
 
-    fn handle_relocate(&mut self, signed_msg: SignedRelocateDetails) -> Option<RelocateParams> {
-        if signed_msg.relocate_details().pub_id != self.node.name() {
+    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Option<Command> {
+        if details.relocate_details().pub_id != self.node.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
             return None;
@@ -759,16 +761,19 @@ impl Approved {
 
         debug!(
             "Received Relocate message to join the section at {}.",
-            signed_msg.relocate_details().destination
+            details.relocate_details().destination
         );
 
-        if self.relocate_promise.is_none() {
+        if self.relocate_state.is_none() {
             self.node.send_event(Event::RelocationStarted {
                 previous_name: self.node.name(),
             });
         }
 
-        let conn_infos: Vec<_> = self
+        let (message_tx, message_rx) = mpsc::channel(1);
+        self.relocate_state = Some(RelocateState::InProgress(message_tx));
+
+        let bootstrap_addrs: Vec<_> = self
             .section
             .elders_info()
             .peers()
@@ -776,9 +781,10 @@ impl Approved {
             .copied()
             .collect();
 
-        Some(RelocateParams {
-            details: signed_msg,
-            conn_infos,
+        Some(Command::Relocate {
+            bootstrap_addrs,
+            details,
+            message_rx,
         })
     }
 
@@ -792,13 +798,19 @@ impl Approved {
         if promise.name == self.node.name() {
             // Store the `RelocatePromise` message and send it back after we are demoted.
             // Keep it around even if we are not elder anymore, in case we need to resend it.
-            if self.relocate_promise.is_none() {
-                self.relocate_promise = Some(msg_bytes.clone());
-                self.node.send_event(Event::RelocationStarted {
-                    previous_name: self.node.name(),
-                });
-            } else {
-                trace!("ignore RelocatePromise - already have one");
+            match self.relocate_state {
+                None => {
+                    self.relocate_state = Some(RelocateState::Delayed(msg_bytes.clone()));
+                    self.node.send_event(Event::RelocationStarted {
+                        previous_name: self.node.name(),
+                    });
+                }
+                Some(RelocateState::InProgress(_)) => {
+                    trace!("ignore RelocatePromise - relocation already in progress");
+                }
+                Some(RelocateState::Delayed(_)) => {
+                    trace!("ignore RelocatePromise - already have one");
+                }
             }
 
             // We are no longer elder. Send the promise back already.
@@ -1594,8 +1606,8 @@ impl Approved {
 
     fn return_relocate_promise(&self) -> Option<Command> {
         // TODO: keep sending this periodically until we get relocated.
-        if let Some(bytes) = self.relocate_promise.as_ref().cloned() {
-            Some(self.send_message_to_our_elders(bytes))
+        if let Some(RelocateState::Delayed(bytes)) = &self.relocate_state {
+            Some(self.send_message_to_our_elders(bytes.clone()))
         } else {
             None
         }
