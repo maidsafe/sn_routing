@@ -23,7 +23,7 @@ async fn test_messages_client_node() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";
 
-    let (node, mut event_stream) = InstanceBuilder::new(None).first().create().await?;
+    let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -65,7 +65,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";
 
-    let (node1, mut event_stream) = InstanceBuilder::new(None).first().create().await?;
+    let (node1, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
     let node1_contact = node1.our_connection_info()?;
     let node1_name = node1.name().await;
 
@@ -84,7 +84,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     });
 
     // start a second node which sends a message to the first node
-    let (node2, mut event_stream) = InstanceBuilder::new(None)
+    let (node2, mut event_stream) = RoutingBuilder::new(None)
         .with_contact(node1_contact)
         .create()
         .await?;

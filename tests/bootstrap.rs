@@ -14,7 +14,7 @@ use futures::future::join_all;
 use sn_routing::{
     event::{Connected, Event},
     rng::MainRng,
-    Instance,
+    Routing,
 };
 use utils::*;
 use xor_name::XorName;
@@ -23,7 +23,7 @@ use xor_name::XorName;
 async fn test_genesis_node() -> Result<()> {
     let keypair = Keypair::generate(&mut MainRng::default());
     let pub_key = keypair.public;
-    let (node, mut event_stream) = InstanceBuilder::new(None)
+    let (node, mut event_stream) = RoutingBuilder::new(None)
         .first()
         .keypair(keypair)
         .create()
@@ -41,7 +41,7 @@ async fn test_genesis_node() -> Result<()> {
 
 #[tokio::test]
 async fn test_node_bootstrapping() -> Result<()> {
-    let (genesis_node, mut event_stream) = InstanceBuilder::new(None).first().create().await?;
+    let (genesis_node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
@@ -55,7 +55,7 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // bootstrap a second node with genesis
     let genesis_contact = genesis_node.our_connection_info()?;
-    let (node1, mut event_stream) = InstanceBuilder::new(None)
+    let (node1, mut event_stream) = RoutingBuilder::new(None)
         .with_contact(genesis_contact)
         .create()
         .await?;
@@ -75,7 +75,7 @@ async fn test_node_bootstrapping() -> Result<()> {
 #[tokio::test]
 async fn test_section_bootstrapping() -> Result<()> {
     let num_of_nodes = 7;
-    let (genesis_node, mut event_stream) = InstanceBuilder::new(None)
+    let (genesis_node, mut event_stream) = RoutingBuilder::new(None)
         .elder_size(num_of_nodes)
         .first()
         .create()
@@ -107,14 +107,14 @@ async fn test_section_bootstrapping() -> Result<()> {
     let mut nodes_joining_tasks = Vec::with_capacity(num_of_nodes);
     for _ in 0..num_of_nodes {
         nodes_joining_tasks.push(async {
-            let (node, mut event_stream) = InstanceBuilder::new(None)
+            let (node, mut event_stream) = RoutingBuilder::new(None)
                 .with_contact(genesis_contact)
                 .create()
                 .await?;
 
             assert_next_event!(event_stream, Event::Connected(Connected::First));
 
-            Ok::<Instance, Error>(node)
+            Ok::<Routing, Error>(node)
         });
     }
 
