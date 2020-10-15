@@ -6,19 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod approved;
 mod bootstrap;
+mod comm;
 mod command;
 pub mod event_stream;
 mod executor;
 mod stage;
 #[cfg(test)]
 mod tests;
+mod update_barrier;
 
 pub use self::event_stream::EventStream;
 use self::{
-    command::Command,
-    executor::Executor,
-    stage::{Approved, Comm, Stage},
+    approved::Approved, comm::Comm, command::Command, executor::Executor, stage::Stage,
+    update_barrier::UpdateBarrier,
 };
 use crate::{
     crypto,

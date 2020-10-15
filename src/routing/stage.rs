@@ -6,14 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod approved;
-mod comm;
-mod update_barrier;
-
-pub(super) use self::{approved::Approved, comm::Comm};
-
-use self::update_barrier::UpdateBarrier;
-use super::{bootstrap, command, Command};
+use super::{bootstrap, Approved, Comm, Command};
 use crate::{
     error::Result,
     event::{Connected, Event},
