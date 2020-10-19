@@ -9,7 +9,7 @@
 use super::{joining::Joining, Command, State};
 use crate::{
     crypto::{keypair_within_range, name},
-    error::Result,
+    error::{Error, Result},
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
@@ -57,6 +57,8 @@ impl Bootstrapping {
                 message
                     .verify(iter::empty())
                     .and_then(VerifyStatus::require_full)?;
+
+                let sender = sender.ok_or(Error::InvalidSource)?;
 
                 self.handle_bootstrap_response(
                     message.src().to_node_peer(sender)?,
