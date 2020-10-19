@@ -29,7 +29,8 @@ impl MemberInfo {
         }
     }
 
-    pub fn is_adult(&self) -> bool {
+    // Is the age > `MIN_AGE`?
+    pub fn is_mature(&self) -> bool {
         self.peer.age() > MIN_AGE
     }
 

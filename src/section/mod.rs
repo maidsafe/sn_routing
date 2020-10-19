@@ -229,7 +229,7 @@ impl Section {
 
     /// Returns whether the given peer adult or elder.
     pub fn is_adult_or_elder(&self, name: &XorName) -> bool {
-        self.members.is_adult(name) || self.is_elder(name)
+        self.members.is_mature(name) || self.is_elder(name)
     }
 
     // Prefix of our section.
@@ -254,7 +254,7 @@ impl Section {
     /// Returns adults from our section.
     pub fn adults(&self) -> impl Iterator<Item = &Peer> {
         self.members
-            .adults()
+            .mature()
             .filter(move |peer| !self.is_elder(peer.name()))
     }
 
@@ -276,7 +276,7 @@ impl Section {
     fn elders_info_signing_key_index(&self) -> u64 {
         // NOTE: we assume that the key the current `EldersInfo` is signed with is always
         // present in our section proof chain. This is currently guaranteed, because we use the
-        // `SectionUpdateBarrier` and so we always update the current `EldersInfo` and the current
+        // `UpdateBarrier` and so we always update the current `EldersInfo` and the current
         // section key at the same time.
         self.chain
             .index_of(&self.elders_info.proof.public_key)
@@ -302,7 +302,7 @@ impl Section {
 
         let (our_new_size, sibling_new_size) = self
             .members
-            .adults()
+            .mature()
             .map(|peer| peer.name().bit(next_bit_index) == next_bit)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
@@ -312,7 +312,7 @@ impl Section {
                 }
             });
 
-        // If either of the two new sections will not contain enough entries, return `false`.
+        // If none of the two new sections would contain enough entries, return `None`.
         if our_new_size < network_params.recommended_section_size
             || sibling_new_size < network_params.recommended_section_size
         {

@@ -127,12 +127,12 @@ impl Routing {
             let _ = tokio::spawn(stage.clone().handle_commands(command));
         }
 
-        let node = Self {
+        let routing = Self {
             stage,
             _executor: executor,
         };
 
-        Ok((node, event_stream))
+        Ok((routing, event_stream))
     }
 
     /// Returns the `PublicKey` of this node.

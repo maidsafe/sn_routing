@@ -41,4 +41,6 @@ pub enum Error {
     InvalidElderDkgResult,
     #[error(display = "Failed to send a message.")]
     FailedSend,
+    #[error(display = "Invalid vote.")]
+    InvalidVote,
 }

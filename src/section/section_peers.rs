@@ -51,10 +51,10 @@ impl SectionPeers {
             .filter(|member| member.value.state == PeerState::Joined)
     }
 
-    /// Returns nodes from our section with age greater than `MIN_AGE`
-    pub fn adults(&self) -> impl Iterator<Item = &Peer> {
+    /// Returns joined nodes from our section with age greater than `MIN_AGE`
+    pub fn mature(&self) -> impl Iterator<Item = &Peer> {
         self.joined()
-            .filter(|info| info.is_adult())
+            .filter(|info| info.is_mature())
             .map(|info| &info.peer)
     }
 
@@ -94,11 +94,6 @@ impl SectionPeers {
         )
     }
 
-    /// Check if the given `XorName` is or was a member of our section.
-    // pub fn contains(&self, name: &XorName) -> bool {
-    //     self.members.contains_key(name)
-    // }
-
     /// Returns whether the given peer is a joined member of our section.
     pub fn is_joined(&self, name: &XorName) -> bool {
         self.members
@@ -107,11 +102,11 @@ impl SectionPeers {
             .unwrap_or(false)
     }
 
-    /// Returns whether the given peer has age > MIN_AGE.
-    pub fn is_adult(&self, name: &XorName) -> bool {
+    /// Returns whether the given peer is joined and has age > MIN_AGE.
+    pub fn is_mature(&self, name: &XorName) -> bool {
         self.members
             .get(name)
-            .map(|info| info.value.is_adult())
+            .map(|info| info.value.state == PeerState::Joined && info.value.is_mature())
             .unwrap_or(false)
     }
 
