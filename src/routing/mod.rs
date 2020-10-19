@@ -99,12 +99,11 @@ impl Routing {
                 comm.our_connection_info()?,
                 MIN_AGE,
                 config.network_params,
-                event_tx.clone(),
             );
-            let state = Approved::first_node(node)?;
+            let state = Approved::first_node(node, event_tx)?;
 
-            let _ = event_tx.send(Event::Connected(Connected::First));
-            let _ = event_tx.send(Event::PromotedToElder);
+            state.send_event(Event::Connected(Connected::First));
+            state.send_event(Event::PromotedToElder);
 
             (state, comm)
         } else {
@@ -115,12 +114,11 @@ impl Routing {
                 comm.our_connection_info()?,
                 MIN_AGE,
                 config.network_params,
-                event_tx.clone(),
             );
             let (node, section) = bootstrap::infant(node, &comm, bootstrap_addr).await?;
-            let state = Approved::new(node, section, None);
+            let state = Approved::new(node, section, None, event_tx);
 
-            let _ = event_tx.send(Event::Connected(Connected::First));
+            state.send_event(Event::Connected(Connected::First));
 
             (state, comm)
         };

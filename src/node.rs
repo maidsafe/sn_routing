@@ -6,14 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, event::Event, peer::Peer, NetworkParams};
+use crate::{crypto, peer::Peer, NetworkParams};
 use ed25519_dalek::Keypair;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
 };
-use tokio::sync::mpsc;
 use xor_name::XorName;
 
 /// Information and state of our node
@@ -26,8 +25,6 @@ pub(crate) struct Node {
     pub addr: SocketAddr,
     pub age: u8,
     pub network_params: NetworkParams,
-    // TODO: move this event sender somewhere else. This is not an approprate place for it.
-    event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Node {
@@ -36,14 +33,12 @@ impl Node {
         addr: SocketAddr,
         age: u8,
         network_params: NetworkParams,
-        event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
         Self {
             keypair: Arc::new(keypair),
             addr,
             age,
             network_params,
-            event_tx,
         }
     }
 
@@ -53,13 +48,6 @@ impl Node {
 
     pub fn name(&self) -> XorName {
         crypto::name(&self.keypair.public)
-    }
-
-    pub fn send_event(&self, event: Event) {
-        // Note: cloning the sender to avoid mutable access. Should have negligible cost.
-        if self.event_tx.clone().send(event).is_err() {
-            error!("Event receiver has been closed");
-        }
     }
 }
 

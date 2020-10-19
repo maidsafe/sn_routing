@@ -55,17 +55,23 @@ pub(crate) struct Approved {
     dkg_voter: DkgVoter,
     relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,
+    pub(super) event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Approved {
     // Creates the approved state for the first node in the network
-    pub fn first_node(node: Node) -> Result<Self> {
+    pub fn first_node(node: Node, event_tx: mpsc::UnboundedSender<Event>) -> Result<Self> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
-        Ok(Self::new(node, section, Some(section_key_share)))
+        Ok(Self::new(node, section, Some(section_key_share), event_tx))
     }
 
     // Creates the approved state for a regular node.
-    pub fn new(node: Node, section: Section, section_key_share: Option<SectionKeyShare>) -> Self {
+    pub fn new(
+        node: Node,
+        section: Section,
+        section_key_share: Option<SectionKeyShare>,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Self {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
 
         Self {
@@ -78,6 +84,7 @@ impl Approved {
             dkg_voter: Default::default(),
             relocate_state: None,
             msg_filter: MessageFilter::new(),
+            event_tx,
         }
     }
 
@@ -91,6 +98,13 @@ impl Approved {
 
     pub fn network(&self) -> &Network {
         &self.network
+    }
+
+    pub fn send_event(&self, event: Event) {
+        // Note: cloning the sender to avoid mutable access. Should have negligible cost.
+        if self.event_tx.clone().send(event).is_err() {
+            error!("Event receiver has been closed");
+        }
     }
 
     pub async fn handle_message(
@@ -739,8 +753,7 @@ impl Approved {
     }
 
     fn handle_user_message(&self, src: SrcLocation, dst: DstLocation, content: Bytes) {
-        self.node
-            .send_event(Event::MessageReceived { content, src, dst })
+        self.send_event(Event::MessageReceived { content, src, dst })
     }
 
     fn handle_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
@@ -765,7 +778,7 @@ impl Approved {
         );
 
         if self.relocate_state.is_none() {
-            self.node.send_event(Event::RelocationStarted {
+            self.send_event(Event::RelocationStarted {
                 previous_name: self.node.name(),
             });
         }
@@ -801,7 +814,7 @@ impl Approved {
             match self.relocate_state {
                 None => {
                     self.relocate_state = Some(RelocateState::Delayed(msg_bytes.clone()));
-                    self.node.send_event(Event::RelocationStarted {
+                    self.send_event(Event::RelocationStarted {
                         previous_name: self.node.name(),
                     });
                 }
@@ -1180,13 +1193,13 @@ impl Approved {
         commands.push(self.send_node_approval(&peer, their_knowledge)?);
 
         if let Some(previous_name) = previous_name {
-            self.node.send_event(Event::MemberJoined {
+            self.send_event(Event::MemberJoined {
                 name: *peer.name(),
                 previous_name,
                 age,
             });
         } else {
-            self.node.send_event(Event::InfantJoined {
+            self.send_event(Event::InfantJoined {
                 name: *peer.name(),
                 age,
             });
@@ -1221,7 +1234,7 @@ impl Approved {
         commands.extend(self.increment_ages(peer.name(), &signature)?);
         commands.extend(self.promote_and_demote_elders()?);
 
-        self.node.send_event(Event::MemberLeft {
+        self.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
         });
@@ -1448,7 +1461,7 @@ impl Approved {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            self.node.send_event(Event::EldersChanged {
+            self.send_event(Event::EldersChanged {
                 prefix: *self.section.prefix(),
                 key: *self.section.chain().last_key(),
                 elders: self.section.elders_info().elders.keys().copied().collect(),
@@ -1457,7 +1470,7 @@ impl Approved {
 
         if !old_is_elder && new_is_elder {
             info!("Promoted to elder");
-            self.node.send_event(Event::PromotedToElder);
+            self.send_event(Event::PromotedToElder);
         }
 
         if old_is_elder && !new_is_elder {
@@ -1465,7 +1478,7 @@ impl Approved {
             self.section = self.section.to_minimal();
             self.network = Network::new();
             self.section_keys_provider = SectionKeysProvider::new(None);
-            self.node.send_event(Event::Demoted);
+            self.send_event(Event::Demoted);
         }
 
         if !new_is_elder {

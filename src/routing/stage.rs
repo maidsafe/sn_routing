@@ -35,7 +35,7 @@ impl Stage {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
-        self.state.lock().await.node().send_event(event)
+        self.state.lock().await.send_event(event)
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
@@ -146,9 +146,11 @@ impl Stage {
         let (node, section) =
             bootstrap::relocate(node, &self.comm, message_rx, bootstrap_addrs, details).await?;
 
-        *self.state.lock().await = Approved::new(node, section, None);
-        self.send_event(Event::Connected(Connected::Relocate { previous_name }))
-            .await;
+        let mut state = self.state.lock().await;
+        let event_tx = state.event_tx.clone();
+        *state = Approved::new(node, section, None, event_tx);
+
+        state.send_event(Event::Connected(Connected::Relocate { previous_name }));
 
         Ok(())
     }
