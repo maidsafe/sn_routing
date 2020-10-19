@@ -19,7 +19,9 @@ use crate::{
     section::{EldersInfo, Section},
     SectionProofChain,
 };
-use std::net::SocketAddr;
+use bytes::Bytes;
+use futures::future;
+use std::{mem, net::SocketAddr};
 use tokio::{sync::mpsc, task};
 use xor_name::Prefix;
 
@@ -38,24 +40,28 @@ pub(crate) async fn infant(
     // sequential in nature anyway (send request, receive response, send request, receive response,
     // ...).
 
+    let (send_tx, send_rx) = mpsc::channel(1);
+    let (recv_tx, recv_rx) = mpsc::channel(1);
+
+    let state = State::new(node, send_tx, recv_rx)?;
     let local_set = task::LocalSet::new();
-    let (message_tx, message_rx) = mpsc::channel(1);
+
     let incoming_connections = comm.listen()?;
-    let _ = local_set.spawn_local(receive_messages(incoming_connections, message_tx));
+    let _ = local_set.spawn_local(receive_messages(incoming_connections, recv_tx));
 
-    let mut state = State::new(node, comm, message_rx)?;
-    let section = local_set
-        .run_until(state.run(vec![bootstrap_addr], None))
-        .await?;
-
-    Ok((state.node, section))
+    future::join(
+        send_messages(comm, send_rx),
+        local_set.run_until(state.run(vec![bootstrap_addr], None)),
+    )
+    .await
+    .1
 }
 
 /// Re-bootstrap as a relocated node.
 pub(crate) async fn relocate(
     node: Node,
     comm: &Comm,
-    message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+    recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section)> {
@@ -64,35 +70,43 @@ pub(crate) async fn relocate(
     // would interfere with it. Instead we read the incoming messages from the `message_rx` whose
     // sending half is stored inside `Approved` which forwards the relevant messages to it.
 
-    let mut state = State::new(node, comm, message_rx)?;
-    let section = state.run(bootstrap_addrs, Some(relocate_details)).await?;
-    Ok((state.node, section))
+    let (send_tx, send_rx) = mpsc::channel(1);
+    let state = State::new(node, send_tx, recv_rx)?;
+
+    future::join(
+        send_messages(comm, send_rx),
+        state.run(bootstrap_addrs, Some(relocate_details)),
+    )
+    .await
+    .1
 }
 
-struct State<'a> {
-    comm: &'a Comm,
-    message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+struct State {
+    // Sender for outgoing messages.
+    send_tx: mpsc::Sender<(Bytes, Vec<SocketAddr>)>,
+    // Receiver for incoming messages.
+    recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
     node: Node,
 }
 
-impl<'a> State<'a> {
+impl State {
     fn new(
         node: Node,
-        comm: &'a Comm,
-        message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+        send_tx: mpsc::Sender<(Bytes, Vec<SocketAddr>)>,
+        recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
     ) -> Result<Self> {
         Ok(Self {
-            comm,
-            message_rx,
+            send_tx,
+            recv_rx,
             node,
         })
     }
 
     async fn run(
-        &mut self,
+        mut self,
         bootstrap_addrs: Vec<SocketAddr>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<Section> {
+    ) -> Result<(Node, Section)> {
         let (elders_info, section_key) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -114,7 +128,7 @@ impl<'a> State<'a> {
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<(EldersInfo, bls::PublicKey)> {
         loop {
-            self.send_bootstrap_request(&bootstrap_addrs, relocate_details)
+            self.send_bootstrap_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
             let (response, sender) = self.receive_bootstrap_response().await?;
@@ -142,8 +156,8 @@ impl<'a> State<'a> {
     }
 
     async fn send_bootstrap_request(
-        &self,
-        recipients: &[SocketAddr],
+        &mut self,
+        recipients: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<()> {
         let destination = match relocate_details {
@@ -162,15 +176,13 @@ impl<'a> State<'a> {
 
         debug!("{} Sending BootstrapRequest to {:?}", self.node, recipients);
 
-        self.comm
-            .send_message_to_targets(recipients, recipients.len(), message.to_bytes())
-            .await?;
+        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
 
         Ok(())
     }
 
     async fn receive_bootstrap_response(&mut self) -> Result<(BootstrapResponse, SocketAddr)> {
-        while let Some((message, sender)) = self.message_rx.recv().await {
+        while let Some((message, sender)) = self.recv_rx.recv().await {
             match message.variant() {
                 Variant::BootstrapResponse(response) => {
                     if !self.verify_message(&message, None) {
@@ -225,11 +237,11 @@ impl<'a> State<'a> {
     // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
     // completing the bootstrap.
     async fn join(
-        &mut self,
+        mut self,
         mut elders_info: EldersInfo,
         mut section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<Section> {
+    ) -> Result<(Node, Section)> {
         loop {
             self.send_join_requests(&elders_info, section_key, relocate_payload.as_ref())
                 .await?;
@@ -243,7 +255,7 @@ impl<'a> State<'a> {
                     elders_info,
                     section_chain,
                 } => {
-                    return Ok(Section::new(section_chain, elders_info));
+                    return Ok((self.node, Section::new(section_chain, elders_info)));
                 }
                 JoinResponse::Rejoin {
                     elders_info: new_elders_info,
@@ -272,7 +284,7 @@ impl<'a> State<'a> {
     }
 
     async fn send_join_requests(
-        &self,
+        &mut self,
         elders_info: &EldersInfo,
         section_key: bls::PublicKey,
         relocate_payload: Option<&RelocatePayload>,
@@ -304,9 +316,7 @@ impl<'a> State<'a> {
             None,
         )?;
 
-        self.comm
-            .send_message_to_targets(&recipients, recipients.len(), message.to_bytes())
-            .await?;
+        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
 
         Ok(())
     }
@@ -315,7 +325,7 @@ impl<'a> State<'a> {
         &mut self,
         relocate_payload: Option<&RelocatePayload>,
     ) -> Result<(JoinResponse, SocketAddr)> {
-        while let Some((message, sender)) = self.message_rx.recv().await {
+        while let Some((message, sender)) = self.recv_rx.recv().await {
             match message.variant() {
                 Variant::BootstrapResponse(BootstrapResponse::Join {
                     elders_info,
@@ -437,5 +447,14 @@ async fn receive_messages(
                 }
             }
         });
+    }
+}
+
+// Keep reading messages from `rx` and send them using `comm`.
+async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>) {
+    while let Some((message, recipients)) = rx.recv().await {
+        let _ = comm
+            .send_message_to_targets(&recipients, recipients.len(), message)
+            .await;
     }
 }
