@@ -530,7 +530,7 @@ mod tests {
             });
 
             // Send NodeApproval
-            let proven_elders_info = proven(&sk, elders_info.clone());
+            let proven_elders_info = proven(&sk, elders_info.clone())?;
             let proof_chain = SectionProofChain::new(pk);
             let message = Message::single_src(
                 &keypairs[0],

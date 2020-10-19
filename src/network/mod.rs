@@ -313,40 +313,28 @@ mod tests {
 
     #[test]
     fn update_keys_single_prefix_multiple_updates() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
+        let k2 = gen_key();
 
-        update_keys_and_check(
-            &mut rng,
-            vec![("1", &k0), ("1", &k1), ("1", &k2)],
-            vec![("1", &k2)],
-        );
+        update_keys_and_check(vec![("1", &k0), ("1", &k1), ("1", &k2)], vec![("1", &k2)]);
     }
 
     #[test]
     fn update_keys_existing_old_key() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
 
-        update_keys_and_check(
-            &mut rng,
-            vec![("1", &k0), ("1", &k1), ("1", &k0)],
-            vec![("1", &k0)],
-        );
+        update_keys_and_check(vec![("1", &k0), ("1", &k1), ("1", &k0)], vec![("1", &k0)]);
     }
 
     #[test]
     fn update_keys_complete_split() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
+        let k2 = gen_key();
 
         update_keys_and_check(
-            &mut rng,
             vec![("1", &k0), ("10", &k1), ("11", &k2)],
             vec![("10", &k1), ("11", &k2)],
         );
@@ -354,28 +342,21 @@ mod tests {
 
     #[test]
     fn update_keys_partial_split() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
 
-        update_keys_and_check(
-            &mut rng,
-            vec![("1", &k0), ("10", &k1)],
-            vec![("1", &k0), ("10", &k1)],
-        );
+        update_keys_and_check(vec![("1", &k0), ("10", &k1)], vec![("1", &k0), ("10", &k1)]);
     }
 
     #[test]
     fn update_keys_indirect_complete_split() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
-        let k3 = gen_key(&mut rng);
-        let k4 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
+        let k2 = gen_key();
+        let k3 = gen_key();
+        let k4 = gen_key();
 
         update_keys_and_check(
-            &mut rng,
             vec![
                 ("1", &k0),
                 ("100", &k1),
@@ -389,13 +370,11 @@ mod tests {
 
     #[test]
     fn update_keys_indirect_partial_split() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
+        let k2 = gen_key();
 
         update_keys_and_check(
-            &mut rng::new(),
             vec![("1", &k0), ("100", &k1), ("101", &k2)],
             vec![("1", &k0), ("100", &k1), ("101", &k2)],
         );
@@ -403,16 +382,14 @@ mod tests {
 
     #[test]
     fn update_keys_split_out_of_order() {
-        let mut rng = rng::new();
-        let k0 = gen_key(&mut rng);
-        let k1 = gen_key(&mut rng);
-        let k2 = gen_key(&mut rng);
-        let k3 = gen_key(&mut rng);
-        let k4 = gen_key(&mut rng);
+        let k0 = gen_key();
+        let k1 = gen_key();
+        let k2 = gen_key();
+        let k3 = gen_key();
+        let k4 = gen_key();
 
         // Late keys ignored
         update_keys_and_check(
-            &mut rng,
             vec![
                 ("1", &k0),
                 ("10", &k1),
@@ -447,7 +424,7 @@ mod tests {
     #[test]
     fn closest() {
         let mut rng = rng::new();
-        let sk = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk = bls::SecretKey::random();
 
         let p01: Prefix = "01".parse().unwrap();
         let p10: Prefix = "10".parse().unwrap();
@@ -469,8 +446,7 @@ mod tests {
 
     #[test]
     fn prune_neighbours() {
-        let mut rng = rng::new();
-        let sk = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk = bls::SecretKey::random();
 
         let p00 = "00".parse().unwrap();
         let mut map = Network::new();
@@ -501,17 +477,16 @@ mod tests {
     // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
     //           order.
     fn update_keys_and_check(
-        rng: &mut MainRng,
         updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
-        let sk = consensus::test_utils::gen_secret_key(rng);
+        let sk = bls::SecretKey::random();
 
         let mut map = Network::new();
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
-            let proof = consensus::test_utils::prove(&sk, &(&prefix, key));
+            let proof = consensus::test_utils::prove(&sk, &(&prefix, key)).unwrap();
             let proven = Proven::new((prefix, *key), proof);
             let _ = map.update_their_key(proven);
         }
@@ -535,13 +510,13 @@ mod tests {
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
-        let sk = consensus::test_utils::gen_secret_key(rng);
+        let sk = bls::SecretKey::random();
 
         let mut map = Network::new();
 
         for (prefix_str, version) in updates {
             let prefix = prefix_str.parse().unwrap();
-            let payload = consensus::test_utils::proven(&sk, (prefix, version));
+            let payload = consensus::test_utils::proven(&sk, (prefix, version)).unwrap();
             map.update_knowledge(payload);
         }
 
@@ -556,10 +531,10 @@ mod tests {
 
     fn gen_proven_elders_info(sk: &bls::SecretKey, prefix: Prefix) -> Proven<EldersInfo> {
         let (elders_info, _) = section::test_utils::gen_elders_info(prefix, 5);
-        consensus::test_utils::proven(sk, elders_info)
+        consensus::test_utils::proven(sk, elders_info).unwrap()
     }
 
-    fn gen_key(rng: &mut MainRng) -> bls::PublicKey {
-        consensus::test_utils::gen_secret_key(rng).public_key()
+    fn gen_key() -> bls::PublicKey {
+        bls::SecretKey::random().public_key()
     }
 }

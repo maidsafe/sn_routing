@@ -325,16 +325,11 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        consensus,
-        rng::{self, MainRng},
-    };
     use std::{iter, ops::Range};
 
     #[test]
     fn check_trust_trusted() {
-        let mut rng = rng::new();
-        let (chain, _) = gen_chain(&mut rng, 4);
+        let (chain, _) = gen_chain(4);
 
         // If any key in the chain is already trusted, the whole chain is trusted.
         for key in chain.keys() {
@@ -344,16 +339,15 @@ mod tests {
 
     #[test]
     fn check_trust_invalid() {
-        let mut rng = rng::new();
-        let (mut chain, _) = gen_chain(&mut rng, 2);
+        let (mut chain, _) = gen_chain(2);
 
         // Add a block with invalid signature to the chain.
-        let (_, invalid_secret_key) = gen_keys(&mut rng);
-        let (key, signature, secret_key) = gen_block(&mut rng, &invalid_secret_key);
+        let (_, invalid_secret_key) = gen_keys();
+        let (key, signature, secret_key) = gen_block(&invalid_secret_key);
         chain.push_without_validation(key, signature);
 
         // Add another block with valid signature by the previous block.
-        let (key, signature, _) = gen_block(&mut rng, &secret_key);
+        let (key, signature, _) = gen_block(&secret_key);
         let _ = chain.push(key, signature);
 
         // If we only trust the keys up to, but excluding the invalid block, the trust check fails
@@ -371,12 +365,11 @@ mod tests {
 
     #[test]
     fn check_trust_unknown() {
-        let mut rng = rng::new();
-        let (chain, _) = gen_chain(&mut rng, 2);
+        let (chain, _) = gen_chain(2);
 
         // None of the keys in the chain is trusted - the chain might be valid, but its trust status
         // cannot be determined.
-        let (trusted_key, _) = gen_keys(&mut rng);
+        let (trusted_key, _) = gen_keys();
 
         assert_eq!(
             chain.check_trust(iter::once(&trusted_key)),
@@ -389,8 +382,7 @@ mod tests {
     // support it.
     #[allow(clippy::reversed_empty_ranges)]
     fn slice() {
-        let mut rng = rng::new();
-        let (chain, _) = gen_chain(&mut rng, 3);
+        let (chain, _) = gen_chain(3);
         let keys: Vec<_> = chain.keys().collect();
 
         let assert_keys_eq = |chain: SectionProofChain, expected: &[_]| {
@@ -430,8 +422,7 @@ mod tests {
 
     #[test]
     fn merge() {
-        let mut rng = rng::new();
-        let (chain, _) = gen_chain(&mut rng, 4);
+        let (chain, _) = gen_chain(4);
 
         let check = |a: Range<u64>, b: Range<u64>, expected: Result<Range<u64>, MergeError>| {
             let mut a = chain.slice(a);
@@ -514,15 +505,13 @@ mod tests {
         // B: [a b c x]
         // R: Err
 
-        let mut rng = rng::new();
-
-        let (mut chain0, sk) = gen_chain(&mut rng, 3);
+        let (mut chain0, sk) = gen_chain(3);
         let mut chain1 = chain0.clone();
 
-        let (c0b0_pk, c0b0_signature, _) = gen_block(&mut rng, &sk);
+        let (c0b0_pk, c0b0_signature, _) = gen_block(&sk);
         let _ = chain0.push(c0b0_pk, c0b0_signature);
 
-        let (c1b0_pk, c1b0_signature, _) = gen_block(&mut rng, &sk);
+        let (c1b0_pk, c1b0_signature, _) = gen_block(&sk);
         let _ = chain1.push(c1b0_pk, c1b0_signature);
 
         assert_eq!(chain0.merge(chain1), Err(MergeError));
@@ -534,18 +523,16 @@ mod tests {
         // B: [a b c x e]
         // R: Err
 
-        let mut rng = rng::new();
-
-        let (mut chain0, sk) = gen_chain(&mut rng, 3);
+        let (mut chain0, sk) = gen_chain(3);
         let mut chain1 = chain0.clone();
 
-        let (c0b0_pk, c0b0_signature, c0b0_sk) = gen_block(&mut rng, &sk);
+        let (c0b0_pk, c0b0_signature, c0b0_sk) = gen_block(&sk);
         let _ = chain0.push(c0b0_pk, c0b0_signature);
 
-        let (c1b0_pk, c1b0_signature, c1b0_sk) = gen_block(&mut rng, &sk);
+        let (c1b0_pk, c1b0_signature, c1b0_sk) = gen_block(&sk);
         let _ = chain1.push(c1b0_pk, c1b0_signature);
 
-        let (b1_pk, _) = gen_keys(&mut rng);
+        let (b1_pk, _) = gen_keys();
         let c0b1_signature = c0b0_sk.sign(&bincode::serialize(&b1_pk).unwrap());
         let _ = chain0.push(b1_pk, c0b1_signature);
 
@@ -555,28 +542,26 @@ mod tests {
         assert_eq!(chain0.merge(chain1), Err(MergeError));
     }
 
-    fn gen_keys(rng: &mut MainRng) -> (bls::PublicKey, bls::SecretKey) {
-        let secret_key = consensus::test_utils::gen_secret_key(rng);
+    fn gen_keys() -> (bls::PublicKey, bls::SecretKey) {
+        let secret_key = bls::SecretKey::random();
         (secret_key.public_key(), secret_key)
     }
 
     fn gen_block(
-        rng: &mut MainRng,
         prev_secret_key: &bls::SecretKey,
     ) -> (bls::PublicKey, bls::Signature, bls::SecretKey) {
-        let (public_key, secret_key) = gen_keys(rng);
+        let (public_key, secret_key) = gen_keys();
         let signature = prev_secret_key.sign(&bincode::serialize(&public_key).unwrap());
 
         (public_key, signature, secret_key)
     }
 
-    fn gen_chain(rng: &mut MainRng, len: usize) -> (SectionProofChain, bls::SecretKey) {
-        let (key, mut current_secret_key) = gen_keys(rng);
+    fn gen_chain(len: usize) -> (SectionProofChain, bls::SecretKey) {
+        let (key, mut current_secret_key) = gen_keys();
         let mut chain = SectionProofChain::new(key);
 
         for _ in 1..len {
-            let (new_public_key, new_signature, new_secret_key) =
-                gen_block(rng, &current_secret_key);
+            let (new_public_key, new_signature, new_secret_key) = gen_block(&current_secret_key);
             let _ = chain.push(new_public_key, new_signature);
             current_secret_key = new_secret_key;
         }

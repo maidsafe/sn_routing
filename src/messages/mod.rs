@@ -370,10 +370,10 @@ mod tests {
 
         let keypair = Keypair::generate(&mut rng);
 
-        let sk0 = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk0 = bls::SecretKey::random();
         let pk0 = sk0.public_key();
 
-        let sk1 = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk1 = bls::SecretKey::random();
         let pk1 = sk1.public_key();
 
         let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
@@ -381,7 +381,7 @@ mod tests {
         let _ = full_proof_chain.push(pk1, pk1_sig);
 
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
-        let elders_info = consensus::test_utils::proven(&sk1, elders_info);
+        let elders_info = consensus::test_utils::proven(&sk1, elders_info).unwrap();
 
         let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(

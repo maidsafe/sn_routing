@@ -132,7 +132,6 @@ impl Serialize for SignableWrapper {
 mod tests {
     use super::*;
     use crate::{
-        consensus,
         rng::{self, MainRng},
         section,
     };
@@ -150,13 +149,13 @@ mod tests {
 
         // Vote::OurKey
         let prefix = gen_prefix(&mut rng);
-        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let key = bls::SecretKey::random().public_key();
         let vote = Vote::OurKey { prefix, key };
         verify_serialize_for_signing(&vote, &key);
 
         // Vote::TheirKey
         let prefix = gen_prefix(&mut rng);
-        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let key = bls::SecretKey::random().public_key();
         let vote = Vote::TheirKey { prefix, key };
         verify_serialize_for_signing(&vote, &(prefix, key));
 

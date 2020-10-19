@@ -8,7 +8,7 @@
 
 use super::{Approved, Comm, Command, Stage};
 use crate::{
-    consensus::{Proven, Vote},
+    consensus::{test_utils::*, Proven, Vote},
     crypto,
     event::Event,
     location::DstLocation,
@@ -18,18 +18,16 @@ use crate::{
     peer::Peer,
     rng,
     section::{
-        majority_count, test_utils, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
+        majority_count, test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
     },
     Error, NetworkParams, ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
-use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use rand::Rng;
-use serde::Serialize;
 use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -41,7 +39,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
-    let new_addr = test_utils::gen_addr();
+    let new_addr = gen_addr();
 
     let message = Message::single_src(
         &new_keypair,
@@ -86,7 +84,7 @@ async fn receive_join_request() -> Result<()> {
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
-    let new_addr = test_utils::gen_addr();
+    let new_addr = gen_addr();
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
@@ -208,7 +206,7 @@ async fn handle_consensus_on_online_of_infant() -> Result<()> {
         previous_name: None,
         their_knowledge: None,
     };
-    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
 
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -247,24 +245,25 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let chain = SectionProofChain::new(sk_set.secret_key().public_key());
 
-    let mut keypairs = test_utils::gen_sorted_keypairs(ELDER_SIZE);
+    let mut keypairs = gen_sorted_keypairs(ELDER_SIZE);
     // Everybody has age 6 except the last peer who as 5.
     let ages = (0..keypairs.len() - 1)
         .map(|_| MIN_AGE + 2)
         .chain(iter::once(MIN_AGE + 1));
-    let elders = keypairs.iter().zip(ages).map(|(keypair, age)| {
-        Peer::new(crypto::name(&keypair.public), test_utils::gen_addr(), age)
-    });
+    let elders = keypairs
+        .iter()
+        .zip(ages)
+        .map(|(keypair, age)| Peer::new(crypto::name(&keypair.public), gen_addr(), age));
     let elders_info = EldersInfo::new(
         elders.map(|peer| (*peer.name(), peer)).collect(),
         Prefix::default(),
     );
-    let proven_elders_info = create_proven(sk_set.secret_key(), elders_info.clone())?;
+    let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
     let mut section = Section::new(chain, proven_elders_info);
 
     for peer in elders_info.elders.values() {
         let member_info = MemberInfo::joined(*peer);
-        let proof = create_proof(sk_set.secret_key(), &member_info)?;
+        let proof = prove(sk_set.secret_key(), &member_info)?;
         let _ = section.update_member(Proven {
             value: member_info,
             proof,
@@ -292,7 +291,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         previous_name: Some(XorName::random()),
         their_knowledge: Some(sk_set.secret_key().public_key()),
     };
-    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
 
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -359,7 +358,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let member_info = create_proven(sk_set.secret_key(), member_info)?;
+    let member_info = proven(sk_set.secret_key(), member_info)?;
     let _ = section.update_member(member_info);
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -378,7 +377,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
         state: PeerState::Left,
     };
     let vote = Vote::Offline(member_info);
-    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
 
     let _ = stage
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -401,7 +400,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
-    let member_info = create_proven(sk_set.secret_key(), member_info)?;
+    let member_info = proven(sk_set.secret_key(), member_info)?;
     let _ = section.update_member(member_info);
 
     // Pick the elder to remove.
@@ -432,7 +431,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     // Handle the consensus on the Offline vote
     let vote = Vote::Offline(remove_member_info);
-    let proof = create_proof(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
 
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -539,7 +538,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
             // from other sections), bounce it to our elders.
             (
                 create_keypair(),
-                test_utils::gen_addr(),
+                gen_addr(),
                 elders_info
                     .elders
                     .values()
@@ -553,7 +552,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let sk = bls::SecretKey::random();
     let chain = SectionProofChain::new(sk.public_key());
 
-    let proven_elders_info = create_proven(&sk, elders_info)?;
+    let proven_elders_info = proven(&sk, elders_info)?;
     let section = Section::new(chain, proven_elders_info);
 
     let node = create_node();
@@ -669,7 +668,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         }
     };
 
-    let proven_elders_info = create_proven(&sk0, elders_info)?;
+    let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(chain.clone(), proven_elders_info);
 
     let node = create_node();
@@ -748,7 +747,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let mut section_chain = SectionProofChain::new(pk0);
     let _ = section_chain.push(pk1, pk1_signature);
 
-    let proven_elders_info = create_proven(&sk0, elders_info)?;
+    let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(section_chain, proven_elders_info);
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
@@ -757,7 +756,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
     let peer_keypair = create_keypair();
-    let peer_addr = test_utils::gen_addr();
+    let peer_addr = gen_addr();
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = Message::single_src(
         &node.keypair,
@@ -847,7 +846,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let mut chain = SectionProofChain::new(pk0);
     let _ = chain.push(pk1, pk1_signature);
 
-    let proven_elders_info = create_proven(&sk0, elders_info)?;
+    let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(chain.clone(), proven_elders_info);
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
@@ -856,7 +855,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
     let peer_keypair = create_keypair();
-    let peer_addr = test_utils::gen_addr();
+    let peer_addr = gen_addr();
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
@@ -942,7 +941,7 @@ async fn handle_sync() -> Result<()> {
     assert!(chain.push(pk1, pk1_signature));
 
     let (old_elders_info, mut keypairs) = create_elders_info();
-    let proven_old_elders_info = create_proven(sk0_set.secret_key(), old_elders_info.clone())?;
+    let proven_old_elders_info = proven(sk0_set.secret_key(), old_elders_info.clone())?;
     let old_section = Section::new(chain.clone(), proven_old_elders_info);
 
     // Create our node
@@ -985,7 +984,7 @@ async fn handle_sync() -> Result<()> {
         old_elders_info.prefix,
     );
     let new_elders: BTreeSet<_> = new_elders_info.elders.keys().copied().collect();
-    let proven_new_elders_info = create_proven(sk1_set.secret_key(), new_elders_info)?;
+    let proven_new_elders_info = proven(sk1_set.secret_key(), new_elders_info)?;
     let new_section = Section::new(chain, proven_new_elders_info);
 
     // Create the `Sync` message containing the new `Section`.
@@ -1038,7 +1037,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         iter::once((*peer.name(), peer)).collect(),
         Prefix::default(),
     );
-    let proven_elders_info = create_proven(sk0_good_set.secret_key(), elders_info)?;
+    let proven_elders_info = proven(sk0_good_set.secret_key(), elders_info)?;
     let section = Section::new(chain, proven_elders_info);
     let section_key_share = create_section_key_share(&sk0_good_set, 0);
 
@@ -1073,7 +1072,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let result = stage
         .handle_command(Command::HandleMessage {
             message,
-            sender: Some(test_utils::gen_addr()),
+            sender: Some(gen_addr()),
         })
         .await;
 
@@ -1092,11 +1091,7 @@ fn create_keypair() -> Keypair {
 }
 
 fn create_peer() -> Peer {
-    Peer::new(
-        crypto::name(&create_keypair().public),
-        test_utils::gen_addr(),
-        MIN_AGE,
-    )
+    Peer::new(crypto::name(&create_keypair().public), gen_addr(), MIN_AGE)
 }
 
 fn create_node() -> Node {
@@ -1104,7 +1099,7 @@ fn create_node() -> Node {
 }
 
 fn create_node_for(keypair: Keypair) -> Node {
-    Node::new(keypair, test_utils::gen_addr())
+    Node::new(keypair, gen_addr())
 }
 
 fn create_comm() -> Result<Comm> {
@@ -1116,7 +1111,7 @@ fn create_comm() -> Result<Comm> {
 
 // Generate random EldersInfo and the corresponding Keypairs.
 fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
-    test_utils::gen_elders_info(Default::default(), ELDER_SIZE)
+    gen_elders_info(Default::default(), ELDER_SIZE)
 }
 
 fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> SectionKeyShare {
@@ -1127,36 +1122,18 @@ fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> Section
     }
 }
 
-fn create_proof<T: Serialize>(sk: &bls::SecretKey, payload: &T) -> Result<Proof> {
-    let bytes = bincode::serialize(payload)?;
-    let signature = sk.sign(&bytes);
-
-    Ok(Proof {
-        public_key: sk.public_key(),
-        signature,
-    })
-}
-
-fn create_proven<T: Serialize>(sk: &bls::SecretKey, payload: T) -> Result<Proven<T>> {
-    let proof = create_proof(sk, &payload)?;
-    Ok(Proven {
-        value: payload,
-        proof,
-    })
-}
-
 fn create_section(
     elders_info: &EldersInfo,
     sk_set: &SecretKeySet,
 ) -> Result<(Section, SectionKeyShare)> {
     let section_chain = SectionProofChain::new(sk_set.secret_key().public_key());
-    let proven_elders_info = create_proven(sk_set.secret_key(), elders_info.clone())?;
+    let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
 
     let mut section = Section::new(section_chain, proven_elders_info);
 
     for peer in elders_info.elders.values().copied() {
         let member_info = MemberInfo::joined(peer);
-        let member_info = create_proven(sk_set.secret_key(), member_info)?;
+        let member_info = proven(sk_set.secret_key(), member_info)?;
         let _ = section.update_member(member_info);
     }
 
