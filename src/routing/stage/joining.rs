@@ -70,6 +70,7 @@ impl Joining {
                 section_key,
             }) => {
                 verify_message(&msg, None)?;
+                let sender = sender.ok_or(Error::InvalidSource)?;
                 Ok(self
                     .handle_bootstrap_response(
                         msg.src().to_node_peer(sender)?,

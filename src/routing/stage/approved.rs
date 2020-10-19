@@ -464,6 +464,7 @@ impl Approved {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
             }
             Variant::BootstrapRequest(name) => {
+                let sender = sender.ok_or(Error::InvalidSource)?;
                 Ok(vec![self.handle_bootstrap_request(
                     msg.src().to_node_peer(sender)?,
                     *name,
@@ -471,26 +472,32 @@ impl Approved {
             }
 
             Variant::JoinRequest(join_request) => {
+                let sender = sender.ok_or(Error::InvalidSource)?;
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
                 self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
                 Ok(vec![])
             }
-            Variant::BouncedUntrustedMessage(message) => Ok(self
-                .handle_bounced_untrusted_message(
-                    msg.src().to_node_peer(sender)?,
-                    *msg.dst_key(),
-                    *message.clone(),
-                )
-                .into_iter()
-                .collect()),
-            Variant::BouncedUnknownMessage { src_key, message } => self
-                .handle_bounced_unknown_message(
+            Variant::BouncedUntrustedMessage(message) => {
+                let sender = sender.ok_or(Error::InvalidSource)?;
+                Ok(self
+                    .handle_bounced_untrusted_message(
+                        msg.src().to_node_peer(sender)?,
+                        *msg.dst_key(),
+                        *message.clone(),
+                    )
+                    .into_iter()
+                    .collect())
+            }
+            Variant::BouncedUnknownMessage { src_key, message } => {
+                let sender = sender.ok_or(Error::InvalidSource)?;
+                self.handle_bounced_unknown_message(
                     msg.src().to_node_peer(sender)?,
                     message.clone(),
                     src_key,
-                ),
+                )
+            }
             Variant::DKGStart {
                 dkg_key,
                 elders_info,

@@ -69,15 +69,13 @@ impl SrcAuthority {
         }
     }
 
-    pub(crate) fn to_node_peer(&self, addr: Option<SocketAddr>) -> Result<Peer> {
+    // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
+    pub(crate) fn to_node_peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
             Self::Section { .. } => Err(Error::BadLocation),
             Self::Node {
                 public_key, age, ..
-            } => {
-                let addr = addr.ok_or(Error::InvalidSource)?;
-                Ok(Peer::new(name(public_key), addr, *age))
-            }
+            } => Ok(Peer::new(name(public_key), addr, *age)),
         }
     }
 
