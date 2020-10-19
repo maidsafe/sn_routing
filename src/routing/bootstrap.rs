@@ -29,6 +29,15 @@ pub(crate) async fn infant(
     comm: &Comm,
     bootstrap_addr: SocketAddr,
 ) -> Result<(Node, Section)> {
+    // NOTE: when we are bootstrapping a new infant node, there is no `Executor` running yet.
+    // So we create a simple throwaway executor here. It works a bit differently than the main
+    // `Executor`. First, it runs inside a `LocalSet`. This allows us to terminate the whole
+    // executor simply by dropping the `LocalSet` - this simplifies things a bit. Second, we don't
+    // `spawn` separate tasks for each message, but send them to a channel instead. This means that
+    // the whole bootstrapping process runs on a single thread. That should be fine as its quite
+    // sequential in nature anyway (send request, receive response, send request, receive response,
+    // ...).
+
     let local_set = task::LocalSet::new();
     let (message_tx, message_rx) = mpsc::channel(1);
     let incoming_connections = comm.listen()?;
@@ -50,6 +59,11 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section)> {
+    // NOTE: when we are re-bootstrapping as a relocated node, the main `Executor` is still running.
+    // We don't create a separate one here (like in the `infant` case), because the main `Executor`
+    // would interfere with it. Instead we read the incoming messages from the `message_rx` whose
+    // sending half is stored inside `Approved` which forwards the relevant messages to it.
+
     let mut state = State::new(node, comm, message_rx)?;
     let section = state.run(bootstrap_addrs, Some(relocate_details)).await?;
     Ok((state.node, section))
@@ -92,6 +106,8 @@ impl<'a> State<'a> {
         self.join(elders_info, section_key, relocate_payload).await
     }
 
+    // Send a `BootstrapRequest` and waits for the response. If the response is `Rebootstrap`,
+    // repeat with the new set of contacts. If it is `Join`, proceeed to the `join` phase.
     async fn bootstrap(
         &mut self,
         mut bootstrap_addrs: Vec<SocketAddr>,
@@ -178,6 +194,7 @@ impl<'a> State<'a> {
         Err(Error::InvalidState)
     }
 
+    // Change our name to fit the destination section and apply the new age.
     fn process_relocation(
         &mut self,
         elders_info: &EldersInfo,
@@ -205,6 +222,9 @@ impl<'a> State<'a> {
         Ok(relocate_payload)
     }
 
+    // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
+    // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
+    // completing the bootstrap.
     async fn join(
         &mut self,
         mut elders_info: EldersInfo,
@@ -393,6 +413,8 @@ enum JoinResponse {
     },
 }
 
+// Keep listening to incoming messages and send them to the given `tx`.
+// This must be spawned on a `LocalSet` with `spawn_local`.
 async fn receive_messages(
     mut incoming_connections: qp2p::IncomingConnections,
     tx: mpsc::Sender<(Message, SocketAddr)>,
