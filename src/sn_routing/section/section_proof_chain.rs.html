@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `src/section/section_proof_chain.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>section_proof_chain.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css"><link rel="stylesheet" type="text/css" href="../../../light.css" id="themeStyle"><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `src/section/section_proof_chain.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>section_proof_chain.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -611,7 +612,7 @@
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">len_without_is_empty</span>)]</span>
 <span class="kw">impl</span> <span class="ident">SectionProofChain</span> {
     <span class="doccomment">/// Creates new chain consisting of only one block.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">first</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">first</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">head</span>: <span class="ident">first</span>,
             <span class="ident">tail</span>: <span class="ident">Vec</span>::<span class="ident">new</span>(),
@@ -620,7 +621,7 @@
 
     <span class="doccomment">/// Pushes a new key into the chain but only if the signature is valid.</span>
     <span class="doccomment">/// Returns whether the chain changed.</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">signature</span>: <span class="ident">bls</span>::<span class="ident">Signature</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">signature</span>: <span class="ident">bls</span>::<span class="ident">Signature</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>) {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;already has key {:?}&quot;</span>, <span class="ident">key</span>);
             <span class="kw">return</span> <span class="bool-val">false</span>;
@@ -649,12 +650,12 @@
     }
 
     <span class="doccomment">/// Returns the first key of the chain.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">head</span>
     }
 
     <span class="doccomment">/// Returns the last key of the chain.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
         <span class="self">self</span>.<span class="ident">tail</span>
             .<span class="ident">last</span>()
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">block</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">block</span>.<span class="ident">key</span>)
@@ -662,19 +663,19 @@
     }
 
     <span class="doccomment">/// Returns all the keys of the chain as a DoubleEndedIterator.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">DoubleEndedIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw">impl</span> <span class="ident">DoubleEndedIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
         <span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">head</span>).<span class="ident">chain</span>(<span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">block</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">block</span>.<span class="ident">key</span>))
     }
 
     <span class="doccomment">/// Returns whether this chain contains the given key.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">keys</span>().<span class="ident">any</span>(<span class="op">|</span><span class="ident">existing_key</span><span class="op">|</span> <span class="ident">existing_key</span> <span class="op">=</span><span class="op">=</span> <span class="ident">key</span>)
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">keys</span>().<span class="ident">any</span>(<span class="op">|</span><span class="ident">existing_key</span><span class="op">|</span> <span class="ident">existing_key</span> <span class="op">==</span> <span class="ident">key</span>)
     }
 
     <span class="doccomment">/// Returns the index of the key in the chain or `None` if not present in the chain.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">index_of</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">index_of</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">keys</span>()
-            .<span class="ident">position</span>(<span class="op">|</span><span class="ident">existing_key</span><span class="op">|</span> <span class="ident">existing_key</span> <span class="op">=</span><span class="op">=</span> <span class="ident">key</span>)
+            .<span class="ident">position</span>(<span class="op">|</span><span class="ident">existing_key</span><span class="op">|</span> <span class="ident">existing_key</span> <span class="op">==</span> <span class="ident">key</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">index</span><span class="op">|</span> <span class="ident">index</span> <span class="kw">as</span> <span class="ident">u64</span>)
     }
 
@@ -682,23 +683,23 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// Note: unlike `std::slice`, if the range is invalid or out of bounds, it is silently adjusted</span>
     <span class="doccomment">/// to the nearest valid range and so this function never panics.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">slice</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">range</span>: <span class="ident">B</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">slice</span><span class="op">&lt;</span><span class="ident">B</span>: <span class="ident">RangeBounds</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">range</span>: <span class="ident">B</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">start</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">range</span>.<span class="ident">start_bound</span>() {
-            <span class="ident">Bound</span>::<span class="ident">Included</span>(<span class="ident">index</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span>,
-            <span class="ident">Bound</span>::<span class="ident">Excluded</span>(<span class="ident">index</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>,
-            <span class="ident">Bound</span>::<span class="ident">Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="number">0</span>,
+            <span class="ident">Bound</span>::<span class="ident">Included</span>(<span class="ident">index</span>) <span class="op">=&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span>,
+            <span class="ident">Bound</span>::<span class="ident">Excluded</span>(<span class="ident">index</span>) <span class="op">=&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>,
+            <span class="ident">Bound</span>::<span class="ident">Unbounded</span> <span class="op">=&gt;</span> <span class="number">0</span>,
         };
 
         <span class="kw">let</span> <span class="ident">end</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">range</span>.<span class="ident">end_bound</span>() {
-            <span class="ident">Bound</span>::<span class="ident">Included</span>(<span class="ident">index</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>,
-            <span class="ident">Bound</span>::<span class="ident">Excluded</span>(<span class="ident">index</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span>,
-            <span class="ident">Bound</span>::<span class="ident">Unbounded</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>,
+            <span class="ident">Bound</span>::<span class="ident">Included</span>(<span class="ident">index</span>) <span class="op">=&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>,
+            <span class="ident">Bound</span>::<span class="ident">Excluded</span>(<span class="ident">index</span>) <span class="op">=&gt;</span> <span class="kw-2">*</span><span class="ident">index</span> <span class="kw">as</span> <span class="ident">usize</span>,
+            <span class="ident">Bound</span>::<span class="ident">Unbounded</span> <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>,
         };
 
         <span class="kw">let</span> <span class="ident">start</span> <span class="op">=</span> <span class="ident">start</span>.<span class="ident">min</span>(<span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>());
         <span class="kw">let</span> <span class="ident">end</span> <span class="op">=</span> <span class="ident">end</span>.<span class="ident">min</span>(<span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>).<span class="ident">max</span>(<span class="ident">start</span> <span class="op">+</span> <span class="number">1</span>);
 
-        <span class="kw">if</span> <span class="ident">start</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">start</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="self">Self</span> {
                 <span class="ident">head</span>: <span class="self">self</span>.<span class="ident">head</span>,
                 <span class="ident">tail</span>: <span class="self">self</span>.<span class="ident">tail</span>[<span class="number">0</span>..<span class="ident">end</span> <span class="op">-</span> <span class="number">1</span>].<span class="ident">to_vec</span>(),
@@ -712,12 +713,12 @@
     }
 
     <span class="doccomment">/// Number of blocks in the chain (including the first block)</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
         <span class="number">1</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>()
     }
 
     <span class="doccomment">/// Index of the last key in the chain.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">last_key_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">u64</span> {
         <span class="self">self</span>.<span class="ident">tail</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>
     }
 
@@ -725,7 +726,7 @@
     <span class="doccomment">/// The first one cannot be verified and requires matching against already trusted keys. Thus</span>
     <span class="doccomment">/// this function alone cannot be used to determine whether this chain is trusted. Use</span>
     <span class="doccomment">/// `check_trust` for that.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">self_verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">self_verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">current_key</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">head</span>;
         <span class="kw">for</span> <span class="ident">block</span> <span class="kw">in</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">tail</span> {
             <span class="kw">if</span> <span class="op">!</span><span class="ident">block</span>.<span class="ident">verify</span>(<span class="ident">current_key</span>) {
@@ -738,7 +739,7 @@
     }
 
     <span class="doccomment">/// Verify this proof chain against the given trusted keys.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_trust</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">trusted_keys</span>: <span class="ident">I</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TrustStatus</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_trust</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">I</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">trusted_keys</span>: <span class="ident">I</span>) <span class="op">-&gt;</span> <span class="ident">TrustStatus</span>
     <span class="kw">where</span>
         <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     {
@@ -764,7 +765,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">new_first_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">full_proof_chain</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">ExtendError</span><span class="op">&gt;</span> {
+    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">ExtendError</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">has_key</span>(<span class="ident">new_first_key</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ExtendError</span>::<span class="ident">AlreadySufficient</span>);
         }
@@ -786,12 +787,12 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">other</span>: <span class="self">Self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">MergeError</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">other</span>: <span class="self">Self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">MergeError</span><span class="op">&gt;</span> {
         <span class="kw">fn</span> <span class="ident">check_same_keys</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
             <span class="ident">a</span>: <span class="kw">impl</span> <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
             <span class="ident">b</span>: <span class="kw">impl</span> <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
-        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">MergeError</span><span class="op">&gt;</span> {
-            <span class="kw">if</span> <span class="ident">a</span>.<span class="ident">into_iter</span>().<span class="ident">zip</span>(<span class="ident">b</span>).<span class="ident">all</span>(<span class="op">|</span>(<span class="ident">a</span>, <span class="ident">b</span>)<span class="op">|</span> <span class="ident">a</span> <span class="op">=</span><span class="op">=</span> <span class="ident">b</span>) {
+        ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">MergeError</span><span class="op">&gt;</span> {
+            <span class="kw">if</span> <span class="ident">a</span>.<span class="ident">into_iter</span>().<span class="ident">zip</span>(<span class="ident">b</span>).<span class="ident">all</span>(<span class="op">|</span>(<span class="ident">a</span>, <span class="ident">b</span>)<span class="op">|</span> <span class="ident">a</span> <span class="op">==</span> <span class="ident">b</span>) {
                 <span class="prelude-val">Ok</span>(())
             } <span class="kw">else</span> {
                 <span class="prelude-val">Err</span>(<span class="ident">MergeError</span>)
@@ -849,7 +850,7 @@
     <span class="kw">fn</span> <span class="ident">latest_trusted_key</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>, <span class="ident">I</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
         <span class="ident">trusted_keys</span>: <span class="ident">I</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">usize</span>, <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>
+    ) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">usize</span>, <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;b</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     {
@@ -902,7 +903,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Block</span> {
-    <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">public_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">public_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
         <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">bytes</span><span class="op">|</span> <span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature</span>, <span class="kw-2">&amp;</span><span class="ident">bytes</span>))
             .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>)
@@ -1026,11 +1027,11 @@
             <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">a</span>.<span class="ident">merge</span>(<span class="ident">b</span>);
 
             <span class="kw">match</span> <span class="ident">expected</span> {
-                <span class="prelude-val">Ok</span>(<span class="ident">range</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="prelude-val">Ok</span>(<span class="ident">range</span>) <span class="op">=&gt;</span> {
                     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">result</span>, <span class="prelude-val">Ok</span>(()));
                     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">a</span>, <span class="ident">chain</span>.<span class="ident">slice</span>(<span class="ident">range</span>));
                 }
-                <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">result</span>, <span class="prelude-val">Err</span>(<span class="ident">error</span>)),
+                <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">result</span>, <span class="prelude-val">Err</span>(<span class="ident">error</span>)),
             }
         };
 
@@ -1142,7 +1143,7 @@
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">chain0</span>.<span class="ident">merge</span>(<span class="ident">chain1</span>), <span class="prelude-val">Err</span>(<span class="ident">MergeError</span>));
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+    <span class="kw">fn</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>) <span class="op">-&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
         <span class="kw">let</span> <span class="ident">secret_key</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">gen_secret_key</span>(<span class="ident">rng</span>);
         (<span class="ident">secret_key</span>.<span class="ident">public_key</span>(), <span class="ident">secret_key</span>)
     }
@@ -1150,14 +1151,14 @@
     <span class="kw">fn</span> <span class="ident">gen_block</span>(
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>,
         <span class="ident">prev_secret_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKey</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">Signature</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+    ) <span class="op">-&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">Signature</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
         <span class="kw">let</span> (<span class="ident">public_key</span>, <span class="ident">secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>);
         <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">prev_secret_key</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">public_key</span>).<span class="ident">unwrap</span>());
 
         (<span class="ident">public_key</span>, <span class="ident">signature</span>, <span class="ident">secret_key</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_chain</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SectionProofChain</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+    <span class="kw">fn</span> <span class="ident">gen_chain</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> (<span class="ident">SectionProofChain</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
         <span class="kw">let</span> (<span class="ident">key</span>, <span class="kw-2">mut</span> <span class="ident">current_secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chain</span> <span class="op">=</span> <span class="ident">SectionProofChain</span>::<span class="ident">new</span>(<span class="ident">key</span>);
 
