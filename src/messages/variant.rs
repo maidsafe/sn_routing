@@ -42,7 +42,12 @@ pub(crate) enum Variant {
     /// section.
     NodeApproval(Proven<EldersInfo>),
     /// Message sent to all members to update them about the state of our section.
-    Sync { section: Section, network: Network },
+    Sync {
+        // Information about our section.
+        section: Section,
+        // Information about the rest of the network that we know of.
+        network: Network,
+    },
     /// Send from a section to the node to be immediately relocated.
     Relocate(RelocateDetails),
     /// Send:

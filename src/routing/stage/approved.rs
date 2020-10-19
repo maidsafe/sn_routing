@@ -302,7 +302,7 @@ impl Approved {
                 // since `public_key` was the latest key.
                 Variant::Sync {
                     section: self.section.clone(),
-                    network: Network::new(),
+                    network: self.network.clone(),
                 },
             )?))
         } else {
@@ -701,7 +701,7 @@ impl Approved {
                 sender.addr(),
                 Variant::Sync {
                     section: self.section.clone(),
-                    network: Network::new(),
+                    network: self.network.clone(),
                 },
             )?,
             Command::send_message_to_target(sender.addr(), bounced_msg_bytes),
@@ -1285,7 +1285,7 @@ impl Approved {
             Ok(vec![])
         } else {
             // Ignore our key. Should be updated using `OurKey` instead.
-            Ok(vec![])
+            Err(Error::InvalidVote)
         }
     }
 
@@ -1323,7 +1323,7 @@ impl Approved {
         let mut commands = vec![];
 
         if self.section.chain().has_key(&public_key) {
-            // Our shared state is already up to date, so no need to vote. Just finalize the DKG so
+            // Our section state is already up to date, so no need to vote. Just finalize the DKG so
             // we can start using the new secret key share.
             self.section_keys_provider.finalise_dkg(&public_key);
             return Ok(commands);

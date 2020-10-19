@@ -1059,7 +1059,7 @@ async fn handle_sync() -> Result<()> {
     let proven_new_elders_info = create_proven(sk1_set.secret_key(), new_elders_info)?;
     let new_section = Section::new(chain, proven_new_elders_info);
 
-    // Create the `Sync` message containing the new shared state.
+    // Create the `Sync` message containing the new `Section`.
     let message = Message::single_src(
         &old_peer_keypair,
         MIN_AGE + 1,

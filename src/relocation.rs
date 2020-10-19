@@ -20,7 +20,7 @@ use crate::{
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use xor_name::XorName;
 
-/// Find all nodes to relocate after a churn even and create the relocate actions for them.
+/// Find all nodes to relocate after a churn event and create the relocate actions for them.
 pub(crate) fn actions(
     section: &Section,
     network: &Network,
