@@ -31,6 +31,7 @@ use crate::{
         EldersInfo, MemberInfo, Section, SectionKeyShare, SectionKeysProvider, SectionProofChain,
         MIN_AGE,
     },
+    NetworkParams,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -55,14 +56,25 @@ pub(crate) struct Approved {
     dkg_voter: DkgVoter,
     relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,
+    pub(super) network_params: NetworkParams,
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Approved {
     // Creates the approved state for the first node in the network
-    pub fn first_node(node: Node, event_tx: mpsc::UnboundedSender<Event>) -> Result<Self> {
+    pub fn first_node(
+        node: Node,
+        network_params: NetworkParams,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Result<Self> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
-        Ok(Self::new(node, section, Some(section_key_share), event_tx))
+        Ok(Self::new(
+            node,
+            section,
+            Some(section_key_share),
+            network_params,
+            event_tx,
+        ))
     }
 
     // Creates the approved state for a regular node.
@@ -70,6 +82,7 @@ impl Approved {
         node: Node,
         section: Section,
         section_key_share: Option<SectionKeyShare>,
+        network_params: NetworkParams,
         event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
         let section_keys_provider = SectionKeysProvider::new(section_key_share);
@@ -84,6 +97,7 @@ impl Approved {
             dkg_voter: Default::default(),
             relocate_state: None,
             msg_filter: MessageFilter::new(),
+            network_params,
             event_tx,
         }
     }
@@ -1020,7 +1034,7 @@ impl Approved {
 
         for info in self
             .section
-            .promote_and_demote_elders(&self.node.network_params, &self.node.name())
+            .promote_and_demote_elders(&self.network_params, &self.node.name())
         {
             // Check whether the result still corresponds to the current elder candidates.
             if info == elders_info {
@@ -1090,7 +1104,7 @@ impl Approved {
 
         for info in self
             .section
-            .promote_and_demote_elders(&self.node.network_params, &self.node.name())
+            .promote_and_demote_elders(&self.network_params, &self.node.name())
         {
             commands.extend(self.send_dkg_start(info)?);
         }
@@ -1162,7 +1176,7 @@ impl Approved {
     fn is_in_startup_phase(&self) -> bool {
         self.section.prefix().is_empty()
             && self.section.members().joined().count()
-                <= self.node.network_params.recommended_section_size
+                <= self.network_params.recommended_section_size
     }
 
     fn handle_online_event(

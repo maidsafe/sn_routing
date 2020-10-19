@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, peer::Peer, NetworkParams, MIN_AGE};
+use crate::{crypto, peer::Peer, MIN_AGE};
 use ed25519_dalek::Keypair;
 use std::{
     fmt::{self, Display, Formatter},
@@ -24,25 +24,18 @@ pub(crate) struct Node {
     pub keypair: Arc<Keypair>,
     pub addr: SocketAddr,
     pub age: u8,
-    pub network_params: NetworkParams,
 }
 
 impl Node {
-    pub fn new(keypair: Keypair, addr: SocketAddr, network_params: NetworkParams) -> Self {
-        Self::with_age(keypair, addr, network_params, MIN_AGE)
+    pub fn new(keypair: Keypair, addr: SocketAddr) -> Self {
+        Self::with_age(keypair, addr, MIN_AGE)
     }
 
-    pub fn with_age(
-        keypair: Keypair,
-        addr: SocketAddr,
-        network_params: NetworkParams,
-        age: u8,
-    ) -> Self {
+    pub fn with_age(keypair: Keypair, addr: SocketAddr, age: u8) -> Self {
         Self {
             keypair: Arc::new(keypair),
             addr,
             age,
-            network_params,
         }
     }
 

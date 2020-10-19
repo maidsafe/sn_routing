@@ -148,7 +148,7 @@ impl Stage {
 
         let mut state = self.state.lock().await;
         let event_tx = state.event_tx.clone();
-        *state = Approved::new(node, section, None, event_tx);
+        *state = Approved::new(node, section, None, state.network_params, event_tx);
 
         state.send_event(Event::Connected(Connected::Relocate { previous_name }));
 

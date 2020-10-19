@@ -216,7 +216,7 @@ impl<'a> State<'a> {
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
 
         info!("{} Changing name to {}.", self.node, new_name);
-        self.node = Node::with_age(new_keypair, self.node.addr, self.node.network_params, age);
+        self.node = Node::with_age(new_keypair, self.node.addr, age);
 
         Ok(relocate_payload)
     }

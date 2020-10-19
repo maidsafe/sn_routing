@@ -21,7 +21,7 @@ use crate::{
         majority_count, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
     },
-    Error, ELDER_SIZE,
+    Error, NetworkParams, ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -69,7 +69,7 @@ use xor_name::{Prefix, XorName};
 #[tokio::test]
 async fn receive_bootstrap_request() -> Result<()> {
     let node = create_node();
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
@@ -219,7 +219,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request() -> Result<()> {
     let node = create_node();
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
@@ -275,6 +275,7 @@ async fn accumulate_votes() -> Result<()> {
         node,
         section,
         Some(section_key_share),
+        NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, create_comm()?);
@@ -328,7 +329,13 @@ async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
     let node = create_node_for(keypairs.remove(0));
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Approved::new(
+        node,
+        section,
+        Some(section_key_share),
+        NetworkParams::default(),
+        event_tx,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     let new_peer = create_peer();
@@ -409,6 +416,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         node,
         section,
         Some(section_key_share),
+        NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, create_comm()?);
@@ -494,7 +502,13 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node_for(keypairs.remove(0));
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Approved::new(
+        node,
+        section,
+        Some(section_key_share),
+        NetworkParams::default(),
+        event_tx,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     let member_info = MemberInfo {
@@ -545,7 +559,13 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node_for(keypairs.remove(0));
     let node_name = node.name();
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Approved::new(
+        node,
+        section,
+        Some(section_key_share),
+        NetworkParams::default(),
+        event_tx,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     // Handle the consensus on the Offline vote
@@ -675,7 +695,13 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let section = Section::new(chain, proven_elders_info);
 
     let node = create_node();
-    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Approved::new(
+        node,
+        section,
+        None,
+        NetworkParams::default(),
+        mpsc::unbounded_channel().0,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     // non-elders can't handle messages addressed to sections.
@@ -786,7 +812,13 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let node = create_node();
     let node_name = node.name();
-    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Approved::new(
+        node,
+        section,
+        None,
+        NetworkParams::default(),
+        mpsc::unbounded_channel().0,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     let sk1 = bls::SecretKey::random();
@@ -878,6 +910,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         node,
         section,
         Some(section_key_share),
+        NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, create_comm()?);
@@ -981,6 +1014,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         node,
         section,
         Some(section_key_share),
+        NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, create_comm()?);
@@ -1053,7 +1087,13 @@ async fn handle_sync() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = create_node_for(keypairs.remove(0));
-    let state = Approved::new(node, old_section, Some(section_key_share), event_tx);
+    let state = Approved::new(
+        node,
+        old_section,
+        Some(section_key_share),
+        NetworkParams::default(),
+        event_tx,
+    );
     let stage = Stage::new(state, create_comm()?);
 
     // Create new `Section` as a successor to the previous one.
@@ -1144,6 +1184,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         node,
         section,
         Some(section_key_share),
+        NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, comm);
@@ -1212,7 +1253,7 @@ fn create_node() -> Node {
 }
 
 fn create_node_for(keypair: Keypair) -> Node {
-    Node::new(keypair, create_addr(), Default::default())
+    Node::new(keypair, create_addr())
 }
 
 fn create_comm() -> Result<Comm> {
