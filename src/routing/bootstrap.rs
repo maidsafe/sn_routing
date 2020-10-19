@@ -401,7 +401,7 @@ impl State {
         match result {
             Ok(()) => true,
             Err(error) => {
-                warn!(
+                error!(
                     "{} Verification of {:?} failed: {}",
                     self.node, message, error
                 );
@@ -456,5 +456,167 @@ async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAdd
         let _ = comm
             .send_message_to_targets(&recipients, recipients.len(), message)
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{consensus::test_utils::*, rng, section::test_utils::*, ELDER_SIZE, MIN_AGE};
+    use anyhow::{Error, Result};
+    use assert_matches::assert_matches;
+    use ed25519_dalek::Keypair;
+
+    #[tokio::test]
+    async fn bootstrap_as_infant() -> Result<()> {
+        let (send_tx, mut send_rx) = mpsc::channel(1);
+        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+
+        let (elders_info, keypairs) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let bootstrap_peer = *elders_info.peers().next().expect("elders_info is empty");
+
+        let sk = bls::SecretKey::random();
+        let pk = sk.public_key();
+
+        let node = Node::new(gen_keypair(), gen_addr());
+        let node_name = node.name();
+        let state = State::new(node, send_tx, recv_rx)?;
+
+        // Create the bootstrap task, but don't run it yet.
+        let bootstrap = async move {
+            state
+                .run(vec![*bootstrap_peer.addr()], None)
+                .await
+                .map_err(Error::from)
+        };
+
+        // Create the task that executes the body of the test, but don't run it either.
+        let others = async {
+            task::yield_now().await;
+
+            // Receive BootstrapRequest
+            let (bytes, recipients) = send_rx.try_recv()?;
+            let message = Message::from_bytes(&bytes)?;
+
+            assert_eq!(recipients, [*bootstrap_peer.addr()]);
+            assert_matches!(message.variant(), Variant::BootstrapRequest(name) => {
+                assert_eq!(*name, node_name);
+            });
+
+            // Send BootstrapResponse
+            let message = Message::single_src(
+                &keypairs[0],
+                bootstrap_peer.age(),
+                DstLocation::Direct,
+                Variant::BootstrapResponse(BootstrapResponse::Join {
+                    elders_info: elders_info.clone(),
+                    section_key: pk,
+                }),
+                None,
+                None,
+            )?;
+
+            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+            task::yield_now().await;
+
+            // Receive JoinRequest
+            let (bytes, recipients) = send_rx.try_recv()?;
+            let message = Message::from_bytes(&bytes)?;
+
+            itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
+            assert_matches!(message.variant(), Variant::JoinRequest(request) => {
+                assert_eq!(request.section_key, pk);
+                assert!(request.relocate_payload.is_none());
+            });
+
+            // Send NodeApproval
+            let proven_elders_info = proven(&sk, elders_info.clone());
+            let proof_chain = SectionProofChain::new(pk);
+            let message = Message::single_src(
+                &keypairs[0],
+                bootstrap_peer.age(),
+                DstLocation::Direct,
+                Variant::NodeApproval(proven_elders_info),
+                Some(proof_chain),
+                None,
+            )?;
+
+            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+
+            Ok(())
+        };
+
+        // Drive both tasks to completion concurrently (but on the same thread).
+        let ((_node, section), _) = future::try_join(bootstrap, others).await?;
+
+        assert_eq!(*section.elders_info(), elders_info);
+        assert_eq!(*section.chain().last_key(), pk);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
+        let (send_tx, mut send_rx) = mpsc::channel(1);
+        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+
+        let bootstrap_keypair = gen_keypair();
+        let bootstrap_addr = gen_addr();
+
+        let node = Node::new(gen_keypair(), gen_addr());
+        let state = State::new(node, send_tx, recv_rx)?;
+
+        // Spawn the bootstrap task on a `LocalSet` so that it runs concurrently with the main test
+        // task, but is aborted when the test task finishes because we don't need it to complete
+        // for the purpose of this test.
+        let local_set = task::LocalSet::new();
+
+        let _ = local_set.spawn_local(state.run(vec![bootstrap_addr], None));
+
+        local_set
+            .run_until(async {
+                task::yield_now().await;
+
+                // Receive BootstrapRequest
+                let (bytes, recipients) = send_rx.try_recv()?;
+                let message = Message::from_bytes(&bytes)?;
+
+                assert_eq!(recipients, vec![bootstrap_addr]);
+                assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+
+                // Send Rebootstrap BootstrapResponse
+                let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+
+                let message = Message::single_src(
+                    &bootstrap_keypair,
+                    MIN_AGE,
+                    DstLocation::Direct,
+                    Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(
+                        new_bootstrap_addrs.clone(),
+                    )),
+                    None,
+                    None,
+                )?;
+
+                recv_tx.try_send((message, bootstrap_addr))?;
+                task::yield_now().await;
+
+                // Receive new BootstrapRequests
+                let (bytes, recipients) = send_rx.try_recv()?;
+                let message = Message::from_bytes(&bytes)?;
+
+                assert_eq!(recipients, new_bootstrap_addrs);
+                assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+
+                Ok(())
+            })
+            .await
+    }
+
+    // TODO: add test for bootstrap as relocated node
+
+    fn gen_keypair() -> Keypair {
+        let mut rng = rng::new();
+        Keypair::generate(&mut rng)
     }
 }
