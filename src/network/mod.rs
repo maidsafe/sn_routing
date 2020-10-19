@@ -455,8 +455,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = Network::new();
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p01));
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&mut rng, &sk, p10));
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p01));
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p10));
 
         let n01 = p01.substituted_in(rng.gen());
         let n10 = p10.substituted_in(rng.gen());
@@ -476,7 +476,7 @@ mod tests {
         let mut map = Network::new();
 
         let p1 = "1".parse().unwrap();
-        let section1 = gen_proven_elders_info(&mut rng, &sk, p1);
+        let section1 = gen_proven_elders_info(&sk, p1);
         let _ = map.update_neighbour_info(section1);
         map.prune_neighbours(&p00);
 
@@ -485,7 +485,7 @@ mod tests {
         // (10) is a neighbour of (00), but (11) is not. So by inserting (10),
         // we no longer need (1)
         let p10 = "10".parse().unwrap();
-        let section10 = gen_proven_elders_info(&mut rng, &sk, p10);
+        let section10 = gen_proven_elders_info(&sk, p10);
         let _ = map.update_neighbour_info(section10);
         map.prune_neighbours(&p00);
 
@@ -554,12 +554,8 @@ mod tests {
         }
     }
 
-    fn gen_proven_elders_info(
-        rng: &mut MainRng,
-        sk: &bls::SecretKey,
-        prefix: Prefix,
-    ) -> Proven<EldersInfo> {
-        let (elders_info, _) = section::gen_elders_info(rng, prefix, 5);
+    fn gen_proven_elders_info(sk: &bls::SecretKey, prefix: Prefix) -> Proven<EldersInfo> {
+        let (elders_info, _) = section::test_utils::gen_elders_info(prefix, 5);
         consensus::test_utils::proven(sk, elders_info)
     }
 

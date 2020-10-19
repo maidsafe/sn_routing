@@ -18,7 +18,7 @@ use crate::{
     peer::Peer,
     rng,
     section::{
-        majority_count, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
+        majority_count, test_utils, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
     },
     Error, NetworkParams, ELDER_SIZE,
@@ -28,22 +28,15 @@ use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
-use itertools::Itertools;
 use rand::Rng;
 use serde::Serialize;
-use std::{
-    cell::Cell,
-    collections::BTreeSet,
-    iter,
-    net::{Ipv4Addr, SocketAddr},
-    ops::Deref,
-};
+use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 // #[tokio::test]
 // async fn send_bootstrap_request() -> Result<()> {
-//     let bootstrap_addr = create_addr();
+//     let bootstrap_addr = test_utils::gen_addr();
 //     let (node, _) = create_node();
 //     let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node)?;
 //     let stage = Stage::new(state.into(), create_comm()?);
@@ -73,7 +66,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
-    let new_addr = create_addr();
+    let new_addr = test_utils::gen_addr();
 
     let message = Message::single_src(
         &new_keypair,
@@ -114,7 +107,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 // #[tokio::test]
 // async fn receive_bootstrap_response_join() -> Result<()> {
 //     let (node, _) = create_node();
-//     let (state, _) = Bootstrapping::new(None, vec![create_addr()], node)?;
+//     let (state, _) = Bootstrapping::new(None, vec![test_utils::gen_addr()], node)?;
 //     let stage = Stage::new(state.into(), create_comm()?);
 
 //     let (elders_info, elder_keypairs) = create_elders_info();
@@ -174,13 +167,13 @@ async fn receive_bootstrap_request() -> Result<()> {
 // async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
 //     let (node, _) = create_node();
 //     let node_name = node.name();
-//     let (state, _) = Bootstrapping::new(None, vec![create_addr()], node)?;
+//     let (state, _) = Bootstrapping::new(None, vec![test_utils::gen_addr()], node)?;
 //     let stage = Stage::new(state.into(), create_comm()?);
 
 //     let old_keypair = create_keypair();
-//     let old_addr = create_addr();
+//     let old_addr = test_utils::gen_addr();
 
-//     let new_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| create_addr()).collect();
+//     let new_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| test_utils::gen_addr()).collect();
 
 //     let message = Message::single_src(
 //         &old_keypair,
@@ -223,7 +216,7 @@ async fn receive_join_request() -> Result<()> {
     let stage = Stage::new(state, create_comm()?);
 
     let new_keypair = create_keypair();
-    let new_addr = create_addr();
+    let new_addr = test_utils::gen_addr();
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
@@ -384,15 +377,14 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let chain = SectionProofChain::new(sk_set.secret_key().public_key());
 
-    let mut keypairs = create_keypairs_for_elders_info();
+    let mut keypairs = test_utils::gen_sorted_keypairs(ELDER_SIZE);
     // Everybody has age 6 except the last peer who as 5.
     let ages = (0..keypairs.len() - 1)
         .map(|_| MIN_AGE + 2)
         .chain(iter::once(MIN_AGE + 1));
-    let elders = keypairs
-        .iter()
-        .zip(ages)
-        .map(|(keypair, age)| Peer::new(crypto::name(&keypair.public), create_addr(), age));
+    let elders = keypairs.iter().zip(ages).map(|(keypair, age)| {
+        Peer::new(crypto::name(&keypair.public), test_utils::gen_addr(), age)
+    });
     let elders_info = EldersInfo::new(
         elders.map(|peer| (*peer.name(), peer)).collect(),
         Prefix::default(),
@@ -677,7 +669,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
             // from other sections), bounce it to our elders.
             (
                 create_keypair(),
-                create_addr(),
+                test_utils::gen_addr(),
                 elders_info
                     .elders
                     .values()
@@ -895,7 +887,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
     let peer_keypair = create_keypair();
-    let peer_addr = create_addr();
+    let peer_addr = test_utils::gen_addr();
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = Message::single_src(
         &node.keypair,
@@ -994,7 +986,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
     let peer_keypair = create_keypair();
-    let peer_addr = create_addr();
+    let peer_addr = test_utils::gen_addr();
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
@@ -1211,7 +1203,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let result = stage
         .handle_command(Command::HandleMessage {
             message,
-            sender: Some(create_addr()),
+            sender: Some(test_utils::gen_addr()),
         })
         .await;
 
@@ -1224,17 +1216,6 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
 const THRESHOLD: usize = majority_count(ELDER_SIZE) - 1;
 
-// Returns unique SocketAddr
-fn create_addr() -> SocketAddr {
-    thread_local! {
-        static NEXT_PORT: Cell<u16> = Cell::new(1000);
-    }
-
-    let port = NEXT_PORT.with(|cell| cell.replace(cell.get().wrapping_add(1)));
-
-    ([192, 0, 2, 0], port).into()
-}
-
 fn create_keypair() -> Keypair {
     let mut rng = rng::new();
     Keypair::generate(&mut rng)
@@ -1243,7 +1224,7 @@ fn create_keypair() -> Keypair {
 fn create_peer() -> Peer {
     Peer::new(
         crypto::name(&create_keypair().public),
-        create_addr(),
+        test_utils::gen_addr(),
         MIN_AGE,
     )
 }
@@ -1253,7 +1234,7 @@ fn create_node() -> Node {
 }
 
 fn create_node_for(keypair: Keypair) -> Node {
-    Node::new(keypair, create_addr())
+    Node::new(keypair, test_utils::gen_addr())
 }
 
 fn create_comm() -> Result<Comm> {
@@ -1263,29 +1244,9 @@ fn create_comm() -> Result<Comm> {
     })?)
 }
 
-// Create ELDER_SIZE Keypairs sorted by their names.
-fn create_keypairs_for_elders_info() -> Vec<Keypair> {
-    let mut rng = rng::new();
-    (0..ELDER_SIZE)
-        .map(|_| Keypair::generate(&mut rng))
-        .sorted_by_key(|keypair| crypto::name(&keypair.public))
-        .collect()
-}
-
 // Generate random EldersInfo and the corresponding Keypairs.
 fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
-    let keypairs = create_keypairs_for_elders_info();
-    let elders = keypairs
-        .iter()
-        .map(|keypair| Peer::new(crypto::name(&keypair.public), create_addr(), MIN_AGE + 1))
-        .map(|peer| (*peer.name(), peer))
-        .collect();
-    let elders_info = EldersInfo {
-        elders,
-        prefix: Prefix::default(),
-    };
-
-    (elders_info, keypairs)
+    test_utils::gen_elders_info(Default::default(), ELDER_SIZE)
 }
 
 fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> SectionKeyShare {

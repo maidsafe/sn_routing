@@ -380,7 +380,7 @@ mod tests {
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1).unwrap());
         let _ = full_proof_chain.push(pk1, pk1_sig);
 
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
+        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info);
 
         let variant = Variant::NodeApproval(elders_info);

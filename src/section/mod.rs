@@ -13,7 +13,7 @@ mod section_peers;
 mod section_proof_chain;
 
 #[cfg(test)]
-pub(crate) use self::elders_info::gen_elders_info;
+pub(crate) use self::elders_info::test_utils;
 pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
     elders_info::{majority_count, EldersInfo},
