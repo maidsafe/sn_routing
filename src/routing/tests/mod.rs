@@ -1212,7 +1212,7 @@ fn create_node() -> Node {
 }
 
 fn create_node_for(keypair: Keypair) -> Node {
-    Node::new(keypair, create_addr(), MIN_AGE, Default::default())
+    Node::new(keypair, create_addr(), Default::default())
 }
 
 fn create_comm() -> Result<Comm> {

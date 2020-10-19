@@ -19,7 +19,7 @@ use crate::{
     section::{EldersInfo, Section},
     SectionProofChain,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tokio::{sync::mpsc, task};
 use xor_name::Prefix;
 
@@ -216,8 +216,7 @@ impl<'a> State<'a> {
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
 
         info!("{} Changing name to {}.", self.node, new_name);
-        self.node.keypair = Arc::new(new_keypair);
-        self.node.age = age;
+        self.node = Node::with_age(new_keypair, self.node.addr, self.node.network_params, age);
 
         Ok(relocate_payload)
     }
