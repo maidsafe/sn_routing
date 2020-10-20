@@ -91,29 +91,31 @@ impl Routing {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let (state, comm) = if config.first {
+        let (state, comm, incoming_conns) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
+            let incoming_conns = comm.listen()?;
+
             let node = Node::new(keypair, comm.our_connection_info()?);
             let state = Approved::first_node(node, config.network_params, event_tx)?;
 
             state.send_event(Event::Connected(Connected::First));
             state.send_event(Event::PromotedToElder);
 
-            (state, comm)
+            (state, comm, incoming_conns)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
             let node = Node::new(keypair, comm.our_connection_info()?);
-            let (node, section) = bootstrap::infant(node, &comm, bootstrap_addr).await?;
+            let (node, section, incoming_conns) =
+                bootstrap::infant(node, &comm, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, config.network_params, event_tx);
 
             state.send_event(Event::Connected(Connected::First));
 
-            (state, comm)
+            (state, comm, incoming_conns)
         };
 
-        let incoming_conns = comm.listen()?;
         let stage = Arc::new(Stage::new(state, comm));
         let executor = Executor::new(stage.clone(), incoming_conns);
         let event_stream = EventStream::new(event_rx);

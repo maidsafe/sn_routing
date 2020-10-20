@@ -22,15 +22,20 @@ use crate::{
 use bytes::Bytes;
 use futures::future;
 use std::{mem, net::SocketAddr};
-use tokio::{sync::mpsc, task};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task,
+};
 use xor_name::Prefix;
 
 /// Bootstrap into the network as an infant node.
+/// When this completes, the returned `IncomingConnections` should be passed to the main `Executor`
+/// instead of creating a new one with `Comm::listen` which would cause temporary disconnect.
 pub(crate) async fn infant(
     node: Node,
     comm: &Comm,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section)> {
+) -> Result<(Node, Section, qp2p::IncomingConnections)> {
     // NOTE: when we are bootstrapping a new infant node, there is no `Executor` running yet.
     // So we create a simple throwaway executor here. It works a bit differently than the main
     // `Executor`. First, it runs inside a `LocalSet`. This allows us to terminate the whole
@@ -46,15 +51,28 @@ pub(crate) async fn infant(
     let state = State::new(node, send_tx, recv_rx)?;
     let local_set = task::LocalSet::new();
 
+    let (abort_tx, abort_rx) = oneshot::channel();
     let incoming_connections = comm.listen()?;
-    let _ = local_set.spawn_local(receive_messages(incoming_connections, recv_tx));
+    let receive_handle =
+        local_set.spawn_local(receive_messages(incoming_connections, recv_tx, abort_rx));
 
-    future::join(
+    let (node, section) = future::join(
         send_messages(comm, send_rx),
         local_set.run_until(state.run(vec![bootstrap_addr], None)),
     )
     .await
-    .1
+    .1?;
+
+    // Abort the `receive_messages` task and extract the `incoming_connections` out of it by
+    // awaiting its join handle. This cannot fail, unless there is a bug in the code, so it's OK
+    // to use `expect`.
+    let _ = abort_tx.send(());
+    let incoming_connections = local_set
+        .run_until(receive_handle)
+        .await
+        .expect("failed to join the receive_messages task");
+
+    Ok((node, section, incoming_connections))
 }
 
 /// Re-bootstrap as a relocated node.
@@ -422,32 +440,45 @@ enum JoinResponse {
     },
 }
 
-// Keep listening to incoming messages and send them to the given `tx`.
+// Keep listening to incoming messages and send them to `message_tx`.
 // This must be spawned on a `LocalSet` with `spawn_local`.
+// Will run until aborted using the sending half of `abort_rx` at which point it returns
+// `incoming_connections` back to the caller so it can be reused.
 async fn receive_messages(
     mut incoming_connections: qp2p::IncomingConnections,
-    tx: mpsc::Sender<(Message, SocketAddr)>,
-) {
-    while let Some(mut incoming_messages) = incoming_connections.next().await {
-        let mut tx = tx.clone();
-        let _ = task::spawn_local(async move {
-            while let Some(message) = incoming_messages.next().await {
-                match message {
-                    qp2p::Message::UniStream { bytes, src, .. } => {
-                        match Message::from_bytes(&bytes) {
-                            Ok(message) => {
-                                let _ = tx.send((message, src)).await;
+    message_tx: mpsc::Sender<(Message, SocketAddr)>,
+    abort_rx: oneshot::Receiver<()>,
+) -> qp2p::IncomingConnections {
+    let run = async {
+        while let Some(mut incoming_messages) = incoming_connections.next().await {
+            let mut message_tx = message_tx.clone();
+            let _ = task::spawn_local(async move {
+                while let Some(message) = incoming_messages.next().await {
+                    match message {
+                        qp2p::Message::UniStream { bytes, src, .. } => {
+                            match Message::from_bytes(&bytes) {
+                                Ok(message) => {
+                                    let _ = message_tx.send((message, src)).await;
+                                }
+                                Err(error) => debug!("Failed to deserialize message: {}", error),
                             }
-                            Err(error) => debug!("Failed to deserialize message: {}", error),
+                        }
+                        qp2p::Message::BiStream { .. } => {
+                            trace!("Ignore bi-stream messages during bootstrap");
                         }
                     }
-                    qp2p::Message::BiStream { .. } => {
-                        trace!("Ignore bi-stream messages during bootstrap");
-                    }
                 }
-            }
-        });
+            });
+        }
+    };
+
+    // Run until aborted, then return `incoming_connections` back to the caller.
+    {
+        futures::pin_mut!(run);
+        let _ = future::select(run, abort_rx).await;
     }
+
+    incoming_connections
 }
 
 // Keep reading messages from `rx` and send them using `comm`.
