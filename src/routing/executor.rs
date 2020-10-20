@@ -7,27 +7,33 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Command, Stage};
-use crate::{
-    cancellation::{cancellable, CancellationHandle, CancellationToken},
-    event::Event,
-    messages::Message,
-};
+use crate::{event::Event, messages::Message};
 use bytes::Bytes;
 use qp2p::{IncomingConnections, IncomingMessages, Message as QuicP2pMsg};
-use std::{net::SocketAddr, sync::Arc};
+use std::{future::Future, net::SocketAddr, sync::Arc};
+use tokio::sync::watch;
 
 pub struct Executor {
-    _cancellation_handle: CancellationHandle,
+    cancel_tx: watch::Sender<bool>,
+}
+
+impl Drop for Executor {
+    fn drop(&mut self) {
+        let _ = self.cancel_tx.broadcast(true);
+    }
 }
 
 impl Executor {
-    pub(crate) fn new(stage: Arc<Stage>, incoming_conns: IncomingConnections) -> Self {
-        let (handle, token) = CancellationHandle::new();
-        spawn_connections_handler(stage, incoming_conns, token);
+    pub(crate) async fn new(stage: Arc<Stage>, incoming_conns: IncomingConnections) -> Self {
+        let (cancel_tx, mut cancel_rx) = watch::channel(false);
 
-        Self {
-            _cancellation_handle: handle,
-        }
+        // Need to `recv` once, otherwise we would cancel all the tasks immediatelly
+        // (for more details, see: https://docs.rs/tokio/0.2.22/tokio/sync/watch/struct.Receiver.html?search=#method.recv).
+        let _ = cancel_rx.recv().await;
+
+        spawn_connections_handler(stage, incoming_conns, cancel_rx);
+
+        Self { cancel_tx }
     }
 }
 
@@ -35,15 +41,15 @@ impl Executor {
 fn spawn_connections_handler(
     stage: Arc<Stage>,
     mut incoming_conns: IncomingConnections,
-    cancel_token: CancellationToken,
+    cancel_rx: watch::Receiver<bool>,
 ) {
-    let _ = tokio::spawn(cancellable(cancel_token.clone(), async move {
+    let _ = tokio::spawn(cancellable(cancel_rx.clone(), async move {
         while let Some(incoming_msgs) = incoming_conns.next().await {
             trace!(
                 "New connection established by peer {}",
                 incoming_msgs.remote_addr()
             );
-            spawn_messages_handler(stage.clone(), incoming_msgs, cancel_token.clone())
+            spawn_messages_handler(stage.clone(), incoming_msgs, cancel_rx.clone())
         }
     }));
 }
@@ -52,9 +58,9 @@ fn spawn_connections_handler(
 fn spawn_messages_handler(
     stage: Arc<Stage>,
     mut incoming_msgs: IncomingMessages,
-    cancel_token: CancellationToken,
+    cancel_rx: watch::Receiver<bool>,
 ) {
-    let _ = tokio::spawn(cancellable(cancel_token, async move {
+    let _ = tokio::spawn(cancellable(cancel_rx, async move {
         while let Some(msg) = incoming_msgs.next().await {
             match msg {
                 QuicP2pMsg::UniStream { bytes, src, .. } => {
@@ -113,3 +119,15 @@ fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: Socke
         }
     });
 }
+
+async fn cancellable<F: Future>(
+    mut cancel_rx: watch::Receiver<bool>,
+    future: F,
+) -> Result<F::Output, Cancelled> {
+    tokio::select! {
+        value = future => Ok(value),
+        _ = cancel_rx.recv() => Err(Cancelled),
+    }
+}
+
+struct Cancelled;

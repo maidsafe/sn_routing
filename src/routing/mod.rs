@@ -117,7 +117,7 @@ impl Routing {
         };
 
         let stage = Arc::new(Stage::new(state, comm));
-        let executor = Executor::new(stage.clone(), incoming_conns);
+        let executor = Executor::new(stage.clone(), incoming_conns).await;
         let event_stream = EventStream::new(event_rx);
 
         let routing = Self {
