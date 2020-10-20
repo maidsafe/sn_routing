@@ -6,16 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod accumulating_message;
 mod hash;
+mod plain_message;
 mod src_authority;
 mod variant;
 
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
-    accumulating_message::PlainMessage,
+    plain_message::PlainMessage,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
-pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
     crypto::{self, name, Keypair, Verifier},
     error::{Error, Result},

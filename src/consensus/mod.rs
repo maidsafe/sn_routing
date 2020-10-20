@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod dkg;
-mod event_accumulator;
 mod proven;
 #[cfg(test)]
 pub mod test_utils;

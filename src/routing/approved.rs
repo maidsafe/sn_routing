@@ -1998,9 +1998,3 @@ impl Approved {
         self.section.member_age(&self.node.name())
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct RelocateParams {
-    pub conn_infos: Vec<SocketAddr>,
-    pub details: SignedRelocateDetails,
-}
