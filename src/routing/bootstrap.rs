@@ -16,6 +16,7 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
+    rng,
     section::{EldersInfo, Section},
     SectionProofChain,
 };
@@ -31,6 +32,10 @@ use xor_name::Prefix;
 /// Bootstrap into the network as an infant node.
 /// When this completes, the returned `IncomingConnections` should be passed to the main `Executor`
 /// instead of creating a new one with `Comm::listen` which would cause temporary disconnect.
+///
+/// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
+/// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
+/// for example by using a timeout.
 pub(crate) async fn infant(
     node: Node,
     comm: &Comm,
@@ -76,6 +81,10 @@ pub(crate) async fn infant(
 }
 
 /// Re-bootstrap as a relocated node.
+///
+/// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
+/// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
+/// for example by using a timeout.
 pub(crate) async fn relocate(
     node: Node,
     comm: &Comm,
@@ -238,7 +247,7 @@ impl State {
             *relocate_details.destination(),
         );
 
-        let mut rng = crate::rng::new();
+        let mut rng = rng::new();
         let new_keypair = crypto::keypair_within_range(&mut rng, &name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
@@ -493,7 +502,7 @@ async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAdd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus::test_utils::*, rng, section::test_utils::*, ELDER_SIZE, MIN_AGE};
+    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE, MIN_AGE};
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use ed25519_dalek::Keypair;

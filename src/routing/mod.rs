@@ -81,7 +81,11 @@ impl Routing {
     // Public API
     ////////////////////////////////////////////////////////////////////////////
 
-    /// Create new node using the given config.
+    /// Creates new node using the given config and bootstraps it to the network.
+    ///
+    /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
+    /// lost in transit during bootstrapping, or other reasons. It's the responsibility of the
+    /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
         let mut rng = rng::new();
         let keypair = config

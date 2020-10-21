@@ -50,6 +50,6 @@ impl Node {
 
 impl Display for Node {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:<8}", hex_fmt::HexFmt(self.keypair.public.as_bytes()))
+        write!(f, "{}", self.name())
     }
 }

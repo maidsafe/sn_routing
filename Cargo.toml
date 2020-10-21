@@ -16,7 +16,7 @@ bls = { package = "threshold_crypto", version = "~0.4.0" }
 bls_dkg = "~0.2.0"
 bls_signature_aggregator = "~0.1.4"
 bytes = "~0.5.4"
-ed25519-dalek = { version = "1.0.0-pre.3", features = ["serde"] }
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 err-derive = "~0.2.4"
 futures = "~0.3.6"
 hex_fmt = "~0.3.0"
@@ -26,7 +26,7 @@ lru_time_cache = "~0.11.0"
 qp2p = { version = "~0.8.4", features = ["upnp"] }
 rand = "~0.7.3"
 rand_xorshift = "~0.2.0"
-serde = { version = "1.0.111", features = ["derive"] }
+serde = { version = "1.0.117", features = ["derive"] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 tokio = { version = "~0.2.22", features = ["sync", "time", "rt-util"] }
 xor_name = "1.1.0"
