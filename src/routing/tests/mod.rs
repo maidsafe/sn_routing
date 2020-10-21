@@ -16,6 +16,7 @@ use crate::{
     network::Network,
     node::Node,
     peer::Peer,
+    relocation,
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
@@ -24,8 +25,8 @@ use crate::{
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
+use bls_signature_aggregator::Proof;
 use bytes::Bytes;
-use ed25519_dalek::Keypair;
 use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -1064,47 +1065,95 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     Ok(())
 }
 
-// #[tokio::test]
-// async fn trigger_relocation_of_non_elder() -> Result<()> {
-//     let network_params = NetworkParams {
-//         recommended_section_size: ELDER_SIZE + 1,
-//         ..Default::default()
-//     };
+#[tokio::test]
+async fn relocation_of_non_elder() -> Result<()> {
+    let network_params = NetworkParams {
+        recommended_section_size: ELDER_SIZE + 1,
+        ..Default::default()
+    };
 
-//     let sk_set = SecretKeySet::random();
+    let sk_set = SecretKeySet::random();
 
-//     let prefix: Prefix = "0".parse().unwrap();
-//     let (elders_info, mut keypairs) = gen_elders_info(prefix, ELDER_SIZE);
-//     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
+    let prefix: Prefix = "0".parse().unwrap();
+    let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
+    let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
 
-//     let node = create_node_for(keypairs.);
+    let mut section = Section::new(
+        SectionProofChain::new(sk_set.secret_key().public_key()),
+        proven_elders_info,
+    );
 
-//     let mut section = Section::new(
-//         SectionProofChain::new(sk_set.secret_key().public_key()),
-//         proven_elders_info,
-//     );
+    let peer = create_peer();
+    let member_info = MemberInfo::joined(peer);
+    let member_info = proven(sk_set.secret_key(), member_info)?;
+    assert!(section.update_member(member_info));
 
-//     Ok(())
-// }
+    let node = nodes.remove(0);
+    let state = Approved::new(
+        node,
+        section,
+        Some(create_section_key_share(&sk_set, 0)),
+        network_params,
+        mpsc::unbounded_channel().0,
+    );
+    let stage = Stage::new(state, create_comm()?);
+
+    let (vote, proof) = create_relocation_trigger(sk_set.secret_key(), peer.age())?;
+    let commands = stage
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    let mut relocate_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        if recipients != [*peer.addr()] {
+            continue;
+        }
+
+        let message = Message::from_bytes(&message)?;
+        let message = match message.variant() {
+            Variant::Vote {
+                content: Vote::SendMessage { message, .. },
+                ..
+            } => message,
+            _ => continue,
+        };
+
+        let details = match &message.variant {
+            Variant::Relocate(details) => details,
+            _ => continue,
+        };
+
+        assert_eq!(details.pub_id, *peer.name());
+        assert_eq!(details.age, peer.age() + 1);
+
+        relocate_sent = true;
+    }
+
+    assert!(relocate_sent);
+
+    Ok(())
+}
 
 // TODO: add more tests here
 
 const THRESHOLD: usize = ELDER_MAJORITY - 1;
 
 fn create_peer() -> Peer {
-    Peer::new(
-        crypto::name(&crypto::gen_keypair().public),
-        gen_addr(),
-        MIN_AGE,
-    )
+    Peer::new(rand::random(), gen_addr(), MIN_AGE)
 }
 
 fn create_node() -> Node {
-    create_node_for(crypto::gen_keypair())
-}
-
-fn create_node_for(keypair: Keypair) -> Node {
-    Node::new(keypair, gen_addr())
+    Node::new(crypto::gen_keypair(), gen_addr())
 }
 
 fn create_comm() -> Result<Comm> {
@@ -1145,6 +1194,30 @@ fn create_section(
     let section_key_share = create_section_key_share(sk_set, 0);
 
     Ok((section, section_key_share))
+}
+
+// Create a `Vote::Online` whose consensus handling triggers relocation of a node with the given age.
+// NOTE: recommended to call this with low `age` (4 or 5), otherwise it might take very long time
+// to complete.
+fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proof)> {
+    loop {
+        let vote = Vote::Online {
+            member_info: MemberInfo::joined(create_peer().with_age(MIN_AGE + 1)),
+            previous_name: Some(rand::random()),
+            their_knowledge: None,
+        };
+
+        let signature = sk.sign(&bincode::serialize(&vote.as_signable())?);
+
+        if relocation::check(age, &signature) {
+            let proof = Proof {
+                public_key: sk.public_key(),
+                signature,
+            };
+
+            return Ok((vote, proof));
+        }
+    }
 }
 
 // Wrapper for `bls::SecretKeySet` that also allows to retrieve the corresponding `bls::SecretKey`.
