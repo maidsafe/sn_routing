@@ -8,6 +8,7 @@
 
 use crate::crypto::{self, Digest256};
 use hex_fmt::HexFmt;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 
 /// Cryptographic hash of Message

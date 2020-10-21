@@ -15,6 +15,7 @@ use crate::{
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug, Formatter},

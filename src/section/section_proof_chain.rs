@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use err_derive::Error;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     iter, mem,

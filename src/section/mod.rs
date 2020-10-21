@@ -29,7 +29,7 @@ use crate::{
     rng, NetworkParams,
 };
 use bls_signature_aggregator::Proof;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},

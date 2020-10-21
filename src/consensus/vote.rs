@@ -12,7 +12,7 @@ use crate::{
     messages::PlainMessage,
     section::{EldersInfo, MemberInfo, SectionProofChain},
 };
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
