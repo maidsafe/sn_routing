@@ -28,8 +28,17 @@ pub struct EldersInfo {
 
 impl EldersInfo {
     /// Creates a new `EldersInfo` with the given members, prefix and version.
-    pub fn new(elders: BTreeMap<XorName, Peer>, prefix: Prefix) -> Self {
-        Self { elders, prefix }
+    pub fn new<I>(elders: I, prefix: Prefix) -> Self
+    where
+        I: IntoIterator<Item = Peer>,
+    {
+        Self {
+            elders: elders
+                .into_iter()
+                .map(|peer| (*peer.name(), peer))
+                .collect(),
+            prefix,
+        }
     }
 
     pub(crate) fn peers(

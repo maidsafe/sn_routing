@@ -253,14 +253,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         })
         .collect();
 
-    let elders_info = EldersInfo::new(
-        nodes
-            .iter()
-            .map(Node::peer)
-            .map(|peer| (*peer.name(), peer))
-            .collect(),
-        Prefix::default(),
-    );
+    let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
     let mut section = Section::new(chain, proven_elders_info)?;
 
@@ -965,9 +958,7 @@ async fn handle_sync() -> Result<()> {
             .values()
             .take(old_elders_info.elders.len() - 1)
             .copied()
-            .chain(iter::once(new_peer))
-            .map(|peer| (*peer.name(), peer))
-            .collect(),
+            .chain(iter::once(new_peer)),
         old_elders_info.prefix,
     );
     let new_elders: BTreeSet<_> = new_elders_info.elders.keys().copied().collect();
@@ -1017,10 +1008,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let peer = node.peer();
 
     let chain = SectionProofChain::new(pk0_good);
-    let elders_info = EldersInfo::new(
-        iter::once((*peer.name(), peer)).collect(),
-        Prefix::default(),
-    );
+    let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
     let proven_elders_info = proven(sk0_good_set.secret_key(), elders_info)?;
     let section = Section::new(chain, proven_elders_info)?;
     let section_key_share = create_section_key_share(&sk0_good_set, 0);
