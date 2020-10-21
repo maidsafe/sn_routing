@@ -125,7 +125,7 @@ async fn accumulate_votes() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
-    let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
+    let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
     let state = Approved::new(
         node,
@@ -183,7 +183,7 @@ async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
-    let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
+    let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
     let state = Approved::new(
         node,
@@ -357,7 +357,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
-    let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
+    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
@@ -399,7 +399,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
-    let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
+    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
     let existing_peer = create_peer();
     let member_info = MemberInfo::joined(existing_peer);
@@ -1067,6 +1067,20 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
 #[tokio::test]
 async fn relocation_of_non_elder() -> Result<()> {
+    relocation(RelocatedPeerRole::NonElder).await
+}
+
+#[tokio::test]
+async fn relocation_of_elder() -> Result<()> {
+    relocation(RelocatedPeerRole::Elder).await
+}
+
+enum RelocatedPeerRole {
+    NonElder,
+    Elder,
+}
+
+async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     let network_params = NetworkParams {
         recommended_section_size: ELDER_SIZE + 1,
         ..Default::default()
@@ -1076,15 +1090,10 @@ async fn relocation_of_non_elder() -> Result<()> {
 
     let prefix: Prefix = "0".parse().unwrap();
     let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
-    let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
+    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
-    let mut section = Section::new(
-        SectionProofChain::new(sk_set.secret_key().public_key()),
-        proven_elders_info,
-    );
-
-    let peer = create_peer();
-    let member_info = MemberInfo::joined(peer);
+    let non_elder_peer = create_peer();
+    let member_info = MemberInfo::joined(non_elder_peer);
     let member_info = proven(sk_set.secret_key(), member_info)?;
     assert!(section.update_member(member_info));
 
@@ -1092,13 +1101,18 @@ async fn relocation_of_non_elder() -> Result<()> {
     let state = Approved::new(
         node,
         section,
-        Some(create_section_key_share(&sk_set, 0)),
+        Some(section_key_share),
         network_params,
         mpsc::unbounded_channel().0,
     );
     let stage = Stage::new(state, create_comm()?);
 
-    let (vote, proof) = create_relocation_trigger(sk_set.secret_key(), peer.age())?;
+    let relocated_peer = match relocated_peer_role {
+        RelocatedPeerRole::Elder => elders_info.peers().nth(1).expect("too few elders"),
+        RelocatedPeerRole::NonElder => &non_elder_peer,
+    };
+
+    let (vote, proof) = create_relocation_trigger(sk_set.secret_key(), relocated_peer.age())?;
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
         .await?;
@@ -1115,7 +1129,7 @@ async fn relocation_of_non_elder() -> Result<()> {
             _ => continue,
         };
 
-        if recipients != [*peer.addr()] {
+        if recipients != [*relocated_peer.addr()] {
             continue;
         }
 
@@ -1128,13 +1142,25 @@ async fn relocation_of_non_elder() -> Result<()> {
             _ => continue,
         };
 
-        let details = match &message.variant {
-            Variant::Relocate(details) => details,
-            _ => continue,
-        };
+        match relocated_peer_role {
+            RelocatedPeerRole::NonElder => {
+                let details = match &message.variant {
+                    Variant::Relocate(details) => details,
+                    _ => continue,
+                };
 
-        assert_eq!(details.pub_id, *peer.name());
-        assert_eq!(details.age, peer.age() + 1);
+                assert_eq!(details.pub_id, *relocated_peer.name());
+                assert_eq!(details.age, relocated_peer.age() + 1);
+            }
+            RelocatedPeerRole::Elder => {
+                let promise = match &message.variant {
+                    Variant::RelocatePromise(promise) => promise,
+                    _ => continue,
+                };
+
+                assert_eq!(promise.name, *relocated_peer.name());
+            }
+        }
 
         relocate_sent = true;
     }
@@ -1177,8 +1203,8 @@ fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> Section
 }
 
 fn create_section(
-    elders_info: &EldersInfo,
     sk_set: &SecretKeySet,
+    elders_info: &EldersInfo,
 ) -> Result<(Section, SectionKeyShare)> {
     let section_chain = SectionProofChain::new(sk_set.secret_key().public_key());
     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
