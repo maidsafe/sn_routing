@@ -262,14 +262,6 @@ impl Section {
             .map(|info| &info.peer)
     }
 
-    // Returns age of a member with `name` or `MIN_AGE` if not found.
-    pub fn member_age(&self, name: &XorName) -> u8 {
-        self.members
-            .get(name)
-            .map(|info| info.peer.age())
-            .unwrap_or(MIN_AGE)
-    }
-
     fn elders_info_signing_key_index(&self) -> u64 {
         // NOTE: we assume that the key the current `EldersInfo` is signed with is always
         // present in our section proof chain. This is currently guaranteed, because we use the

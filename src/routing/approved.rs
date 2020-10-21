@@ -279,8 +279,7 @@ impl Approved {
         };
         let proof_chain = self.section.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -614,8 +613,7 @@ impl Approved {
         };
 
         let bounce_msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             bounce_dst,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
@@ -639,8 +637,7 @@ impl Approved {
         msg_bytes: Bytes,
     ) -> Result<Command> {
         let bounce_msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
                 src_key: *self.section.chain().last_key(),
@@ -1547,8 +1544,7 @@ impl Approved {
 
         trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -1582,14 +1578,8 @@ impl Approved {
             };
 
             trace!("Send {:?} to {:?}", variant, peer);
-            let message = Message::single_src(
-                &self.node.keypair,
-                self.age(),
-                DstLocation::Direct,
-                variant,
-                None,
-                None,
-            )?;
+            let message =
+                Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
             commands.push(Command::send_message_to_target(
                 peer.addr(),
                 message.to_bytes(),
@@ -1655,8 +1645,7 @@ impl Approved {
         };
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Section(dst.name()),
             variant,
             Some(proof_chain),
@@ -1709,14 +1698,7 @@ impl Approved {
         );
 
         let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         Ok(Command::send_message_to_targets(
             &recipients,
@@ -1736,14 +1718,7 @@ impl Approved {
             dkg_key,
             message: dkg_message_bytes.clone(),
         };
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         let recipients: Vec<_> = self
             .dkg_voter
@@ -1818,8 +1793,7 @@ impl Approved {
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg =
-                    Message::single_src(&self.node.keypair, self.age(), dst, variant, None, None)?;
+                let msg = Message::single_src(&self.node, dst, variant, None, None)?;
                 Ok(self.relay_message(&msg)?.into_iter().collect())
             }
             SrcLocation::Section(_) => {
@@ -1884,14 +1858,7 @@ impl Approved {
     }
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
         Ok(Command::send_message_to_target(
             recipient,
             message.to_bytes(),
@@ -1992,9 +1959,5 @@ impl Approved {
         self.network
             .network_stats(self.section.elders_info())
             .print()
-    }
-
-    fn age(&self) -> u8 {
-        self.section.member_age(&self.node.name())
     }
 }

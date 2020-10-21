@@ -36,14 +36,12 @@ async fn receive_bootstrap_request() -> Result<()> {
     let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
-    let new_keypair = crypto::gen_keypair();
-    let new_addr = gen_addr();
+    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
     let message = Message::single_src(
-        &new_keypair,
-        MIN_AGE,
+        &new_node,
         DstLocation::Direct,
-        Variant::BootstrapRequest(crypto::name(&new_keypair.public)),
+        Variant::BootstrapRequest(new_node.name()),
         None,
         None,
     )?;
@@ -51,7 +49,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let mut commands = stage
         .handle_command(Command::HandleMessage {
             message,
-            sender: Some(new_addr),
+            sender: Some(new_node.addr),
         })
         .await?
         .into_iter();
@@ -64,7 +62,7 @@ async fn receive_bootstrap_request() -> Result<()> {
         }) => (recipients, message)
     );
 
-    assert_eq!(recipients, [new_addr]);
+    assert_eq!(recipients, [new_node.addr]);
 
     let message = Message::from_bytes(&message)?;
     assert_matches!(
@@ -81,13 +79,11 @@ async fn receive_join_request() -> Result<()> {
     let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
-    let new_keypair = crypto::gen_keypair();
-    let new_addr = gen_addr();
+    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
-        &new_keypair,
-        MIN_AGE,
+        &new_node,
         DstLocation::Direct,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
@@ -98,7 +94,7 @@ async fn receive_join_request() -> Result<()> {
     )?;
     let mut commands = stage
         .handle_command(Command::HandleMessage {
-            sender: Some(new_addr),
+            sender: Some(new_node.addr),
             message,
         })
         .await?
@@ -111,8 +107,8 @@ async fn receive_join_request() -> Result<()> {
     assert_matches!(
         vote,
         Vote::Online { member_info, previous_name, their_knowledge } => {
-            assert_eq!(*member_info.peer.name(), crypto::name(&new_keypair.public));
-            assert_eq!(*member_info.peer.addr(), new_addr);
+            assert_eq!(*member_info.peer.name(), new_node.name());
+            assert_eq!(*member_info.peer.addr(), new_node.addr);
             assert_eq!(member_info.peer.age(), MIN_AGE);
             assert_eq!(member_info.state, PeerState::Joined);
             assert_eq!(previous_name, None);
@@ -519,7 +515,7 @@ enum UnknownMessageSource {
 async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let (elders_info, mut keypairs) = create_elders_info();
 
-    let (sender_keypair, sender_addr, expected_recipients) = match source {
+    let (sender_node, expected_recipients) = match source {
         UnknownMessageSource::OurElder => {
             // When the unknown message is sent from one of our elders, we should bounce it back to
             // that elder only.
@@ -529,14 +525,13 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
                 .next()
                 .expect("elders_info is empty")
                 .addr();
-            (keypairs.remove(0), addr, vec![addr])
+            (Node::new(keypairs.remove(0), addr), vec![addr])
         }
         UnknownMessageSource::NonElder => {
             // When the unknown message is sent from a peer that is not our elder (including peers
             // from other sections), bounce it to our elders.
             (
-                crypto::gen_keypair(),
-                gen_addr(),
+                Node::new(crypto::gen_keypair(), gen_addr()),
                 elders_info
                     .elders
                     .values()
@@ -565,8 +560,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
 
     // non-elders can't handle messages addressed to sections.
     let original_message = Message::single_src(
-        &sender_keypair,
-        MIN_AGE + 1,
+        &sender_node,
         DstLocation::Section(rand::random()),
         Variant::UserMessage(Bytes::from_static(b"hello")),
         None,
@@ -577,7 +571,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let commands = stage
         .handle_command(Command::HandleMessage {
             message: original_message,
-            sender: Some(sender_addr),
+            sender: Some(sender_node.addr),
         })
         .await?;
 
@@ -753,13 +747,11 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
-    let peer_keypair = crypto::gen_keypair();
-    let peer_addr = gen_addr();
+    let other_node = Node::new(crypto::gen_keypair(), gen_addr());
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = Message::single_src(
-        &node.keypair,
-        MIN_AGE + 1,
-        DstLocation::Node(crypto::name(&peer_keypair.public)),
+        &node,
+        DstLocation::Node(other_node.name()),
         Variant::UserMessage(original_message_content.clone()),
         None,
         None,
@@ -775,8 +767,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let stage = Stage::new(state, create_comm()?);
 
     let bounced_message = Message::single_src(
-        &peer_keypair,
-        MIN_AGE,
+        &other_node,
         DstLocation::Direct,
         Variant::BouncedUnknownMessage {
             src_key: pk0,
@@ -789,7 +780,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let commands = stage
         .handle_command(Command::HandleMessage {
             message: bounced_message,
-            sender: Some(peer_addr),
+            sender: Some(other_node.addr),
         })
         .await?;
 
@@ -810,12 +801,12 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
         match message.variant() {
             Variant::Sync { section, .. } => {
-                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(recipients, [other_node.addr]);
                 assert_eq!(*section.chain().last_key(), pk1);
                 sync_sent = true;
             }
             Variant::UserMessage(content) => {
-                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(recipients, [other_node.addr]);
                 assert_eq!(*content, original_message_content);
                 original_message_sent = true;
             }
@@ -852,13 +843,12 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
-    let peer_keypair = crypto::gen_keypair();
-    let peer_addr = gen_addr();
+    let other_node = Node::new(crypto::gen_keypair(), gen_addr());
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
         src: Prefix::default(),
-        dst: DstLocation::Node(crypto::name(&peer_keypair.public)),
+        dst: DstLocation::Node(other_node.name()),
         dst_key: pk1,
         variant: Variant::UserMessage(original_message_content.clone()),
     };
@@ -880,8 +870,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     // Create the bounced message, indicating the last key the peer knows is `pk0`
     let bounced_message = Message::single_src(
-        &peer_keypair,
-        MIN_AGE,
+        &other_node,
         DstLocation::Direct,
         Variant::BouncedUntrustedMessage(Box::new(original_message)),
         None,
@@ -891,7 +880,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let commands = stage
         .handle_command(Command::HandleMessage {
             message: bounced_message,
-            sender: Some(peer_addr),
+            sender: Some(other_node.addr),
         })
         .await?;
 
@@ -911,7 +900,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
         match message.variant() {
             Variant::UserMessage(content) => {
-                assert_eq!(recipients, [peer_addr]);
+                assert_eq!(recipients, [other_node.addr]);
                 assert_eq!(*content, original_message_content);
                 assert_eq!(*message.proof_chain()?, chain);
 
@@ -966,7 +955,7 @@ async fn handle_sync() -> Result<()> {
         .values()
         .nth(1)
         .expect("not enough elders");
-    let old_peer_keypair = keypairs.remove(0);
+    let old_node = Node::with_age(keypairs.remove(0), *old_peer.addr(), old_peer.age());
 
     // Create the new `EldersInfo` by replacing the last peer with a new one.
     let new_peer = create_peer();
@@ -987,8 +976,7 @@ async fn handle_sync() -> Result<()> {
 
     // Create the `Sync` message containing the new `Section`.
     let message = Message::single_src(
-        &old_peer_keypair,
-        MIN_AGE + 1,
+        &old_node,
         DstLocation::Direct,
         Variant::Sync {
             section: new_section,

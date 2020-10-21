@@ -197,8 +197,7 @@ impl State {
         };
 
         let message = Message::single_src(
-            &self.node.keypair,
-            self.node.age,
+            &self.node,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
             None,
@@ -337,14 +336,7 @@ impl State {
         );
 
         let variant = Variant::JoinRequest(Box::new(join_request));
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.node.age,
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
 
@@ -505,7 +497,7 @@ async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAdd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE, MIN_AGE};
+    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE};
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
 
@@ -514,8 +506,13 @@ mod tests {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let (elders_info, keypairs) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let (elders_info, mut keypairs) = gen_elders_info(Default::default(), ELDER_SIZE);
         let bootstrap_peer = *elders_info.peers().next().expect("elders_info is empty");
+        let bootstrap_node = Node::with_age(
+            keypairs.remove(0),
+            *bootstrap_peer.addr(),
+            bootstrap_peer.age(),
+        );
 
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
@@ -547,8 +544,7 @@ mod tests {
 
             // Send BootstrapResponse
             let message = Message::single_src(
-                &keypairs[0],
-                bootstrap_peer.age(),
+                &bootstrap_node,
                 DstLocation::Direct,
                 Variant::BootstrapResponse(BootstrapResponse::Join {
                     elders_info: elders_info.clone(),
@@ -575,8 +571,7 @@ mod tests {
             let proven_elders_info = proven(&sk, elders_info.clone())?;
             let proof_chain = SectionProofChain::new(pk);
             let message = Message::single_src(
-                &keypairs[0],
-                bootstrap_peer.age(),
+                &bootstrap_node,
                 DstLocation::Direct,
                 Variant::NodeApproval(proven_elders_info),
                 Some(proof_chain),
@@ -602,8 +597,7 @@ mod tests {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let bootstrap_keypair = crypto::gen_keypair();
-        let bootstrap_addr = gen_addr();
+        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
         let state = State::new(node, send_tx, recv_rx)?;
@@ -613,7 +607,7 @@ mod tests {
         // for the purpose of this test.
         let local_set = task::LocalSet::new();
 
-        let _ = local_set.spawn_local(state.run(vec![bootstrap_addr], None));
+        let _ = local_set.spawn_local(state.run(vec![bootstrap_node.addr], None));
 
         local_set
             .run_until(async {
@@ -623,15 +617,14 @@ mod tests {
                 let (bytes, recipients) = send_rx.try_recv()?;
                 let message = Message::from_bytes(&bytes)?;
 
-                assert_eq!(recipients, vec![bootstrap_addr]);
+                assert_eq!(recipients, vec![bootstrap_node.addr]);
                 assert_matches!(message.variant(), Variant::BootstrapRequest(_));
 
                 // Send Rebootstrap BootstrapResponse
                 let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
 
                 let message = Message::single_src(
-                    &bootstrap_keypair,
-                    MIN_AGE,
+                    &bootstrap_node,
                     DstLocation::Direct,
                     Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(
                         new_bootstrap_addrs.clone(),
@@ -640,7 +633,7 @@ mod tests {
                     None,
                 )?;
 
-                recv_tx.try_send((message, bootstrap_addr))?;
+                recv_tx.try_send((message, bootstrap_node.addr))?;
                 task::yield_now().await;
 
                 // Receive new BootstrapRequests

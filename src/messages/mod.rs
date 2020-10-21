@@ -17,9 +17,10 @@ pub(crate) use self::{
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
 use crate::{
-    crypto::{self, name, Keypair, Verifier},
+    crypto::{self, name, Verifier},
     error::{Error, Result},
     location::DstLocation,
+    node::Node,
     section::{ExtendError, SectionProofChain, TrustStatus},
 };
 
@@ -124,8 +125,7 @@ impl Message {
 
     /// Creates a signed message from single node.
     pub(crate) fn single_src(
-        keypair: &Keypair,
-        age: u8,
+        node: &Node,
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SectionProofChain>,
@@ -136,10 +136,10 @@ impl Message {
             dst_key: dst_key.as_ref(),
             variant: &variant,
         })?;
-        let signature = crypto::sign(&serialized, keypair);
+        let signature = crypto::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
-            public_key: keypair.public,
-            age,
+            public_key: node.keypair.public,
+            age: node.age,
             signature,
         };
 
@@ -362,12 +362,15 @@ pub(crate) struct SignableView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, crypto, section, MIN_AGE};
+    use crate::{
+        consensus, crypto,
+        section::{self, test_utils::gen_addr},
+    };
     use std::iter;
 
     #[test]
     fn extend_proof_chain() {
-        let keypair = crypto::gen_keypair();
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
 
         let sk0 = bls::SecretKey::random();
         let pk0 = sk0.public_key();
@@ -384,8 +387,7 @@ mod tests {
 
         let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(
-            &keypair,
-            MIN_AGE,
+            &node,
             DstLocation::Direct,
             variant,
             Some(full_proof_chain.slice(1..)),
