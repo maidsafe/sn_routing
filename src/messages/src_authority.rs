@@ -12,7 +12,7 @@ use crate::{
     location::SrcLocation,
     peer::Peer,
 };
-
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 

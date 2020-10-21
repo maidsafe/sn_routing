@@ -16,7 +16,7 @@ use crate::{
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,

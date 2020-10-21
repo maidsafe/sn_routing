@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
 use xor_name::{Prefix, XorName};
 
 /// Message source location.

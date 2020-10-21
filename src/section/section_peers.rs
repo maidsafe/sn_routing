@@ -13,6 +13,7 @@ use super::{
 use crate::{consensus::Proven, peer::Peer};
 
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     collections::{

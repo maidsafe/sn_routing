@@ -25,6 +25,7 @@ use crate::{
 
 use bytes::Bytes;
 use err_derive::Error;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 

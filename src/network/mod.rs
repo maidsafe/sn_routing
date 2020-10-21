@@ -17,7 +17,7 @@ use crate::{
     section::{EldersInfo, SectionProofChain},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 

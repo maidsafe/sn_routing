@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{consensus::Proof, section::SectionProofChain};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, fmt::Debug};
 use xor_name::Prefix;
 
