@@ -362,14 +362,12 @@ pub(crate) struct SignableView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, crypto::Keypair, rng, section, MIN_AGE};
+    use crate::{consensus, crypto, section, MIN_AGE};
     use std::iter;
 
     #[test]
     fn extend_proof_chain() {
-        let mut rng = rng::new();
-
-        let keypair = Keypair::generate(&mut rng);
+        let keypair = crypto::gen_keypair();
 
         let sk0 = bls::SecretKey::random();
         let pk0 = sk0.public_key();

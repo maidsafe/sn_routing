@@ -293,7 +293,6 @@ impl<T: Debug> Debug for Entry<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rng;
     use rand::Rng;
     use xor_name::Prefix;
 
@@ -394,7 +393,7 @@ mod tests {
 
     #[test]
     fn get_matching() {
-        let mut rng = rng::new();
+        let mut rng = rand::thread_rng();
 
         let mut map = PrefixMap::new();
         let _ = map.insert((prefix("0"), 0));

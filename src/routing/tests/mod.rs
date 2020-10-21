@@ -16,7 +16,6 @@ use crate::{
     network::Network,
     node::Node,
     peer::Peer,
-    rng,
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
@@ -27,7 +26,6 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
-use rand::Rng;
 use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -38,7 +36,7 @@ async fn receive_bootstrap_request() -> Result<()> {
     let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
-    let new_keypair = create_keypair();
+    let new_keypair = crypto::gen_keypair();
     let new_addr = gen_addr();
 
     let message = Message::single_src(
@@ -83,7 +81,7 @@ async fn receive_join_request() -> Result<()> {
     let state = Approved::first_node(node, NetworkParams::default(), mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
-    let new_keypair = create_keypair();
+    let new_keypair = crypto::gen_keypair();
     let new_addr = gen_addr();
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
@@ -537,7 +535,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
             // When the unknown message is sent from a peer that is not our elder (including peers
             // from other sections), bounce it to our elders.
             (
-                create_keypair(),
+                crypto::gen_keypair(),
                 gen_addr(),
                 elders_info
                     .elders
@@ -569,7 +567,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let original_message = Message::single_src(
         &sender_keypair,
         MIN_AGE + 1,
-        DstLocation::Section(rng::new().gen()),
+        DstLocation::Section(rand::random()),
         Variant::UserMessage(Bytes::from_static(b"hello")),
         None,
         None,
@@ -755,7 +753,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
-    let peer_keypair = create_keypair();
+    let peer_keypair = crypto::gen_keypair();
     let peer_addr = gen_addr();
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = Message::single_src(
@@ -854,7 +852,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
-    let peer_keypair = create_keypair();
+    let peer_keypair = crypto::gen_keypair();
     let peer_addr = gen_addr();
 
     let original_message_content = Bytes::from_static(b"unknown message");
@@ -1085,17 +1083,16 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
 const THRESHOLD: usize = ELDER_MAJORITY - 1;
 
-fn create_keypair() -> Keypair {
-    let mut rng = rng::new();
-    Keypair::generate(&mut rng)
-}
-
 fn create_peer() -> Peer {
-    Peer::new(crypto::name(&create_keypair().public), gen_addr(), MIN_AGE)
+    Peer::new(
+        crypto::name(&crypto::gen_keypair().public),
+        gen_addr(),
+        MIN_AGE,
+    )
 }
 
 fn create_node() -> Node {
-    create_node_for(create_keypair())
+    create_node_for(crypto::gen_keypair())
 }
 
 fn create_node_for(keypair: Keypair) -> Node {
@@ -1152,7 +1149,7 @@ struct SecretKeySet {
 
 impl SecretKeySet {
     fn random() -> Self {
-        let poly = bls::poly::Poly::random(THRESHOLD, &mut rng::new());
+        let poly = bls::poly::Poly::random(THRESHOLD, &mut rand::thread_rng());
         let key = bls::SecretKey::from_mut(&mut poly.evaluate(0));
         let set = bls::SecretKeySet::from(poly);
 

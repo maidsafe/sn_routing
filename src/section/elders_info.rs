@@ -80,7 +80,7 @@ pub(crate) mod test_utils {
     use crate::{
         crypto::{self, Keypair},
         peer::Peer,
-        rng, MIN_AGE,
+        MIN_AGE,
     };
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
@@ -99,9 +99,8 @@ pub(crate) mod test_utils {
 
     // Create ELDER_SIZE Keypairs sorted by their names.
     pub fn gen_sorted_keypairs(count: usize) -> Vec<Keypair> {
-        let mut rng = rng::new();
         (0..count)
-            .map(|_| Keypair::generate(&mut rng))
+            .map(|_| crypto::gen_keypair())
             .sorted_by_key(|keypair| crypto::name(&keypair.public))
             .collect()
     }

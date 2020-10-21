@@ -6,13 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto::Digest256,
-    majority,
-    peer::Peer,
-    rng::{self, MainRng},
-    section::EldersInfo,
-};
+use crate::{crypto::Digest256, majority, peer::Peer, section::EldersInfo};
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -80,7 +74,6 @@ impl Debug for DkgKey {
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
-    rng: MainRng,
     participant: Option<Participant>,
     observers: HashMap<DkgKey, Observer>,
 }
@@ -88,7 +81,6 @@ pub struct DkgVoter {
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
-            rng: rng::new(),
             participant: None,
             observers: HashMap::new(),
         }
@@ -215,7 +207,10 @@ impl DkgVoter {
 
         trace!("DKG for {} progressing", elders_info);
 
-        match session.key_gen.timed_phase_transition(&mut self.rng) {
+        match session
+            .key_gen
+            .timed_phase_transition(&mut rand::thread_rng())
+        {
             Ok(messages) => Some((session.dkg_key, Ok(messages))),
             Err(error) => {
                 trace!("DKG for {} failed: {}", elders_info, error);
@@ -256,7 +251,7 @@ impl DkgVoter {
 
         session
             .key_gen
-            .handle_message(&mut self.rng, message)
+            .handle_message(&mut rand::thread_rng(), message)
             .unwrap_or_default()
     }
 

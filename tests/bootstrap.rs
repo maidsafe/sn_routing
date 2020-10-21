@@ -13,7 +13,6 @@ use ed25519_dalek::Keypair;
 use futures::future::join_all;
 use sn_routing::{
     event::{Connected, Event},
-    rng::MainRng,
     Routing,
 };
 use utils::*;
@@ -21,7 +20,7 @@ use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
-    let keypair = Keypair::generate(&mut MainRng::default());
+    let keypair = Keypair::generate(&mut rand::thread_rng());
     let pub_key = keypair.public;
     let (node, mut event_stream) = RoutingBuilder::new(None)
         .first()

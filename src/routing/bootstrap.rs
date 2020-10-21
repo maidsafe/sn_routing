@@ -16,7 +16,6 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    rng,
     section::{EldersInfo, Section},
     SectionProofChain,
 };
@@ -252,8 +251,7 @@ impl State {
             *relocate_details.destination(),
         );
 
-        let mut rng = rng::new();
-        let new_keypair = crypto::keypair_within_range(&mut rng, &name_prefix.range_inclusive());
+        let new_keypair = crypto::gen_keypair_within_range(&name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
         let relocate_payload =
@@ -510,7 +508,6 @@ mod tests {
     use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE, MIN_AGE};
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
-    use ed25519_dalek::Keypair;
 
     #[tokio::test]
     async fn bootstrap_as_infant() -> Result<()> {
@@ -523,7 +520,7 @@ mod tests {
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
 
-        let node = Node::new(gen_keypair(), gen_addr());
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
         let node_name = node.name();
         let state = State::new(node, send_tx, recv_rx)?;
 
@@ -605,10 +602,10 @@ mod tests {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let bootstrap_keypair = gen_keypair();
+        let bootstrap_keypair = crypto::gen_keypair();
         let bootstrap_addr = gen_addr();
 
-        let node = Node::new(gen_keypair(), gen_addr());
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
         let state = State::new(node, send_tx, recv_rx)?;
 
         // Spawn the bootstrap task on a `LocalSet` so that it runs concurrently with the main test
@@ -659,9 +656,4 @@ mod tests {
     }
 
     // TODO: add test for bootstrap as relocated node
-
-    fn gen_keypair() -> Keypair {
-        let mut rng = rng::new();
-        Keypair::generate(&mut rng)
-    }
 }

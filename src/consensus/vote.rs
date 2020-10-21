@@ -131,37 +131,32 @@ impl Serialize for SignableWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        rng::{self, MainRng},
-        section,
-    };
+    use crate::section;
     use rand::Rng;
     use std::fmt::Debug;
 
     #[test]
     fn serialize_for_signing() {
-        let mut rng = rng::new();
-
         // Vote::SectionInfo
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
         let vote = Vote::SectionInfo(elders_info.clone());
         verify_serialize_for_signing(&vote, &elders_info);
 
         // Vote::OurKey
-        let prefix = gen_prefix(&mut rng);
+        let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
         let vote = Vote::OurKey { prefix, key };
         verify_serialize_for_signing(&vote, &key);
 
         // Vote::TheirKey
-        let prefix = gen_prefix(&mut rng);
+        let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
         let vote = Vote::TheirKey { prefix, key };
         verify_serialize_for_signing(&vote, &(prefix, key));
 
         // Vote::TheirKnowledge
-        let prefix = gen_prefix(&mut rng);
-        let key_index = rng.gen();
+        let prefix = gen_prefix();
+        let key_index = rand::random();
         let vote = Vote::TheirKnowledge { prefix, key_index };
         verify_serialize_for_signing(&vote, &(prefix, key_index));
     }
@@ -181,7 +176,8 @@ mod tests {
         )
     }
 
-    fn gen_prefix(rng: &mut MainRng) -> Prefix {
+    fn gen_prefix() -> Prefix {
+        let mut rng = rand::thread_rng();
         let mut prefix = Prefix::default();
         let len = rng.gen_range(0, 5);
 

@@ -83,14 +83,13 @@ pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API upd
 /// sn_routing events.
 pub mod event;
 
-/// Random number generation
-pub mod rng;
 
 // ############################################################################
 // Private
 // ############################################################################
 
 mod consensus;
+mod crypto;
 mod delivery_group;
 mod error;
 mod location;
@@ -103,9 +102,6 @@ mod peer;
 mod relocation;
 mod routing;
 mod section;
-
-// Cryptography
-mod crypto;
 
 /// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.

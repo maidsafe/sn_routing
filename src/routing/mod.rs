@@ -30,7 +30,6 @@ use crate::{
     network_params::NetworkParams,
     node::Node,
     peer::Peer,
-    rng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -87,10 +86,7 @@ impl Routing {
     /// lost in transit during bootstrapping, or other reasons. It's the responsibility of the
     /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
-        let mut rng = rng::new();
-        let keypair = config
-            .keypair
-            .unwrap_or_else(|| Keypair::generate(&mut rng));
+        let keypair = config.keypair.unwrap_or_else(crypto::gen_keypair);
         let node_name = crypto::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
