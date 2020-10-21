@@ -172,6 +172,11 @@ impl State {
                     return Ok((elders_info, section_key));
                 }
                 BootstrapResponse::Rebootstrap(new_bootstrap_addrs) => {
+                    if new_bootstrap_addrs.is_empty() {
+                        error!("{} Invalid rebootstrap response: missing peers", self.node);
+                        return Err(Error::InvalidMessage);
+                    }
+
                     info!(
                         "{} Bootstrapping redirected to another set of peers: {:?}",
                         self.node, new_bootstrap_addrs,
