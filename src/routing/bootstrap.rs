@@ -257,7 +257,7 @@ impl State {
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
 
         info!("{} Changing name to {}.", self.node, new_name);
-        self.node = Node::with_age(new_keypair, self.node.addr, age);
+        self.node = Node::new(new_keypair, self.node.addr).with_age(age);
 
         Ok(relocate_payload)
     }
@@ -506,13 +506,9 @@ mod tests {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let (elders_info, mut keypairs) = gen_elders_info(Default::default(), ELDER_SIZE);
-        let bootstrap_peer = *elders_info.peers().next().expect("elders_info is empty");
-        let bootstrap_node = Node::with_age(
-            keypairs.remove(0),
-            *bootstrap_peer.addr(),
-            bootstrap_peer.age(),
-        );
+        let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let bootstrap_node = nodes.remove(0);
+        let bootstrap_addr = bootstrap_node.addr;
 
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
@@ -524,7 +520,7 @@ mod tests {
         // Create the bootstrap task, but don't run it yet.
         let bootstrap = async move {
             state
-                .run(vec![*bootstrap_peer.addr()], None)
+                .run(vec![bootstrap_addr], None)
                 .await
                 .map_err(Error::from)
         };
@@ -537,7 +533,7 @@ mod tests {
             let (bytes, recipients) = send_rx.try_recv()?;
             let message = Message::from_bytes(&bytes)?;
 
-            assert_eq!(recipients, [*bootstrap_peer.addr()]);
+            assert_eq!(recipients, [bootstrap_addr]);
             assert_matches!(message.variant(), Variant::BootstrapRequest(name) => {
                 assert_eq!(*name, node_name);
             });
@@ -554,7 +550,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+            recv_tx.try_send((message, bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -578,7 +574,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+            recv_tx.try_send((message, bootstrap_addr))?;
 
             Ok(())
         };

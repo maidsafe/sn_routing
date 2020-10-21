@@ -77,17 +77,13 @@ impl Display for EldersInfo {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::EldersInfo;
-    use crate::{
-        crypto::{self, Keypair},
-        peer::Peer,
-        MIN_AGE,
-    };
+    use crate::{crypto, node::Node, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
 
     // Generate unique SocketAddr for testing purposes
-    pub fn gen_addr() -> SocketAddr {
+    pub(crate) fn gen_addr() -> SocketAddr {
         thread_local! {
             static NEXT_PORT: Cell<u16> = Cell::new(1000);
         }
@@ -97,24 +93,24 @@ pub(crate) mod test_utils {
         ([192, 0, 2, 0], port).into()
     }
 
-    // Create ELDER_SIZE Keypairs sorted by their names.
-    pub fn gen_sorted_keypairs(count: usize) -> Vec<Keypair> {
+    // Create ELDER_SIZE Nodes sorted by their names.
+    pub(crate) fn gen_sorted_nodes(count: usize) -> Vec<Node> {
         (0..count)
-            .map(|_| crypto::gen_keypair())
-            .sorted_by_key(|keypair| crypto::name(&keypair.public))
+            .map(|_| Node::new(crypto::gen_keypair(), gen_addr()).with_age(MIN_AGE + 1))
+            .sorted_by_key(|node| node.name())
             .collect()
     }
 
     // Generate random `EldersInfo` for testing purposes.
-    pub fn gen_elders_info(prefix: Prefix, count: usize) -> (EldersInfo, Vec<Keypair>) {
-        let keypairs = gen_sorted_keypairs(count);
-        let elders = keypairs
+    pub(crate) fn gen_elders_info(prefix: Prefix, count: usize) -> (EldersInfo, Vec<Node>) {
+        let nodes = gen_sorted_nodes(count);
+        let elders = nodes
             .iter()
-            .map(|keypair| Peer::new(crypto::name(&keypair.public), gen_addr(), MIN_AGE + 1))
+            .map(Node::peer)
             .map(|peer| (*peer.name(), peer))
             .collect();
         let elders_info = EldersInfo { elders, prefix };
 
-        (elders_info, keypairs)
+        (elders_info, nodes)
     }
 }

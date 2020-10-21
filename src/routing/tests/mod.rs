@@ -121,11 +121,11 @@ async fn receive_join_request() -> Result<()> {
 
 #[tokio::test]
 async fn accumulate_votes() -> Result<()> {
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
     let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let state = Approved::new(
         node,
         section,
@@ -180,10 +180,10 @@ async fn accumulate_votes() -> Result<()> {
 #[tokio::test]
 async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&elders_info, &sk_set)?;
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let state = Approved::new(
         node,
         section,
@@ -239,17 +239,25 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let chain = SectionProofChain::new(sk_set.secret_key().public_key());
 
-    let mut keypairs = gen_sorted_keypairs(ELDER_SIZE);
-    // Everybody has age 6 except the last peer who as 5.
-    let ages = (0..keypairs.len() - 1)
-        .map(|_| MIN_AGE + 2)
-        .chain(iter::once(MIN_AGE + 1));
-    let elders = keypairs
-        .iter()
-        .zip(ages)
-        .map(|(keypair, age)| Peer::new(crypto::name(&keypair.public), gen_addr(), age));
+    // Creates nodes where everybody has age 6 except the last one who has 5.
+    let mut nodes: Vec<_> = gen_sorted_nodes(ELDER_SIZE)
+        .into_iter()
+        .enumerate()
+        .map(|(index, node)| {
+            if index < ELDER_SIZE - 1 {
+                node.with_age(MIN_AGE + 2)
+            } else {
+                node.with_age(MIN_AGE + 1)
+            }
+        })
+        .collect();
+
     let elders_info = EldersInfo::new(
-        elders.map(|peer| (*peer.name(), peer)).collect(),
+        nodes
+            .iter()
+            .map(Node::peer)
+            .map(|peer| (*peer.name(), peer))
+            .collect(),
         Prefix::default(),
     );
     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
@@ -264,7 +272,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         });
     }
 
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let node_name = node.name();
     let section_key_share = create_section_key_share(&sk_set, 0);
     let state = Approved::new(
@@ -345,7 +353,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
 #[tokio::test]
 async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
     let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
@@ -356,7 +364,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let _ = section.update_member(member_info);
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let state = Approved::new(
         node,
         section,
@@ -387,7 +395,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
 #[tokio::test]
 async fn handle_consensus_on_offline_of_elder() -> Result<()> {
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
     let (mut section, section_key_share) = create_section(&elders_info, &sk_set)?;
@@ -412,7 +420,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let node_name = node.name();
     let state = Approved::new(
         node,
@@ -513,19 +521,15 @@ enum UnknownMessageSource {
 }
 
 async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
 
     let (sender_node, expected_recipients) = match source {
         UnknownMessageSource::OurElder => {
             // When the unknown message is sent from one of our elders, we should bounce it back to
             // that elder only.
-            let addr = *elders_info
-                .elders
-                .values()
-                .next()
-                .expect("elders_info is empty")
-                .addr();
-            (Node::new(keypairs.remove(0), addr), vec![addr])
+            let node = nodes.remove(0);
+            let addr = node.addr;
+            (node, vec![addr])
         }
         UnknownMessageSource::NonElder => {
             // When the unknown message is sent from a peer that is not our elder (including peers
@@ -726,7 +730,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
 #[tokio::test]
 async fn handle_bounced_unknown_message() -> Result<()> {
-    let (elders_info, mut keypairs) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
 
     // Create section chain with two keys.
     let sk0 = bls::SecretKey::random();
@@ -743,7 +747,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let section = Section::new(section_chain, proven_elders_info)?;
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
 
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
@@ -822,7 +826,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
 #[tokio::test]
 async fn handle_bounced_untrusted_message() -> Result<()> {
-    let (elders_info, mut full_ids) = create_elders_info();
+    let (elders_info, mut nodes) = create_elders_info();
 
     // Create section chain with two keys.
     let sk0 = bls::SecretKey::random();
@@ -839,7 +843,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let section = Section::new(chain.clone(), proven_elders_info)?;
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
-    let node = create_node_for(full_ids.remove(0));
+    let node = nodes.remove(0);
 
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
@@ -927,14 +931,14 @@ async fn handle_sync() -> Result<()> {
     let mut chain = SectionProofChain::new(pk0);
     assert!(chain.push(pk1, pk1_signature));
 
-    let (old_elders_info, mut keypairs) = create_elders_info();
+    let (old_elders_info, mut nodes) = create_elders_info();
     let proven_old_elders_info = proven(sk0_set.secret_key(), old_elders_info.clone())?;
     let old_section = Section::new(chain.clone(), proven_old_elders_info)?;
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let section_key_share = create_section_key_share(&sk1_set, 0);
-    let node = create_node_for(keypairs.remove(0));
+    let node = nodes.remove(0);
     let state = Approved::new(
         node,
         old_section,
@@ -950,12 +954,7 @@ async fn handle_sync() -> Result<()> {
     let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
     assert!(chain.push(pk2, pk2_signature));
 
-    let old_peer = *old_elders_info
-        .elders
-        .values()
-        .nth(1)
-        .expect("not enough elders");
-    let old_node = Node::with_age(keypairs.remove(0), *old_peer.addr(), old_peer.age());
+    let old_node = nodes.remove(0);
 
     // Create the new `EldersInfo` by replacing the last peer with a new one.
     let new_peer = create_peer();
@@ -990,7 +989,7 @@ async fn handle_sync() -> Result<()> {
     let _ = stage
         .handle_command(Command::HandleMessage {
             message,
-            sender: Some(*old_peer.addr()),
+            sender: Some(old_node.addr),
         })
         .await?;
 
@@ -1014,9 +1013,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let pk0_good = sk0_good_set.secret_key().public_key();
 
     let node = create_node();
-    let comm = create_comm()?;
-    let addr = comm.our_connection_info()?;
-    let peer = Peer::new(node.name(), addr, MIN_AGE);
+    let peer = node.peer();
 
     let chain = SectionProofChain::new(pk0_good);
     let elders_info = EldersInfo::new(
@@ -1034,7 +1031,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         NetworkParams::default(),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, comm);
+    let stage = Stage::new(state, create_comm()?);
 
     // Create a message with a valid signature but invalid proof chain (the last key in the chain
     // not signed with the previous key)
@@ -1067,6 +1064,29 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     Ok(())
 }
 
+// #[tokio::test]
+// async fn trigger_relocation_of_non_elder() -> Result<()> {
+//     let network_params = NetworkParams {
+//         recommended_section_size: ELDER_SIZE + 1,
+//         ..Default::default()
+//     };
+
+//     let sk_set = SecretKeySet::random();
+
+//     let prefix: Prefix = "0".parse().unwrap();
+//     let (elders_info, mut keypairs) = gen_elders_info(prefix, ELDER_SIZE);
+//     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
+
+//     let node = create_node_for(keypairs.);
+
+//     let mut section = Section::new(
+//         SectionProofChain::new(sk_set.secret_key().public_key()),
+//         proven_elders_info,
+//     );
+
+//     Ok(())
+// }
+
 // TODO: add more tests here
 
 const THRESHOLD: usize = ELDER_MAJORITY - 1;
@@ -1094,8 +1114,8 @@ fn create_comm() -> Result<Comm> {
     })?)
 }
 
-// Generate random EldersInfo and the corresponding Keypairs.
-fn create_elders_info() -> (EldersInfo, Vec<Keypair>) {
+// Generate random EldersInfo and the corresponding Nodes.
+fn create_elders_info() -> (EldersInfo, Vec<Node>) {
     gen_elders_info(Default::default(), ELDER_SIZE)
 }
 
