@@ -32,6 +32,7 @@
 <span id="31">31</span>
 <span id="32">32</span>
 <span id="33">33</span>
+<span id="34">34</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -42,6 +43,7 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">DstLocation</span>, <span class="ident">SignableView</span>, <span class="ident">Variant</span>};
+<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
 <span class="doccomment">/// Section-source message without signature and proof.</span>

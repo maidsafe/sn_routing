@@ -223,6 +223,7 @@
 <span id="222">222</span>
 <span id="223">223</span>
 <span id="224">224</span>
+<span id="225">225</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -239,6 +240,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>::<span class="ident">Proven</span>, <span class="ident">peer</span>::<span class="ident">Peer</span>};
 
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
+<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">cmp</span>::<span class="ident">Ordering</span>,
     <span class="ident">collections</span>::{

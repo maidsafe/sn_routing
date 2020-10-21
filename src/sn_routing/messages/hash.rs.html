@@ -33,6 +33,7 @@
 <span id="32">32</span>
 <span id="33">33</span>
 <span id="34">34</span>
+<span id="35">35</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -44,6 +45,7 @@
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Digest256</span>};
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
+<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>};
 
 <span class="doccomment">/// Cryptographic hash of Message</span>
