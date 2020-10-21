@@ -132,7 +132,6 @@ impl Serialize for SignableWrapper {
 mod tests {
     use super::*;
     use crate::{
-        consensus,
         rng::{self, MainRng},
         section,
     };
@@ -144,19 +143,19 @@ mod tests {
         let mut rng = rng::new();
 
         // Vote::SectionInfo
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 4);
+        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
         let vote = Vote::SectionInfo(elders_info.clone());
         verify_serialize_for_signing(&vote, &elders_info);
 
         // Vote::OurKey
         let prefix = gen_prefix(&mut rng);
-        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let key = bls::SecretKey::random().public_key();
         let vote = Vote::OurKey { prefix, key };
         verify_serialize_for_signing(&vote, &key);
 
         // Vote::TheirKey
         let prefix = gen_prefix(&mut rng);
-        let key = consensus::test_utils::gen_secret_key(&mut rng).public_key();
+        let key = bls::SecretKey::random().public_key();
         let vote = Vote::TheirKey { prefix, key };
         verify_serialize_for_signing(&vote, &(prefix, key));
 

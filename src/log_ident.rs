@@ -8,8 +8,7 @@
 
 //! Log identifier - a short string that is prefixed in front of every log message.
 
-use futures::Future;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 tokio::task_local! {
     static LOG_IDENT: Arc<String>;

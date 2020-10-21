@@ -6,16 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod accumulating_message;
 mod hash;
+mod plain_message;
 mod src_authority;
 mod variant;
 
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
-    accumulating_message::PlainMessage,
+    plain_message::PlainMessage,
     variant::{BootstrapResponse, JoinRequest, Variant},
 };
-pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 use crate::{
     crypto::{self, name, Keypair, Verifier},
     error::{Error, Result},
@@ -308,15 +308,6 @@ pub enum VerifyStatus {
     Unknown,
 }
 
-impl VerifyStatus {
-    pub fn require_full(self) -> Result<(), Error> {
-        match self {
-            Self::Full => Ok(()),
-            Self::Unknown => Err(Error::UntrustedMessage),
-        }
-    }
-}
-
 /// Status of an incomming message.
 pub enum MessageStatus {
     /// Message is useful and should be handled.
@@ -379,18 +370,18 @@ mod tests {
 
         let keypair = Keypair::generate(&mut rng);
 
-        let sk0 = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk0 = bls::SecretKey::random();
         let pk0 = sk0.public_key();
 
-        let sk1 = consensus::test_utils::gen_secret_key(&mut rng);
+        let sk1 = bls::SecretKey::random();
         let pk1 = sk1.public_key();
 
         let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1).unwrap());
         let _ = full_proof_chain.push(pk1, pk1_sig);
 
-        let (elders_info, _) = section::gen_elders_info(&mut rng, Default::default(), 3);
-        let elders_info = consensus::test_utils::proven(&sk1, elders_info);
+        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
+        let elders_info = consensus::test_utils::proven(&sk1, elders_info).unwrap();
 
         let variant = Variant::NodeApproval(elders_info);
         let message = Message::single_src(

@@ -6,23 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod approved;
+mod bootstrap;
+mod comm;
 mod command;
 pub mod event_stream;
 mod executor;
 mod stage;
 #[cfg(test)]
 mod tests;
+mod update_barrier;
 
 pub use self::event_stream::EventStream;
-#[cfg(test)]
-use self::stage::State;
 use self::{
-    command::Command,
-    executor::Executor,
-    stage::{Approved, Bootstrapping, Comm, Stage},
+    approved::Approved, comm::Comm, command::Command, executor::Executor, stage::Stage,
+    update_barrier::UpdateBarrier,
 };
 use crate::{
-    crypto::{self, Keypair, PublicKey},
+    crypto,
     error::{Error, Result},
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
@@ -31,10 +32,10 @@ use crate::{
     peer::Peer,
     rng,
     section::{EldersInfo, SectionProofChain},
-    TransportConfig, MIN_AGE,
+    TransportConfig,
 };
 use bytes::Bytes;
-use ed25519_dalek::Signature;
+use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
@@ -80,7 +81,11 @@ impl Routing {
     // Public API
     ////////////////////////////////////////////////////////////////////////////
 
-    /// Create new node using the given config.
+    /// Creates new node using the given config and bootstraps it to the network.
+    ///
+    /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
+    /// lost in transit during bootstrapping, or other reasons. It's the responsibility of the
+    /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
         let mut rng = rng::new();
         let keypair = config
@@ -90,42 +95,34 @@ impl Routing {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let (state, comm, initial_command) = if config.first {
+        let (state, comm, incoming_conns) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
-            let addr = comm.our_connection_info()?;
-            let node = Node::new(
-                keypair,
-                addr,
-                MIN_AGE,
-                config.network_params,
-                event_tx.clone(),
-            );
-            let state = Approved::first_node(node)?;
+            let incoming_conns = comm.listen()?;
 
-            let _ = event_tx.send(Event::Connected(Connected::First));
-            let _ = event_tx.send(Event::PromotedToElder);
+            let node = Node::new(keypair, comm.our_connection_info()?);
+            let state = Approved::first_node(node, config.network_params, event_tx)?;
 
-            (state.into(), comm, None)
+            state.send_event(Event::Connected(Connected::First));
+            state.send_event(Event::PromotedToElder);
+
+            (state, comm, incoming_conns)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
-            let addr = comm.our_connection_info()?;
-            let node = Node::new(keypair, addr, MIN_AGE, config.network_params, event_tx);
-            let (state, command) = Bootstrapping::new(None, vec![bootstrap_addr], node)?;
+            let node = Node::new(keypair, comm.our_connection_info()?);
+            let (node, section, incoming_conns) =
+                bootstrap::infant(node, &comm, bootstrap_addr).await?;
+            let state = Approved::new(node, section, None, config.network_params, event_tx);
 
-            (state.into(), comm, Some(command))
+            state.send_event(Event::Connected(Connected::First));
+
+            (state, comm, incoming_conns)
         };
 
-        let incoming_conns = comm.listen()?;
         let stage = Arc::new(Stage::new(state, comm));
-        let executor = Executor::new(stage.clone(), incoming_conns);
+        let executor = Executor::new(stage.clone(), incoming_conns).await;
         let event_stream = EventStream::new(event_rx);
-
-        // Process the initial command.
-        if let Some(command) = initial_command {
-            let _ = tokio::spawn(stage.clone().handle_commands(command));
-        }
 
         let routing = Self {
             stage,
@@ -137,52 +134,62 @@ impl Routing {
 
     /// Returns the `PublicKey` of this node.
     pub async fn public_key(&self) -> PublicKey {
-        self.stage.public_key().await
+        self.stage.state.lock().await.node().keypair.public
     }
 
     /// Sign any data with the key of this node.
     pub async fn sign(&self, data: &[u8]) -> Signature {
-        self.stage.sign(data).await
+        self.stage.state.lock().await.node().keypair.sign(data)
     }
 
     /// Verify any signed data with the key of this node.
     pub async fn verify(&self, data: &[u8], signature: &Signature) -> bool {
-        self.stage.verify(data, signature).await
+        self.stage
+            .state
+            .lock()
+            .await
+            .node()
+            .keypair
+            .verify(data, signature)
+            .is_ok()
     }
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        self.stage.name().await
+        self.stage.state.lock().await.node().name()
     }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.stage.our_connection_info()
+        self.stage.comm.our_connection_info()
     }
 
-    /// Our `Prefix` once we are a part of the section.
-    pub async fn our_prefix(&self) -> Option<Prefix> {
-        self.stage.our_prefix().await
+    /// Prefix of our section
+    pub async fn our_prefix(&self) -> Prefix {
+        *self.stage.state.lock().await.section().prefix()
     }
 
-    /// Finds out if the given XorName matches our prefix. Returns error
-    /// if we don't have a prefix because we haven't joined any section yet.
-    pub async fn matches_our_prefix(&self, name: &XorName) -> Result<bool> {
-        if let Some(prefix) = self.our_prefix().await {
-            Ok(prefix.matches(name))
-        } else {
-            Err(Error::InvalidState)
-        }
+    /// Finds out if the given XorName matches our prefix.
+    pub async fn matches_our_prefix(&self, name: &XorName) -> bool {
+        self.our_prefix().await.matches(name)
     }
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.stage.is_elder().await
+        self.stage.state.lock().await.is_elder()
     }
 
     /// Returns the information of all the current section elders.
     pub async fn our_elders(&self) -> Vec<Peer> {
-        self.stage.our_elders().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .elders_info()
+            .peers()
+            .copied()
+            .collect()
     }
 
     /// Returns the elders of our section sorted by their distance to `name` (closest first).
@@ -196,7 +203,14 @@ impl Routing {
 
     /// Returns the information of all the current section adults.
     pub async fn our_adults(&self) -> Vec<Peer> {
-        self.stage.our_adults().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .adults()
+            .copied()
+            .collect()
     }
 
     /// Returns the adults of our section sorted by their distance to `name` (closest first).
@@ -210,13 +224,26 @@ impl Routing {
     }
 
     /// Returns the info about our section or `None` if we are not joined yet.
-    pub async fn our_section(&self) -> Option<EldersInfo> {
-        self.stage.our_section().await
+    pub async fn our_section(&self) -> EldersInfo {
+        self.stage
+            .state
+            .lock()
+            .await
+            .section()
+            .elders_info()
+            .clone()
     }
 
     /// Returns the info about our neighbour sections.
     pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
-        self.stage.neighbour_sections().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .network()
+            .all()
+            .cloned()
+            .collect()
     }
 
     /// Send a message.
@@ -247,23 +274,41 @@ impl Routing {
     /// Returns the current BLS public key set or `Error::InvalidState` if we are not joined
     /// yet.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.stage.public_key_set().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.public_key_set.clone())
+            .ok_or(Error::InvalidState)
     }
 
     /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
     /// elder.
     pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
-        self.stage.secret_key_share().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.secret_key_share.clone())
+            .ok_or(Error::InvalidState)
     }
 
     /// Returns our section proof chain, or `None` if we are not joined yet.
-    pub async fn our_history(&self) -> Option<SectionProofChain> {
-        self.stage.our_history().await
+    pub async fn our_history(&self) -> SectionProofChain {
+        self.stage.state.lock().await.section().chain().clone()
     }
 
     /// Returns our index in the current BLS group or `Error::InvalidState` if section key was
     /// not generated yet.
     pub async fn our_index(&self) -> Result<usize> {
-        self.stage.our_index().await
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.index)
+            .ok_or(Error::InvalidState)
     }
 }

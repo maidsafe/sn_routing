@@ -183,9 +183,15 @@ impl Comm {
             conn
         };
 
-        conn.send_uni(msg).await?;
+        let result = conn.send_uni(msg).await;
 
-        Ok(())
+        // In case of error, remove the cached connection so it can be re-established on the next
+        // attempt.
+        if result.is_err() {
+            let _ = self.node_conns.lock().await.remove(recipient);
+        }
+
+        result
     }
 }
 
@@ -293,9 +299,12 @@ mod tests {
     use futures::future;
     use std::{
         net::{IpAddr, Ipv4Addr},
+        slice,
         time::Duration,
     };
     use tokio::{net::UdpSocket, sync::mpsc, time};
+
+    const TIMEOUT: Duration = Duration::from_secs(1);
 
     #[tokio::test]
     async fn successful_send() -> Result<()> {
@@ -327,7 +336,7 @@ mod tests {
 
         assert_eq!(peer0.rx.recv().await, Some(message));
 
-        assert!(time::timeout(Duration::from_millis(100), peer1.rx.recv())
+        assert!(time::timeout(TIMEOUT, peer1.rx.recv())
             .await
             .unwrap_or_default()
             .is_none());
@@ -384,6 +393,60 @@ mod tests {
         }
 
         assert_eq!(peer.rx.recv().await, Some(message));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_after_reconnect() -> Result<()> {
+        let send_comm = Comm::new(transport_config())?;
+
+        let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
+        let recv_endpoint = recv_transport.new_endpoint()?;
+        let recv_addr = recv_endpoint.local_addr()?;
+        let mut recv_incoming_connections = recv_endpoint.listen()?;
+
+        // Send the first message.
+        let msg0 = Bytes::from_static(b"zero");
+        send_comm
+            .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg0.clone())
+            .await?;
+
+        let mut msg0_received = false;
+
+        // Receive one message and drop the incoming stream.
+        {
+            if let Some(mut incoming_msgs) =
+                time::timeout(TIMEOUT, recv_incoming_connections.next()).await?
+            {
+                if let Some(msg) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
+                    assert_eq!(msg.get_message_data(), msg0);
+                    msg0_received = true;
+                }
+            }
+
+            assert!(msg0_received);
+        }
+
+        // Send the second message.
+        let msg1 = Bytes::from_static(b"one");
+        send_comm
+            .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg1.clone())
+            .await?;
+
+        let mut msg1_received = false;
+
+        // Expect to receive the second message on a re-established connection.
+        if let Some(mut incoming_msgs) =
+            time::timeout(TIMEOUT, recv_incoming_connections.next()).await?
+        {
+            if let Some(msg) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
+                assert_eq!(msg.get_message_data(), msg1);
+                msg1_received = true;
+            }
+        }
+
+        assert!(msg1_received);
 
         Ok(())
     }

@@ -6,8 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(test)]
-use crate::{crypto::Keypair, rng::MainRng};
 use crate::{peer::Peer, Prefix, XorName};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -84,38 +82,48 @@ pub const fn majority_count(elder_size: usize) -> usize {
     1 + (elder_size * MAJORITY_NUMERATOR) / MAJORITY_DENOMINATOR
 }
 
-// Generate random `EldersInfo` for testing purposes.
 #[cfg(test)]
-pub(crate) fn gen_elders_info(
-    rng: &mut MainRng,
-    prefix: Prefix,
-    count: usize,
-) -> (EldersInfo, Vec<Keypair>) {
-    use crate::{crypto::name, MIN_AGE};
-    use rand::Rng;
-    use std::net::SocketAddr;
+pub(crate) mod test_utils {
+    use super::EldersInfo;
+    use crate::{
+        crypto::{self, Keypair},
+        peer::Peer,
+        rng, MIN_AGE,
+    };
+    use itertools::Itertools;
+    use std::{cell::Cell, net::SocketAddr};
+    use xor_name::Prefix;
 
-    fn gen_socket_addr(rng: &mut MainRng) -> SocketAddr {
-        let ip: [u8; 4] = rng.gen();
-        let port: u16 = rng.gen();
-        SocketAddr::from((ip, port))
+    // Generate unique SocketAddr for testing purposes
+    pub fn gen_addr() -> SocketAddr {
+        thread_local! {
+            static NEXT_PORT: Cell<u16> = Cell::new(1000);
+        }
+
+        let port = NEXT_PORT.with(|cell| cell.replace(cell.get().wrapping_add(1)));
+
+        ([192, 0, 2, 0], port).into()
     }
 
-    let mut keypairs: Vec<_> = (0..count).map(|_| Keypair::generate(rng)).collect();
+    // Create ELDER_SIZE Keypairs sorted by their names.
+    pub fn gen_sorted_keypairs(count: usize) -> Vec<Keypair> {
+        let mut rng = rng::new();
+        (0..count)
+            .map(|_| Keypair::generate(&mut rng))
+            .sorted_by_key(|keypair| crypto::name(&keypair.public))
+            .collect()
+    }
 
-    // Clippy false positive - https://github.com/rust-lang/rust-clippy/issues/5754
-    // (note the issue is closed, but it probably hasn't been merged into stable yet)
-    #[allow(clippy::unnecessary_sort_by)]
-    keypairs.sort_by(|lhs, rhs| name(&lhs.public).cmp(&name(&rhs.public)));
+    // Generate random `EldersInfo` for testing purposes.
+    pub fn gen_elders_info(prefix: Prefix, count: usize) -> (EldersInfo, Vec<Keypair>) {
+        let keypairs = gen_sorted_keypairs(count);
+        let elders = keypairs
+            .iter()
+            .map(|keypair| Peer::new(crypto::name(&keypair.public), gen_addr(), MIN_AGE + 1))
+            .map(|peer| (*peer.name(), peer))
+            .collect();
+        let elders_info = EldersInfo { elders, prefix };
 
-    let elders = keypairs
-        .iter()
-        .map(|keypair| {
-            let addr = gen_socket_addr(rng);
-            let peer = Peer::new(name(&keypair.public), addr, MIN_AGE);
-            (*peer.name(), peer)
-        })
-        .collect();
-
-    (EldersInfo::new(elders, prefix), keypairs)
+        (elders_info, keypairs)
+    }
 }

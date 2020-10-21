@@ -183,21 +183,10 @@ pub async fn create_connected_nodes(
 
 pub async fn verify_invariants_for_node(node: &Routing, elder_size: usize) -> Result<()> {
     let our_name = node.name().await;
-    assert!(node.matches_our_prefix(&our_name).await?);
+    assert!(node.matches_our_prefix(&our_name).await);
 
-    let our_prefix = node
-        .our_prefix()
-        .await
-        .ok_or_else(|| format_err!("Failed to get node's prefix"))?;
-
-    let our_section_elders: BTreeSet<_> = node
-        .our_section()
-        .await
-        .ok_or_else(|| format_err!("Failed to get node's prefix"))?
-        .elders
-        .keys()
-        .copied()
-        .collect();
+    let our_prefix = node.our_prefix().await;
+    let our_section_elders: BTreeSet<_> = node.our_section().await.elders.keys().copied().collect();
 
     if !our_prefix.is_empty() {
         assert!(

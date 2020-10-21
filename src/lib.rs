@@ -92,7 +92,6 @@ pub mod rng;
 // Private
 // ############################################################################
 
-mod cancellation;
 mod consensus;
 mod delivery_group;
 mod error;

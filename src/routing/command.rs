@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::stage::State;
 use crate::{
     consensus::{ProofShare, Vote},
     location::{DstLocation, SrcLocation},
     messages::Message,
+    relocation::SignedRelocateDetails,
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
@@ -21,6 +21,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
+use tokio::sync::mpsc;
 
 /// Command for node.
 pub(crate) enum Command {
@@ -54,8 +55,15 @@ pub(crate) enum Command {
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
     /// command is raised. The token is used to identify the timeout.
     ScheduleTimeout { duration: Duration, token: u64 },
-    /// Transition into the given state.
-    Transition(Box<State>),
+    /// Relocate
+    Relocate {
+        /// Contacts to re-bootstrap to
+        bootstrap_addrs: Vec<SocketAddr>,
+        /// Details of the relocation
+        details: SignedRelocateDetails,
+        /// Message receiver to pass to the bootstrap task.
+        message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+    },
 }
 
 impl Command {
@@ -119,7 +127,15 @@ impl Debug for Command {
                 .field("duration", duration)
                 .field("token", token)
                 .finish(),
-            Self::Transition(state) => f.debug_tuple("Transition").field(state).finish(),
+            Self::Relocate {
+                bootstrap_addrs,
+                details,
+                ..
+            } => f
+                .debug_struct("Relocate")
+                .field("bootstrap_addrs", bootstrap_addrs)
+                .field("details", details)
+                .finish(),
         }
     }
 }

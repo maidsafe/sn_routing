@@ -7,26 +7,20 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Proof, Proven};
-use crate::rng::MainRng;
-use rand::Rng;
+use crate::error::Result;
 use serde::Serialize;
 
-// Generate random BLS `SecretKey`.
-pub fn gen_secret_key(rng: &mut MainRng) -> bls::SecretKey {
-    rng.gen()
-}
-
 // Create proof for the given payload using the given secret key.
-pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Proof {
-    let bytes = bincode::serialize(payload).unwrap();
-    Proof {
+pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Proof> {
+    let bytes = bincode::serialize(payload)?;
+    Ok(Proof {
         public_key: secret_key.public_key(),
         signature: secret_key.sign(&bytes),
-    }
+    })
 }
 
 // Wrap the given payload in `Proven`
-pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Proven<T> {
-    let proof = prove(secret_key, &payload);
-    Proven::new(payload, proof)
+pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Result<Proven<T>> {
+    let proof = prove(secret_key, &payload)?;
+    Ok(Proven::new(payload, proof))
 }

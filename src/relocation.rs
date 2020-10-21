@@ -16,8 +16,10 @@ use crate::{
     network::Network,
     section::{MemberInfo, Section},
 };
-
+use bytes::Bytes;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
+use std::net::SocketAddr;
+use tokio::sync::mpsc;
 use xor_name::XorName;
 
 /// Find all nodes to relocate after a churn event and create the relocate actions for them.
@@ -169,9 +171,19 @@ impl RelocatePayload {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
-pub struct RelocatePromise {
+pub(crate) struct RelocatePromise {
     pub name: XorName,
     pub destination: XorName,
+}
+
+pub(crate) enum RelocateState {
+    // Node is undergoing delayed relocation. This happens when the node is selected for relocation
+    // while being an elder. It must keep fulfilling its duties as elder until its demoted, then it
+    // can send the bytes (which are serialized `RelocatePromise` message) back to the elders who
+    // will exchange it for an actual `Relocate` message.
+    Delayed(Bytes),
+    // Relocation in progress. The sender is used to pass messages to the bootstrap task.
+    InProgress(mpsc::Sender<(Message, SocketAddr)>),
 }
 
 /// Action to relocate a node.
