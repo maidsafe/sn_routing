@@ -570,21 +570,6 @@
 <span id="569">569</span>
 <span id="570">570</span>
 <span id="571">571</span>
-<span id="572">572</span>
-<span id="573">573</span>
-<span id="574">574</span>
-<span id="575">575</span>
-<span id="576">576</span>
-<span id="577">577</span>
-<span id="578">578</span>
-<span id="579">579</span>
-<span id="580">580</span>
-<span id="581">581</span>
-<span id="582">582</span>
-<span id="583">583</span>
-<span id="584">584</span>
-<span id="585">585</span>
-<span id="586">586</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -913,16 +898,11 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">consensus</span>,
-        <span class="ident">rng</span>::{<span class="self">self</span>, <span class="ident">MainRng</span>},
-    };
     <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">iter</span>, <span class="ident">ops</span>::<span class="ident">Range</span>};
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">check_trust_trusted</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">4</span>);
+        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">4</span>);
 
         <span class="comment">// If any key in the chain is already trusted, the whole chain is trusted.</span>
         <span class="kw">for</span> <span class="ident">key</span> <span class="kw">in</span> <span class="ident">chain</span>.<span class="ident">keys</span>() {
@@ -932,16 +912,15 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">check_trust_invalid</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">2</span>);
+        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">2</span>);
 
         <span class="comment">// Add a block with invalid signature to the chain.</span>
-        <span class="kw">let</span> (<span class="kw">_</span>, <span class="ident">invalid_secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
-        <span class="kw">let</span> (<span class="ident">key</span>, <span class="ident">signature</span>, <span class="ident">secret_key</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">invalid_secret_key</span>);
+        <span class="kw">let</span> (<span class="kw">_</span>, <span class="ident">invalid_secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>();
+        <span class="kw">let</span> (<span class="ident">key</span>, <span class="ident">signature</span>, <span class="ident">secret_key</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">invalid_secret_key</span>);
         <span class="ident">chain</span>.<span class="ident">push_without_validation</span>(<span class="ident">key</span>, <span class="ident">signature</span>);
 
         <span class="comment">// Add another block with valid signature by the previous block.</span>
-        <span class="kw">let</span> (<span class="ident">key</span>, <span class="ident">signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">secret_key</span>);
+        <span class="kw">let</span> (<span class="ident">key</span>, <span class="ident">signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">secret_key</span>);
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain</span>.<span class="ident">push</span>(<span class="ident">key</span>, <span class="ident">signature</span>);
 
         <span class="comment">// If we only trust the keys up to, but excluding the invalid block, the trust check fails</span>
@@ -959,12 +938,11 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">check_trust_unknown</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">2</span>);
+        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">2</span>);
 
         <span class="comment">// None of the keys in the chain is trusted - the chain might be valid, but its trust status</span>
         <span class="comment">// cannot be determined.</span>
-        <span class="kw">let</span> (<span class="ident">trusted_key</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+        <span class="kw">let</span> (<span class="ident">trusted_key</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_keys</span>();
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(
             <span class="ident">chain</span>.<span class="ident">check_trust</span>(<span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="ident">trusted_key</span>)),
@@ -977,8 +955,7 @@
     <span class="comment">// support it.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">reversed_empty_ranges</span>)]</span>
     <span class="kw">fn</span> <span class="ident">slice</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">3</span>);
+        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">3</span>);
         <span class="kw">let</span> <span class="ident">keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">chain</span>.<span class="ident">keys</span>().<span class="ident">collect</span>();
 
         <span class="kw">let</span> <span class="ident">assert_keys_eq</span> <span class="op">=</span> <span class="op">|</span><span class="ident">chain</span>: <span class="ident">SectionProofChain</span>, <span class="ident">expected</span>: <span class="kw-2">&amp;</span>[<span class="kw">_</span>]<span class="op">|</span> {
@@ -1018,8 +995,7 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">merge</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">4</span>);
+        <span class="kw">let</span> (<span class="ident">chain</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">4</span>);
 
         <span class="kw">let</span> <span class="ident">check</span> <span class="op">=</span> <span class="op">|</span><span class="ident">a</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">b</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">expected</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Range</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">MergeError</span><span class="op">&gt;</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">chain</span>.<span class="ident">slice</span>(<span class="ident">a</span>);
@@ -1102,15 +1078,13 @@
         <span class="comment">// B: [a b c x]</span>
         <span class="comment">// R: Err</span>
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain0</span>, <span class="ident">sk</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">3</span>);
+        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain0</span>, <span class="ident">sk</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">3</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chain1</span> <span class="op">=</span> <span class="ident">chain0</span>.<span class="ident">clone</span>();
 
-        <span class="kw">let</span> (<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">sk</span>);
+        <span class="kw">let</span> (<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>);
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain0</span>.<span class="ident">push</span>(<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>);
 
-        <span class="kw">let</span> (<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">sk</span>);
+        <span class="kw">let</span> (<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>);
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain1</span>.<span class="ident">push</span>(<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>);
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">chain0</span>.<span class="ident">merge</span>(<span class="ident">chain1</span>), <span class="prelude-val">Err</span>(<span class="ident">MergeError</span>));
@@ -1122,18 +1096,16 @@
         <span class="comment">// B: [a b c x e]</span>
         <span class="comment">// R: Err</span>
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain0</span>, <span class="ident">sk</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="number">3</span>);
+        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">chain0</span>, <span class="ident">sk</span>) <span class="op">=</span> <span class="ident">gen_chain</span>(<span class="number">3</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chain1</span> <span class="op">=</span> <span class="ident">chain0</span>.<span class="ident">clone</span>();
 
-        <span class="kw">let</span> (<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>, <span class="ident">c0b0_sk</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">sk</span>);
+        <span class="kw">let</span> (<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>, <span class="ident">c0b0_sk</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>);
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain0</span>.<span class="ident">push</span>(<span class="ident">c0b0_pk</span>, <span class="ident">c0b0_signature</span>);
 
-        <span class="kw">let</span> (<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>, <span class="ident">c1b0_sk</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">sk</span>);
+        <span class="kw">let</span> (<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>, <span class="ident">c1b0_sk</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>);
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain1</span>.<span class="ident">push</span>(<span class="ident">c1b0_pk</span>, <span class="ident">c1b0_signature</span>);
 
-        <span class="kw">let</span> (<span class="ident">b1_pk</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+        <span class="kw">let</span> (<span class="ident">b1_pk</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_keys</span>();
         <span class="kw">let</span> <span class="ident">c0b1_signature</span> <span class="op">=</span> <span class="ident">c0b0_sk</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">b1_pk</span>).<span class="ident">unwrap</span>());
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain0</span>.<span class="ident">push</span>(<span class="ident">b1_pk</span>, <span class="ident">c0b1_signature</span>);
 
@@ -1143,28 +1115,26 @@
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">chain0</span>.<span class="ident">merge</span>(<span class="ident">chain1</span>), <span class="prelude-val">Err</span>(<span class="ident">MergeError</span>));
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>) <span class="op">-&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
-        <span class="kw">let</span> <span class="ident">secret_key</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">gen_secret_key</span>(<span class="ident">rng</span>);
+    <span class="kw">fn</span> <span class="ident">gen_keys</span>() <span class="op">-&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+        <span class="kw">let</span> <span class="ident">secret_key</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
         (<span class="ident">secret_key</span>.<span class="ident">public_key</span>(), <span class="ident">secret_key</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">gen_block</span>(
-        <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>,
         <span class="ident">prev_secret_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKey</span>,
     ) <span class="op">-&gt;</span> (<span class="ident">bls</span>::<span class="ident">PublicKey</span>, <span class="ident">bls</span>::<span class="ident">Signature</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
-        <span class="kw">let</span> (<span class="ident">public_key</span>, <span class="ident">secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>);
+        <span class="kw">let</span> (<span class="ident">public_key</span>, <span class="ident">secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>();
         <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">prev_secret_key</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">public_key</span>).<span class="ident">unwrap</span>());
 
         (<span class="ident">public_key</span>, <span class="ident">signature</span>, <span class="ident">secret_key</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_chain</span>(<span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> (<span class="ident">SectionProofChain</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
-        <span class="kw">let</span> (<span class="ident">key</span>, <span class="kw-2">mut</span> <span class="ident">current_secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>(<span class="ident">rng</span>);
+    <span class="kw">fn</span> <span class="ident">gen_chain</span>(<span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> (<span class="ident">SectionProofChain</span>, <span class="ident">bls</span>::<span class="ident">SecretKey</span>) {
+        <span class="kw">let</span> (<span class="ident">key</span>, <span class="kw-2">mut</span> <span class="ident">current_secret_key</span>) <span class="op">=</span> <span class="ident">gen_keys</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chain</span> <span class="op">=</span> <span class="ident">SectionProofChain</span>::<span class="ident">new</span>(<span class="ident">key</span>);
 
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">1</span>..<span class="ident">len</span> {
-            <span class="kw">let</span> (<span class="ident">new_public_key</span>, <span class="ident">new_signature</span>, <span class="ident">new_secret_key</span>) <span class="op">=</span>
-                <span class="ident">gen_block</span>(<span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">current_secret_key</span>);
+            <span class="kw">let</span> (<span class="ident">new_public_key</span>, <span class="ident">new_signature</span>, <span class="ident">new_secret_key</span>) <span class="op">=</span> <span class="ident">gen_block</span>(<span class="kw-2">&amp;</span><span class="ident">current_secret_key</span>);
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">chain</span>.<span class="ident">push</span>(<span class="ident">new_public_key</span>, <span class="ident">new_signature</span>);
             <span class="ident">current_secret_key</span> <span class="op">=</span> <span class="ident">new_secret_key</span>;
         }

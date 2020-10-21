@@ -268,6 +268,51 @@
 <span id="267">267</span>
 <span id="268">268</span>
 <span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -277,23 +322,24 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">mod</span> <span class="ident">approved</span>;
+<span class="kw">mod</span> <span class="ident">bootstrap</span>;
+<span class="kw">mod</span> <span class="ident">comm</span>;
 <span class="kw">mod</span> <span class="ident">command</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">event_stream</span>;
 <span class="kw">mod</span> <span class="ident">executor</span>;
 <span class="kw">mod</span> <span class="ident">stage</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span>;
+<span class="kw">mod</span> <span class="ident">update_barrier</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">event_stream</span>::<span class="ident">EventStream</span>;
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-<span class="kw">use</span> <span class="self">self</span>::<span class="ident">stage</span>::<span class="ident">State</span>;
 <span class="kw">use</span> <span class="self">self</span>::{
-    <span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">executor</span>::<span class="ident">Executor</span>,
-    <span class="ident">stage</span>::{<span class="ident">Approved</span>, <span class="ident">Bootstrapping</span>, <span class="ident">Comm</span>, <span class="ident">Stage</span>},
+    <span class="ident">approved</span>::<span class="ident">Approved</span>, <span class="ident">comm</span>::<span class="ident">Comm</span>, <span class="ident">command</span>::<span class="ident">Command</span>, <span class="ident">executor</span>::<span class="ident">Executor</span>, <span class="ident">stage</span>::<span class="ident">Stage</span>,
+    <span class="ident">update_barrier</span>::<span class="ident">UpdateBarrier</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Keypair</span>, <span class="ident">PublicKey</span>},
+    <span class="ident">crypto</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">event</span>::{<span class="ident">Connected</span>, <span class="ident">Event</span>},
     <span class="ident">location</span>::{<span class="ident">DstLocation</span>, <span class="ident">SrcLocation</span>},
@@ -302,10 +348,10 @@
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">rng</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
-    <span class="ident">TransportConfig</span>, <span class="ident">MIN_AGE</span>,
+    <span class="ident">TransportConfig</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
-<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Signature</span>;
+<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>};
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
@@ -351,7 +397,11 @@
     <span class="comment">// Public API</span>
     <span class="comment">////////////////////////////////////////////////////////////////////////////</span>
 
-    <span class="doccomment">/// Create new node using the given config.</span>
+    <span class="doccomment">/// Creates new node using the given config and bootstraps it to the network.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// NOTE: It&#39;s not guaranteed this function ever returns. This can happen due to messages being</span>
+    <span class="doccomment">/// lost in transit during bootstrapping, or other reasons. It&#39;s the responsibility of the</span>
+    <span class="doccomment">/// caller to handle this case, for example by using a timeout.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">config</span>: <span class="ident">Config</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">EventStream</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">config</span>
@@ -361,42 +411,34 @@
 
         <span class="kw">let</span> (<span class="ident">event_tx</span>, <span class="ident">event_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">unbounded_channel</span>();
 
-        <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">initial_command</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
+        <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the seed node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>)<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-                <span class="ident">keypair</span>,
-                <span class="ident">addr</span>,
-                <span class="ident">MIN_AGE</span>,
-                <span class="ident">config</span>.<span class="ident">network_params</span>,
-                <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
-            );
-            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">incoming_conns</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
+            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
 
-            (<span class="ident">state</span>.<span class="ident">into</span>(), <span class="ident">comm</span>, <span class="prelude-val">None</span>)
+            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
+            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
+
+            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>)
         } <span class="kw">else</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Bootstrapping a new node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> (<span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>) <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">from_bootstrapping</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>, <span class="ident">MIN_AGE</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>);
-            <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">command</span>) <span class="op">=</span> <span class="ident">Bootstrapping</span>::<span class="ident">new</span>(<span class="prelude-val">None</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="ident">node</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
+            <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">incoming_conns</span>) <span class="op">=</span>
+                <span class="ident">bootstrap</span>::<span class="ident">infant</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>);
 
-            (<span class="ident">state</span>.<span class="ident">into</span>(), <span class="ident">comm</span>, <span class="prelude-val">Some</span>(<span class="ident">command</span>))
+            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
+
+            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>)
         };
 
-        <span class="kw">let</span> <span class="ident">incoming_conns</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stage</span>::<span class="ident">new</span>(<span class="ident">state</span>, <span class="ident">comm</span>));
-        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">incoming_conns</span>);
+        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">incoming_conns</span>).<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">event_stream</span> <span class="op">=</span> <span class="ident">EventStream</span>::<span class="ident">new</span>(<span class="ident">event_rx</span>);
-
-        <span class="comment">// Process the initial command.</span>
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">command</span>) <span class="op">=</span> <span class="ident">initial_command</span> {
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>));
-        }
 
         <span class="kw">let</span> <span class="ident">routing</span> <span class="op">=</span> <span class="self">Self</span> {
             <span class="ident">stage</span>,
@@ -408,52 +450,62 @@
 
     <span class="doccomment">/// Returns the `PublicKey` of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">PublicKey</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">public_key</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">public</span>
     }
 
     <span class="doccomment">/// Sign any data with the key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-&gt;</span> <span class="ident">Signature</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">sign</span>(<span class="ident">data</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">sign</span>(<span class="ident">data</span>)
     }
 
     <span class="doccomment">/// Verify any signed data with the key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">signature</span>: <span class="kw-2">&amp;</span><span class="ident">Signature</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">verify</span>(<span class="ident">data</span>, <span class="ident">signature</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">node</span>()
+            .<span class="ident">keypair</span>
+            .<span class="ident">verify</span>(<span class="ident">data</span>, <span class="ident">signature</span>)
+            .<span class="ident">is_ok</span>()
     }
 
     <span class="doccomment">/// The name of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">XorName</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">name</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">name</span>()
     }
 
     <span class="doccomment">/// Returns connection info of this node.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_connection_info</span>()
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
     }
 
-    <span class="doccomment">/// Our `Prefix` once we are a part of the section.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Prefix</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_prefix</span>().<span class="kw">await</span>
+    <span class="doccomment">/// Prefix of our section</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Prefix</span> {
+        <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">prefix</span>()
     }
 
-    <span class="doccomment">/// Finds out if the given XorName matches our prefix. Returns error</span>
-    <span class="doccomment">/// if we don&#39;t have a prefix because we haven&#39;t joined any section yet.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">matches_our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">prefix</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">our_prefix</span>().<span class="kw">await</span> {
-            <span class="prelude-val">Ok</span>(<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="ident">name</span>))
-        } <span class="kw">else</span> {
-            <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
-        }
+    <span class="doccomment">/// Finds out if the given XorName matches our prefix.</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">matches_our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">our_prefix</span>().<span class="kw">await</span>.<span class="ident">matches</span>(<span class="ident">name</span>)
     }
 
     <span class="doccomment">/// Returns whether the node is Elder.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">is_elder</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">is_elder</span>()
     }
 
     <span class="doccomment">/// Returns the information of all the current section elders.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_elders</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section</span>()
+            .<span class="ident">elders_info</span>()
+            .<span class="ident">peers</span>()
+            .<span class="ident">copied</span>()
+            .<span class="ident">collect</span>()
     }
 
     <span class="doccomment">/// Returns the elders of our section sorted by their distance to `name` (closest first).</span>
@@ -467,7 +519,14 @@
 
     <span class="doccomment">/// Returns the information of all the current section adults.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_adults</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section</span>()
+            .<span class="ident">adults</span>()
+            .<span class="ident">copied</span>()
+            .<span class="ident">collect</span>()
     }
 
     <span class="doccomment">/// Returns the adults of our section sorted by their distance to `name` (closest first).</span>
@@ -481,13 +540,26 @@
     }
 
     <span class="doccomment">/// Returns the info about our section or `None` if we are not joined yet.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_section</span>().<span class="kw">await</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">EldersInfo</span> {
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section</span>()
+            .<span class="ident">elders_info</span>()
+            .<span class="ident">clone</span>()
     }
 
     <span class="doccomment">/// Returns the info about our neighbour sections.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">neighbour_sections</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">neighbour_sections</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">network</span>()
+            .<span class="ident">all</span>()
+            .<span class="ident">cloned</span>()
+            .<span class="ident">collect</span>()
     }
 
     <span class="doccomment">/// Send a message.</span>
@@ -518,24 +590,42 @@
     <span class="doccomment">/// Returns the current BLS public key set or `Error::InvalidState` if we are not joined</span>
     <span class="doccomment">/// yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKeySet</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">public_key_set</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section_key_share</span>()
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">public_key_set</span>.<span class="ident">clone</span>())
+            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
     }
 
     <span class="doccomment">/// Returns the current BLS secret key share or `Error::InvalidState` if we are not</span>
     <span class="doccomment">/// elder.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">secret_key_share</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">SecretKeyShare</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">secret_key_share</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section_key_share</span>()
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">secret_key_share</span>.<span class="ident">clone</span>())
+            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
     }
 
     <span class="doccomment">/// Returns our section proof chain, or `None` if we are not joined yet.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_history</span>().<span class="kw">await</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">SectionProofChain</span> {
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
     }
 
     <span class="doccomment">/// Returns our index in the current BLS group or `Error::InvalidState` if section key was</span>
     <span class="doccomment">/// not generated yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">our_index</span>().<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">stage</span>
+            .<span class="ident">state</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section_key_share</span>()
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">share</span><span class="op">|</span> <span class="ident">share</span>.<span class="ident">index</span>)
+            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
     }
 }
 </pre></div>

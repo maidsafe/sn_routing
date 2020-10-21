@@ -54,11 +54,6 @@
 <span id="53">53</span>
 <span id="54">54</span>
 <span id="55">55</span>
-<span id="56">56</span>
-<span id="57">57</span>
-<span id="58">58</span>
-<span id="59">59</span>
-<span id="60">60</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -68,10 +63,13 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">crypto</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">peer</span>::<span class="ident">Peer</span>, <span class="ident">NetworkParams</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">crypto</span>, <span class="ident">peer</span>::<span class="ident">Peer</span>, <span class="ident">MIN_AGE</span>};
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
-<span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
+<span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Display</span>, <span class="ident">Formatter</span>},
+    <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
+    <span class="ident">sync</span>::<span class="ident">Arc</span>,
+};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// Information and state of our node</span>
@@ -83,25 +81,18 @@
     <span class="kw">pub</span> <span class="ident">keypair</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Keypair</span><span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">addr</span>: <span class="ident">SocketAddr</span>,
     <span class="kw">pub</span> <span class="ident">age</span>: <span class="ident">u8</span>,
-    <span class="kw">pub</span> <span class="ident">network_params</span>: <span class="ident">NetworkParams</span>,
-    <span class="comment">// TODO: move this event sender somewhere else. This is not an approprate place for it.</span>
-    <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Node</span> {
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">keypair</span>: <span class="ident">Keypair</span>,
-        <span class="ident">addr</span>: <span class="ident">SocketAddr</span>,
-        <span class="ident">age</span>: <span class="ident">u8</span>,
-        <span class="ident">network_params</span>: <span class="ident">NetworkParams</span>,
-        <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="ident">Keypair</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span>::<span class="ident">with_age</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>, <span class="ident">MIN_AGE</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_age</span>(<span class="ident">keypair</span>: <span class="ident">Keypair</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">keypair</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">keypair</span>),
             <span class="ident">addr</span>,
             <span class="ident">age</span>,
-            <span class="ident">network_params</span>,
-            <span class="ident">event_tx</span>,
         }
     }
 
@@ -112,12 +103,11 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">XorName</span> {
         <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">keypair</span>.<span class="ident">public</span>)
     }
+}
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send_event</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">event</span>: <span class="ident">Event</span>) {
-        <span class="comment">// Note: cloning the sender to avoid mutable access. Should have negligible cost.</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">event_tx</span>.<span class="ident">clone</span>().<span class="ident">send</span>(<span class="ident">event</span>).<span class="ident">is_err</span>() {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Event receiver has been closed&quot;</span>);
-        }
+<span class="kw">impl</span> <span class="ident">Display</span> <span class="kw">for</span> <span class="ident">Node</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+        <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="self">self</span>.<span class="ident">name</span>())
     }
 }
 </pre></div>

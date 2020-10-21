@@ -29,7 +29,6 @@
 <span id="28">28</span>
 <span id="29">29</span>
 <span id="30">30</span>
-<span id="31">31</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -41,8 +40,7 @@
 
 <span class="doccomment">//! Log identifier - a short string that is prefixed in front of every log message.</span>
 
-<span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">Future</span>;
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 
 <span class="ident">tokio</span>::<span class="macro">task_local</span><span class="macro">!</span> {
     <span class="kw">static</span> <span class="ident">LOG_IDENT</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>;
