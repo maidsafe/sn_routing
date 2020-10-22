@@ -30,8 +30,9 @@ impl DkgKey {
         // Calculate the hash without involving serialization to avoid having to return `Result`.
         let mut hasher = Sha3::v256();
 
-        for name in elders_info.elders.keys() {
-            hasher.update(&name.0);
+        for peer in elders_info.elders.values() {
+            hasher.update(&peer.name().0);
+            hasher.update(&[peer.age()]);
         }
 
         hasher.update(&elders_info.prefix.name().0);
@@ -376,4 +377,29 @@ struct Observer {
     elders_info: EldersInfo,
     section_key_index: u64,
     accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<XorName>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{section::test_utils::gen_addr, MIN_AGE};
+    use std::iter;
+    use xor_name::Prefix;
+
+    #[test]
+    fn dkg_key_is_affected_by_ages() {
+        let name = rand::random();
+        let addr = gen_addr();
+
+        let peer0 = Peer::new(name, addr, MIN_AGE);
+        let peer1 = Peer::new(name, addr, MIN_AGE + 1);
+
+        let elders_info0 = EldersInfo::new(iter::once(peer0), Prefix::default());
+        let elders_info1 = EldersInfo::new(iter::once(peer1), Prefix::default());
+
+        let key0 = DkgKey::new(&elders_info0);
+        let key1 = DkgKey::new(&elders_info1);
+
+        assert_ne!(key0, key1);
+    }
 }

@@ -139,10 +139,7 @@ async fn test_section_bootstrapping() -> Result<()> {
 
 // Test that the first `ELDER_SIZE` nodes in the network are promoted to elders.
 #[tokio::test]
-// FIXME: this test currently fails due to a bug somewhere in the DKG logic (probably). Fix it and
-// then un-ignore this test.
-#[ignore]
-async fn test_first_elders() -> Result<()> {
+async fn test_startup_elders() -> Result<()> {
     let network_params = NetworkParams::default();
     let network_size = 2;
     let mut nodes = create_connected_nodes(network_size, network_params).await?;
