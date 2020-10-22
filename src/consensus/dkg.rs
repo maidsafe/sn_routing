@@ -345,6 +345,20 @@ impl DkgVoter {
             session.timer_token = token;
         }
     }
+
+    // If this node participating in a DKG session with the given key?
+    pub fn is_participating(&self, dkg_key: &DkgKey) -> bool {
+        self.participant
+            .as_ref()
+            .map(|session| session.dkg_key == *dkg_key)
+            .unwrap_or(false)
+    }
+
+    pub fn observing_elders_info(&self, dkg_key: &DkgKey) -> Option<&EldersInfo> {
+        self.observers
+            .get(dkg_key)
+            .map(|session| &session.elders_info)
+    }
 }
 
 // Data for a DKG participant.
