@@ -1778,7 +1778,6 @@ impl Approved {
         dkg_key: DkgKey,
         dkg_message: DkgMessage,
     ) -> Result<Vec<Command>> {
-        trace!("broadcasting DKG message {:?}", dkg_message);
         let dkg_message_bytes: Bytes = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             dkg_key,
@@ -1793,6 +1792,12 @@ impl Approved {
             .map(Peer::addr)
             .copied()
             .collect();
+
+        trace!(
+            "broadcasting DKG message {:?} to {:?}",
+            dkg_message,
+            recipients
+        );
 
         let mut commands = vec![];
         commands.push(Command::send_message_to_targets(
