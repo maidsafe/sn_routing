@@ -104,12 +104,12 @@ impl<'a> RoutingBuilder {
 // actual error rather than the test just being slow.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Assert that the next event raised by the node matches the given pattern.
-/// Fails if no event, or an event that does not match the pattern is raised.
+/// Assert that the next event in the event stream matches the given pattern.
+/// Fails if no event, or an event that does not match the pattern is raised within `TIMEOUT`.
 #[macro_export]
 macro_rules! assert_next_event {
-    ($node:expr, $pattern:pat) => {
-        match tokio::time::timeout($crate::utils::TIMEOUT, $node.next()).await {
+    ($event_stream:expr, $pattern:pat) => {
+        match tokio::time::timeout($crate::utils::TIMEOUT, $event_stream.next()).await {
             Ok(Some($pattern)) => {}
             Ok(other) => panic!("Expecting {}, got {:?}", stringify!($pattern), other),
             Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),

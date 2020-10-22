@@ -10,11 +10,12 @@ mod utils;
 
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
-use futures::future::join_all;
+use futures::future;
 use sn_routing::{
     event::{Connected, Event},
-    Routing,
+    EventStream, NetworkParams, Routing,
 };
+use tokio::time;
 use utils::*;
 use xor_name::XorName;
 
@@ -117,7 +118,7 @@ async fn test_section_bootstrapping() -> Result<()> {
         });
     }
 
-    let nodes = join_all(nodes_joining_tasks).await;
+    let nodes = future::join_all(nodes_joining_tasks).await;
 
     // just await for genesis node to finish receiving all events
     let joined_nodes = genesis_handler.await??;
@@ -132,6 +133,41 @@ async fn test_section_bootstrapping() -> Result<()> {
 
         verify_invariants_for_node(&node, num_of_nodes).await?;
     }
+
+    Ok(())
+}
+
+// Test that the first `ELDER_SIZE` nodes in the network are promoted to elders.
+#[tokio::test]
+// FIXME: this test currently fails due to a bug somewhere in the DKG logic (probably). Fix it and
+// then un-ignore this test.
+#[ignore]
+async fn test_first_elders() -> Result<()> {
+    let network_params = NetworkParams::default();
+    let network_size = 2;
+    let mut nodes = create_connected_nodes(network_size, network_params).await?;
+
+    async fn expect_promote_event(stream: &mut EventStream) {
+        while let Some(event) = stream.next().await {
+            if let Event::PromotedToElder = event {
+                return;
+            }
+        }
+
+        panic!("event stream closed before receiving Event::PromotedToElder");
+    }
+
+    let _ = time::timeout(
+        TIMEOUT,
+        future::join_all(nodes.iter_mut().map(|(node, stream)| async move {
+            if node.is_elder().await {
+                return;
+            }
+
+            expect_promote_event(stream).await
+        })),
+    )
+    .await?;
 
     Ok(())
 }

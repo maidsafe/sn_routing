@@ -1020,37 +1020,43 @@ impl Approved {
             return Ok(commands);
         }
 
-        let (elders_info, result) =
+        let (dkg_elders_info, result) =
             if let Some(output) = self.dkg_voter.observe_result(&dkg_key, result, sender) {
                 output
             } else {
                 return Ok(commands);
             };
 
-        trace!("accumulated DKG result for {}: {:?}", elders_info, result);
+        trace!(
+            "accumulated DKG result for {}: {:?}",
+            dkg_elders_info,
+            result
+        );
 
-        for info in self
+        for new_elders_info in self
             .section
             .promote_and_demote_elders(&self.network_params, &self.node.name())
         {
             // Check whether the result still corresponds to the current elder candidates.
-            if info == elders_info {
-                debug!("handle DKG result for {}: {:?}", info, result);
+            if new_elders_info == dkg_elders_info {
+                debug!("handle DKG result for {}: {:?}", new_elders_info, result);
 
                 if let Ok(public_key) = result {
-                    commands.extend(self.vote_for_section_update(public_key, info)?)
+                    commands.extend(self.vote_for_section_update(public_key, new_elders_info)?)
                 } else {
-                    commands.extend(self.send_dkg_start(info)?)
+                    commands.extend(self.send_dkg_start(new_elders_info)?)
                 }
-            } else if info.prefix == elders_info.prefix
-                || info.prefix.is_extension_of(&elders_info.prefix)
+            } else if new_elders_info.prefix == dkg_elders_info.prefix
+                || new_elders_info
+                    .prefix
+                    .is_extension_of(&dkg_elders_info.prefix)
             {
                 trace!(
                     "ignore DKG result for {}: {:?} - outdated",
-                    elders_info,
+                    dkg_elders_info,
                     result
                 );
-                commands.extend(self.send_dkg_start(info)?);
+                commands.extend(self.send_dkg_start(new_elders_info)?);
             }
         }
 
