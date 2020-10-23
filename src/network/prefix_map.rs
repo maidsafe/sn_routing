@@ -293,9 +293,9 @@ impl<T: Debug> Debug for Entry<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xor_name::Prefix;
+    use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
-use rand::rngs::SmallRng;
+    use xor_name::Prefix;
 
     #[test]
     fn insert_existing_prefix() {

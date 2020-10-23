@@ -36,10 +36,10 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
+use rand::rngs::OsRng;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
-use rand::rngs::OsRng;
 
 /// Routing configuration.
 pub struct Config {

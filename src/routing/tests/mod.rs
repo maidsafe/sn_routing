@@ -26,11 +26,11 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
+use rand::rngs::SmallRng;
+use rand::{rngs::OsRng, Rng, SeedableRng};
 use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
-use rand::{rngs::OsRng, Rng, SeedableRng};
-use rand::rngs::SmallRng;
 
 #[tokio::test]
 async fn receive_bootstrap_request() -> Result<()> {

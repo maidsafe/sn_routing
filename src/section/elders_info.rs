@@ -91,9 +91,9 @@ pub(crate) mod test_utils {
         MIN_AGE,
     };
     use itertools::Itertools;
+    use rand::rngs::OsRng;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
-    use rand::rngs::OsRng;
 
     // Generate unique SocketAddr for testing purposes
     pub fn gen_addr() -> SocketAddr {

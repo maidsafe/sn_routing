@@ -19,9 +19,9 @@ use crate::{
     section::{EldersInfo, Section},
     SectionProofChain,
 };
-use rand::rngs::OsRng;
 use bytes::Bytes;
 use futures::future;
+use rand::rngs::OsRng;
 use std::{mem, net::SocketAddr};
 use tokio::{
     sync::{mpsc, oneshot},

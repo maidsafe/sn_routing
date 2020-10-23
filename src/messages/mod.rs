@@ -362,8 +362,8 @@ pub(crate) struct SignableView<'a> {
 mod tests {
     use super::*;
     use crate::{consensus, crypto::Keypair, section, MIN_AGE};
-    use std::iter;
     use rand::rngs::OsRng;
+    use std::iter;
 
     #[test]
     fn extend_proof_chain() {

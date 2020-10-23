@@ -11,10 +11,10 @@ use crate::{
     peer::Peer,
     section::{majority_count, EldersInfo},
 };
-use rand::rngs::OsRng;
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},

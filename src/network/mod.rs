@@ -303,13 +303,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        consensus,
-        location::DstLocation,
-        section,
-    };
+    use crate::{consensus, location::DstLocation, section};
+    use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
-use rand::rngs::SmallRng;
 
     #[test]
     fn update_keys_single_prefix_multiple_updates() {
