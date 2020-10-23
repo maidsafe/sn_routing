@@ -306,10 +306,10 @@ mod tests {
     use crate::{
         consensus,
         location::DstLocation,
-        rng::{self, MainRng},
         section,
     };
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
 
     #[test]
     fn update_keys_single_prefix_multiple_updates() {
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn update_their_knowledge_after_split_from_one_sibling() {
-        let mut rng = rng::new();
+        let mut rng = SmallRng::from_entropy();
         update_their_knowledge_and_check_proving_index(
             &mut rng,
             vec![("1", 1), ("10", 2)],
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn update_their_knowledge_after_split_from_both_siblings() {
-        let mut rng = rng::new();
+        let mut rng = SmallRng::from_entropy();
         update_their_knowledge_and_check_proving_index(
             &mut rng,
             vec![("1", 1), ("10", 2), ("11", 2)],
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn closest() {
-        let mut rng = rng::new();
+        let mut rng = SmallRng::from_entropy();
         let sk = bls::SecretKey::random();
 
         let p01: Prefix = "01".parse().unwrap();
@@ -506,7 +506,7 @@ mod tests {
     // - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is
     //   generated such that it matches `prefix` and `version` is the expected trusted key version.
     fn update_their_knowledge_and_check_proving_index(
-        rng: &mut MainRng,
+        rng: &mut SmallRng,
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {

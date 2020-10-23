@@ -88,11 +88,12 @@ pub(crate) mod test_utils {
     use crate::{
         crypto::{self, Keypair},
         peer::Peer,
-        rng, MIN_AGE,
+        MIN_AGE,
     };
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
+    use rand::rngs::OsRng;
 
     // Generate unique SocketAddr for testing purposes
     pub fn gen_addr() -> SocketAddr {
@@ -107,7 +108,7 @@ pub(crate) mod test_utils {
 
     // Create ELDER_SIZE Keypairs sorted by their names.
     pub fn gen_sorted_keypairs(count: usize) -> Vec<Keypair> {
-        let mut rng = rng::new();
+        let mut rng = OsRng;
         (0..count)
             .map(|_| Keypair::generate(&mut rng))
             .sorted_by_key(|keypair| crypto::name(&keypair.public))

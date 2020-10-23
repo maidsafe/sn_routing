@@ -26,9 +26,10 @@ use crate::{
     consensus::Proven,
     error::{Error, Result},
     peer::Peer,
-    rng, NetworkParams,
+    NetworkParams,
 };
 use bls_signature_aggregator::Proof;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -65,7 +66,7 @@ impl Section {
 
     /// Creates `Section` for the first node in the network
     pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare)> {
-        let mut rng = rng::new();
+        let mut rng = OsRng;
         let secret_key_set = bls::SecretKeySet::random(0, &mut rng);
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);

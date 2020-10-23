@@ -22,7 +22,6 @@ use crate::{
     location::DstLocation,
     section::{ExtendError, SectionProofChain, TrustStatus},
 };
-
 use bytes::Bytes;
 use err_derive::Error;
 use serde::{Deserialize, Serialize};
@@ -362,12 +361,13 @@ pub(crate) struct SignableView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, crypto::Keypair, rng, section, MIN_AGE};
+    use crate::{consensus, crypto::Keypair, section, MIN_AGE};
     use std::iter;
+    use rand::rngs::OsRng;
 
     #[test]
     fn extend_proof_chain() {
-        let mut rng = rng::new();
+        let mut rng = OsRng;
 
         let keypair = Keypair::generate(&mut rng);
 

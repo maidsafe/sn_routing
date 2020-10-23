@@ -30,7 +30,6 @@ use crate::{
     network_params::NetworkParams,
     node::Node,
     peer::Peer,
-    rng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -40,6 +39,7 @@ use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
+use rand::rngs::OsRng;
 
 /// Routing configuration.
 pub struct Config {
@@ -87,7 +87,7 @@ impl Routing {
     /// lost in transit during bootstrapping, or other reasons. It's the responsibility of the
     /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
-        let mut rng = rng::new();
+        let mut rng = OsRng;
         let keypair = config
             .keypair
             .unwrap_or_else(|| Keypair::generate(&mut rng));

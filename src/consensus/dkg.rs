@@ -9,9 +9,9 @@
 use crate::{
     crypto::Digest256,
     peer::Peer,
-    rng::{self, MainRng},
     section::{majority_count, EldersInfo},
 };
+use rand::rngs::OsRng;
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -79,7 +79,7 @@ impl Debug for DkgKey {
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
-    rng: MainRng,
+    rng: OsRng,
     participant: Option<Participant>,
     observers: HashMap<DkgKey, Observer>,
 }
@@ -87,7 +87,7 @@ pub struct DkgVoter {
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
-            rng: rng::new(),
+            rng: OsRng,
             participant: None,
             observers: HashMap::new(),
         }

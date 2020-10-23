@@ -83,8 +83,7 @@ pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API upd
 /// sn_routing events.
 pub mod event;
 pub mod log_ident;
-/// Random number generation
-pub mod rng;
+
 
 // ############################################################################
 // Private
