@@ -16,7 +16,6 @@ use crate::{
     network::Network,
     node::Node,
     peer::Peer,
-    rng,
     section::{
         majority_count, test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
@@ -27,10 +26,11 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
-use rand::Rng;
 use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
+use rand::{rngs::OsRng, Rng, SeedableRng};
+use rand::rngs::SmallRng;
 
 #[tokio::test]
 async fn receive_bootstrap_request() -> Result<()> {
@@ -569,7 +569,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let original_message = Message::single_src(
         &sender_keypair,
         MIN_AGE + 1,
-        DstLocation::Section(rng::new().gen()),
+        DstLocation::Section(SmallRng::from_entropy().gen()),
         Variant::UserMessage(Bytes::from_static(b"hello")),
         None,
         None,
@@ -1086,7 +1086,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 const THRESHOLD: usize = majority_count(ELDER_SIZE) - 1;
 
 fn create_keypair() -> Keypair {
-    let mut rng = rng::new();
+    let mut rng = OsRng;
     Keypair::generate(&mut rng)
 }
 
@@ -1152,7 +1152,7 @@ struct SecretKeySet {
 
 impl SecretKeySet {
     fn random() -> Self {
-        let poly = bls::poly::Poly::random(THRESHOLD, &mut rng::new());
+        let poly = bls::poly::Poly::random(THRESHOLD, &mut OsRng);
         let key = bls::SecretKey::from_mut(&mut poly.evaluate(0));
         let set = bls::SecretKeySet::from(poly);
 

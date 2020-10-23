@@ -8,7 +8,7 @@
 
 //! Cryptographic primitives.
 
-use crate::rng::MainRng;
+use rand::{CryptoRng, Rng};
 use ed25519_dalek::ExpandedSecretKey;
 pub use ed25519_dalek::{
     Keypair, PublicKey, SecretKey, Signature, Verifier, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
@@ -44,7 +44,7 @@ pub fn name(public_key: &PublicKey) -> XorName {
 }
 
 /// Construct a `Keypair` whose name is in the interval [start, end] (both endpoints inclusive).
-pub fn keypair_within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> Keypair {
+pub fn keypair_within_range<T: Sized>(rng: &mut T, range: &RangeInclusive<XorName>) -> Keypair where T: CryptoRng + Rng {
     loop {
         let keypair = Keypair::generate(rng);
         if range.contains(&name(&keypair.public)) {

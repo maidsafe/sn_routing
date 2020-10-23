@@ -16,10 +16,10 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    rng,
     section::{EldersInfo, Section},
     SectionProofChain,
 };
+use rand::rngs::OsRng;
 use bytes::Bytes;
 use futures::future;
 use std::{mem, net::SocketAddr};
@@ -252,7 +252,7 @@ impl State {
             *relocate_details.destination(),
         );
 
-        let mut rng = rng::new();
+        let mut rng = OsRng;
         let new_keypair = crypto::keypair_within_range(&mut rng, &name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
@@ -661,7 +661,7 @@ mod tests {
     // TODO: add test for bootstrap as relocated node
 
     fn gen_keypair() -> Keypair {
-        let mut rng = rng::new();
+        let mut rng = OsRng;
         Keypair::generate(&mut rng)
     }
 }

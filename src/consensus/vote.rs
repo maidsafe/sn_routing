@@ -131,16 +131,15 @@ impl Serialize for SignableWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        rng::{self, MainRng},
-        section,
-    };
-    use rand::Rng;
+    use crate::section;
+    use rand::{Rng, SeedableRng};
+
+use rand::rngs::SmallRng;
     use std::fmt::Debug;
 
     #[test]
     fn serialize_for_signing() {
-        let mut rng = rng::new();
+        let mut rng = SmallRng::from_entropy();
 
         // Vote::SectionInfo
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
@@ -181,7 +180,7 @@ mod tests {
         )
     }
 
-    fn gen_prefix(rng: &mut MainRng) -> Prefix {
+    fn gen_prefix(rng: &mut SmallRng) -> Prefix {
         let mut prefix = Prefix::default();
         let len = rng.gen_range(0, 5);
 
