@@ -134,7 +134,7 @@ mod tests {
     use crate::section;
     use rand::{Rng, SeedableRng};
 
-use rand::rngs::SmallRng;
+    use rand::rngs::SmallRng;
     use std::fmt::Debug;
 
     #[test]

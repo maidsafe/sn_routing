@@ -22,7 +22,7 @@ use xor_name::XorName;
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
     let mut rng = OsRng;
-    let keypair = Keypair::generate(&mut rng );
+    let keypair = Keypair::generate(&mut rng);
     let pub_key = keypair.public;
     let (node, mut event_stream) = RoutingBuilder::new(None)
         .first()
