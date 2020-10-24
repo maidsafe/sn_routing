@@ -8,11 +8,17 @@
 
 //! Utilities for sn_routing messages through the network.
 
-use crate::{ELDER_MAJORITY, error::{Error, Result}, location::DstLocation, network::Network, peer::Peer, section::Section};
-use std::{cmp, iter};
+use crate::{
+    error::{Error, Result},
+    location::DstLocation,
+    network::Network,
+    peer::Peer,
+    section::Section,
+    ELDER_MAJORITY,
+};
 use itertools::Itertools;
+use std::{cmp, iter};
 use xor_name::XorName;
-
 
 /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
 /// onwards, sorted by priority, along with the number of targets the message should be sent to.
@@ -100,9 +106,14 @@ fn candidates(
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
         // If we don't have enough contacts send to as many as possible
-        // up to majority of Elders 
+        // up to majority of Elders
         dg_size = cmp::min(len, dg_size);
-        if len < ELDER_MAJORITY { warn!("Delivery group only {:?} when it should be {:?}", len, ELDER_MAJORITY)}
+        if len < ELDER_MAJORITY {
+            warn!(
+                "Delivery group only {:?} when it should be {:?}",
+                len, ELDER_MAJORITY
+            )
+        }
 
         if prefix == section.prefix() {
             // Send to all connected targets so they can forward the message
