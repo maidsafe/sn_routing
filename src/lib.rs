@@ -107,13 +107,6 @@ mod section;
 // Cryptography
 mod crypto;
 
-/// Majority is defined as having strictly greater than `MAJORITY_NUMERATOR / MAJORITY_DENOMINATOR`
-/// agreement; using only integer arithmetic a quorum can be checked with
-/// `votes * MAJORITY_DENOMINATOR > voters * MAJORITY_NUMERATOR`.
-const MAJORITY_NUMERATOR: usize = 2;
-/// See `QUORUM_NUMERATOR`.
-const MAJORITY_DENOMINATOR: usize = 3;
-
 /// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
@@ -122,21 +115,27 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
+/// Strict majority of Elders
+const ELDER_MAJORITY: usize = 4;
 
+/// Number of votes required to agree 
+/// with a strict majority (i.e. > 50%)
+pub(crate) fn majority(num_possible_voters: usize) -> usize {
+    1 + (num_possible_voters /2) 
+}
 #[cfg(test)]
 mod tests {
-    use super::{MAJORITY_DENOMINATOR, MAJORITY_NUMERATOR};
+        use crate::{ELDER_MAJORITY, ELDER_SIZE};
+
+use super::majority;
 
     #[test]
-    #[allow(clippy::assertions_on_constants)]
-    fn quorum_check() {
-        assert!(
-            MAJORITY_NUMERATOR < MAJORITY_DENOMINATOR,
-            "Majority impossible to achieve"
-        );
-        assert!(
-            MAJORITY_NUMERATOR * 2 >= MAJORITY_DENOMINATOR,
-            "Majority does not guarantee agreement"
-        );
-    }
+    fn strict_majority() {
+        assert_eq!(majority(4), majority(5));
+        assert_eq!(majority(6), majority(7));
+        assert_eq!(majority(7), 4);
+        assert_eq!(ELDER_MAJORITY, majority(ELDER_SIZE))
+
 }
+}
+

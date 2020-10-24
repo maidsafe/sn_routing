@@ -6,12 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto::Digest256,
-    peer::Peer,
-    rng::{self, MainRng},
-    section::{majority_count, EldersInfo},
-};
+use crate::{crypto::Digest256, peer::Peer, majority, rng::{self, MainRng}, section::EldersInfo};
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -110,7 +105,7 @@ impl DkgVoter {
             }
         }
 
-        let threshold = majority_count(elders_info.elders.len()) - 1;
+        let threshold = majority(elders_info.elders.len()) - 1;
         let participants = elders_info
             .elders
             .values()
@@ -287,7 +282,7 @@ impl DkgVoter {
 
         let total: usize = session.accumulator.values().map(|ids| ids.len()).sum();
         let missing = session.elders_info.elders.len() - total;
-        let majority = majority_count(session.elders_info.elders.len());
+        let majority = majority(session.elders_info.elders.len());
 
         let result = if let Some((public_key, count)) = session
             .accumulator

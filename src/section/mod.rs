@@ -16,7 +16,7 @@ mod section_proof_chain;
 pub(crate) use self::elders_info::test_utils;
 pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
-    elders_info::{majority_count, EldersInfo},
+    elders_info::EldersInfo,
     member_info::{MemberInfo, PeerState, MIN_AGE},
     section_keys::{SectionKeyShare, SectionKeysProvider},
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
@@ -216,7 +216,7 @@ impl Section {
 
         if expected_elders == current_elders {
             vec![]
-        } else if expected_elders.len() < majority_count(current_elders.len()) {
+        } else if expected_elders.len() < crate::majority(current_elders.len()) {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
