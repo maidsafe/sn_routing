@@ -118,16 +118,16 @@ const ELDER_SIZE: usize = 7;
 /// Strict majority of Elders
 const ELDER_MAJORITY: usize = 4;
 
-/// Number of votes required to agree 
+/// Number of votes required to agree
 /// with a strict majority (i.e. > 50%)
 pub(crate) fn majority(num_possible_voters: usize) -> usize {
-    1 + (num_possible_voters /2) 
+    1 + (num_possible_voters / 2)
 }
 #[cfg(test)]
 mod tests {
-        use crate::{ELDER_MAJORITY, ELDER_SIZE};
+    use crate::{ELDER_MAJORITY, ELDER_SIZE};
 
-use super::majority;
+    use super::majority;
 
     #[test]
     fn strict_majority() {
@@ -135,7 +135,5 @@ use super::majority;
         assert_eq!(majority(6), majority(7));
         assert_eq!(majority(7), 4);
         assert_eq!(ELDER_MAJORITY, majority(ELDER_SIZE))
-
+    }
 }
-}
-
