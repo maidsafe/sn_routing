@@ -8,23 +8,11 @@
 
 //! Utilities for sn_routing messages through the network.
 
-use crate::{
-    error::{Error, Result},
-    location::DstLocation,
-    network::Network,
-    peer::Peer,
-    section::Section,
-};
-use std::iter;
-
+use crate::{ELDER_MAJORITY, error::{Error, Result}, location::DstLocation, network::Network, peer::Peer, section::Section};
+use std::{cmp, iter};
 use itertools::Itertools;
 use xor_name::XorName;
 
-/// Returns the delivery group size based on the section size `n`
-const fn delivery_group_size(n: usize) -> usize {
-    // this is an integer that is ≥ n/3
-    (n + 2) / 3
-}
 
 /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
 /// onwards, sorted by priority, along with the number of targets the message should be sent to.
@@ -107,11 +95,14 @@ fn candidates(
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
-    let mut dg_size = 0;
+    let mut dg_size = ELDER_MAJORITY;
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
-        dg_size = delivery_group_size(len);
+        // If we don't have enough contacts send to as many as possible
+        // up to majority of Elders 
+        dg_size = cmp::min(len, dg_size);
+        if len < ELDER_MAJORITY { warn!("Delivery group only {:?} when it should be {:?}", len, ELDER_MAJORITY)}
 
         if prefix == section.prefix() {
             // Send to all connected targets so they can forward the message
@@ -161,6 +152,6 @@ where
         .into_iter()
         .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
         .collect();
-    list.truncate(delivery_group_size(list.len()));
+    list.truncate(cmp::min(list.len(), ELDER_MAJORITY));
     list
 }

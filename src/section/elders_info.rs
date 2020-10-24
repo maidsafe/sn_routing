@@ -74,14 +74,6 @@ impl Display for EldersInfo {
     }
 }
 
-/// Returns the number of vote for a majority of this section such that:
-/// majority_count * MAJORITY_DENOMINATOR > elder_size * MAJORITY_NUMERATOR
-#[inline]
-pub const fn majority_count(elder_size: usize) -> usize {
-    use crate::{MAJORITY_DENOMINATOR, MAJORITY_NUMERATOR};
-    1 + (elder_size * MAJORITY_NUMERATOR) / MAJORITY_DENOMINATOR
-}
-
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::EldersInfo;

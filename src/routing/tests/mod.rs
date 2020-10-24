@@ -7,22 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Approved, Comm, Command, Stage};
-use crate::{
-    consensus::{test_utils::*, Proven, Vote},
-    crypto,
-    event::Event,
-    location::DstLocation,
-    messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
-    network::Network,
-    node::Node,
-    peer::Peer,
-    rng,
-    section::{
-        majority_count, test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
+use crate::{ELDER_SIZE, Error, NetworkParams, consensus::{test_utils::*, Proven, Vote}, crypto, event::Event, location::DstLocation, ELDER_MAJORITY, messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant}, network::Network, node::Node, peer::Peer, rng, section::{
+        test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
-    },
-    Error, NetworkParams, ELDER_SIZE,
-};
+    }};
 use anyhow::Result;
 use assert_matches::assert_matches;
 use bytes::Bytes;
@@ -1083,7 +1071,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
 // TODO: add more tests here
 
-const THRESHOLD: usize = majority_count(ELDER_SIZE) - 1;
+const THRESHOLD: usize = ELDER_MAJORITY - 1;
 
 fn create_keypair() -> Keypair {
     let mut rng = rng::new();
