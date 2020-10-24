@@ -49,18 +49,16 @@ pub(crate) struct Section {
 impl Section {
     /// Creates a minimal `Section` initially containing only info about our elders
     /// (`elders_info`).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the key used to sign `elders_info` is not present in `section_chain`.
-    pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Self {
-        assert!(chain.has_key(&elders_info.proof.public_key));
+    pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
+        if !chain.has_key(&elders_info.proof.public_key) {
+            return Err(Error::UntrustedMessage);
+        }
 
-        Self {
+        Ok(Self {
             elders_info,
             chain,
             members: SectionPeers::default(),
-        }
+        })
     }
 
     /// Creates `Section` for the first node in the network
@@ -77,7 +75,7 @@ impl Section {
         let mut section = Self::new(
             SectionProofChain::new(elders_info.proof.public_key),
             elders_info,
-        );
+        )?;
 
         for peer in section.elders_info.value.peers() {
             let member_info = MemberInfo::joined(*peer);

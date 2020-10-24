@@ -287,7 +287,7 @@ impl State {
                     elders_info,
                     section_chain,
                 } => {
-                    return Ok((self.node, Section::new(section_chain, elders_info)));
+                    return Ok((self.node, Section::new(section_chain, elders_info)?));
                 }
                 JoinResponse::Rejoin {
                     elders_info: new_elders_info,
