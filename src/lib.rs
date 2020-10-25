@@ -126,14 +126,19 @@ pub(crate) fn majority(num_possible_voters: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::{ELDER_MAJORITY, ELDER_SIZE};
+    use proptest::prelude::*;
 
     use super::majority;
-
+    proptest! {
+        #[test]
+        fn pt_strict_majority(a in any::<usize>()) {
+            let maj = majority(a);
+            let maj_double = maj * 2;
+            assert!(maj_double == a || maj_double == a + 1 || maj_double == a + 2);
+        }
+    }
     #[test]
-    fn strict_majority() {
-        assert_eq!(majority(4), majority(5));
-        assert_eq!(majority(6), majority(7));
-        assert_eq!(majority(7), 4);
+    fn strict_majority_from_consts() {
         assert_eq!(ELDER_MAJORITY, majority(ELDER_SIZE))
     }
 }
