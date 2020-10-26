@@ -50,9 +50,9 @@ impl Stage {
 
     /// Handles a single command.
     pub async fn handle_command(&self, command: Command) -> Result<Vec<Command>> {
-            trace!("Handling command {:?}", command);
+        trace!("Handling command {:?}", command);
 
-        let result = async { 
+        let result = async {
             match command {
                 Command::HandleMessage { message, sender } => {
                     self.state
@@ -153,5 +153,4 @@ impl Stage {
 
         Ok(())
     }
-
 }
