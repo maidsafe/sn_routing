@@ -21,7 +21,6 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::future;
-use rand::rngs::OsRng;
 use std::{mem, net::SocketAddr};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -252,8 +251,7 @@ impl State {
             *relocate_details.destination(),
         );
 
-        let mut rng = OsRng;
-        let new_keypair = crypto::keypair_within_range(&mut rng, &name_prefix.range_inclusive());
+        let new_keypair = crypto::keypair_within_range(&name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
         let relocate_payload =
@@ -511,6 +509,7 @@ mod tests {
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use ed25519_dalek::Keypair;
+    use rand::rngs::OsRng;
 
     #[tokio::test]
     async fn bootstrap_as_infant() -> Result<()> {
