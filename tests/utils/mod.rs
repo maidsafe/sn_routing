@@ -16,7 +16,7 @@ use futures::future;
 use itertools::Itertools;
 use sn_routing::{
     event::{Connected, Event},
-    log_ident, Config, EventStream, NetworkParams, Routing, TransportConfig, MIN_AGE,
+    Config, EventStream, NetworkParams, Routing, TransportConfig, MIN_AGE,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -44,9 +44,8 @@ impl<'a> RoutingBuilder {
                 .format(|buf, record| {
                     writeln!(
                         buf,
-                        "{:.1} {}{} ({}:{})",
+                        " {}{} ({}:{})",
                         record.level(),
-                        log_ident::get(),
                         record.args(),
                         record.file().unwrap_or("<unknown>"),
                         record.line().unwrap_or(0)

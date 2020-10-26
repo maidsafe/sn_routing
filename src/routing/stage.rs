@@ -10,7 +10,6 @@ use super::{bootstrap, Approved, Comm, Command};
 use crate::{
     error::Result,
     event::{Connected, Event},
-    log_ident,
     messages::Message,
     relocation::SignedRelocateDetails,
 };
@@ -51,9 +50,9 @@ impl Stage {
 
     /// Handles a single command.
     pub async fn handle_command(&self, command: Command) -> Result<Vec<Command>> {
-        let result = log_ident::set(self.log_ident().await, async {
             trace!("Handling command {:?}", command);
 
+        let result = async { 
             match command {
                 Command::HandleMessage { message, sender } => {
                     self.state
@@ -93,7 +92,7 @@ impl Stage {
                     Ok(vec![])
                 }
             }
-        })
+        }
         .await;
 
         if let Err(error) = &result {
@@ -155,18 +154,4 @@ impl Stage {
         Ok(())
     }
 
-    async fn log_ident(&self) -> String {
-        let state = self.state.lock().await;
-
-        if state.is_elder() {
-            format!(
-                "{}({:b}v{}!) ",
-                state.node().name(),
-                state.section().prefix(),
-                state.section().chain().last_key_index()
-            )
-        } else {
-            format!("{}({:b}) ", state.node().name(), state.section().prefix())
-        }
-    }
 }
