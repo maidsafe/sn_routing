@@ -347,12 +347,9 @@ impl DkgVoter {
         }
     }
 
-    // If this node participating in a DKG session with the given key?
-    pub fn is_participating(&self, dkg_key: &DkgKey) -> bool {
-        self.participant
-            .as_ref()
-            .map(|session| session.dkg_key == *dkg_key)
-            .unwrap_or(false)
+    // If this node participating in any DKG session?
+    pub fn is_participating(&self) -> bool {
+        self.participant.is_some()
     }
 
     pub fn observing_elders_info(&self, dkg_key: &DkgKey) -> Option<&EldersInfo> {

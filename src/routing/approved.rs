@@ -421,8 +421,8 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::DKGMessage { dkg_key, .. } => {
-                if !self.dkg_voter.is_participating(dkg_key) {
+            Variant::DKGMessage { .. } => {
+                if !self.dkg_voter.is_participating() {
                     return Ok(MessageStatus::Unknown);
                 }
             }
