@@ -120,14 +120,6 @@
 <span id="119">119</span>
 <span id="120">120</span>
 <span id="121">121</span>
-<span id="122">122</span>
-<span id="123">123</span>
-<span id="124">124</span>
-<span id="125">125</span>
-<span id="126">126</span>
-<span id="127">127</span>
-<span id="128">128</span>
-<span id="129">129</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -203,14 +195,6 @@
             <span class="self">self</span>.<span class="ident">prefix</span>,
         )
     }
-}
-
-<span class="doccomment">/// Returns the number of vote for a majority of this section such that:</span>
-<span class="doccomment">/// majority_count * MAJORITY_DENOMINATOR &gt; elder_size * MAJORITY_NUMERATOR</span>
-<span class="attribute">#[<span class="ident">inline</span>]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">majority_count</span>(<span class="ident">elder_size</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">MAJORITY_DENOMINATOR</span>, <span class="ident">MAJORITY_NUMERATOR</span>};
-    <span class="number">1</span> <span class="op">+</span> (<span class="ident">elder_size</span> <span class="op">*</span> <span class="ident">MAJORITY_NUMERATOR</span>) <span class="op">/</span> <span class="ident">MAJORITY_DENOMINATOR</span>
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>

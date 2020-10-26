@@ -418,7 +418,7 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">elders_info</span>::<span class="ident">test_utils</span>;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">section_peers</span>::<span class="ident">SectionPeers</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
-    <span class="ident">elders_info</span>::{<span class="ident">majority_count</span>, <span class="ident">EldersInfo</span>},
+    <span class="ident">elders_info</span>::<span class="ident">EldersInfo</span>,
     <span class="ident">member_info</span>::{<span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">MIN_AGE</span>},
     <span class="ident">section_keys</span>::{<span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>},
     <span class="ident">section_proof_chain</span>::{<span class="ident">ExtendError</span>, <span class="ident">SectionProofChain</span>, <span class="ident">TrustStatus</span>},
@@ -618,7 +618,7 @@
 
         <span class="kw">if</span> <span class="ident">expected_elders</span> <span class="op">==</span> <span class="ident">current_elders</span> {
             <span class="macro">vec</span><span class="macro">!</span>[]
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">majority_count</span>(<span class="ident">current_elders</span>.<span class="ident">len</span>()) {
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="kw">crate</span>::<span class="ident">majority</span>(<span class="ident">current_elders</span>.<span class="ident">len</span>()) {
             <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ignore attempt to reduce the number of elders too much&quot;</span>);
             <span class="macro">vec</span><span class="macro">!</span>[]
         } <span class="kw">else</span> {

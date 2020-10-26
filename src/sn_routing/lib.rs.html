@@ -141,6 +141,8 @@
 <span id="140">140</span>
 <span id="141">141</span>
 <span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -251,13 +253,6 @@
 <span class="comment">// Cryptography</span>
 <span class="kw">mod</span> <span class="ident">crypto</span>;
 
-<span class="doccomment">/// Majority is defined as having strictly greater than `MAJORITY_NUMERATOR / MAJORITY_DENOMINATOR`</span>
-<span class="doccomment">/// agreement; using only integer arithmetic a quorum can be checked with</span>
-<span class="doccomment">/// `votes * MAJORITY_DENOMINATOR &gt; voters * MAJORITY_NUMERATOR`.</span>
-<span class="kw">const</span> <span class="ident">MAJORITY_NUMERATOR</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">2</span>;
-<span class="doccomment">/// See `QUORUM_NUMERATOR`.</span>
-<span class="kw">const</span> <span class="ident">MAJORITY_DENOMINATOR</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">3</span>;
-
 <span class="doccomment">/// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.</span>
 <span class="doccomment">/// More nodes might be added if requested by the upper layers.</span>
 <span class="doccomment">/// This number also detemines when split happens - if both post-split sections would have at least</span>
@@ -266,22 +261,31 @@
 
 <span class="doccomment">/// Number of elders per section.</span>
 <span class="kw">const</span> <span class="ident">ELDER_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">7</span>;
+<span class="doccomment">/// Strict majority of Elders</span>
+<span class="kw">const</span> <span class="ident">ELDER_MAJORITY</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
 
+<span class="doccomment">/// Number of votes required to agree</span>
+<span class="doccomment">/// with a strict majority (i.e. &gt; 50%)</span>
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">majority</span>(<span class="ident">num_possible_voters</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
+    <span class="number">1</span> <span class="op">+</span> (<span class="ident">num_possible_voters</span> <span class="op">/</span> <span class="number">2</span>)
+}
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
-    <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">MAJORITY_DENOMINATOR</span>, <span class="ident">MAJORITY_NUMERATOR</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ELDER_MAJORITY</span>, <span class="ident">ELDER_SIZE</span>};
+    <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
 
+    <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">majority</span>;
+    <span class="macro">proptest</span><span class="macro">!</span> {
+        <span class="attribute">#[<span class="ident">test</span>]</span>
+        <span class="kw">fn</span> <span class="ident">pt_strict_majority</span>(<span class="ident">a</span> <span class="kw">in</span> <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>()) {
+            <span class="kw">let</span> <span class="ident">maj</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">a</span>);
+            <span class="kw">let</span> <span class="ident">maj_double</span> <span class="op">=</span> <span class="ident">maj</span> <span class="op">*</span> <span class="number">2</span>;
+            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
+        }
+    }
     <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">assertions_on_constants</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">quorum_check</span>() {
-        <span class="macro">assert</span><span class="macro">!</span>(
-            <span class="ident">MAJORITY_NUMERATOR</span> <span class="op">&lt;</span> <span class="ident">MAJORITY_DENOMINATOR</span>,
-            <span class="string">&quot;Majority impossible to achieve&quot;</span>
-        );
-        <span class="macro">assert</span><span class="macro">!</span>(
-            <span class="ident">MAJORITY_NUMERATOR</span> <span class="op">*</span> <span class="number">2</span> <span class="op">&gt;=</span> <span class="ident">MAJORITY_DENOMINATOR</span>,
-            <span class="string">&quot;Majority does not guarantee agreement&quot;</span>
-        );
+    <span class="kw">fn</span> <span class="ident">strict_majority_from_consts</span>() {
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">ELDER_MAJORITY</span>, <span class="ident">majority</span>(<span class="ident">ELDER_SIZE</span>))
     }
 }
 </pre></div>

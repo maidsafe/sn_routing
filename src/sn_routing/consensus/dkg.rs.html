@@ -368,6 +368,7 @@
 <span id="367">367</span>
 <span id="368">368</span>
 <span id="369">369</span>
+<span id="370">370</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -379,9 +380,10 @@
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>::<span class="ident">Digest256</span>,
+    <span class="ident">majority</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">rng</span>::{<span class="self">self</span>, <span class="ident">MainRng</span>},
-    <span class="ident">section</span>::{<span class="ident">majority_count</span>, <span class="ident">EldersInfo</span>},
+    <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::{<span class="ident">outcome</span>::<span class="ident">Outcome</span>, <span class="ident">KeyGen</span>};
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
@@ -481,7 +483,7 @@
             }
         }
 
-        <span class="kw">let</span> <span class="ident">threshold</span> <span class="op">=</span> <span class="ident">majority_count</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>()) <span class="op">-</span> <span class="number">1</span>;
+        <span class="kw">let</span> <span class="ident">threshold</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>()) <span class="op">-</span> <span class="number">1</span>;
         <span class="kw">let</span> <span class="ident">participants</span> <span class="op">=</span> <span class="ident">elders_info</span>
             .<span class="ident">elders</span>
             .<span class="ident">values</span>()
@@ -658,7 +660,7 @@
 
         <span class="kw">let</span> <span class="ident">total</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">session</span>.<span class="ident">accumulator</span>.<span class="ident">values</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">ids</span><span class="op">|</span> <span class="ident">ids</span>.<span class="ident">len</span>()).<span class="ident">sum</span>();
         <span class="kw">let</span> <span class="ident">missing</span> <span class="op">=</span> <span class="ident">session</span>.<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="ident">total</span>;
-        <span class="kw">let</span> <span class="ident">majority</span> <span class="op">=</span> <span class="ident">majority_count</span>(<span class="ident">session</span>.<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>());
+        <span class="kw">let</span> <span class="ident">majority</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">session</span>.<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>());
 
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">public_key</span>, <span class="ident">count</span>)) <span class="op">=</span> <span class="ident">session</span>
             .<span class="ident">accumulator</span>
