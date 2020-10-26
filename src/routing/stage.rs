@@ -69,6 +69,23 @@ impl Stage {
                     self.state.lock().await.handle_consensus(vote, proof)
                 }
                 Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
+                Command::HandleDkgParticipationResult {
+                    dkg_key,
+                    elders_info,
+                    result,
+                } => self.state.lock().await.handle_dkg_participation_result(
+                    dkg_key,
+                    elders_info,
+                    result,
+                ),
+                Command::HandleDkgObservationResult {
+                    elders_info,
+                    result,
+                } => self
+                    .state
+                    .lock()
+                    .await
+                    .handle_dkg_observation_result(elders_info, result),
                 Command::SendMessage {
                     recipients,
                     delivery_group_size,

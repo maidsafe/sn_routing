@@ -12,9 +12,9 @@ mod proven;
 pub mod test_utils;
 mod vote;
 
-pub(crate) use self::vote::{Vote, VoteAccumulator};
-pub use self::{
-    dkg::{DkgKey, DkgVoter},
-    proven::Proven,
+pub use self::{dkg::DkgKey, proven::Proven};
+pub(crate) use self::{
+    dkg::DkgVoter,
+    vote::{Vote, VoteAccumulator},
 };
 pub use bls_signature_aggregator::{AccumulationError, Proof, ProofShare, SignatureAggregator};
