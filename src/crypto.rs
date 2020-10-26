@@ -12,7 +12,7 @@ use ed25519_dalek::ExpandedSecretKey;
 pub use ed25519_dalek::{
     Keypair, PublicKey, SecretKey, Signature, Verifier, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
 };
-use rand::{CryptoRng, Rng};
+use rand::rngs::OsRng;
 use std::ops::RangeInclusive;
 use xor_name::XorName;
 
@@ -44,12 +44,11 @@ pub fn name(public_key: &PublicKey) -> XorName {
 }
 
 /// Construct a `Keypair` whose name is in the interval [start, end] (both endpoints inclusive).
-pub fn keypair_within_range<T: Sized>(rng: &mut T, range: &RangeInclusive<XorName>) -> Keypair
-where
-    T: CryptoRng + Rng,
+pub fn keypair_within_range(range: &RangeInclusive<XorName>) -> Keypair
 {
+let mut rng = OsRng;
     loop {
-        let keypair = Keypair::generate(rng);
+        let keypair = Keypair::generate(& mut rng);
         if range.contains(&name(&keypair.public)) {
             return keypair;
         }
