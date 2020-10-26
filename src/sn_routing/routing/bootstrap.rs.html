@@ -956,7 +956,7 @@
                     <span class="ident">elders_info</span>,
                     <span class="ident">section_chain</span>,
                 } <span class="op">=&gt;</span> {
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="self">self</span>.<span class="ident">node</span>, <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">section_chain</span>, <span class="ident">elders_info</span>)));
+                    <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="self">self</span>.<span class="ident">node</span>, <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">section_chain</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>));
                 }
                 <span class="ident">JoinResponse</span>::<span class="ident">Rejoin</span> {
                     <span class="ident">elders_info</span>: <span class="ident">new_elders_info</span>,
