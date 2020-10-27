@@ -347,7 +347,7 @@ impl DkgVoter {
         }
     }
 
-    // If this node participating in any DKG session?
+    // Is this node participating in any DKG session?
     pub fn is_participating(&self) -> bool {
         self.participant.is_some()
     }

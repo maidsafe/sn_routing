@@ -176,7 +176,7 @@ impl IntoIterator for SectionPeers {
     }
 }
 
-// Returns the nodes that should become the next elders out of the given members.
+// Returns the nodes that should become the next elders out of the given members, sorted by names.
 fn elder_candidates<'a, I>(elder_size: usize, current_elders: &EldersInfo, members: I) -> Vec<Peer>
 where
     I: IntoIterator<Item = &'a Proven<MemberInfo>>,

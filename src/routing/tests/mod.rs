@@ -1212,7 +1212,8 @@ fn create_section(
 
 // Create a `Vote::Online` whose consensus handling triggers relocation of a node with the given age.
 // NOTE: recommended to call this with low `age` (4 or 5), otherwise it might take very long time
-// to complete.
+// to complete because it needs to generate a signature with the number of trailing zeroes equal to
+// (or greater that) `age`.
 fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proof)> {
     loop {
         let vote = Vote::Online {

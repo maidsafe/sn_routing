@@ -51,8 +51,8 @@ async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_msgs: Incoming
                     src
                 );
                 // Since it's arriving on a uni-stream we treat it as a Node
-                // message which we need to be processed by us, as well as
-                // reported to the event stream consumer.
+                // message which needs to be processed by us, as well as
+                // potentially reported to the event stream consumer.
                 spawn_node_message_handler(stage.clone(), bytes, src);
             }
             qp2p::Message::BiStream {

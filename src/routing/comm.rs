@@ -71,7 +71,16 @@ impl Comm {
         ))
     }
 
-    /// Starts listening for messages returning a stream where to read them from.
+    /// Starts listening for incoming messages. Returns a stream to read the messages from.
+    ///
+    /// NOTE: this method can be called multiple times, producing multiple independent streams.
+    /// Every message is received on only one stream, but it's unspecified which. For this reason
+    /// it's recommended to always use only one stream to avoid potentially surprising behaviour.
+    ///
+    /// Also, if a stream is dropped and then another one created, it will cause a disconnection
+    /// event for the peers whom we received any messages from on the first stream. This means the
+    /// next message they send to us will fail the first send attempt (but will likely succeed on
+    /// the subsequent one).
     pub fn listen(&self) -> Result<IncomingMessages> {
         Ok(IncomingMessages::new(self.endpoint.listen()?))
     }
@@ -296,7 +305,8 @@ impl SendState {
     }
 }
 
-// Stream of incoming messages from all existing and incoming connections.
+/// Stream of incoming messages. Listens for incoming connections and multiplex all messages from
+/// those connection into a single stream.
 pub(crate) struct IncomingMessages {
     message_rx: mpsc::Receiver<qp2p::Message>,
 
