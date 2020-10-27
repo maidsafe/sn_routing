@@ -142,4 +142,3 @@ mod tests {
         assert_eq!(ELDER_MAJORITY, majority(ELDER_SIZE))
     }
 }
-

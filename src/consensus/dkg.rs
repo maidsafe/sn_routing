@@ -6,7 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto::Digest256, peer::Peer, majority, rng::{self, MainRng}, section::EldersInfo};
+use crate::{
+    crypto::Digest256,
+    majority,
+    peer::Peer,
+    rng::{self, MainRng},
+    section::EldersInfo,
+};
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
