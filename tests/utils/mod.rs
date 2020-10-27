@@ -44,7 +44,7 @@ impl<'a> RoutingBuilder {
                 .format(|buf, record| {
                     writeln!(
                         buf,
-                        " {}{} ({}:{})",
+                        "{:.1} {} ({}:{})",
                         record.level(),
                         record.args(),
                         record.file().unwrap_or("<unknown>"),
