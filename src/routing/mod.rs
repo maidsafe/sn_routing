@@ -30,7 +30,6 @@ use crate::{
     network_params::NetworkParams,
     node::Node,
     peer::Peer,
-    rng,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -87,18 +86,15 @@ impl Routing {
     /// lost in transit during bootstrapping, or other reasons. It's the responsibility of the
     /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
-        let mut rng = rng::new();
-        let keypair = config
-            .keypair
-            .unwrap_or_else(|| Keypair::generate(&mut rng));
+        let keypair = config.keypair.unwrap_or_else(crypto::gen_keypair);
         let node_name = crypto::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let (state, comm, incoming_conns) = if config.first {
+        let (state, comm, incoming_msgs) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
-            let incoming_conns = comm.listen()?;
+            let incoming_msgs = comm.listen()?;
 
             let node = Node::new(keypair, comm.our_connection_info()?);
             let state = Approved::first_node(node, config.network_params, event_tx)?;
@@ -106,22 +102,24 @@ impl Routing {
             state.send_event(Event::Connected(Connected::First));
             state.send_event(Event::PromotedToElder);
 
-            (state, comm, incoming_conns)
+            (state, comm, incoming_msgs)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
+            let mut incoming_msgs = comm.listen()?;
+
             let node = Node::new(keypair, comm.our_connection_info()?);
-            let (node, section, incoming_conns) =
-                bootstrap::infant(node, &comm, bootstrap_addr).await?;
+            let (node, section) =
+                bootstrap::infant(node, &comm, &mut incoming_msgs, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, config.network_params, event_tx);
 
             state.send_event(Event::Connected(Connected::First));
 
-            (state, comm, incoming_conns)
+            (state, comm, incoming_msgs)
         };
 
         let stage = Arc::new(Stage::new(state, comm));
-        let executor = Executor::new(stage.clone(), incoming_conns).await;
+        let executor = Executor::new(stage.clone(), incoming_msgs).await;
         let event_stream = EventStream::new(event_rx);
 
         let routing = Self {

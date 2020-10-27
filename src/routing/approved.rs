@@ -279,8 +279,7 @@ impl Approved {
         };
         let proof_chain = self.section.create_proof_chain_for_our_info(None);
         let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -422,6 +421,11 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
+            Variant::DKGMessage { .. } => {
+                if !self.dkg_voter.is_participating() {
+                    return Ok(MessageStatus::Unknown);
+                }
+            }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
@@ -449,8 +453,7 @@ impl Approved {
             | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGMessage { .. } => (),
+            | Variant::BouncedUnknownMessage { .. } => (),
         }
 
         if self.verify_message(msg)? {
@@ -614,8 +617,7 @@ impl Approved {
         };
 
         let bounce_msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             bounce_dst,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
@@ -639,8 +641,7 @@ impl Approved {
         msg_bytes: Bytes,
     ) -> Result<Command> {
         let bounce_msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
                 src_key: *self.section.chain().last_key(),
@@ -700,6 +701,62 @@ impl Approved {
     }
 
     fn handle_bounced_unknown_message(
+        &self,
+        sender: Peer,
+        bounced_msg_bytes: Bytes,
+        sender_last_key: &bls::PublicKey,
+    ) -> Result<Vec<Command>> {
+        let bounced_msg = Message::from_bytes(&bounced_msg_bytes)?;
+
+        if let Variant::DKGMessage { dkg_key, .. } = bounced_msg.variant() {
+            self.handle_bounced_unknown_dkg_message(sender, bounced_msg_bytes, dkg_key)
+        } else {
+            self.handle_bounced_unknown_other_message(sender, bounced_msg_bytes, sender_last_key)
+        }
+    }
+
+    fn handle_bounced_unknown_dkg_message(
+        &self,
+        sender: Peer,
+        bounced_msg_bytes: Bytes,
+        dkg_key: &DkgKey,
+    ) -> Result<Vec<Command>> {
+        let elders_info = if let Some(elders_info) = self.dkg_voter.observing_elders_info(dkg_key) {
+            trace!(
+                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
+                     - resending with DKGStart",
+                sender
+            );
+            elders_info
+        } else {
+            trace!(
+                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
+                     - peer is not a DKG participant, discarding",
+                sender
+            );
+            return Ok(vec![]);
+        };
+
+        // Normally a peer would bounce a DKG message if they don't have the corresponding DKG
+        // session which means they haven't yet reached the `DKGStart` consensus. Let's send the
+        // `DKGStart` again in case the previous one got lost and then resend the original message.
+
+        let variant = Variant::DKGStart {
+            dkg_key: *dkg_key,
+            elders_info: elders_info.clone(),
+        };
+        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
+
+        let mut commands = self.send_vote(slice::from_ref(&sender), vote)?;
+        commands.push(Command::send_message_to_target(
+            sender.addr(),
+            bounced_msg_bytes,
+        ));
+
+        Ok(commands)
+    }
+
+    fn handle_bounced_unknown_other_message(
         &self,
         sender: Peer,
         bounced_msg_bytes: Bytes,
@@ -1023,37 +1080,43 @@ impl Approved {
             return Ok(commands);
         }
 
-        let (elders_info, result) =
+        let (dkg_elders_info, result) =
             if let Some(output) = self.dkg_voter.observe_result(&dkg_key, result, sender) {
                 output
             } else {
                 return Ok(commands);
             };
 
-        trace!("accumulated DKG result for {}: {:?}", elders_info, result);
+        trace!(
+            "accumulated DKG result for {}: {:?}",
+            dkg_elders_info,
+            result
+        );
 
-        for info in self
+        for new_elders_info in self
             .section
             .promote_and_demote_elders(&self.network_params, &self.node.name())
         {
             // Check whether the result still corresponds to the current elder candidates.
-            if info == elders_info {
-                debug!("handle DKG result for {}: {:?}", info, result);
+            if new_elders_info == dkg_elders_info {
+                debug!("handle DKG result for {}: {:?}", new_elders_info, result);
 
                 if let Ok(public_key) = result {
-                    commands.extend(self.vote_for_section_update(public_key, info)?)
+                    commands.extend(self.vote_for_section_update(public_key, new_elders_info)?)
                 } else {
-                    commands.extend(self.send_dkg_start(info)?)
+                    commands.extend(self.send_dkg_start(new_elders_info)?)
                 }
-            } else if info.prefix == elders_info.prefix
-                || info.prefix.is_extension_of(&elders_info.prefix)
+            } else if new_elders_info.prefix == dkg_elders_info.prefix
+                || new_elders_info
+                    .prefix
+                    .is_extension_of(&dkg_elders_info.prefix)
             {
                 trace!(
                     "ignore DKG result for {}: {:?} - outdated",
-                    elders_info,
+                    dkg_elders_info,
                     result
                 );
-                commands.extend(self.send_dkg_start(info)?);
+                commands.extend(self.send_dkg_start(new_elders_info)?);
             }
         }
 
@@ -1547,8 +1610,7 @@ impl Approved {
 
         trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Direct,
             variant,
             Some(proof_chain),
@@ -1582,14 +1644,8 @@ impl Approved {
             };
 
             trace!("Send {:?} to {:?}", variant, peer);
-            let message = Message::single_src(
-                &self.node.keypair,
-                self.age(),
-                DstLocation::Direct,
-                variant,
-                None,
-                None,
-            )?;
+            let message =
+                Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
             commands.push(Command::send_message_to_target(
                 peer.addr(),
                 message.to_bytes(),
@@ -1655,8 +1711,7 @@ impl Approved {
         };
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
-            &self.node.keypair,
-            self.age(),
+            &self.node,
             DstLocation::Section(dst.name()),
             variant,
             Some(proof_chain),
@@ -1709,14 +1764,7 @@ impl Approved {
         );
 
         let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         Ok(Command::send_message_to_targets(
             &recipients,
@@ -1730,20 +1778,12 @@ impl Approved {
         dkg_key: DkgKey,
         dkg_message: DkgMessage,
     ) -> Result<Vec<Command>> {
-        trace!("broadcasting DKG message {:?}", dkg_message);
         let dkg_message_bytes: Bytes = bincode::serialize(&dkg_message)?.into();
         let variant = Variant::DKGMessage {
             dkg_key,
             message: dkg_message_bytes.clone(),
         };
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         let recipients: Vec<_> = self
             .dkg_voter
@@ -1752,6 +1792,12 @@ impl Approved {
             .map(Peer::addr)
             .copied()
             .collect();
+
+        trace!(
+            "broadcasting DKG message {:?} to {:?}",
+            dkg_message,
+            recipients
+        );
 
         let mut commands = vec![];
         commands.push(Command::send_message_to_targets(
@@ -1818,8 +1864,7 @@ impl Approved {
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg =
-                    Message::single_src(&self.node.keypair, self.age(), dst, variant, None, None)?;
+                let msg = Message::single_src(&self.node, dst, variant, None, None)?;
                 Ok(self.relay_message(&msg)?.into_iter().collect())
             }
             SrcLocation::Section(_) => {
@@ -1884,14 +1929,7 @@ impl Approved {
     }
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.age(),
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
         Ok(Command::send_message_to_target(
             recipient,
             message.to_bytes(),
@@ -1992,9 +2030,5 @@ impl Approved {
         self.network
             .network_stats(self.section.elders_info())
             .print()
-    }
-
-    fn age(&self) -> u8 {
-        self.section.member_age(&self.node.name())
     }
 }

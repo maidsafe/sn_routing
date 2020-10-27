@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Comm;
+use super::{comm::IncomingMessages, Comm};
 use crate::{
     consensus::Proven,
     crypto,
@@ -16,22 +16,16 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    rng,
     section::{EldersInfo, Section},
     SectionProofChain,
 };
 use bytes::Bytes;
-use futures::future;
-use std::{mem, net::SocketAddr};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task,
-};
+use futures::future::{self, Either};
+use std::{future::Future, mem, net::SocketAddr};
+use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 /// Bootstrap into the network as an infant node.
-/// When this completes, the returned `IncomingConnections` should be passed to the main `Executor`
-/// instead of creating a new one with `Comm::listen` which would cause temporary disconnect.
 ///
 /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
 /// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
@@ -39,45 +33,22 @@ use xor_name::Prefix;
 pub(crate) async fn infant(
     node: Node,
     comm: &Comm,
+    incoming_messages: &mut IncomingMessages,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section, qp2p::IncomingConnections)> {
-    // NOTE: when we are bootstrapping a new infant node, there is no `Executor` running yet.
-    // So we create a simple throwaway executor here. It works a bit differently than the main
-    // `Executor`. First, it runs inside a `LocalSet`. This allows us to terminate the whole
-    // executor simply by dropping the `LocalSet` - this simplifies things a bit. Second, we don't
-    // `spawn` separate tasks for each message, but send them to a channel instead. This means that
-    // the whole bootstrapping process runs on a single thread. That should be fine as its quite
-    // sequential in nature anyway (send request, receive response, send request, receive response,
-    // ...).
-
+) -> Result<(Node, Section)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let (recv_tx, recv_rx) = mpsc::channel(1);
 
     let state = State::new(node, send_tx, recv_rx)?;
-    let local_set = task::LocalSet::new();
 
-    let (abort_tx, abort_rx) = oneshot::channel();
-    let incoming_connections = comm.listen()?;
-    let receive_handle =
-        local_set.spawn_local(receive_messages(incoming_connections, recv_tx, abort_rx));
-
-    let (node, section) = future::join(
-        send_messages(comm, send_rx),
-        local_set.run_until(state.run(vec![bootstrap_addr], None)),
+    run_until_first(
+        state.run(vec![bootstrap_addr], None),
+        future::join(
+            send_messages(send_rx, comm),
+            receive_messages(incoming_messages, recv_tx),
+        ),
     )
     .await
-    .1?;
-
-    // Abort the `receive_messages` task and extract the `incoming_connections` out of it by
-    // awaiting its join handle. This cannot fail, unless there is a bug in the code, so it's OK
-    // to use `expect`.
-    let _ = abort_tx.send(());
-    let incoming_connections = local_set
-        .run_until(receive_handle)
-        .await
-        .expect("failed to join the receive_messages task");
-
-    Ok((node, section, incoming_connections))
 }
 
 /// Re-bootstrap as a relocated node.
@@ -92,20 +63,14 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section)> {
-    // NOTE: when we are re-bootstrapping as a relocated node, the main `Executor` is still running.
-    // We don't create a separate one here (like in the `infant` case), because the main `Executor`
-    // would interfere with it. Instead we read the incoming messages from the `message_rx` whose
-    // sending half is stored inside `Approved` which forwards the relevant messages to it.
-
     let (send_tx, send_rx) = mpsc::channel(1);
     let state = State::new(node, send_tx, recv_rx)?;
 
-    future::join(
-        send_messages(comm, send_rx),
+    run_until_first(
         state.run(bootstrap_addrs, Some(relocate_details)),
+        send_messages(send_rx, comm),
     )
     .await
-    .1
 }
 
 struct State {
@@ -198,8 +163,7 @@ impl State {
         };
 
         let message = Message::single_src(
-            &self.node.keypair,
-            self.node.age,
+            &self.node,
             DstLocation::Direct,
             Variant::BootstrapRequest(destination),
             None,
@@ -252,15 +216,14 @@ impl State {
             *relocate_details.destination(),
         );
 
-        let mut rng = rng::new();
-        let new_keypair = crypto::keypair_within_range(&mut rng, &name_prefix.range_inclusive());
+        let new_keypair = crypto::gen_keypair_within_range(&name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
 
         info!("{} Changing name to {}.", self.node, new_name);
-        self.node = Node::with_age(new_keypair, self.node.addr, age);
+        self.node = Node::new(new_keypair, self.node.addr).with_age(age);
 
         Ok(relocate_payload)
     }
@@ -339,14 +302,7 @@ impl State {
         );
 
         let variant = Variant::JoinRequest(Box::new(join_request));
-        let message = Message::single_src(
-            &self.node.keypair,
-            self.node.age,
-            DstLocation::Direct,
-            variant,
-            None,
-            None,
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
 
@@ -454,49 +410,28 @@ enum JoinResponse {
     },
 }
 
-// Keep listening to incoming messages and send them to `message_tx`.
-// This must be spawned on a `LocalSet` with `spawn_local`.
-// Will run until aborted using the sending half of `abort_rx` at which point it returns
-// `incoming_connections` back to the caller so it can be reused.
+// Keep receiving messages from `incoming_messages` and send them to `message_tx`.
 async fn receive_messages(
-    mut incoming_connections: qp2p::IncomingConnections,
-    message_tx: mpsc::Sender<(Message, SocketAddr)>,
-    abort_rx: oneshot::Receiver<()>,
-) -> qp2p::IncomingConnections {
-    let run = async {
-        while let Some(mut incoming_messages) = incoming_connections.next().await {
-            let mut message_tx = message_tx.clone();
-            let _ = task::spawn_local(async move {
-                while let Some(message) = incoming_messages.next().await {
-                    match message {
-                        qp2p::Message::UniStream { bytes, src, .. } => {
-                            match Message::from_bytes(&bytes) {
-                                Ok(message) => {
-                                    let _ = message_tx.send((message, src)).await;
-                                }
-                                Err(error) => debug!("Failed to deserialize message: {}", error),
-                            }
-                        }
-                        qp2p::Message::BiStream { .. } => {
-                            trace!("Ignore bi-stream messages during bootstrap");
-                        }
-                    }
+    incoming_messages: &mut IncomingMessages,
+    mut message_tx: mpsc::Sender<(Message, SocketAddr)>,
+) {
+    while let Some(message) = incoming_messages.next().await {
+        match message {
+            qp2p::Message::UniStream { bytes, src, .. } => match Message::from_bytes(&bytes) {
+                Ok(message) => {
+                    let _ = message_tx.send((message, src)).await;
                 }
-            });
+                Err(error) => debug!("Failed to deserialize message: {}", error),
+            },
+            qp2p::Message::BiStream { .. } => {
+                trace!("Ignore bi-stream messages during bootstrap");
+            }
         }
-    };
-
-    // Run until aborted, then return `incoming_connections` back to the caller.
-    {
-        futures::pin_mut!(run);
-        let _ = future::select(run, abort_rx).await;
     }
-
-    incoming_connections
 }
 
 // Keep reading messages from `rx` and send them using `comm`.
-async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>) {
+async fn send_messages(mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>, comm: &Comm) {
     while let Some((message, recipients)) = rx.recv().await {
         let _ = comm
             .send_message_to_targets(&recipients, recipients.len(), message)
@@ -504,33 +439,51 @@ async fn send_messages(comm: &Comm, mut rx: mpsc::Receiver<(Bytes, Vec<SocketAdd
     }
 }
 
+// Runs the two futures concurrently until the first one completes. Returns the result of the first
+// future, ignores the second.
+async fn run_until_first<F, G>(f: F, g: G) -> F::Output
+where
+    F: Future,
+    G: Future,
+{
+    futures::pin_mut!(f);
+    futures::pin_mut!(g);
+
+    match future::select(f, g).await {
+        Either::Left((value, _)) => value,
+        Either::Right((_, f)) => f.await,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE, MIN_AGE};
+    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE};
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
-    use ed25519_dalek::Keypair;
+    use futures::future;
+    use tokio::task;
 
     #[tokio::test]
     async fn bootstrap_as_infant() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let (elders_info, keypairs) = gen_elders_info(Default::default(), ELDER_SIZE);
-        let bootstrap_peer = *elders_info.peers().next().expect("elders_info is empty");
+        let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let bootstrap_node = nodes.remove(0);
+        let bootstrap_addr = bootstrap_node.addr;
 
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
 
-        let node = Node::new(gen_keypair(), gen_addr());
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
         let node_name = node.name();
         let state = State::new(node, send_tx, recv_rx)?;
 
         // Create the bootstrap task, but don't run it yet.
         let bootstrap = async move {
             state
-                .run(vec![*bootstrap_peer.addr()], None)
+                .run(vec![bootstrap_addr], None)
                 .await
                 .map_err(Error::from)
         };
@@ -543,15 +496,14 @@ mod tests {
             let (bytes, recipients) = send_rx.try_recv()?;
             let message = Message::from_bytes(&bytes)?;
 
-            assert_eq!(recipients, [*bootstrap_peer.addr()]);
+            assert_eq!(recipients, [bootstrap_addr]);
             assert_matches!(message.variant(), Variant::BootstrapRequest(name) => {
                 assert_eq!(*name, node_name);
             });
 
             // Send BootstrapResponse
             let message = Message::single_src(
-                &keypairs[0],
-                bootstrap_peer.age(),
+                &bootstrap_node,
                 DstLocation::Direct,
                 Variant::BootstrapResponse(BootstrapResponse::Join {
                     elders_info: elders_info.clone(),
@@ -561,7 +513,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+            recv_tx.try_send((message, bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -578,15 +530,14 @@ mod tests {
             let proven_elders_info = proven(&sk, elders_info.clone())?;
             let proof_chain = SectionProofChain::new(pk);
             let message = Message::single_src(
-                &keypairs[0],
-                bootstrap_peer.age(),
+                &bootstrap_node,
                 DstLocation::Direct,
                 Variant::NodeApproval(proven_elders_info),
                 Some(proof_chain),
                 None,
             )?;
 
-            recv_tx.try_send((message, *bootstrap_peer.addr()))?;
+            recv_tx.try_send((message, bootstrap_addr))?;
 
             Ok(())
         };
@@ -605,10 +556,9 @@ mod tests {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
 
-        let bootstrap_keypair = gen_keypair();
-        let bootstrap_addr = gen_addr();
+        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
 
-        let node = Node::new(gen_keypair(), gen_addr());
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
         let state = State::new(node, send_tx, recv_rx)?;
 
         // Spawn the bootstrap task on a `LocalSet` so that it runs concurrently with the main test
@@ -616,7 +566,7 @@ mod tests {
         // for the purpose of this test.
         let local_set = task::LocalSet::new();
 
-        let _ = local_set.spawn_local(state.run(vec![bootstrap_addr], None));
+        let _ = local_set.spawn_local(state.run(vec![bootstrap_node.addr], None));
 
         local_set
             .run_until(async {
@@ -626,15 +576,14 @@ mod tests {
                 let (bytes, recipients) = send_rx.try_recv()?;
                 let message = Message::from_bytes(&bytes)?;
 
-                assert_eq!(recipients, vec![bootstrap_addr]);
+                assert_eq!(recipients, vec![bootstrap_node.addr]);
                 assert_matches!(message.variant(), Variant::BootstrapRequest(_));
 
                 // Send Rebootstrap BootstrapResponse
                 let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
 
                 let message = Message::single_src(
-                    &bootstrap_keypair,
-                    MIN_AGE,
+                    &bootstrap_node,
                     DstLocation::Direct,
                     Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(
                         new_bootstrap_addrs.clone(),
@@ -643,7 +592,7 @@ mod tests {
                     None,
                 )?;
 
-                recv_tx.try_send((message, bootstrap_addr))?;
+                recv_tx.try_send((message, bootstrap_node.addr))?;
                 task::yield_now().await;
 
                 // Receive new BootstrapRequests
@@ -659,9 +608,4 @@ mod tests {
     }
 
     // TODO: add test for bootstrap as relocated node
-
-    fn gen_keypair() -> Keypair {
-        let mut rng = rng::new();
-        Keypair::generate(&mut rng)
-    }
 }

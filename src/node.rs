@@ -28,15 +28,15 @@ pub(crate) struct Node {
 
 impl Node {
     pub fn new(keypair: Keypair, addr: SocketAddr) -> Self {
-        Self::with_age(keypair, addr, MIN_AGE)
-    }
-
-    pub fn with_age(keypair: Keypair, addr: SocketAddr, age: u8) -> Self {
         Self {
             keypair: Arc::new(keypair),
             addr,
-            age,
+            age: MIN_AGE,
         }
+    }
+
+    pub fn with_age(self, age: u8) -> Self {
+        Self { age, ..self }
     }
 
     pub fn peer(&self) -> Peer {

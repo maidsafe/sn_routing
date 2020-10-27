@@ -26,17 +26,11 @@ use crate::{
     consensus::Proven,
     error::{Error, Result},
     peer::Peer,
-    rng, NetworkParams,
+    NetworkParams,
 };
 use bls_signature_aggregator::Proof;
 use serde::{Deserialize, Serialize};
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-    convert::TryInto,
-    iter,
-    net::SocketAddr,
-};
+use std::{cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,8 +57,7 @@ impl Section {
 
     /// Creates `Section` for the first node in the network
     pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare)> {
-        let mut rng = rng::new();
-        let secret_key_set = bls::SecretKeySet::random(0, &mut rng);
+        let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);
 
@@ -210,17 +203,17 @@ impl Section {
             return vec![our_info, other_info];
         }
 
-        let expected_elders_map = self.elder_candidates(network_params.elder_size);
-        let expected_elders: BTreeSet<_> = expected_elders_map.keys().collect();
-        let current_elders: BTreeSet<_> = self.elders_info().elders.keys().collect();
+        let expected_peers = self.elder_candidates(network_params.elder_size);
+        let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).collect();
+        let current_names: BTreeSet<_> = self.elders_info().elders.keys().collect();
 
-        if expected_elders == current_elders {
+        if expected_names == current_names {
             vec![]
-        } else if expected_elders.len() < crate::majority(current_elders.len()) {
+        } else if expected_names.len() < crate::majority(current_names.len()) {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
-            let new_info = EldersInfo::new(expected_elders_map, self.elders_info().prefix);
+            let new_info = EldersInfo::new(expected_peers, self.elders_info().prefix);
             vec![new_info]
         }
     }
@@ -261,14 +254,6 @@ impl Section {
             .all()
             .find(|info| info.peer.addr() == addr)
             .map(|info| &info.peer)
-    }
-
-    // Returns age of a member with `name` or `MIN_AGE` if not found.
-    pub fn member_age(&self, name: &XorName) -> u8 {
-        self.members
-            .get(name)
-            .map(|info| info.peer.age())
-            .unwrap_or(MIN_AGE)
     }
 
     fn elders_info_signing_key_index(&self) -> u64 {
@@ -339,7 +324,7 @@ impl Section {
 
     // Returns the candidates for elders out of all the nodes in the section, even out of the
     // relocating nodes if there would not be enough instead.
-    fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, Peer> {
+    fn elder_candidates(&self, elder_size: usize) -> Vec<Peer> {
         self.members
             .elder_candidates(elder_size, self.elders_info())
     }
@@ -351,10 +336,7 @@ fn create_first_elders_info(
     sk_share: &bls::SecretKeyShare,
     peer: Peer,
 ) -> Result<Proven<EldersInfo>> {
-    let elders_info = EldersInfo::new(
-        iter::once((*peer.name(), peer)).collect(),
-        Prefix::default(),
-    );
+    let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
     let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
     Ok(Proven::new(elders_info, proof))
 }

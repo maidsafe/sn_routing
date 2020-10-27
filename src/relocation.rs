@@ -226,6 +226,14 @@ impl RelocateAction {
     }
 }
 
+// Relocation check - returns whether a member with the given age is a candidate for relocation on
+// a churn event with the given signature.
+pub(crate) fn check(age: u8, churn_signature: &bls::Signature) -> bool {
+    // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
+    // has at least `age` trailing zero bits.
+    trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
+}
+
 // Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
 // the name of the joined/left node that triggered the relocation.
 fn destination(relocating_name: &XorName, churn_name: &XorName) -> XorName {
@@ -241,14 +249,6 @@ fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
     }
 
     output
-}
-
-// Relocation check - returns whether a member with the given age is a candidate for relocation on
-// a churn event with the given signature.
-fn check(age: u8, churn_signature: &bls::Signature) -> bool {
-    // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
-    // has at least `age` trailing zero bits.
-    trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
 }
 
 // Returns the number of trailing zero bits of the byte slice.

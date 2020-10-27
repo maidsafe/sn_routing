@@ -6,13 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto::Digest256,
-    majority,
-    peer::Peer,
-    rng::{self, MainRng},
-    section::EldersInfo,
-};
+use crate::{crypto::Digest256, majority, peer::Peer, section::EldersInfo};
 use bls_dkg::key_gen::{outcome::Outcome, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -36,8 +30,9 @@ impl DkgKey {
         // Calculate the hash without involving serialization to avoid having to return `Result`.
         let mut hasher = Sha3::v256();
 
-        for name in elders_info.elders.keys() {
-            hasher.update(&name.0);
+        for peer in elders_info.elders.values() {
+            hasher.update(&peer.name().0);
+            hasher.update(&[peer.age()]);
         }
 
         hasher.update(&elders_info.prefix.name().0);
@@ -80,7 +75,6 @@ impl Debug for DkgKey {
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
 /// is currently not a responsibility of this module.
 pub struct DkgVoter {
-    rng: MainRng,
     participant: Option<Participant>,
     observers: HashMap<DkgKey, Observer>,
 }
@@ -88,7 +82,6 @@ pub struct DkgVoter {
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
-            rng: rng::new(),
             participant: None,
             observers: HashMap::new(),
         }
@@ -215,7 +208,10 @@ impl DkgVoter {
 
         trace!("DKG for {} progressing", elders_info);
 
-        match session.key_gen.timed_phase_transition(&mut self.rng) {
+        match session
+            .key_gen
+            .timed_phase_transition(&mut rand::thread_rng())
+        {
             Ok(messages) => Some((session.dkg_key, Ok(messages))),
             Err(error) => {
                 trace!("DKG for {} failed: {}", elders_info, error);
@@ -256,7 +252,7 @@ impl DkgVoter {
 
         session
             .key_gen
-            .handle_message(&mut self.rng, message)
+            .handle_message(&mut rand::thread_rng(), message)
             .unwrap_or_default()
     }
 
@@ -350,6 +346,17 @@ impl DkgVoter {
             session.timer_token = token;
         }
     }
+
+    // Is this node participating in any DKG session?
+    pub fn is_participating(&self) -> bool {
+        self.participant.is_some()
+    }
+
+    pub fn observing_elders_info(&self, dkg_key: &DkgKey) -> Option<&EldersInfo> {
+        self.observers
+            .get(dkg_key)
+            .map(|session| &session.elders_info)
+    }
 }
 
 // Data for a DKG participant.
@@ -367,4 +374,29 @@ struct Observer {
     elders_info: EldersInfo,
     section_key_index: u64,
     accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<XorName>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{section::test_utils::gen_addr, MIN_AGE};
+    use std::iter;
+    use xor_name::Prefix;
+
+    #[test]
+    fn dkg_key_is_affected_by_ages() {
+        let name = rand::random();
+        let addr = gen_addr();
+
+        let peer0 = Peer::new(name, addr, MIN_AGE);
+        let peer1 = Peer::new(name, addr, MIN_AGE + 1);
+
+        let elders_info0 = EldersInfo::new(iter::once(peer0), Prefix::default());
+        let elders_info1 = EldersInfo::new(iter::once(peer1), Prefix::default());
+
+        let key0 = DkgKey::new(&elders_info0);
+        let key1 = DkgKey::new(&elders_info1);
+
+        assert_ne!(key0, key1);
+    }
 }

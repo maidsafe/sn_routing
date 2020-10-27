@@ -65,11 +65,7 @@ impl SectionPeers {
     }
 
     /// Returns the candidates for elders out of all the nodes in this section.
-    pub fn elder_candidates(
-        &self,
-        elder_size: usize,
-        current_elders: &EldersInfo,
-    ) -> BTreeMap<XorName, Peer> {
+    pub fn elder_candidates(&self, elder_size: usize, current_elders: &EldersInfo) -> Vec<Peer> {
         elder_candidates(
             elder_size,
             current_elders,
@@ -85,7 +81,7 @@ impl SectionPeers {
         prefix: &Prefix,
         elder_size: usize,
         current_elders: &EldersInfo,
-    ) -> BTreeMap<XorName, Peer> {
+    ) -> Vec<Peer> {
         elder_candidates(
             elder_size,
             current_elders,
@@ -180,19 +176,15 @@ impl IntoIterator for SectionPeers {
     }
 }
 
-// Returns the nodes that should become the next elders out of the given members.
-fn elder_candidates<'a, I>(
-    elder_size: usize,
-    current_elders: &EldersInfo,
-    members: I,
-) -> BTreeMap<XorName, Peer>
+// Returns the nodes that should become the next elders out of the given members, sorted by names.
+fn elder_candidates<'a, I>(elder_size: usize, current_elders: &EldersInfo, members: I) -> Vec<Peer>
 where
     I: IntoIterator<Item = &'a Proven<MemberInfo>>,
 {
     members
         .into_iter()
         .sorted_by(|lhs, rhs| cmp_elder_candidates(lhs, rhs, current_elders))
-        .map(|info| (*info.value.peer.name(), info.value.peer))
+        .map(|info| info.value.peer)
         .take(elder_size)
         .collect()
 }

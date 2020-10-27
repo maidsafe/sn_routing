@@ -303,12 +303,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        consensus,
-        location::DstLocation,
-        rng::{self, MainRng},
-        section,
-    };
+    use crate::{consensus, location::DstLocation, section};
     use rand::Rng;
 
     #[test]
@@ -403,9 +398,7 @@ mod tests {
 
     #[test]
     fn update_their_knowledge_after_split_from_one_sibling() {
-        let mut rng = rng::new();
         update_their_knowledge_and_check_proving_index(
-            &mut rng,
             vec![("1", 1), ("10", 2)],
             vec![("10", 1), ("11", 1)],
         )
@@ -413,9 +406,7 @@ mod tests {
 
     #[test]
     fn update_their_knowledge_after_split_from_both_siblings() {
-        let mut rng = rng::new();
         update_their_knowledge_and_check_proving_index(
-            &mut rng,
             vec![("1", 1), ("10", 2), ("11", 2)],
             vec![("10", 2), ("11", 2)],
         )
@@ -423,7 +414,6 @@ mod tests {
 
     #[test]
     fn closest() {
-        let mut rng = rng::new();
         let sk = bls::SecretKey::random();
 
         let p01: Prefix = "01".parse().unwrap();
@@ -435,6 +425,7 @@ mod tests {
         let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p01));
         let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p10));
 
+        let mut rng = rand::thread_rng();
         let n01 = p01.substituted_in(rng.gen());
         let n10 = p10.substituted_in(rng.gen());
         let n11 = p11.substituted_in(rng.gen());
@@ -506,7 +497,6 @@ mod tests {
     // - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is
     //   generated such that it matches `prefix` and `version` is the expected trusted key version.
     fn update_their_knowledge_and_check_proving_index(
-        rng: &mut MainRng,
         updates: Vec<(&str, u64)>,
         expected_trusted_key_indices: Vec<(&str, u64)>,
     ) {
@@ -522,7 +512,7 @@ mod tests {
 
         for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {
             let dst_name_prefix: Prefix = dst_name_prefix_str.parse().unwrap();
-            let dst_name = dst_name_prefix.substituted_in(rng.gen());
+            let dst_name = dst_name_prefix.substituted_in(rand::random());
             let dst = DstLocation::Section(dst_name);
 
             assert_eq!(map.knowledge_by_location(&dst), expected_index);

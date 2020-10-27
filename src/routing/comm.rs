@@ -14,8 +14,12 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
 };
 use lru_time_cache::LruCache;
-use qp2p::{Connection, Endpoint, IncomingConnections, QuicP2p};
-use std::{net::SocketAddr, sync::Arc};
+use qp2p::{Connection, Endpoint, QuicP2p};
+use std::{future::Future, net::SocketAddr, sync::Arc};
+use tokio::{
+    sync::{mpsc, watch},
+    task,
+};
 
 // Number of Connections to maintain in the cache
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
@@ -67,9 +71,18 @@ impl Comm {
         ))
     }
 
-    /// Starts listening for connections returning a stream where to read them from.
-    pub fn listen(&self) -> Result<IncomingConnections> {
-        Ok(self.endpoint.listen()?)
+    /// Starts listening for incoming messages. Returns a stream to read the messages from.
+    ///
+    /// NOTE: this method can be called multiple times, producing multiple independent streams.
+    /// Every message is received on only one stream, but it's unspecified which. For this reason
+    /// it's recommended to always use only one stream to avoid potentially surprising behaviour.
+    ///
+    /// Also, if a stream is dropped and then another one created, it will cause a disconnection
+    /// event for the peers whom we received any messages from on the first stream. This means the
+    /// next message they send to us will fail the first send attempt (but will likely succeed on
+    /// the subsequent one).
+    pub fn listen(&self) -> Result<IncomingMessages> {
+        Ok(IncomingMessages::new(self.endpoint.listen()?))
     }
 
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
@@ -291,6 +304,88 @@ impl SendState {
             .collect()
     }
 }
+
+/// Stream of incoming messages. Listens for incoming connections and multiplex all messages from
+/// those connection into a single stream.
+pub(crate) struct IncomingMessages {
+    message_rx: mpsc::Receiver<qp2p::Message>,
+
+    // TODO: use `mpsc::Sender::closed` instead of this when we switch to the version of tokio that
+    // supports it (>= 0.3.0).
+    cancel_tx: watch::Sender<bool>,
+}
+
+impl Drop for IncomingMessages {
+    fn drop(&mut self) {
+        let _ = self.cancel_tx.broadcast(true);
+    }
+}
+
+impl IncomingMessages {
+    pub fn new(incoming_conns: qp2p::IncomingConnections) -> Self {
+        let (cancel_tx, mut cancel_rx) = watch::channel(false);
+        let (message_tx, message_rx) = mpsc::channel(1);
+
+        // Need to `recv` once, otherwise we would cancel all the tasks immediatelly
+        // NOTE: using block_on to avoid making this function `async`. It won't actually block,
+        // because the receiver is immediatelly ready.
+        // (for more details, see: https://docs.rs/tokio/0.2.22/tokio/sync/watch/struct.Receiver.html?search=#method.recv).
+        let _ = futures::executor::block_on(cancel_rx.recv());
+
+        let _ = task::spawn(cancellable(
+            cancel_rx.clone(),
+            handle_incoming_connections(incoming_conns, message_tx, cancel_rx),
+        ));
+
+        Self {
+            message_rx,
+            cancel_tx,
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<qp2p::Message> {
+        self.message_rx.recv().await
+    }
+}
+
+async fn handle_incoming_connections(
+    mut incoming_conns: qp2p::IncomingConnections,
+    message_tx: mpsc::Sender<qp2p::Message>,
+    cancel_rx: watch::Receiver<bool>,
+) {
+    while let Some(incoming_msgs) = incoming_conns.next().await {
+        trace!(
+            "New connection established by peer {}",
+            incoming_msgs.remote_addr()
+        );
+
+        let _ = task::spawn(cancellable(
+            cancel_rx.clone(),
+            handle_incoming_messages(incoming_msgs, message_tx.clone()),
+        ));
+    }
+}
+
+async fn handle_incoming_messages(
+    mut incoming_msgs: qp2p::IncomingMessages,
+    mut message_tx: mpsc::Sender<qp2p::Message>,
+) {
+    while let Some(msg) = incoming_msgs.next().await {
+        let _ = message_tx.send(msg).await;
+    }
+}
+
+async fn cancellable<F: Future>(
+    mut cancel_rx: watch::Receiver<bool>,
+    future: F,
+) -> Result<F::Output, Cancelled> {
+    tokio::select! {
+        value = future => Ok(value),
+        _ = cancel_rx.recv() => Err(Cancelled),
+    }
+}
+
+struct Cancelled;
 
 #[cfg(test)]
 mod tests {

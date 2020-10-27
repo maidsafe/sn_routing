@@ -10,18 +10,18 @@ mod utils;
 
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
-use futures::future::join_all;
+use futures::future;
 use sn_routing::{
     event::{Connected, Event},
-    rng::MainRng,
-    Routing,
+    EventStream, NetworkParams, Routing,
 };
+use tokio::time;
 use utils::*;
 use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
-    let keypair = Keypair::generate(&mut MainRng::default());
+    let keypair = Keypair::generate(&mut rand::thread_rng());
     let pub_key = keypair.public;
     let (node, mut event_stream) = RoutingBuilder::new(None)
         .first()
@@ -118,7 +118,7 @@ async fn test_section_bootstrapping() -> Result<()> {
         });
     }
 
-    let nodes = join_all(nodes_joining_tasks).await;
+    let nodes = future::join_all(nodes_joining_tasks).await;
 
     // just await for genesis node to finish receiving all events
     let joined_nodes = genesis_handler.await??;
@@ -133,6 +133,40 @@ async fn test_section_bootstrapping() -> Result<()> {
 
         verify_invariants_for_node(&node, num_of_nodes).await?;
     }
+
+    Ok(())
+}
+
+// Test that the first `ELDER_SIZE` nodes in the network are promoted to elders.
+#[tokio::test]
+async fn test_startup_elders() -> Result<()> {
+    let network_params = NetworkParams::default();
+    // FIXME: using only 3 nodes for now because with 4 or more the test takes too long (but still
+    // succeeds). Needs further investigation.
+    let network_size = 3;
+    let mut nodes = create_connected_nodes(network_size, network_params).await?;
+
+    async fn expect_promote_event(stream: &mut EventStream) {
+        while let Some(event) = stream.next().await {
+            if let Event::PromotedToElder = event {
+                return;
+            }
+        }
+
+        panic!("event stream closed before receiving Event::PromotedToElder");
+    }
+
+    let _ = time::timeout(
+        TIMEOUT,
+        future::join_all(nodes.iter_mut().map(|(node, stream)| async move {
+            if node.is_elder().await {
+                return;
+            }
+
+            expect_promote_event(stream).await
+        })),
+    )
+    .await?;
 
     Ok(())
 }
