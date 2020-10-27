@@ -110,17 +110,15 @@ const RECOMMENDED_SECTION_SIZE: usize = 60;
 
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
-/// Strict majority of Elders
-const ELDER_MAJORITY: usize = 4;
 
 /// Number of votes required to agree
 /// with a strict majority (i.e. > 50%)
-pub(crate) fn majority(num_possible_voters: usize) -> usize {
+#[inline]
+pub(crate) const fn majority(num_possible_voters: usize) -> usize {
     1 + (num_possible_voters / 2)
 }
 #[cfg(test)]
 mod tests {
-    use crate::{ELDER_MAJORITY, ELDER_SIZE};
     use proptest::prelude::*;
 
     use super::majority;
@@ -131,9 +129,5 @@ mod tests {
             let maj_double = maj * 2;
             assert!(maj_double == a || maj_double == a + 1 || maj_double == a + 2);
         }
-    }
-    #[test]
-    fn strict_majority_from_consts() {
-        assert_eq!(ELDER_MAJORITY, majority(ELDER_SIZE))
     }
 }

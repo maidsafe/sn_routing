@@ -12,6 +12,7 @@ use crate::{
     crypto,
     event::Event,
     location::DstLocation,
+    majority,
     messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
     network::Network,
     node::Node,
@@ -21,7 +22,7 @@ use crate::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
     },
-    Error, NetworkParams, ELDER_MAJORITY, ELDER_SIZE,
+    Error, NetworkParams, ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -1058,10 +1059,7 @@ async fn relocation_of_non_elder() -> Result<()> {
     relocation(RelocatedPeerRole::NonElder).await
 }
 
-#[tokio::test]
-async fn relocation_of_elder() -> Result<()> {
-    relocation(RelocatedPeerRole::Elder).await
-}
+const THRESHOLD: usize = majority(ELDER_SIZE) - 1;
 
 enum RelocatedPeerRole {
     NonElder,
