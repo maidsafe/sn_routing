@@ -23,7 +23,7 @@ hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 log = "~0.4.8"
 lru_time_cache = "~0.11.0"
-qp2p = { version = "~0.8.5", features = ["upnp"] }
+qp2p = { git = "https://github.com/maqi/quic-p2p.git", branch = "serde_dependency" }
 rand = "~0.7.3"
 rand_xorshift = "~0.2.0"
 serde = { version = "1.0.117", features = ["derive"] }
