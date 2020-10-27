@@ -138,11 +138,6 @@
 <span id="137">137</span>
 <span id="138">138</span>
 <span id="139">139</span>
-<span id="140">140</span>
-<span id="141">141</span>
-<span id="142">142</span>
-<span id="143">143</span>
-<span id="144">144</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -229,14 +224,12 @@
 <span class="doccomment">/// sn_routing events.</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">event</span>;
 
-<span class="doccomment">/// Random number generation</span>
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">rng</span>;
-
 <span class="comment">// ############################################################################</span>
 <span class="comment">// Private</span>
 <span class="comment">// ############################################################################</span>
 
 <span class="kw">mod</span> <span class="ident">consensus</span>;
+<span class="kw">mod</span> <span class="ident">crypto</span>;
 <span class="kw">mod</span> <span class="ident">delivery_group</span>;
 <span class="kw">mod</span> <span class="ident">error</span>;
 <span class="kw">mod</span> <span class="ident">location</span>;
@@ -249,9 +242,6 @@
 <span class="kw">mod</span> <span class="ident">relocation</span>;
 <span class="kw">mod</span> <span class="ident">routing</span>;
 <span class="kw">mod</span> <span class="ident">section</span>;
-
-<span class="comment">// Cryptography</span>
-<span class="kw">mod</span> <span class="ident">crypto</span>;
 
 <span class="doccomment">/// Recommended section size. sn_routing will keep adding nodes until the section reaches this size.</span>
 <span class="doccomment">/// More nodes might be added if requested by the upper layers.</span>

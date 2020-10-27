@@ -610,62 +610,6 @@
 <span id="609">609</span>
 <span id="610">610</span>
 <span id="611">611</span>
-<span id="612">612</span>
-<span id="613">613</span>
-<span id="614">614</span>
-<span id="615">615</span>
-<span id="616">616</span>
-<span id="617">617</span>
-<span id="618">618</span>
-<span id="619">619</span>
-<span id="620">620</span>
-<span id="621">621</span>
-<span id="622">622</span>
-<span id="623">623</span>
-<span id="624">624</span>
-<span id="625">625</span>
-<span id="626">626</span>
-<span id="627">627</span>
-<span id="628">628</span>
-<span id="629">629</span>
-<span id="630">630</span>
-<span id="631">631</span>
-<span id="632">632</span>
-<span id="633">633</span>
-<span id="634">634</span>
-<span id="635">635</span>
-<span id="636">636</span>
-<span id="637">637</span>
-<span id="638">638</span>
-<span id="639">639</span>
-<span id="640">640</span>
-<span id="641">641</span>
-<span id="642">642</span>
-<span id="643">643</span>
-<span id="644">644</span>
-<span id="645">645</span>
-<span id="646">646</span>
-<span id="647">647</span>
-<span id="648">648</span>
-<span id="649">649</span>
-<span id="650">650</span>
-<span id="651">651</span>
-<span id="652">652</span>
-<span id="653">653</span>
-<span id="654">654</span>
-<span id="655">655</span>
-<span id="656">656</span>
-<span id="657">657</span>
-<span id="658">658</span>
-<span id="659">659</span>
-<span id="660">660</span>
-<span id="661">661</span>
-<span id="662">662</span>
-<span id="663">663</span>
-<span id="664">664</span>
-<span id="665">665</span>
-<span id="666">666</span>
-<span id="667">667</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -675,7 +619,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Comm</span>;
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">IncomingMessages</span>, <span class="ident">Comm</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::<span class="ident">Proven</span>,
     <span class="ident">crypto</span>,
@@ -685,22 +629,16 @@
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">relocation</span>::{<span class="ident">RelocatePayload</span>, <span class="ident">SignedRelocateDetails</span>},
-    <span class="ident">rng</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">Section</span>},
     <span class="ident">SectionProofChain</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
-<span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">mem</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
-<span class="kw">use</span> <span class="ident">tokio</span>::{
-    <span class="ident">sync</span>::{<span class="ident">mpsc</span>, <span class="ident">oneshot</span>},
-    <span class="ident">task</span>,
-};
+<span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">mem</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
+<span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
 <span class="doccomment">/// Bootstrap into the network as an infant node.</span>
-<span class="doccomment">/// When this completes, the returned `IncomingConnections` should be passed to the main `Executor`</span>
-<span class="doccomment">/// instead of creating a new one with `Comm::listen` which would cause temporary disconnect.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// NOTE: It&#39;s not guaranteed this function ever returns. This can happen due to messages being</span>
 <span class="doccomment">/// lost in transit or other reasons. It&#39;s the responsibility of the caller to handle this case,</span>
@@ -708,45 +646,22 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">infant</span>(
     <span class="ident">node</span>: <span class="ident">Node</span>,
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>,
+    <span class="ident">incoming_messages</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">IncomingMessages</span>,
     <span class="ident">bootstrap_addr</span>: <span class="ident">SocketAddr</span>,
-) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">qp2p</span>::<span class="ident">IncomingConnections</span>)<span class="op">&gt;</span> {
-    <span class="comment">// NOTE: when we are bootstrapping a new infant node, there is no `Executor` running yet.</span>
-    <span class="comment">// So we create a simple throwaway executor here. It works a bit differently than the main</span>
-    <span class="comment">// `Executor`. First, it runs inside a `LocalSet`. This allows us to terminate the whole</span>
-    <span class="comment">// executor simply by dropping the `LocalSet` - this simplifies things a bit. Second, we don&#39;t</span>
-    <span class="comment">// `spawn` separate tasks for each message, but send them to a channel instead. This means that</span>
-    <span class="comment">// the whole bootstrapping process runs on a single thread. That should be fine as its quite</span>
-    <span class="comment">// sequential in nature anyway (send request, receive response, send request, receive response,</span>
-    <span class="comment">// ...).</span>
-
+) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>)<span class="question-mark">?</span>;
-    <span class="kw">let</span> <span class="ident">local_set</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">LocalSet</span>::<span class="ident">new</span>();
 
-    <span class="kw">let</span> (<span class="ident">abort_tx</span>, <span class="ident">abort_rx</span>) <span class="op">=</span> <span class="ident">oneshot</span>::<span class="ident">channel</span>();
-    <span class="kw">let</span> <span class="ident">incoming_connections</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
-    <span class="kw">let</span> <span class="ident">receive_handle</span> <span class="op">=</span>
-        <span class="ident">local_set</span>.<span class="ident">spawn_local</span>(<span class="ident">receive_messages</span>(<span class="ident">incoming_connections</span>, <span class="ident">recv_tx</span>, <span class="ident">abort_rx</span>));
-
-    <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>) <span class="op">=</span> <span class="ident">future</span>::<span class="ident">join</span>(
-        <span class="ident">send_messages</span>(<span class="ident">comm</span>, <span class="ident">send_rx</span>),
-        <span class="ident">local_set</span>.<span class="ident">run_until</span>(<span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>)),
+    <span class="ident">run_until_first</span>(
+        <span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>),
+        <span class="ident">future</span>::<span class="ident">join</span>(
+            <span class="ident">send_messages</span>(<span class="ident">send_rx</span>, <span class="ident">comm</span>),
+            <span class="ident">receive_messages</span>(<span class="ident">incoming_messages</span>, <span class="ident">recv_tx</span>),
+        ),
     )
     .<span class="kw">await</span>
-    .<span class="number">1</span><span class="question-mark">?</span>;
-
-    <span class="comment">// Abort the `receive_messages` task and extract the `incoming_connections` out of it by</span>
-    <span class="comment">// awaiting its join handle. This cannot fail, unless there is a bug in the code, so it&#39;s OK</span>
-    <span class="comment">// to use `expect`.</span>
-    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">abort_tx</span>.<span class="ident">send</span>(());
-    <span class="kw">let</span> <span class="ident">incoming_connections</span> <span class="op">=</span> <span class="ident">local_set</span>
-        .<span class="ident">run_until</span>(<span class="ident">receive_handle</span>)
-        .<span class="kw">await</span>
-        .<span class="ident">expect</span>(<span class="string">&quot;failed to join the receive_messages task&quot;</span>);
-
-    <span class="prelude-val">Ok</span>((<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">incoming_connections</span>))
 }
 
 <span class="doccomment">/// Re-bootstrap as a relocated node.</span>
@@ -761,20 +676,14 @@
     <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
     <span class="ident">relocate_details</span>: <span class="ident">SignedRelocateDetails</span>,
 ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
-    <span class="comment">// NOTE: when we are re-bootstrapping as a relocated node, the main `Executor` is still running.</span>
-    <span class="comment">// We don&#39;t create a separate one here (like in the `infant` case), because the main `Executor`</span>
-    <span class="comment">// would interfere with it. Instead we read the incoming messages from the `message_rx` whose</span>
-    <span class="comment">// sending half is stored inside `Approved` which forwards the relevant messages to it.</span>
-
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>)<span class="question-mark">?</span>;
 
-    <span class="ident">future</span>::<span class="ident">join</span>(
-        <span class="ident">send_messages</span>(<span class="ident">comm</span>, <span class="ident">send_rx</span>),
+    <span class="ident">run_until_first</span>(
         <span class="ident">state</span>.<span class="ident">run</span>(<span class="ident">bootstrap_addrs</span>, <span class="prelude-val">Some</span>(<span class="ident">relocate_details</span>)),
+        <span class="ident">send_messages</span>(<span class="ident">send_rx</span>, <span class="ident">comm</span>),
     )
     .<span class="kw">await</span>
-    .<span class="number">1</span>
 }
 
 <span class="kw">struct</span> <span class="ident">State</span> {
@@ -867,8 +776,7 @@
         };
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>,
-            <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">age</span>,
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
             <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
             <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">destination</span>),
             <span class="prelude-val">None</span>,
@@ -921,15 +829,14 @@
             <span class="kw-2">*</span><span class="ident">relocate_details</span>.<span class="ident">destination</span>(),
         );
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">keypair_within_range</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>, <span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>());
+        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">gen_keypair_within_range</span>(<span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>());
         <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">new_keypair</span>.<span class="ident">public</span>);
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">relocate_details</span>.<span class="ident">relocate_details</span>().<span class="ident">age</span>;
         <span class="kw">let</span> <span class="ident">relocate_payload</span> <span class="op">=</span>
             <span class="ident">RelocatePayload</span>::<span class="ident">new</span>(<span class="ident">relocate_details</span>, <span class="kw-2">&amp;</span><span class="ident">new_name</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>)<span class="question-mark">?</span>;
 
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Changing name to {}.&quot;</span>, <span class="self">self</span>.<span class="ident">node</span>, <span class="ident">new_name</span>);
-        <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">with_age</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>, <span class="ident">age</span>);
+        <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>).<span class="ident">with_age</span>(<span class="ident">age</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">relocate_payload</span>)
     }
@@ -1008,14 +915,7 @@
         );
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">join_request</span>));
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>,
-            <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">age</span>,
-            <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
-            <span class="ident">variant</span>,
-            <span class="prelude-val">None</span>,
-            <span class="prelude-val">None</span>,
-        )<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">send_tx</span>.<span class="ident">send</span>((<span class="ident">message</span>.<span class="ident">to_bytes</span>(), <span class="ident">recipients</span>)).<span class="kw">await</span>;
 
@@ -1123,49 +1023,28 @@
     },
 }
 
-<span class="comment">// Keep listening to incoming messages and send them to `message_tx`.</span>
-<span class="comment">// This must be spawned on a `LocalSet` with `spawn_local`.</span>
-<span class="comment">// Will run until aborted using the sending half of `abort_rx` at which point it returns</span>
-<span class="comment">// `incoming_connections` back to the caller so it can be reused.</span>
+<span class="comment">// Keep receiving messages from `incoming_messages` and send them to `message_tx`.</span>
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">receive_messages</span>(
-    <span class="kw-2">mut</span> <span class="ident">incoming_connections</span>: <span class="ident">qp2p</span>::<span class="ident">IncomingConnections</span>,
-    <span class="ident">message_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
-    <span class="ident">abort_rx</span>: <span class="ident">oneshot</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span>,
-) <span class="op">-&gt;</span> <span class="ident">qp2p</span>::<span class="ident">IncomingConnections</span> {
-    <span class="kw">let</span> <span class="ident">run</span> <span class="op">=</span> <span class="kw">async</span> {
-        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">mut</span> <span class="ident">incoming_messages</span>) <span class="op">=</span> <span class="ident">incoming_connections</span>.<span class="ident">next</span>().<span class="kw">await</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">message_tx</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">clone</span>();
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn_local</span>(<span class="kw">async</span> <span class="kw">move</span> {
-                <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span> <span class="ident">incoming_messages</span>.<span class="ident">next</span>().<span class="kw">await</span> {
-                    <span class="kw">match</span> <span class="ident">message</span> {
-                        <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">UniStream</span> { <span class="ident">bytes</span>, <span class="ident">src</span>, .. } <span class="op">=&gt;</span> {
-                            <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
-                                <span class="prelude-val">Ok</span>(<span class="ident">message</span>) <span class="op">=&gt;</span> {
-                                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">message</span>, <span class="ident">src</span>)).<span class="kw">await</span>;
-                                }
-                                <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message: {}&quot;</span>, <span class="ident">error</span>),
-                            }
-                        }
-                        <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">BiStream</span> { .. } <span class="op">=&gt;</span> {
-                            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore bi-stream messages during bootstrap&quot;</span>);
-                        }
-                    }
+    <span class="ident">incoming_messages</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">IncomingMessages</span>,
+    <span class="kw-2">mut</span> <span class="ident">message_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
+) {
+    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span> <span class="ident">incoming_messages</span>.<span class="ident">next</span>().<span class="kw">await</span> {
+        <span class="kw">match</span> <span class="ident">message</span> {
+            <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">UniStream</span> { <span class="ident">bytes</span>, <span class="ident">src</span>, .. } <span class="op">=&gt;</span> <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
+                <span class="prelude-val">Ok</span>(<span class="ident">message</span>) <span class="op">=&gt;</span> {
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">message</span>, <span class="ident">src</span>)).<span class="kw">await</span>;
                 }
-            });
+                <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message: {}&quot;</span>, <span class="ident">error</span>),
+            },
+            <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">BiStream</span> { .. } <span class="op">=&gt;</span> {
+                <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore bi-stream messages during bootstrap&quot;</span>);
+            }
         }
-    };
-
-    <span class="comment">// Run until aborted, then return `incoming_connections` back to the caller.</span>
-    {
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">run</span>);
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">future</span>::<span class="ident">select</span>(<span class="ident">run</span>, <span class="ident">abort_rx</span>).<span class="kw">await</span>;
     }
-
-    <span class="ident">incoming_connections</span>
 }
 
 <span class="comment">// Keep reading messages from `rx` and send them using `comm`.</span>
-<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_messages</span>(<span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>, <span class="kw-2">mut</span> <span class="ident">rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Bytes</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>)<span class="op">&gt;</span>) {
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_messages</span>(<span class="kw-2">mut</span> <span class="ident">rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Bytes</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>)<span class="op">&gt;</span>, <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>) {
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">message</span>, <span class="ident">recipients</span>)) <span class="op">=</span> <span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span> {
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">comm</span>
             .<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">recipients</span>.<span class="ident">len</span>(), <span class="ident">message</span>)
@@ -1173,33 +1052,51 @@
     }
 }
 
+<span class="comment">// Runs the two futures concurrently until the first one completes. Returns the result of the first</span>
+<span class="comment">// future, ignores the second.</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">run_until_first</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">G</span><span class="op">&gt;</span>(<span class="ident">f</span>: <span class="ident">F</span>, <span class="ident">g</span>: <span class="ident">G</span>) <span class="op">-&gt;</span> <span class="ident">F</span>::<span class="ident">Output</span>
+<span class="kw">where</span>
+    <span class="ident">F</span>: <span class="ident">Future</span>,
+    <span class="ident">G</span>: <span class="ident">Future</span>,
+{
+    <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">f</span>);
+    <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">g</span>);
+
+    <span class="kw">match</span> <span class="ident">future</span>::<span class="ident">select</span>(<span class="ident">f</span>, <span class="ident">g</span>).<span class="kw">await</span> {
+        <span class="ident">Either</span>::<span class="ident">Left</span>((<span class="ident">value</span>, <span class="kw">_</span>)) <span class="op">=&gt;</span> <span class="ident">value</span>,
+        <span class="ident">Either</span>::<span class="ident">Right</span>((<span class="kw">_</span>, <span class="ident">f</span>)) <span class="op">=&gt;</span> <span class="ident">f</span>.<span class="kw">await</span>,
+    }
+}
+
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">ELDER_SIZE</span>};
     <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
-    <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
+    <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
+    <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">task</span>;
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">bootstrap_as_infant</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
-        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="ident">keypairs</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
-        <span class="kw">let</span> <span class="ident">bootstrap_peer</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">elders_info</span>.<span class="ident">peers</span>().<span class="ident">next</span>().<span class="ident">expect</span>(<span class="string">&quot;elders_info is empty&quot;</span>);
+        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>;
 
         <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
         <span class="kw">let</span> <span class="ident">pk</span> <span class="op">=</span> <span class="ident">sk</span>.<span class="ident">public_key</span>();
 
-        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
+        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
         <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Create the bootstrap task, but don&#39;t run it yet.</span>
         <span class="kw">let</span> <span class="ident">bootstrap</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
             <span class="ident">state</span>
-                .<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="kw-2">*</span><span class="ident">bootstrap_peer</span>.<span class="ident">addr</span>()], <span class="prelude-val">None</span>)
+                .<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>)
                 .<span class="kw">await</span>
                 .<span class="ident">map_err</span>(<span class="ident">Error</span>::<span class="ident">from</span>)
         };
@@ -1212,15 +1109,14 @@
             <span class="kw">let</span> (<span class="ident">bytes</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>)<span class="question-mark">?</span>;
 
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, [<span class="kw-2">*</span><span class="ident">bootstrap_peer</span>.<span class="ident">addr</span>()]);
+            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, [<span class="ident">bootstrap_addr</span>]);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">name</span>) <span class="op">=&gt;</span> {
                 <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">name</span>, <span class="ident">node_name</span>);
             });
 
             <span class="comment">// Send BootstrapResponse</span>
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-                <span class="kw-2">&amp;</span><span class="ident">keypairs</span>[<span class="number">0</span>],
-                <span class="ident">bootstrap_peer</span>.<span class="ident">age</span>(),
+                <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
                 <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">BootstrapResponse</span>::<span class="ident">Join</span> {
                     <span class="ident">elders_info</span>: <span class="ident">elders_info</span>.<span class="ident">clone</span>(),
@@ -1230,7 +1126,7 @@
                 <span class="prelude-val">None</span>,
             )<span class="question-mark">?</span>;
 
-            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="kw-2">*</span><span class="ident">bootstrap_peer</span>.<span class="ident">addr</span>()))<span class="question-mark">?</span>;
+            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
             <span class="comment">// Receive JoinRequest</span>
@@ -1247,15 +1143,14 @@
             <span class="kw">let</span> <span class="ident">proven_elders_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">SectionProofChain</span>::<span class="ident">new</span>(<span class="ident">pk</span>);
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-                <span class="kw-2">&amp;</span><span class="ident">keypairs</span>[<span class="number">0</span>],
-                <span class="ident">bootstrap_peer</span>.<span class="ident">age</span>(),
+                <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
                 <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="ident">proven_elders_info</span>),
                 <span class="prelude-val">Some</span>(<span class="ident">proof_chain</span>),
                 <span class="prelude-val">None</span>,
             )<span class="question-mark">?</span>;
 
-            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="kw-2">*</span><span class="ident">bootstrap_peer</span>.<span class="ident">addr</span>()))<span class="question-mark">?</span>;
+            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
 
             <span class="prelude-val">Ok</span>(())
         };
@@ -1274,10 +1169,9 @@
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
-        <span class="kw">let</span> <span class="ident">bootstrap_keypair</span> <span class="op">=</span> <span class="ident">gen_keypair</span>();
-        <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">gen_addr</span>();
+        <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
 
-        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
+        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Spawn the bootstrap task on a `LocalSet` so that it runs concurrently with the main test</span>
@@ -1285,7 +1179,7 @@
         <span class="comment">// for the purpose of this test.</span>
         <span class="kw">let</span> <span class="ident">local_set</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">LocalSet</span>::<span class="ident">new</span>();
 
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">local_set</span>.<span class="ident">spawn_local</span>(<span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>));
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">local_set</span>.<span class="ident">spawn_local</span>(<span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>], <span class="prelude-val">None</span>));
 
         <span class="ident">local_set</span>
             .<span class="ident">run_until</span>(<span class="kw">async</span> {
@@ -1295,15 +1189,14 @@
                 <span class="kw">let</span> (<span class="ident">bytes</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>)<span class="question-mark">?</span>;
 
-                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>]);
+                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>]);
                 <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="kw">_</span>));
 
                 <span class="comment">// Send Rebootstrap BootstrapResponse</span>
                 <span class="kw">let</span> <span class="ident">new_bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">gen_addr</span>()).<span class="ident">collect</span>();
 
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-                    <span class="kw-2">&amp;</span><span class="ident">bootstrap_keypair</span>,
-                    <span class="ident">MIN_AGE</span>,
+                    <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                     <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
                     <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">BootstrapResponse</span>::<span class="ident">Rebootstrap</span>(
                         <span class="ident">new_bootstrap_addrs</span>.<span class="ident">clone</span>(),
@@ -1312,7 +1205,7 @@
                     <span class="prelude-val">None</span>,
                 )<span class="question-mark">?</span>;
 
-                <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
+                <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">message</span>, <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>))<span class="question-mark">?</span>;
                 <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
                 <span class="comment">// Receive new BootstrapRequests</span>
@@ -1328,11 +1221,6 @@
     }
 
     <span class="comment">// TODO: add test for bootstrap as relocated node</span>
-
-    <span class="kw">fn</span> <span class="ident">gen_keypair</span>() <span class="op">-&gt;</span> <span class="ident">Keypair</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="ident">Keypair</span>::<span class="ident">generate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>)
-    }
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "sn_routing";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

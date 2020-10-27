@@ -311,8 +311,6 @@
 <span id="310">310</span>
 <span id="311">311</span>
 <span id="312">312</span>
-<span id="313">313</span>
-<span id="314">314</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -346,7 +344,6 @@
     <span class="ident">network_params</span>::<span class="ident">NetworkParams</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">rng</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
     <span class="ident">TransportConfig</span>,
 };
@@ -403,18 +400,15 @@
     <span class="doccomment">/// lost in transit during bootstrapping, or other reasons. It&#39;s the responsibility of the</span>
     <span class="doccomment">/// caller to handle this case, for example by using a timeout.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">config</span>: <span class="ident">Config</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">EventStream</span>)<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">config</span>
-            .<span class="ident">keypair</span>
-            .<span class="ident">unwrap_or_else</span>(<span class="op">||</span> <span class="ident">Keypair</span>::<span class="ident">generate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>));
+        <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">config</span>.<span class="ident">keypair</span>.<span class="ident">unwrap_or_else</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>);
         <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">keypair</span>.<span class="ident">public</span>);
 
         <span class="kw">let</span> (<span class="ident">event_tx</span>, <span class="ident">event_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">unbounded_channel</span>();
 
-        <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
+        <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_msgs</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the seed node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>)<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">incoming_conns</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">incoming_msgs</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
@@ -422,22 +416,24 @@
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
 
-            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>)
+            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_msgs</span>)
         } <span class="kw">else</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Bootstrapping a new node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> (<span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>) <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">from_bootstrapping</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
+
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
-            <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">incoming_conns</span>) <span class="op">=</span>
-                <span class="ident">bootstrap</span>::<span class="ident">infant</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>) <span class="op">=</span>
+                <span class="ident">bootstrap</span>::<span class="ident">infant</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>, <span class="ident">bootstrap_addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">config</span>.<span class="ident">network_params</span>, <span class="ident">event_tx</span>);
 
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Connected</span>(<span class="ident">Connected</span>::<span class="ident">First</span>));
 
-            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_conns</span>)
+            (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">incoming_msgs</span>)
         };
 
         <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stage</span>::<span class="ident">new</span>(<span class="ident">state</span>, <span class="ident">comm</span>));
-        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">incoming_conns</span>).<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">executor</span> <span class="op">=</span> <span class="ident">Executor</span>::<span class="ident">new</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">incoming_msgs</span>).<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">event_stream</span> <span class="op">=</span> <span class="ident">EventStream</span>::<span class="ident">new</span>(<span class="ident">event_rx</span>);
 
         <span class="kw">let</span> <span class="ident">routing</span> <span class="op">=</span> <span class="self">Self</span> {

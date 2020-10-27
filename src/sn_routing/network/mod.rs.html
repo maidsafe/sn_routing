@@ -529,16 +529,6 @@
 <span id="528">528</span>
 <span id="529">529</span>
 <span id="530">530</span>
-<span id="531">531</span>
-<span id="532">532</span>
-<span id="533">533</span>
-<span id="534">534</span>
-<span id="535">535</span>
-<span id="536">536</span>
-<span id="537">537</span>
-<span id="538">538</span>
-<span id="539">539</span>
-<span id="540">540</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -845,12 +835,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">consensus</span>,
-        <span class="ident">location</span>::<span class="ident">DstLocation</span>,
-        <span class="ident">rng</span>::{<span class="self">self</span>, <span class="ident">MainRng</span>},
-        <span class="ident">section</span>,
-    };
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>, <span class="ident">location</span>::<span class="ident">DstLocation</span>, <span class="ident">section</span>};
     <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">Rng</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -945,9 +930,7 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">update_their_knowledge_after_split_from_one_sibling</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
         <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
             <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;10&quot;</span>, <span class="number">2</span>)],
             <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">1</span>)],
         )
@@ -955,9 +938,7 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">update_their_knowledge_after_split_from_both_siblings</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
         <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-            <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>,
             <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;10&quot;</span>, <span class="number">2</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">2</span>)],
             <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="number">2</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">2</span>)],
         )
@@ -965,7 +946,6 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">closest</span>() {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rng</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
 
         <span class="kw">let</span> <span class="ident">p01</span>: <span class="ident">Prefix</span> <span class="op">=</span> <span class="string">&quot;01&quot;</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
@@ -977,6 +957,7 @@
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_neighbour_info</span>(<span class="ident">gen_proven_elders_info</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p01</span>));
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_neighbour_info</span>(<span class="ident">gen_proven_elders_info</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p10</span>));
 
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
         <span class="kw">let</span> <span class="ident">n01</span> <span class="op">=</span> <span class="ident">p01</span>.<span class="ident">substituted_in</span>(<span class="ident">rng</span>.<span class="ident">gen</span>());
         <span class="kw">let</span> <span class="ident">n10</span> <span class="op">=</span> <span class="ident">p10</span>.<span class="ident">substituted_in</span>(<span class="ident">rng</span>.<span class="ident">gen</span>());
         <span class="kw">let</span> <span class="ident">n11</span> <span class="op">=</span> <span class="ident">p11</span>.<span class="ident">substituted_in</span>(<span class="ident">rng</span>.<span class="ident">gen</span>());
@@ -1048,7 +1029,6 @@
     <span class="comment">// - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is</span>
     <span class="comment">//   generated such that it matches `prefix` and `version` is the expected trusted key version.</span>
     <span class="kw">fn</span> <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-        <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">MainRng</span>,
         <span class="ident">updates</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">u64</span>)<span class="op">&gt;</span>,
         <span class="ident">expected_trusted_key_indices</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">u64</span>)<span class="op">&gt;</span>,
     ) {
@@ -1064,7 +1044,7 @@
 
         <span class="kw">for</span> (<span class="ident">dst_name_prefix_str</span>, <span class="ident">expected_index</span>) <span class="kw">in</span> <span class="ident">expected_trusted_key_indices</span> {
             <span class="kw">let</span> <span class="ident">dst_name_prefix</span>: <span class="ident">Prefix</span> <span class="op">=</span> <span class="ident">dst_name_prefix_str</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">dst_name</span> <span class="op">=</span> <span class="ident">dst_name_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rng</span>.<span class="ident">gen</span>());
+            <span class="kw">let</span> <span class="ident">dst_name</span> <span class="op">=</span> <span class="ident">dst_name_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>());
             <span class="kw">let</span> <span class="ident">dst</span> <span class="op">=</span> <span class="ident">DstLocation</span>::<span class="ident">Section</span>(<span class="ident">dst_name</span>);
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>.<span class="ident">knowledge_by_location</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>), <span class="ident">expected_index</span>);

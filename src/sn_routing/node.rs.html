@@ -85,15 +85,15 @@
 
 <span class="kw">impl</span> <span class="ident">Node</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="ident">Keypair</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span>::<span class="ident">with_age</span>(<span class="ident">keypair</span>, <span class="ident">addr</span>, <span class="ident">MIN_AGE</span>)
-    }
-
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_age</span>(<span class="ident">keypair</span>: <span class="ident">Keypair</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">keypair</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">keypair</span>),
             <span class="ident">addr</span>,
-            <span class="ident">age</span>,
+            <span class="ident">age</span>: <span class="ident">MIN_AGE</span>,
         }
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_age</span>(<span class="self">self</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span> { <span class="ident">age</span>, ..<span class="self">self</span> }
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Peer</span> {
