@@ -480,7 +480,10 @@ struct Observer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{section::test_utils::gen_addr, MIN_AGE};
+    use crate::{
+        section::test_utils::{gen_addr, gen_elders_info},
+        ELDER_SIZE, MIN_AGE,
+    };
     use std::iter;
     use xor_name::Prefix;
 
@@ -499,5 +502,89 @@ mod tests {
         let key1 = DkgKey::new(&elders_info1);
 
         assert_ne!(key0, key1);
+    }
+
+    #[test]
+    fn accumulate_results() {
+        let mut voter = DkgVoter::default();
+
+        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let dkg_key = DkgKey::new(&elders_info);
+        let majority = majority(elders_info.elders.len());
+
+        voter.start_observing(dkg_key, elders_info, 0);
+
+        let pk = bls::SecretKey::random().public_key();
+
+        for sender in &nodes[..majority - 1] {
+            assert!(voter
+                .observe_result(&dkg_key, Ok(pk), sender.name())
+                .is_none());
+        }
+
+        assert!(voter
+            .observe_result(&dkg_key, Ok(pk), nodes[majority - 1].name())
+            .is_some());
+    }
+
+    #[test]
+    fn result_is_ignored_if_observation_not_started() {
+        let mut voter = DkgVoter::default();
+
+        let (elders_info, _) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let dkg_key = DkgKey::new(&elders_info);
+        let pk = bls::SecretKey::random().public_key();
+
+        for sender in elders_info.elders.keys() {
+            assert!(voter.observe_result(&dkg_key, Ok(pk), *sender).is_none());
+        }
+    }
+
+    #[test]
+    fn result_is_ignored_if_not_from_participant() {
+        let mut voter = DkgVoter::default();
+
+        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let dkg_key = DkgKey::new(&elders_info);
+        let majority = majority(elders_info.elders.len());
+
+        voter.start_observing(dkg_key, elders_info, 0);
+
+        let pk = bls::SecretKey::random().public_key();
+
+        for sender in &nodes[..majority - 1] {
+            assert!(voter
+                .observe_result(&dkg_key, Ok(pk), sender.name())
+                .is_none());
+        }
+
+        let invalid_peer: XorName = rand::random();
+        assert!(voter
+            .observe_result(&dkg_key, Ok(pk), invalid_peer)
+            .is_none());
+    }
+
+    #[test]
+    fn unequal_results_do_not_accumulate() {
+        let mut voter = DkgVoter::default();
+
+        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let dkg_key = DkgKey::new(&elders_info);
+        let majority = majority(elders_info.elders.len());
+
+        voter.start_observing(dkg_key, elders_info, 0);
+
+        let pk0 = bls::SecretKey::random().public_key();
+        let pk1 = bls::SecretKey::random().public_key();
+
+        for sender in &nodes[..majority - 1] {
+            assert!(voter
+                .observe_result(&dkg_key, Ok(pk0), sender.name())
+                .is_none());
+        }
+
+        assert!(voter
+            .observe_result(&dkg_key, Ok(pk1), nodes[majority - 1].name())
+            .is_none());
     }
 }
