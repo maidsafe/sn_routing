@@ -1061,6 +1061,7 @@ async fn relocation_of_non_elder() -> Result<()> {
 
 const THRESHOLD: usize = majority(ELDER_SIZE) - 1;
 
+#[allow(dead_code)]
 enum RelocatedPeerRole {
     NonElder,
     Elder,
@@ -1157,8 +1158,6 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 }
 
 // TODO: add more tests here
-
-const THRESHOLD: usize = ELDER_MAJORITY - 1;
 
 fn create_peer() -> Peer {
     Peer::new(rand::random(), gen_addr(), MIN_AGE)
