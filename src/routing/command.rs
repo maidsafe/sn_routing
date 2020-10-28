@@ -42,13 +42,15 @@ pub(crate) enum Command {
     HandleVote { vote: Vote, proof_share: ProofShare },
     /// Handle consensus on a vote.
     HandleConsensus { vote: Vote, proof: Proof },
-    /// Handle the result of a DKG session we are participating in
+    /// Handle the result of a DKG session where we are one of the participants (that is, one of
+    /// the proposed new elders).
     HandleDkgParticipationResult {
         dkg_key: DkgKey,
         elders_info: EldersInfo,
         result: Result<DkgOutcome, ()>,
     },
-    /// Handle the result of a DKG session we observing
+    /// Handle the result of a DKG session that we are an observer of (that is, one of the current
+    /// elders).
     HandleDkgObservationResult {
         elders_info: EldersInfo,
         result: Result<bls::PublicKey, ()>,

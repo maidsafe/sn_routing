@@ -240,15 +240,14 @@ impl Approved {
         elders_info: EldersInfo,
         result: Result<DkgOutcome, ()>,
     ) -> Result<Vec<Command>> {
-        let key = result
-            .as_ref()
-            .map(|outcome| outcome.public_key_set.public_key())
-            .map_err(|_| ());
-
-        if let Ok(outcome) = result {
+        let key = if let Ok(outcome) = result {
+            let key = outcome.public_key_set.public_key();
             self.section_keys_provider
                 .insert_dkg_outcome(&self.node.name(), &elders_info, outcome);
-        }
+            Ok(key)
+        } else {
+            Err(())
+        };
 
         let mut commands = vec![];
         commands.push(self.send_dkg_result(dkg_key, key)?);

@@ -10,8 +10,7 @@ use crate::{
     crypto::Digest256,
     error::Result,
     majority,
-    messages::Message,
-    messages::Variant,
+    messages::{Message, Variant},
     node::Node,
     peer::Peer,
     routing::command::{self, Command},
@@ -422,16 +421,12 @@ impl Participant {
     }
 
     fn check(&mut self) -> Option<Command> {
-        let _ = self.elders_info.as_ref()?;
-
         if !self.key_gen.is_finalized() {
             return None;
         }
 
         let (participants, outcome) = self.key_gen.generate_keys()?;
-
-        // This is OK to `unwrap` because we already checked it is `Some`.
-        let elders_info = self.elders_info.take().unwrap();
+        let elders_info = self.elders_info.take()?;
 
         if participants.iter().eq(elders_info.elders.keys()) {
             trace!(
