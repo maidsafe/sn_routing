@@ -132,12 +132,6 @@
 <span id="131">131</span>
 <span id="132">132</span>
 <span id="133">133</span>
-<span id="134">134</span>
-<span id="135">135</span>
-<span id="136">136</span>
-<span id="137">137</span>
-<span id="138">138</span>
-<span id="139">139</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -251,17 +245,15 @@
 
 <span class="doccomment">/// Number of elders per section.</span>
 <span class="kw">const</span> <span class="ident">ELDER_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">7</span>;
-<span class="doccomment">/// Strict majority of Elders</span>
-<span class="kw">const</span> <span class="ident">ELDER_MAJORITY</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
 
 <span class="doccomment">/// Number of votes required to agree</span>
 <span class="doccomment">/// with a strict majority (i.e. &gt; 50%)</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">majority</span>(<span class="ident">num_possible_voters</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
+<span class="attribute">#[<span class="ident">inline</span>]</span>
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">majority</span>(<span class="ident">num_possible_voters</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
     <span class="number">1</span> <span class="op">+</span> (<span class="ident">num_possible_voters</span> <span class="op">/</span> <span class="number">2</span>)
 }
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ELDER_MAJORITY</span>, <span class="ident">ELDER_SIZE</span>};
     <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">majority</span>;
@@ -272,10 +264,6 @@
             <span class="kw">let</span> <span class="ident">maj_double</span> <span class="op">=</span> <span class="ident">maj</span> <span class="op">*</span> <span class="number">2</span>;
             <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
         }
-    }
-    <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">strict_majority_from_consts</span>() {
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">ELDER_MAJORITY</span>, <span class="ident">majority</span>(<span class="ident">ELDER_SIZE</span>))
     }
 }
 </pre></div>
