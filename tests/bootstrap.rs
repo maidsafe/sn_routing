@@ -47,7 +47,7 @@ async fn test_node_bootstrapping() -> Result<()> {
     });
 
     // bootstrap a second node with genesis
-    let genesis_contact = genesis_node.our_connection_info()?;
+    let genesis_contact = genesis_node.our_connection_info().await?;
     let (node1, _event_stream) = RoutingBuilder::new(None)
         .with_contact(genesis_contact)
         .create()
@@ -86,7 +86,7 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
     });
 
     // bootstrap several nodes with genesis to form a section
-    let genesis_contact = genesis_node.our_connection_info()?;
+    let genesis_contact = genesis_node.our_connection_info().await?;
     let nodes_joining_tasks: Vec<_> = (0..other_node_count)
         .map(|_| async {
             let (node, mut event_stream) = RoutingBuilder::new(None)

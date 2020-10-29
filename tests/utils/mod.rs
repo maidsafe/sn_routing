@@ -112,7 +112,7 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
     let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
     assert_next_event!(event_stream, Event::PromotedToElder);
 
-    let bootstrap_contact = node.our_connection_info()?;
+    let bootstrap_contact = node.our_connection_info().await?;
 
     nodes.push((node, event_stream));
 

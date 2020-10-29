@@ -30,7 +30,7 @@ async fn test_messages_client_node() -> Result<()> {
                     content, mut send, ..
                 } => {
                     assert_eq!(content, Bytes::from_static(msg));
-                    send.send(Bytes::from_static(response)).await?;
+                    send.send_user_msg(Bytes::from_static(response)).await?;
                     break;
                 }
                 _other => {}
@@ -40,7 +40,7 @@ async fn test_messages_client_node() -> Result<()> {
     });
 
     // create a client which sends a message to the node
-    let node_addr = node.our_connection_info()?;
+    let node_addr = node.our_connection_info().await?;
     let mut config = TransportConfig::default();
     config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
@@ -63,7 +63,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     let response = b"good bye!";
 
     let (node1, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
-    let node1_contact = node1.our_connection_info()?;
+    let node1_contact = node1.our_connection_info().await?;
     let node1_name = node1.name().await;
 
     // spawn node events listener
