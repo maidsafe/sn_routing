@@ -311,6 +311,7 @@
 <span id="310">310</span>
 <span id="311">311</span>
 <span id="312">312</span>
+<span id="313">313</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -320,11 +321,12 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">command</span>;
+
 <span class="kw">mod</span> <span class="ident">approved</span>;
 <span class="kw">mod</span> <span class="ident">bootstrap</span>;
 <span class="kw">mod</span> <span class="ident">comm</span>;
-<span class="kw">mod</span> <span class="ident">command</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">event_stream</span>;
+<span class="kw">mod</span> <span class="ident">event_stream</span>;
 <span class="kw">mod</span> <span class="ident">executor</span>;
 <span class="kw">mod</span> <span class="ident">stage</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>

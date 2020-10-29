@@ -34,10 +34,10 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">test_utils</span>;
 <span class="kw">mod</span> <span class="ident">vote</span>;
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">vote</span>::{<span class="ident">Vote</span>, <span class="ident">VoteAccumulator</span>};
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
-    <span class="ident">dkg</span>::{<span class="ident">DkgKey</span>, <span class="ident">DkgVoter</span>},
-    <span class="ident">proven</span>::<span class="ident">Proven</span>,
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{<span class="ident">dkg</span>::<span class="ident">DkgKey</span>, <span class="ident">proven</span>::<span class="ident">Proven</span>};
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::{
+    <span class="ident">dkg</span>::<span class="ident">DkgVoter</span>,
+    <span class="ident">vote</span>::{<span class="ident">Vote</span>, <span class="ident">VoteAccumulator</span>},
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">SignatureAggregator</span>};
 </pre></div>
