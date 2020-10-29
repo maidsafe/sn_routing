@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{command, Command, UpdateBarrier};
+use super::{Command, UpdateBarrier};
 use crate::{
     consensus::{
         AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
@@ -33,15 +33,12 @@ use crate::{
     },
     NetworkParams,
 };
-use bls_dkg::key_gen::message::Message as DkgMessage;
+use bls_dkg::key_gen::outcome::Outcome as DkgOutcome;
 use bytes::Bytes;
 use itertools::Itertools;
-use std::{net::SocketAddr, slice, time::Duration};
+use std::{net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
-
-// Interval to progress DKG timed phase
-const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
@@ -169,20 +166,7 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
-        let mut commands = Vec::new();
-
-        if self.dkg_voter.timer_token() == Some(token) {
-            let token = command::next_timer_token();
-            self.dkg_voter.set_timer_token(token);
-
-            commands.push(Command::ScheduleTimeout {
-                duration: DKG_PROGRESS_INTERVAL,
-                token,
-            });
-            commands.extend(self.progress_dkg()?);
-        }
-
-        Ok(commands)
+        self.dkg_voter.handle_timeout(&self.node, token)
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
@@ -248,6 +232,71 @@ impl Approved {
         } else {
             Ok(vec![])
         }
+    }
+
+    pub fn handle_dkg_participation_result(
+        &mut self,
+        dkg_key: DkgKey,
+        elders_info: EldersInfo,
+        result: Result<DkgOutcome, ()>,
+    ) -> Result<Vec<Command>> {
+        let key = if let Ok(outcome) = result {
+            let key = outcome.public_key_set.public_key();
+            self.section_keys_provider
+                .insert_dkg_outcome(&self.node.name(), &elders_info, outcome);
+            Ok(key)
+        } else {
+            Err(())
+        };
+
+        let mut commands = vec![];
+        commands.push(self.send_dkg_result(dkg_key, key)?);
+        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name()));
+
+        Ok(commands)
+    }
+
+    pub fn handle_dkg_observation_result(
+        &mut self,
+        dkg_elders_info: EldersInfo,
+        result: Result<bls::PublicKey, ()>,
+    ) -> Result<Vec<Command>> {
+        trace!(
+            "accumulated DKG result for {}: {:?}",
+            dkg_elders_info,
+            result
+        );
+
+        let mut commands = vec![];
+
+        for new_elders_info in self
+            .section
+            .promote_and_demote_elders(&self.network_params, &self.node.name())
+        {
+            // Check whether the result still corresponds to the current elder candidates.
+            if new_elders_info == dkg_elders_info {
+                debug!("handle DKG result for {}: {:?}", new_elders_info, result);
+
+                if let Ok(public_key) = result {
+                    commands.extend(self.vote_for_section_update(public_key, new_elders_info)?);
+                } else {
+                    commands.extend(self.send_dkg_start(new_elders_info)?);
+                }
+            } else if new_elders_info.prefix == dkg_elders_info.prefix
+                || new_elders_info
+                    .prefix
+                    .is_extension_of(&dkg_elders_info.prefix)
+            {
+                trace!(
+                    "ignore DKG result for {}: {:?} - outdated",
+                    dkg_elders_info,
+                    result
+                );
+                commands.extend(self.send_dkg_start(new_elders_info)?);
+            }
+        }
+
+        Ok(commands)
     }
 
     // Send vote to all our elders.
@@ -337,42 +386,6 @@ impl Approved {
         } else {
             Ok(None)
         }
-    }
-
-    fn check_dkg(&mut self, dkg_key: DkgKey) -> Result<Vec<Command>> {
-        match self.dkg_voter.check_dkg() {
-            Some(Ok((elders_info, outcome))) => {
-                let public_key = outcome.public_key_set.public_key();
-                self.section_keys_provider.insert_dkg_outcome(
-                    &self.node.name(),
-                    &elders_info,
-                    outcome,
-                );
-                self.handle_dkg_result(dkg_key, Ok(public_key), self.node.name())
-            }
-            Some(Err(())) => self.handle_dkg_result(dkg_key, Err(()), self.node.name()),
-            None => Ok(vec![]),
-        }
-    }
-
-    fn progress_dkg(&mut self) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-
-        match self.dkg_voter.progress_dkg() {
-            Some((dkg_key, Ok(messages))) => {
-                for message in messages {
-                    commands.extend(self.broadcast_dkg_message(dkg_key, message)?);
-                }
-
-                commands.extend(self.check_dkg(dkg_key)?)
-            }
-            Some((dkg_key, Err(()))) => {
-                commands.extend(self.handle_dkg_result(dkg_key, Err(()), self.node.name())?)
-            }
-            None => {}
-        }
-
-        Ok(commands)
     }
 
     /// Is this node an elder?
@@ -527,9 +540,10 @@ impl Approved {
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
-            Variant::DKGResult { dkg_key, result } => {
-                self.handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)
-            }
+            Variant::DKGResult { dkg_key, result } => Ok(self
+                .handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)
+                .into_iter()
+                .collect()),
             Variant::Vote {
                 content,
                 proof_share,
@@ -1044,24 +1058,8 @@ impl Approved {
         new_elders_info: EldersInfo,
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
-
-        let mut commands = vec![];
-
-        if let Some(message) =
-            self.dkg_voter
-                .start_participating(self.node.name(), dkg_key, new_elders_info)
-        {
-            let token = command::next_timer_token();
-            self.dkg_voter.set_timer_token(token);
-
-            commands.push(Command::ScheduleTimeout {
-                duration: DKG_PROGRESS_INTERVAL,
-                token,
-            });
-            commands.extend(self.broadcast_dkg_message(dkg_key, message)?);
-        }
-
-        Ok(commands)
+        self.dkg_voter
+            .start_participating(&self.node, dkg_key, new_elders_info)
     }
 
     fn handle_dkg_result(
@@ -1069,91 +1067,20 @@ impl Approved {
         dkg_key: DkgKey,
         result: Result<bls::PublicKey, ()>,
         sender: XorName,
-    ) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-
-        if sender == self.node.name() {
-            commands.push(self.send_dkg_result(dkg_key, result)?);
-        }
-
-        if !self.is_elder() {
-            return Ok(commands);
-        }
-
-        let (dkg_elders_info, result) =
-            if let Some(output) = self.dkg_voter.observe_result(&dkg_key, result, sender) {
-                output
-            } else {
-                return Ok(commands);
-            };
-
-        trace!(
-            "accumulated DKG result for {}: {:?}",
-            dkg_elders_info,
-            result
-        );
-
-        for new_elders_info in self
-            .section
-            .promote_and_demote_elders(&self.network_params, &self.node.name())
-        {
-            // Check whether the result still corresponds to the current elder candidates.
-            if new_elders_info == dkg_elders_info {
-                debug!("handle DKG result for {}: {:?}", new_elders_info, result);
-
-                if let Ok(public_key) = result {
-                    commands.extend(self.vote_for_section_update(public_key, new_elders_info)?)
-                } else {
-                    commands.extend(self.send_dkg_start(new_elders_info)?)
-                }
-            } else if new_elders_info.prefix == dkg_elders_info.prefix
-                || new_elders_info
-                    .prefix
-                    .is_extension_of(&dkg_elders_info.prefix)
-            {
-                trace!(
-                    "ignore DKG result for {}: {:?} - outdated",
-                    dkg_elders_info,
-                    result
-                );
-                commands.extend(self.send_dkg_start(new_elders_info)?);
-            }
-        }
-
-        Ok(commands)
+    ) -> Option<Command> {
+        self.dkg_voter.observe_result(&dkg_key, result, sender)
     }
 
-    pub fn handle_dkg_message(
+    fn handle_dkg_message(
         &mut self,
         dkg_key: DkgKey,
         message_bytes: Bytes,
         sender: XorName,
     ) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-
         let message = bincode::deserialize(&message_bytes[..])?;
         trace!("handle DKG message {:?} from {}", message, sender);
 
-        let responses = self.dkg_voter.process_dkg_message(&dkg_key, message);
-
-        // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
-        if !responses.is_empty() {
-            let token = command::next_timer_token();
-            commands.push(Command::ScheduleTimeout {
-                duration: DKG_PROGRESS_INTERVAL,
-                token,
-            });
-
-            self.dkg_voter.set_timer_token(token);
-        }
-
-        for response in responses {
-            commands.extend(self.broadcast_dkg_message(dkg_key, response)?);
-        }
-
-        commands.extend(self.check_dkg(dkg_key)?);
-
-        Ok(commands)
+        self.dkg_voter.process_message(&self.node, dkg_key, message)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1771,44 +1698,6 @@ impl Approved {
             recipients.len(),
             message.to_bytes(),
         ))
-    }
-
-    fn broadcast_dkg_message(
-        &mut self,
-        dkg_key: DkgKey,
-        dkg_message: DkgMessage,
-    ) -> Result<Vec<Command>> {
-        let dkg_message_bytes: Bytes = bincode::serialize(&dkg_message)?.into();
-        let variant = Variant::DKGMessage {
-            dkg_key,
-            message: dkg_message_bytes.clone(),
-        };
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-
-        let recipients: Vec<_> = self
-            .dkg_voter
-            .participants()
-            .filter(|peer| peer.name() != &self.node.name())
-            .map(Peer::addr)
-            .copied()
-            .collect();
-
-        trace!(
-            "broadcasting DKG message {:?} to {:?}",
-            dkg_message,
-            recipients
-        );
-
-        let mut commands = vec![];
-        commands.push(Command::send_message_to_targets(
-            &recipients,
-            recipients.len(),
-            message.to_bytes(),
-        ));
-
-        commands.extend(self.handle_dkg_message(dkg_key, dkg_message_bytes, self.node.name())?);
-
-        Ok(commands)
     }
 
     // Send message over the network.

@@ -121,13 +121,15 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
+        # TODO: temporarily disable cache on macos due to weird issues. Needs further investigation.
+        if: matrix.os != 'macOS-latest'
 
       # Run tests.
       - shell: bash
         run: ./scripts/tests
 
       # Print CI machine disk space stats if the tests fail
-      - name: Print CI Machine df Stats on Failure 
+      - name: Print CI Machine df Stats on Failure
         if: failure()
         run: df -Ph
         shell: bash

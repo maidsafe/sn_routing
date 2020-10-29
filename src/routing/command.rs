@@ -7,11 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{ProofShare, Vote},
+    consensus::{DkgKey, ProofShare, Vote},
     location::{DstLocation, SrcLocation},
     messages::Message,
     relocation::SignedRelocateDetails,
+    section::EldersInfo,
 };
+use bls_dkg::key_gen::outcome::Outcome as DkgOutcome;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use std::{
@@ -40,6 +42,19 @@ pub(crate) enum Command {
     HandleVote { vote: Vote, proof_share: ProofShare },
     /// Handle consensus on a vote.
     HandleConsensus { vote: Vote, proof: Proof },
+    /// Handle the result of a DKG session where we are one of the participants (that is, one of
+    /// the proposed new elders).
+    HandleDkgParticipationResult {
+        dkg_key: DkgKey,
+        elders_info: EldersInfo,
+        result: Result<DkgOutcome, ()>,
+    },
+    /// Handle the result of a DKG session that we are an observer of (that is, one of the current
+    /// elders).
+    HandleDkgObservationResult {
+        elders_info: EldersInfo,
+        result: Result<bls::PublicKey, ()>,
+    },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
         recipients: Vec<SocketAddr>,
@@ -105,6 +120,24 @@ impl Debug for Command {
                 .debug_struct("HandleConsensus")
                 .field("vote", vote)
                 .field("proof.public_key", &proof.public_key)
+                .finish(),
+            Self::HandleDkgParticipationResult {
+                dkg_key,
+                elders_info,
+                result,
+            } => f
+                .debug_struct("HandleDkgParticipationResult")
+                .field("dkg_key", dkg_key)
+                .field("elders_info", elders_info)
+                .field("result", result)
+                .finish(),
+            Self::HandleDkgObservationResult {
+                elders_info,
+                result,
+            } => f
+                .debug_struct("HandleDkgObservationResult")
+                .field("elders_info", elders_info)
+                .field("result", result)
                 .finish(),
             Self::SendMessage {
                 recipients,
