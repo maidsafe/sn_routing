@@ -85,8 +85,8 @@ impl Comm {
         Ok(IncomingMessages::new(self.endpoint.listen()?))
     }
 
-    pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.endpoint.our_addr().map_err(|err| {
+    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
+        self.endpoint.socket_addr().await.map_err(|err| {
             error!("Failed to retrieve our connection info: {:?}", err);
             err.into()
         })
@@ -405,8 +405,8 @@ mod tests {
     async fn successful_send() -> Result<()> {
         let comm = Comm::new(transport_config())?;
 
-        let mut peer0 = Peer::new()?;
-        let mut peer1 = Peer::new()?;
+        let mut peer0 = Peer::new().await?;
+        let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
         comm.send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
@@ -422,8 +422,8 @@ mod tests {
     async fn successful_send_to_subset() -> Result<()> {
         let comm = Comm::new(transport_config())?;
 
-        let mut peer0 = Peer::new()?;
-        let mut peer1 = Peer::new()?;
+        let mut peer0 = Peer::new().await?;
+        let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
         comm.send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
@@ -459,7 +459,7 @@ mod tests {
     #[tokio::test]
     async fn successful_send_after_failed_attempts() -> Result<()> {
         let comm = Comm::new(transport_config())?;
-        let mut peer = Peer::new()?;
+        let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
@@ -474,7 +474,7 @@ mod tests {
     #[tokio::test]
     async fn partially_successful_send() -> Result<()> {
         let comm = Comm::new(transport_config())?;
-        let mut peer = Peer::new()?;
+        let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
@@ -498,7 +498,7 @@ mod tests {
 
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
         let recv_endpoint = recv_transport.new_endpoint()?;
-        let recv_addr = recv_endpoint.local_addr()?;
+        let recv_addr = recv_endpoint.socket_addr().await?;
         let mut recv_incoming_connections = recv_endpoint.listen()?;
 
         // Send the first message.
@@ -560,11 +560,11 @@ mod tests {
     }
 
     impl Peer {
-        fn new() -> Result<Self> {
+        async fn new() -> Result<Self> {
             let transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
 
             let endpoint = transport.new_endpoint()?;
-            let addr = endpoint.local_addr()?;
+            let addr = endpoint.socket_addr().await?;
             let mut incoming_connections = endpoint.listen()?;
 
             let (tx, rx) = mpsc::channel(1);

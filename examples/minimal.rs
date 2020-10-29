@@ -196,6 +196,7 @@ async fn start_node(
 
     let contact_info = node
         .our_connection_info()
+        .await
         .expect("Failed to obtain node's contact info.");
 
     info!(
