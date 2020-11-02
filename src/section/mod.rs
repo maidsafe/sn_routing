@@ -26,7 +26,7 @@ use crate::{
     consensus::Proven,
     error::{Error, Result},
     peer::Peer,
-    NetworkParams,
+    ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_signature_aggregator::Proof;
 use serde::{Deserialize, Serialize};
@@ -194,16 +194,12 @@ impl Section {
 
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
-    pub fn promote_and_demote_elders(
-        &self,
-        network_params: &NetworkParams,
-        our_name: &XorName,
-    ) -> Vec<EldersInfo> {
-        if let Some((our_info, other_info)) = self.try_split(network_params, our_name) {
+    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<EldersInfo> {
+        if let Some((our_info, other_info)) = self.try_split(our_name) {
             return vec![our_info, other_info];
         }
 
-        let expected_peers = self.elder_candidates(network_params.elder_size);
+        let expected_peers = self.elder_candidates(ELDER_SIZE);
         let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).collect();
         let current_names: BTreeSet<_> = self.elders_info().elders.keys().collect();
 
@@ -269,11 +265,7 @@ impl Section {
     // Tries to split our section.
     // If we have enough mature nodes for both subsections, returns the elders infos of the two
     // subsections. Otherwise returns `None`.
-    fn try_split(
-        &self,
-        network_params: &NetworkParams,
-        our_name: &XorName,
-    ) -> Option<(EldersInfo, EldersInfo)> {
+    fn try_split(&self, our_name: &XorName) -> Option<(EldersInfo, EldersInfo)> {
         let next_bit_index = if let Ok(index) = self.prefix().bit_count().try_into() {
             index
         } else {
@@ -296,9 +288,7 @@ impl Section {
             });
 
         // If none of the two new sections would contain enough entries, return `None`.
-        if our_new_size < network_params.recommended_section_size
-            || sibling_new_size < network_params.recommended_section_size
-        {
+        if our_new_size < RECOMMENDED_SECTION_SIZE || sibling_new_size < RECOMMENDED_SECTION_SIZE {
             return None;
         }
 
@@ -307,12 +297,12 @@ impl Section {
 
         let our_elders = self.members.elder_candidates_matching_prefix(
             &our_prefix,
-            network_params.elder_size,
+            ELDER_SIZE,
             self.elders_info(),
         );
         let other_elders = self.members.elder_candidates_matching_prefix(
             &other_prefix,
-            network_params.elder_size,
+            ELDER_SIZE,
             self.elders_info(),
         );
 

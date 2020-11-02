@@ -28,11 +28,10 @@ use crate::{
     error::{Error, Result},
     event::{Connected, Event},
     location::{DstLocation, SrcLocation},
-    network_params::NetworkParams,
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
-    TransportConfig,
+    TransportConfig, ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
@@ -50,7 +49,10 @@ pub struct Config {
     /// Configuration for the underlying network transport.
     pub transport_config: TransportConfig,
     /// Global network parameters. Must be identical for all nodes in the network.
-    pub network_params: NetworkParams,
+    /// The number of elders per section
+    pub elder_size: usize,
+    /// Recommended number of nodes in a section.
+    pub recommended_section_size: usize,
 }
 
 impl Default for Config {
@@ -59,7 +61,8 @@ impl Default for Config {
             first: false,
             keypair: None,
             transport_config: TransportConfig::default(),
-            network_params: NetworkParams::default(),
+            elder_size: ELDER_SIZE,
+            recommended_section_size: RECOMMENDED_SECTION_SIZE,
         }
     }
 }
@@ -98,7 +101,7 @@ impl Routing {
             let incoming_msgs = comm.listen()?;
 
             let node = Node::new(keypair, comm.our_connection_info()?);
-            let state = Approved::first_node(node, config.network_params, event_tx)?;
+            let state = Approved::first_node(node, event_tx)?;
 
             state.send_event(Event::Connected(Connected::First));
             state.send_event(Event::PromotedToElder);
@@ -112,7 +115,7 @@ impl Routing {
             let node = Node::new(keypair, comm.our_connection_info()?);
             let (node, section) =
                 bootstrap::infant(node, &comm, &mut incoming_msgs, bootstrap_addr).await?;
-            let state = Approved::new(node, section, None, config.network_params, event_tx);
+            let state = Approved::new(node, section, None, event_tx);
 
             state.send_event(Event::Connected(Connected::First));
 
