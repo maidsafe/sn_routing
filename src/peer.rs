@@ -64,3 +64,21 @@ impl Display for Peer {
         write!(f, "{} at {}", self.name, self.addr)
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::MIN_AGE;
+
+    use super::*;
+    use proptest::prelude::*;
+    use xor_name::XOR_NAME_LEN;
+
+    pub(crate) fn arbitrary_xor_name() -> impl Strategy<Value = XorName> {
+        any::<[u8; XOR_NAME_LEN]>().prop_map(XorName)
+    }
+
+    pub(crate) fn arbitrary_peer() -> impl Strategy<Value = Peer> {
+        (arbitrary_xor_name(), any::<SocketAddr>(), MIN_AGE..)
+            .prop_map(|(name, addr, age)| Peer::new(name, addr, age))
+    }
+}

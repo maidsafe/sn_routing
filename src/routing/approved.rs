@@ -9,7 +9,8 @@
 use super::{Command, UpdateBarrier};
 use crate::{
     consensus::{
-        AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
+        AccumulationError, DkgCommands, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote,
+        VoteAccumulator,
     },
     delivery_group,
     error::{Error, Result},
@@ -153,7 +154,9 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
-        self.dkg_voter.handle_timeout(&self.node, token)
+        self.dkg_voter
+            .handle_timeout(&self.node.name(), token)
+            .into_commands(&self.node)
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
@@ -238,7 +241,7 @@ impl Approved {
 
         let mut commands = vec![];
         commands.push(self.send_dkg_result(dkg_key, key)?);
-        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name()));
+        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name())?);
 
         Ok(commands)
     }
@@ -525,7 +528,7 @@ impl Approved {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
             Variant::DKGResult { dkg_key, result } => Ok(self
-                .handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)
+                .handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)?
                 .into_iter()
                 .collect()),
             Variant::Vote {
@@ -1043,7 +1046,8 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start_participating(&self.node, dkg_key, new_elders_info)
+            .start_participating(self.node.name(), dkg_key, new_elders_info)
+            .into_commands(&self.node)
     }
 
     fn handle_dkg_result(
@@ -1051,8 +1055,10 @@ impl Approved {
         dkg_key: DkgKey,
         result: Result<bls::PublicKey, ()>,
         sender: XorName,
-    ) -> Option<Command> {
-        self.dkg_voter.observe_result(&dkg_key, result, sender)
+    ) -> Result<Vec<Command>> {
+        self.dkg_voter
+            .observe_result(&dkg_key, result, sender)
+            .into_commands(&self.node)
     }
 
     fn handle_dkg_message(
@@ -1064,7 +1070,9 @@ impl Approved {
         let message = bincode::deserialize(&message_bytes[..])?;
         trace!("handle DKG message {:?} from {}", message, sender);
 
-        self.dkg_voter.process_message(&self.node, dkg_key, message)
+        self.dkg_voter
+            .process_message(&self.node.name(), dkg_key, message)
+            .into_commands(&self.node)
     }
 
     ////////////////////////////////////////////////////////////////////////////
