@@ -73,7 +73,6 @@ extern crate log;
 pub use self::{
     error::{Error, Result},
     location::{DstLocation, SrcLocation},
-    network_params::NetworkParams,
     routing::{Config, EventStream, Routing},
     section::{SectionProofChain, MIN_AGE},
 };
@@ -95,7 +94,6 @@ mod location;
 mod message_filter;
 mod messages;
 mod network;
-mod network_params;
 mod node;
 mod peer;
 mod relocation;

@@ -16,7 +16,7 @@ use futures::future;
 use itertools::Itertools;
 use sn_routing::{
     event::{Connected, Event},
-    Config, EventStream, NetworkParams, Routing, TransportConfig, MIN_AGE,
+    Config, EventStream, Routing, TransportConfig, MIN_AGE,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -71,13 +71,8 @@ impl<'a> RoutingBuilder {
         self
     }
 
-    pub fn network_params(mut self, params: NetworkParams) -> Self {
-        self.config.network_params = params;
-        self
-    }
-
     pub fn elder_size(mut self, size: usize) -> Self {
-        self.config.network_params.elder_size = size;
+        self.config.elder_size = size;
         self
     }
 
@@ -118,18 +113,11 @@ macro_rules! assert_next_event {
 }
 
 /// Create the given number of nodes and wait until they all connect.
-pub async fn create_connected_nodes(
-    count: usize,
-    network_params: NetworkParams,
-) -> Result<Vec<(Routing, EventStream)>> {
+pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventStream)>> {
     let mut nodes = vec![];
 
     // Create the first node
-    let (node, mut event_stream) = RoutingBuilder::new(None)
-        .first()
-        .network_params(network_params)
-        .create()
-        .await?;
+    let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
     assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::PromotedToElder);
 
@@ -140,7 +128,6 @@ pub async fn create_connected_nodes(
     // Create the other nodes bootstrapping off the first node.
     let other_nodes = (1..count).map(|_| async {
         let (node, mut event_stream) = RoutingBuilder::new(None)
-            .network_params(network_params)
             .with_contact(bootstrap_contact)
             .create()
             .await?;
