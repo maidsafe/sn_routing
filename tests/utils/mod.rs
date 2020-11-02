@@ -71,11 +71,6 @@ impl<'a> RoutingBuilder {
         self
     }
 
-    pub fn elder_size(mut self, size: usize) -> Self {
-        self.config.elder_size = size;
-        self
-    }
-
     pub fn keypair(mut self, keypair: Keypair) -> Self {
         self.config.keypair = Some(keypair);
         self
