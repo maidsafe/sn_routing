@@ -13,7 +13,7 @@ use ed25519_dalek::Keypair;
 use futures::future;
 use sn_routing::{
     event::{Connected, Event},
-    EventStream, Routing,
+    EventStream, Routing, ELDER_SIZE,
 };
 use tokio::time;
 use utils::*;
@@ -74,12 +74,7 @@ async fn test_node_bootstrapping() -> Result<()> {
 
 #[tokio::test]
 async fn test_section_bootstrapping() -> Result<()> {
-    let num_of_nodes = 7;
-    let (genesis_node, mut event_stream) = RoutingBuilder::new(None)
-        .elder_size(num_of_nodes)
-        .first()
-        .create()
-        .await?;
+    let (genesis_node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
@@ -94,7 +89,7 @@ async fn test_section_bootstrapping() -> Result<()> {
                 _other => {}
             }
 
-            if joined_nodes.len() == num_of_nodes {
+            if joined_nodes.len() == ELDER_SIZE {
                 break;
             }
         }
@@ -104,8 +99,8 @@ async fn test_section_bootstrapping() -> Result<()> {
 
     // bootstrap several nodes with genesis to form a section
     let genesis_contact = genesis_node.our_connection_info()?;
-    let mut nodes_joining_tasks = Vec::with_capacity(num_of_nodes);
-    for _ in 0..num_of_nodes {
+    let mut nodes_joining_tasks = Vec::with_capacity(ELDER_SIZE);
+    for _ in 0..ELDER_SIZE {
         nodes_joining_tasks.push(async {
             let (node, mut event_stream) = RoutingBuilder::new(None)
                 .with_contact(genesis_contact)
@@ -131,7 +126,7 @@ async fn test_section_bootstrapping() -> Result<()> {
         let found = joined_nodes.iter().find(|n| **n == name);
         assert!(found.is_some());
 
-        verify_invariants_for_node(&node, num_of_nodes).await?;
+        verify_invariants_for_node(&node, ELDER_SIZE).await?;
     }
 
     Ok(())

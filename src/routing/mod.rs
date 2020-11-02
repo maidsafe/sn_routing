@@ -31,7 +31,7 @@ use crate::{
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
-    TransportConfig, ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
+    TransportConfig,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
@@ -48,11 +48,6 @@ pub struct Config {
     pub keypair: Option<Keypair>,
     /// Configuration for the underlying network transport.
     pub transport_config: TransportConfig,
-    /// Global network parameters. Must be identical for all nodes in the network.
-    /// The number of elders per section
-    pub elder_size: usize,
-    /// Recommended number of nodes in a section.
-    pub recommended_section_size: usize,
 }
 
 impl Default for Config {
@@ -61,8 +56,6 @@ impl Default for Config {
             first: false,
             keypair: None,
             transport_config: TransportConfig::default(),
-            elder_size: ELDER_SIZE,
-            recommended_section_size: RECOMMENDED_SECTION_SIZE,
         }
     }
 }
