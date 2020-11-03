@@ -109,7 +109,7 @@ impl DkgVoter {
     ) -> Vec<DkgCommand> {
         if let Some(session) = &self.participant {
             if session.dkg_key == dkg_key && session.elders_info.is_some() {
-                trace!("DKG for {} already in progress", elders_info);
+                trace!("{} DKG for {} already in progress", our_name, elders_info);
                 return vec![];
             }
         }
@@ -124,7 +124,12 @@ impl DkgVoter {
 
         match KeyGen::initialize(our_name, threshold, participants) {
             Ok((key_gen, message)) => {
-                trace!("DKG for {} starting", elders_info);
+                trace!(
+                    "{} DKG for {:?} {} starting",
+                    our_name,
+                    dkg_key,
+                    elders_info
+                );
 
                 let mut session = Participant {
                     dkg_key,
@@ -189,7 +194,7 @@ impl DkgVoter {
 
         let dkg_key = session.dkg_key;
 
-        trace!("DKG for {} progressing", elders_info);
+        trace!("{} DKG for {} progressing", our_name, elders_info);
 
         match session
             .key_gen
@@ -321,17 +326,6 @@ impl DkgVoter {
             .retain(|_, session| session.section_key_index >= section_key_index);
     }
 
-    // Is this node participating in any DKG session?
-    pub fn is_participating(&self) -> bool {
-        self.participant.is_some()
-    }
-
-    pub fn observing_elders_info(&self, dkg_key: &DkgKey) -> Option<&EldersInfo> {
-        self.observers
-            .get(dkg_key)
-            .map(|session| &session.elders_info)
-    }
-
     // Check whether a key generator is finalized to give a DKG outcome.
     fn check(&mut self) -> Option<DkgCommand> {
         let session = self.participant.as_mut()?;
@@ -367,6 +361,12 @@ impl Participant {
             return vec![];
         }
 
+        trace!(
+            "{} process DKG message {:?} {:?}",
+            our_name,
+            dkg_key,
+            message
+        );
         let responses = self
             .key_gen
             .handle_message(&mut rand::thread_rng(), message)
@@ -394,7 +394,13 @@ impl Participant {
             .copied()
             .collect();
 
-        trace!("broadcasting DKG message {:?} to {:?}", message, recipients);
+        trace!(
+            "{} broadcasting DKG message {:?} {:?} to {:?}",
+            our_name,
+            dkg_key,
+            message,
+            recipients
+        );
 
         let mut commands = vec![];
         commands.push(DkgCommand::SendMessage {

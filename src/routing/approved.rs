@@ -421,11 +421,6 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::DKGMessage { .. } => {
-                if !self.dkg_voter.is_participating() {
-                    return Ok(MessageStatus::Unknown);
-                }
-            }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
@@ -453,7 +448,8 @@ impl Approved {
             | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => (),
+            | Variant::BouncedUnknownMessage { .. }
+            | Variant::DKGMessage { .. } => {}
         }
 
         if self.verify_message(msg)? {
@@ -702,62 +698,6 @@ impl Approved {
     }
 
     fn handle_bounced_unknown_message(
-        &self,
-        sender: Peer,
-        bounced_msg_bytes: Bytes,
-        sender_last_key: &bls::PublicKey,
-    ) -> Result<Vec<Command>> {
-        let bounced_msg = Message::from_bytes(&bounced_msg_bytes)?;
-
-        if let Variant::DKGMessage { dkg_key, .. } = bounced_msg.variant() {
-            self.handle_bounced_unknown_dkg_message(sender, bounced_msg_bytes, dkg_key)
-        } else {
-            self.handle_bounced_unknown_other_message(sender, bounced_msg_bytes, sender_last_key)
-        }
-    }
-
-    fn handle_bounced_unknown_dkg_message(
-        &self,
-        sender: Peer,
-        bounced_msg_bytes: Bytes,
-        dkg_key: &DkgKey,
-    ) -> Result<Vec<Command>> {
-        let elders_info = if let Some(elders_info) = self.dkg_voter.observing_elders_info(dkg_key) {
-            trace!(
-                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
-                     - resending with DKGStart",
-                sender
-            );
-            elders_info
-        } else {
-            trace!(
-                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
-                     - peer is not a DKG participant, discarding",
-                sender
-            );
-            return Ok(vec![]);
-        };
-
-        // Normally a peer would bounce a DKG message if they don't have the corresponding DKG
-        // session which means they haven't yet reached the `DKGStart` consensus. Let's send the
-        // `DKGStart` again in case the previous one got lost and then resend the original message.
-
-        let variant = Variant::DKGStart {
-            dkg_key: *dkg_key,
-            elders_info: elders_info.clone(),
-        };
-        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-
-        let mut commands = self.send_vote(slice::from_ref(&sender), vote)?;
-        commands.push(Command::send_message_to_target(
-            sender.addr(),
-            bounced_msg_bytes,
-        ));
-
-        Ok(commands)
-    }
-
-    fn handle_bounced_unknown_other_message(
         &self,
         sender: Peer,
         bounced_msg_bytes: Bytes,
@@ -1044,7 +984,7 @@ impl Approved {
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
     ) -> Result<Vec<Command>> {
-        trace!("Received DKGStart for {}", new_elders_info);
+        trace!("{} Received DKGStart for {}", self.node, new_elders_info);
         self.dkg_voter
             .start_participating(self.node.name(), dkg_key, new_elders_info)
             .into_commands(&self.node)
@@ -1637,9 +1577,14 @@ impl Approved {
     }
 
     fn send_dkg_start(&mut self, new_elders_info: EldersInfo) -> Result<Vec<Command>> {
-        trace!("Send DKGStart for {}", new_elders_info);
-
         let dkg_key = DkgKey::new(&new_elders_info);
+
+        trace!(
+            "{} Send DKGStart for {:?} {}",
+            self.node,
+            dkg_key,
+            new_elders_info
+        );
 
         // Send to all participants.
         let recipients: Vec<_> = new_elders_info.elders.values().copied().collect();

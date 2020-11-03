@@ -137,7 +137,7 @@ async fn test_section_bootstrapping() -> Result<()> {
 async fn test_startup_elders() -> Result<()> {
     // FIXME: using only 3 nodes for now because with 4 or more the test takes too long (but still
     // succeeds). Needs further investigation.
-    let network_size = 3;
+    let network_size = 4;
     let mut nodes = create_connected_nodes(network_size).await?;
 
     async fn expect_promote_event(stream: &mut EventStream) {
