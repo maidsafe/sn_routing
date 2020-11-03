@@ -15,20 +15,33 @@ use crate::{
 };
 use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{sync::mpsc, sync::Mutex, time};
+use tokio::{
+    sync::{mpsc, watch, Mutex},
+    time,
+};
 
 // Node's current stage which is responsible
 // for accessing current info and trigger operations.
 pub(crate) struct Stage {
     pub(super) state: Mutex<Approved>,
     pub(super) comm: Comm,
+
+    cancel_timer_tx: watch::Sender<bool>,
+    cancel_timer_rx: watch::Receiver<bool>,
 }
 
 impl Stage {
     pub fn new(state: Approved, comm: Comm) -> Self {
+        let (cancel_timer_tx, mut cancel_timer_rx) = watch::channel(false);
+
+        // Take out the initial value.
+        let _ = futures::executor::block_on(cancel_timer_rx.recv());
+
         Self {
             state: Mutex::new(state),
             comm,
+            cancel_timer_tx,
+            cancel_timer_rx,
         }
     }
 
@@ -96,9 +109,11 @@ impl Stage {
                 Command::SendUserMessage { src, dst, content } => {
                     self.state.lock().await.send_user_message(src, dst, content)
                 }
-                Command::ScheduleTimeout { duration, token } => {
-                    Ok(vec![self.handle_schedule_timeout(duration, token).await])
-                }
+                Command::ScheduleTimeout { duration, token } => Ok(self
+                    .handle_schedule_timeout(duration, token)
+                    .await
+                    .into_iter()
+                    .collect()),
                 Command::Relocate {
                     bootstrap_addrs,
                     details,
@@ -116,6 +131,11 @@ impl Stage {
         }
 
         result
+    }
+
+    // Cancels any scheduled timers, currently or in the future.
+    pub fn cancel_timers(&self) {
+        let _ = self.cancel_timer_tx.broadcast(true);
     }
 
     // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
@@ -144,9 +164,18 @@ impl Stage {
         }
     }
 
-    async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Command {
-        time::delay_for(duration).await;
-        Command::HandleTimeout(token)
+    async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {
+        let mut cancel_rx = self.cancel_timer_rx.clone();
+
+        if *cancel_rx.borrow() {
+            // Timers are already cancelled, do nothing.
+            return None;
+        }
+
+        tokio::select! {
+            _ = time::delay_for(duration) => Some(Command::HandleTimeout(token)),
+            _ = cancel_rx.recv() => None,
+        }
     }
 
     async fn handle_relocate(

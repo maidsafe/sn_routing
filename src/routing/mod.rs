@@ -318,3 +318,9 @@ impl Routing {
             .ok_or(Error::InvalidState)
     }
 }
+
+impl Drop for Routing {
+    fn drop(&mut self) {
+        self.stage.cancel_timers()
+    }
+}
