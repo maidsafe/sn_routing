@@ -371,16 +371,6 @@
 <span id="370">370</span>
 <span id="371">371</span>
 <span id="372">372</span>
-<span id="373">373</span>
-<span id="374">374</span>
-<span id="375">375</span>
-<span id="376">376</span>
-<span id="377">377</span>
-<span id="378">378</span>
-<span id="379">379</span>
-<span id="380">380</span>
-<span id="381">381</span>
-<span id="382">382</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -410,7 +400,7 @@
     <span class="ident">consensus</span>::<span class="ident">Proven</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">NetworkParams</span>,
+    <span class="ident">ELDER_SIZE</span>, <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
@@ -578,16 +568,12 @@
 
     <span class="doccomment">/// Generate a new section info(s) based on the current set of members.</span>
     <span class="doccomment">/// Returns a set of EldersInfos to vote for.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">network_params</span>: <span class="kw-2">&amp;</span><span class="ident">NetworkParams</span>,
-        <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
-    ) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_info</span>, <span class="ident">other_info</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">network_params</span>, <span class="ident">our_name</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_info</span>, <span class="ident">other_info</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">our_name</span>) {
             <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">our_info</span>, <span class="ident">other_info</span>];
         }
 
-        <span class="kw">let</span> <span class="ident">expected_peers</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">elder_candidates</span>(<span class="ident">network_params</span>.<span class="ident">elder_size</span>);
+        <span class="kw">let</span> <span class="ident">expected_peers</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">elder_candidates</span>(<span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">expected_names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">expected_peers</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">name</span>).<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">current_names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">collect</span>();
 
@@ -653,11 +639,7 @@
     <span class="comment">// Tries to split our section.</span>
     <span class="comment">// If we have enough mature nodes for both subsections, returns the elders infos of the two</span>
     <span class="comment">// subsections. Otherwise returns `None`.</span>
-    <span class="kw">fn</span> <span class="ident">try_split</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">network_params</span>: <span class="kw-2">&amp;</span><span class="ident">NetworkParams</span>,
-        <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">EldersInfo</span>, <span class="ident">EldersInfo</span>)<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">try_split</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">EldersInfo</span>, <span class="ident">EldersInfo</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">next_bit_index</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">index</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">prefix</span>().<span class="ident">bit_count</span>().<span class="ident">try_into</span>() {
             <span class="ident">index</span>
         } <span class="kw">else</span> {
@@ -680,9 +662,7 @@
             });
 
         <span class="comment">// If none of the two new sections would contain enough entries, return `None`.</span>
-        <span class="kw">if</span> <span class="ident">our_new_size</span> <span class="op">&lt;</span> <span class="ident">network_params</span>.<span class="ident">recommended_section_size</span>
-            <span class="op">||</span> <span class="ident">sibling_new_size</span> <span class="op">&lt;</span> <span class="ident">network_params</span>.<span class="ident">recommended_section_size</span>
-        {
+        <span class="kw">if</span> <span class="ident">our_new_size</span> <span class="op">&lt;</span> <span class="ident">RECOMMENDED_SECTION_SIZE</span> <span class="op">||</span> <span class="ident">sibling_new_size</span> <span class="op">&lt;</span> <span class="ident">RECOMMENDED_SECTION_SIZE</span> {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
 
@@ -691,12 +671,12 @@
 
         <span class="kw">let</span> <span class="ident">our_elders</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">members</span>.<span class="ident">elder_candidates_matching_prefix</span>(
             <span class="kw-2">&amp;</span><span class="ident">our_prefix</span>,
-            <span class="ident">network_params</span>.<span class="ident">elder_size</span>,
+            <span class="ident">ELDER_SIZE</span>,
             <span class="self">self</span>.<span class="ident">elders_info</span>(),
         );
         <span class="kw">let</span> <span class="ident">other_elders</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">members</span>.<span class="ident">elder_candidates_matching_prefix</span>(
             <span class="kw-2">&amp;</span><span class="ident">other_prefix</span>,
-            <span class="ident">network_params</span>.<span class="ident">elder_size</span>,
+            <span class="ident">ELDER_SIZE</span>,
             <span class="self">self</span>.<span class="ident">elders_info</span>(),
         );
 

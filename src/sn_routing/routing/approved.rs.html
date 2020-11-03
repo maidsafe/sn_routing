@@ -1902,26 +1902,6 @@
 <span id="1901">1901</span>
 <span id="1902">1902</span>
 <span id="1903">1903</span>
-<span id="1904">1904</span>
-<span id="1905">1905</span>
-<span id="1906">1906</span>
-<span id="1907">1907</span>
-<span id="1908">1908</span>
-<span id="1909">1909</span>
-<span id="1910">1910</span>
-<span id="1911">1911</span>
-<span id="1912">1912</span>
-<span id="1913">1913</span>
-<span id="1914">1914</span>
-<span id="1915">1915</span>
-<span id="1916">1916</span>
-<span id="1917">1917</span>
-<span id="1918">1918</span>
-<span id="1919">1919</span>
-<span id="1920">1920</span>
-<span id="1921">1921</span>
-<span id="1922">1922</span>
-<span id="1923">1923</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1956,7 +1936,7 @@
         <span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>, <span class="ident">SectionProofChain</span>,
         <span class="ident">MIN_AGE</span>,
     },
-    <span class="ident">NetworkParams</span>,
+    <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">outcome</span>::<span class="ident">Outcome</span> <span class="kw">as</span> <span class="ident">DkgOutcome</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
@@ -1978,25 +1958,14 @@
     <span class="ident">dkg_voter</span>: <span class="ident">DkgVoter</span>,
     <span class="ident">relocate_state</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocateState</span><span class="op">&gt;</span>,
     <span class="ident">msg_filter</span>: <span class="ident">MessageFilter</span>,
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">network_params</span>: <span class="ident">NetworkParams</span>,
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Approved</span> {
     <span class="comment">// Creates the approved state for the first node in the network</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_node</span>(
-        <span class="ident">node</span>: <span class="ident">Node</span>,
-        <span class="ident">network_params</span>: <span class="ident">NetworkParams</span>,
-        <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_node</span>(<span class="ident">node</span>: <span class="ident">Node</span>, <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">section</span>, <span class="ident">section_key_share</span>) <span class="op">=</span> <span class="ident">Section</span>::<span class="ident">first_node</span>(<span class="ident">node</span>.<span class="ident">peer</span>())<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="self">Self</span>::<span class="ident">new</span>(
-            <span class="ident">node</span>,
-            <span class="ident">section</span>,
-            <span class="prelude-val">Some</span>(<span class="ident">section_key_share</span>),
-            <span class="ident">network_params</span>,
-            <span class="ident">event_tx</span>,
-        ))
+        <span class="prelude-val">Ok</span>(<span class="self">Self</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">Some</span>(<span class="ident">section_key_share</span>), <span class="ident">event_tx</span>))
     }
 
     <span class="comment">// Creates the approved state for a regular node.</span>
@@ -2004,7 +1973,6 @@
         <span class="ident">node</span>: <span class="ident">Node</span>,
         <span class="ident">section</span>: <span class="ident">Section</span>,
         <span class="ident">section_key_share</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionKeyShare</span><span class="op">&gt;</span>,
-        <span class="ident">network_params</span>: <span class="ident">NetworkParams</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
     ) <span class="op">-&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">section_keys_provider</span> <span class="op">=</span> <span class="ident">SectionKeysProvider</span>::<span class="ident">new</span>(<span class="ident">section_key_share</span>);
@@ -2019,7 +1987,6 @@
             <span class="ident">dkg_voter</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
             <span class="ident">relocate_state</span>: <span class="prelude-val">None</span>,
             <span class="ident">msg_filter</span>: <span class="ident">MessageFilter</span>::<span class="ident">new</span>(),
-            <span class="ident">network_params</span>,
             <span class="ident">event_tx</span>,
         }
     }
@@ -2194,10 +2161,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">for</span> <span class="ident">new_elders_info</span> <span class="kw">in</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network_params</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
-        {
+        <span class="kw">for</span> <span class="ident">new_elders_info</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
             <span class="comment">// Check whether the result still corresponds to the current elder candidates.</span>
             <span class="kw">if</span> <span class="ident">new_elders_info</span> <span class="op">==</span> <span class="ident">dkg_elders_info</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;handle DKG result for {}: {:?}&quot;</span>, <span class="ident">new_elders_info</span>, <span class="ident">result</span>);
@@ -3017,10 +2981,7 @@
     <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">for</span> <span class="ident">info</span> <span class="kw">in</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network_params</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
-        {
+        <span class="kw">for</span> <span class="ident">info</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
             <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_dkg_start</span>(<span class="ident">info</span>)<span class="question-mark">?</span>);
         }
 
@@ -3090,8 +3051,7 @@
     <span class="comment">// and it has no more than `recommended_section_size` members.</span>
     <span class="kw">fn</span> <span class="ident">is_in_startup_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_empty</span>()
-            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">joined</span>().<span class="ident">count</span>()
-                <span class="op">&lt;=</span> <span class="self">self</span>.<span class="ident">network_params</span>.<span class="ident">recommended_section_size</span>
+            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">joined</span>().<span class="ident">count</span>() <span class="op">&lt;=</span> <span class="ident">RECOMMENDED_SECTION_SIZE</span>
     }
 
     <span class="kw">fn</span> <span class="ident">handle_online_event</span>(
