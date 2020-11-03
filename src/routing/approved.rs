@@ -984,7 +984,7 @@ impl Approved {
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
     ) -> Result<Vec<Command>> {
-        trace!("{} Received DKGStart for {}", self.node, new_elders_info);
+        trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
             .start_participating(self.node.name(), dkg_key, new_elders_info)
             .into_commands(&self.node)
@@ -1577,14 +1577,9 @@ impl Approved {
     }
 
     fn send_dkg_start(&mut self, new_elders_info: EldersInfo) -> Result<Vec<Command>> {
-        let dkg_key = DkgKey::new(&new_elders_info);
+        trace!("Send DKGStart for {}", new_elders_info);
 
-        trace!(
-            "{} Send DKGStart for {:?} {}",
-            self.node,
-            dkg_key,
-            new_elders_info
-        );
+        let dkg_key = DkgKey::new(&new_elders_info);
 
         // Send to all participants.
         let recipients: Vec<_> = new_elders_info.elders.values().copied().collect();

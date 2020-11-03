@@ -105,8 +105,7 @@ impl Stage {
                     message_rx,
                 } => {
                     self.handle_relocate(bootstrap_addrs, details, message_rx)
-                        .await?;
-                    Ok(vec![])
+                        .await
                 }
             }
         }
@@ -155,11 +154,11 @@ impl Stage {
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
         message_rx: mpsc::Receiver<(Message, SocketAddr)>,
-    ) -> Result<()> {
+    ) -> Result<Vec<Command>> {
         let node = self.state.lock().await.node().clone();
         let previous_name = node.name();
 
-        let (node, section) =
+        let (node, section, backlog) =
             bootstrap::relocate(node, &self.comm, message_rx, bootstrap_addrs, details).await?;
 
         let mut state = self.state.lock().await;
@@ -168,6 +167,13 @@ impl Stage {
 
         state.send_event(Event::Connected(Connected::Relocate { previous_name }));
 
-        Ok(())
+        let commands = backlog
+            .into_iter()
+            .map(|(message, sender)| Command::HandleMessage {
+                message,
+                sender: Some(sender),
+            })
+            .collect();
+        Ok(commands)
     }
 }

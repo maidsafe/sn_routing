@@ -21,9 +21,11 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::future::{self, Either};
-use std::{future::Future, mem, net::SocketAddr};
+use std::{collections::VecDeque, future::Future, mem, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
+
+const BACKLOG_CAPACITY: usize = 100;
 
 /// Bootstrap into the network as an infant node.
 ///
@@ -35,7 +37,7 @@ pub(crate) async fn infant(
     comm: &Comm,
     incoming_messages: &mut IncomingMessages,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let (recv_tx, recv_rx) = mpsc::channel(1);
 
@@ -62,7 +64,7 @@ pub(crate) async fn relocate(
     recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let state = State::new(node, send_tx, recv_rx)?;
 
@@ -79,6 +81,8 @@ struct State {
     // Receiver for incoming messages.
     recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
     node: Node,
+    // Backlog for unknown messages
+    backlog: VecDeque<(Message, SocketAddr)>,
 }
 
 impl State {
@@ -91,6 +95,7 @@ impl State {
             send_tx,
             recv_rx,
             node,
+            backlog: VecDeque::with_capacity(BACKLOG_CAPACITY),
         })
     }
 
@@ -98,7 +103,7 @@ impl State {
         mut self,
         bootstrap_addrs: Vec<SocketAddr>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
         let (elders_info, section_key) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -187,14 +192,7 @@ impl State {
 
                     return Ok((response.clone(), sender));
                 }
-                _ => {
-                    trace!(
-                        "{} Useless message {:?} from {}",
-                        self.node,
-                        message,
-                        sender,
-                    );
-                }
+                _ => self.backlog_message(message, sender),
             }
         }
 
@@ -236,7 +234,7 @@ impl State {
         mut elders_info: EldersInfo,
         mut section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<(Node, Section)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
         loop {
             self.send_join_requests(&elders_info, section_key, relocate_payload.as_ref())
                 .await?;
@@ -250,7 +248,11 @@ impl State {
                     elders_info,
                     section_chain,
                 } => {
-                    return Ok((self.node, Section::new(section_chain, elders_info)?));
+                    return Ok((
+                        self.node,
+                        Section::new(section_chain, elders_info)?,
+                        self.backlog.into_iter().collect(),
+                    ));
                 }
                 JoinResponse::Rejoin {
                     elders_info: new_elders_info,
@@ -359,14 +361,7 @@ impl State {
                     ));
                 }
 
-                _ => {
-                    trace!(
-                        "{} Useless message {:?} from {}",
-                        self.node,
-                        message,
-                        sender,
-                    );
-                }
+                _ => self.backlog_message(message, sender),
             }
         }
 
@@ -396,6 +391,14 @@ impl State {
                 false
             }
         }
+    }
+
+    fn backlog_message(&mut self, message: Message, sender: SocketAddr) {
+        while self.backlog.len() >= BACKLOG_CAPACITY {
+            let _ = self.backlog.pop_front();
+        }
+
+        self.backlog.push_back((message, sender))
     }
 }
 
@@ -543,7 +546,7 @@ mod tests {
         };
 
         // Drive both tasks to completion concurrently (but on the same thread).
-        let ((_node, section), _) = future::try_join(bootstrap, others).await?;
+        let ((_node, section, _backlog), _) = future::try_join(bootstrap, others).await?;
 
         assert_eq!(*section.elders_info(), elders_info);
         assert_eq!(*section.chain().last_key(), pk);
