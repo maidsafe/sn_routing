@@ -88,7 +88,7 @@ impl Routing {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let (state, comm, incoming_msgs) = if config.first {
+        let (state, comm, incoming_msgs, backlog) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config)?;
             let incoming_msgs = comm.listen()?;
@@ -99,25 +99,36 @@ impl Routing {
             state.send_event(Event::Connected(Connected::First));
             state.send_event(Event::PromotedToElder);
 
-            (state, comm, incoming_msgs)
+            (state, comm, incoming_msgs, vec![])
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
             let mut incoming_msgs = comm.listen()?;
 
             let node = Node::new(keypair, comm.our_connection_info()?);
-            let (node, section) =
+            let (node, section, backlog) =
                 bootstrap::infant(node, &comm, &mut incoming_msgs, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, event_tx);
 
             state.send_event(Event::Connected(Connected::First));
 
-            (state, comm, incoming_msgs)
+            (state, comm, incoming_msgs, backlog)
         };
 
         let stage = Arc::new(Stage::new(state, comm));
         let executor = Executor::new(stage.clone(), incoming_msgs).await;
         let event_stream = EventStream::new(event_rx);
+
+        // Process message backlog
+        for (message, sender) in backlog {
+            stage
+                .clone()
+                .handle_commands(Command::HandleMessage {
+                    message,
+                    sender: Some(sender),
+                })
+                .await?;
+        }
 
         let routing = Self {
             stage,
@@ -305,5 +316,11 @@ impl Routing {
             .section_key_share()
             .map(|share| share.index)
             .ok_or(Error::InvalidState)
+    }
+}
+
+impl Drop for Routing {
+    fn drop(&mut self) {
+        self.stage.cancel_timers()
     }
 }

@@ -9,7 +9,7 @@
 use crate::{crypto, peer::Peer, MIN_AGE};
 use ed25519_dalek::Keypair;
 use std::{
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
 };
@@ -51,5 +51,15 @@ impl Node {
 impl Display for Node {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.name())
+    }
+}
+
+impl Debug for Node {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("Node")
+            .field("name", &self.name())
+            .field("addr", &self.addr)
+            .field("age", &self.age)
+            .finish()
     }
 }

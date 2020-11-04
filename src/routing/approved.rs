@@ -9,7 +9,8 @@
 use super::{Command, UpdateBarrier};
 use crate::{
     consensus::{
-        AccumulationError, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote, VoteAccumulator,
+        AccumulationError, DkgCommands, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote,
+        VoteAccumulator,
     },
     delivery_group,
     error::{Error, Result},
@@ -153,7 +154,9 @@ impl Approved {
     }
 
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
-        self.dkg_voter.handle_timeout(&self.node, token)
+        self.dkg_voter
+            .handle_timeout(&self.node.name(), token)
+            .into_commands(&self.node)
     }
 
     // Insert the vote into the vote accumulator and handle it if accumulated.
@@ -238,7 +241,7 @@ impl Approved {
 
         let mut commands = vec![];
         commands.push(self.send_dkg_result(dkg_key, key)?);
-        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name()));
+        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name())?);
 
         Ok(commands)
     }
@@ -418,11 +421,6 @@ impl Approved {
                     return Ok(MessageStatus::Unknown);
                 }
             }
-            Variant::DKGMessage { .. } => {
-                if !self.dkg_voter.is_participating() {
-                    return Ok(MessageStatus::Unknown);
-                }
-            }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
@@ -450,7 +448,8 @@ impl Approved {
             | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. } => (),
+            | Variant::BouncedUnknownMessage { .. }
+            | Variant::DKGMessage { .. } => {}
         }
 
         if self.verify_message(msg)? {
@@ -525,7 +524,7 @@ impl Approved {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
             Variant::DKGResult { dkg_key, result } => Ok(self
-                .handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)
+                .handle_dkg_result(*dkg_key, *result, msg.src().to_node_name()?)?
                 .into_iter()
                 .collect()),
             Variant::Vote {
@@ -699,62 +698,6 @@ impl Approved {
     }
 
     fn handle_bounced_unknown_message(
-        &self,
-        sender: Peer,
-        bounced_msg_bytes: Bytes,
-        sender_last_key: &bls::PublicKey,
-    ) -> Result<Vec<Command>> {
-        let bounced_msg = Message::from_bytes(&bounced_msg_bytes)?;
-
-        if let Variant::DKGMessage { dkg_key, .. } = bounced_msg.variant() {
-            self.handle_bounced_unknown_dkg_message(sender, bounced_msg_bytes, dkg_key)
-        } else {
-            self.handle_bounced_unknown_other_message(sender, bounced_msg_bytes, sender_last_key)
-        }
-    }
-
-    fn handle_bounced_unknown_dkg_message(
-        &self,
-        sender: Peer,
-        bounced_msg_bytes: Bytes,
-        dkg_key: &DkgKey,
-    ) -> Result<Vec<Command>> {
-        let elders_info = if let Some(elders_info) = self.dkg_voter.observing_elders_info(dkg_key) {
-            trace!(
-                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
-                     - resending with DKGStart",
-                sender
-            );
-            elders_info
-        } else {
-            trace!(
-                "Received BouncedUnknownMessage(DKGMessage) from {:?} \
-                     - peer is not a DKG participant, discarding",
-                sender
-            );
-            return Ok(vec![]);
-        };
-
-        // Normally a peer would bounce a DKG message if they don't have the corresponding DKG
-        // session which means they haven't yet reached the `DKGStart` consensus. Let's send the
-        // `DKGStart` again in case the previous one got lost and then resend the original message.
-
-        let variant = Variant::DKGStart {
-            dkg_key: *dkg_key,
-            elders_info: elders_info.clone(),
-        };
-        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-
-        let mut commands = self.send_vote(slice::from_ref(&sender), vote)?;
-        commands.push(Command::send_message_to_target(
-            sender.addr(),
-            bounced_msg_bytes,
-        ));
-
-        Ok(commands)
-    }
-
-    fn handle_bounced_unknown_other_message(
         &self,
         sender: Peer,
         bounced_msg_bytes: Bytes,
@@ -1043,7 +986,8 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start_participating(&self.node, dkg_key, new_elders_info)
+            .start_participating(self.node.name(), dkg_key, new_elders_info)
+            .into_commands(&self.node)
     }
 
     fn handle_dkg_result(
@@ -1051,8 +995,10 @@ impl Approved {
         dkg_key: DkgKey,
         result: Result<bls::PublicKey, ()>,
         sender: XorName,
-    ) -> Option<Command> {
-        self.dkg_voter.observe_result(&dkg_key, result, sender)
+    ) -> Result<Vec<Command>> {
+        self.dkg_voter
+            .observe_result(&dkg_key, result, sender)
+            .into_commands(&self.node)
     }
 
     fn handle_dkg_message(
@@ -1064,7 +1010,9 @@ impl Approved {
         let message = bincode::deserialize(&message_bytes[..])?;
         trace!("handle DKG message {:?} from {}", message, sender);
 
-        self.dkg_voter.process_message(&self.node, dkg_key, message)
+        self.dkg_voter
+            .process_message(&self.node.name(), dkg_key, message)
+            .into_commands(&self.node)
     }
 
     ////////////////////////////////////////////////////////////////////////////

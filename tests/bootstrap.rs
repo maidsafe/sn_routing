@@ -135,10 +135,7 @@ async fn test_section_bootstrapping() -> Result<()> {
 // Test that the first `ELDER_SIZE` nodes in the network are promoted to elders.
 #[tokio::test]
 async fn test_startup_elders() -> Result<()> {
-    // FIXME: using only 3 nodes for now because with 4 or more the test takes too long (but still
-    // succeeds). Needs further investigation.
-    let network_size = 3;
-    let mut nodes = create_connected_nodes(network_size).await?;
+    let mut nodes = create_connected_nodes(ELDER_SIZE).await?;
 
     async fn expect_promote_event(stream: &mut EventStream) {
         while let Some(event) = stream.next().await {
