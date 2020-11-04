@@ -610,6 +610,9 @@
 <span id="609">609</span>
 <span id="610">610</span>
 <span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -634,9 +637,11 @@
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>};
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">mem</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections</span>::<span class="ident">VecDeque</span>, <span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">mem</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
+
+<span class="kw">const</span> <span class="ident">BACKLOG_CAPACITY</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">100</span>;
 
 <span class="doccomment">/// Bootstrap into the network as an infant node.</span>
 <span class="doccomment">///</span>
@@ -648,7 +653,7 @@
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>,
     <span class="ident">incoming_messages</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">IncomingMessages</span>,
     <span class="ident">bootstrap_addr</span>: <span class="ident">SocketAddr</span>,
-) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
+) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
@@ -675,7 +680,7 @@
     <span class="ident">recv_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
     <span class="ident">relocate_details</span>: <span class="ident">SignedRelocateDetails</span>,
-) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
+) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>)<span class="question-mark">?</span>;
 
@@ -692,6 +697,8 @@
     <span class="comment">// Receiver for incoming messages.</span>
     <span class="ident">recv_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     <span class="ident">node</span>: <span class="ident">Node</span>,
+    <span class="comment">// Backlog for unknown messages</span>
+    <span class="ident">backlog</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">State</span> {
@@ -704,6 +711,7 @@
             <span class="ident">send_tx</span>,
             <span class="ident">recv_rx</span>,
             <span class="ident">node</span>,
+            <span class="ident">backlog</span>: <span class="ident">VecDeque</span>::<span class="ident">with_capacity</span>(<span class="ident">BACKLOG_CAPACITY</span>),
         })
     }
 
@@ -711,7 +719,7 @@
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">relocate_details</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SignedRelocateDetails</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
+    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="ident">section_key</span>) <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">bootstrap</span>(<span class="ident">bootstrap_addrs</span>, <span class="ident">relocate_details</span>.<span class="ident">as_ref</span>())
             .<span class="kw">await</span><span class="question-mark">?</span>;
@@ -800,14 +808,7 @@
 
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">response</span>.<span class="ident">clone</span>(), <span class="ident">sender</span>));
                 }
-                <span class="kw">_</span> <span class="op">=&gt;</span> {
-                    <span class="macro">trace</span><span class="macro">!</span>(
-                        <span class="string">&quot;{} Useless message {:?} from {}&quot;</span>,
-                        <span class="self">self</span>.<span class="ident">node</span>,
-                        <span class="ident">message</span>,
-                        <span class="ident">sender</span>,
-                    );
-                }
+                <span class="kw">_</span> <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">backlog_message</span>(<span class="ident">message</span>, <span class="ident">sender</span>),
             }
         }
 
@@ -849,7 +850,7 @@
         <span class="kw-2">mut</span> <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="kw-2">mut</span> <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>)<span class="op">&gt;</span> {
+    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">loop</span> {
             <span class="self">self</span>.<span class="ident">send_join_requests</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>, <span class="ident">section_key</span>, <span class="ident">relocate_payload</span>.<span class="ident">as_ref</span>())
                 .<span class="kw">await</span><span class="question-mark">?</span>;
@@ -863,7 +864,11 @@
                     <span class="ident">elders_info</span>,
                     <span class="ident">section_chain</span>,
                 } <span class="op">=&gt;</span> {
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="self">self</span>.<span class="ident">node</span>, <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">section_chain</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>));
+                    <span class="kw">return</span> <span class="prelude-val">Ok</span>((
+                        <span class="self">self</span>.<span class="ident">node</span>,
+                        <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">section_chain</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>,
+                        <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">into_iter</span>().<span class="ident">collect</span>(),
+                    ));
                 }
                 <span class="ident">JoinResponse</span>::<span class="ident">Rejoin</span> {
                     <span class="ident">elders_info</span>: <span class="ident">new_elders_info</span>,
@@ -972,14 +977,7 @@
                     ));
                 }
 
-                <span class="kw">_</span> <span class="op">=&gt;</span> {
-                    <span class="macro">trace</span><span class="macro">!</span>(
-                        <span class="string">&quot;{} Useless message {:?} from {}&quot;</span>,
-                        <span class="self">self</span>.<span class="ident">node</span>,
-                        <span class="ident">message</span>,
-                        <span class="ident">sender</span>,
-                    );
-                }
+                <span class="kw">_</span> <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">backlog_message</span>(<span class="ident">message</span>, <span class="ident">sender</span>),
             }
         }
 
@@ -1009,6 +1007,14 @@
                 <span class="bool-val">false</span>
             }
         }
+    }
+
+    <span class="kw">fn</span> <span class="ident">backlog_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">Message</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>) {
+        <span class="kw">while</span> <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">len</span>() <span class="op">&gt;=</span> <span class="ident">BACKLOG_CAPACITY</span> {
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">pop_front</span>();
+        }
+
+        <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">push_back</span>((<span class="ident">message</span>, <span class="ident">sender</span>))
     }
 }
 
@@ -1156,7 +1162,7 @@
         };
 
         <span class="comment">// Drive both tasks to completion concurrently (but on the same thread).</span>
-        <span class="kw">let</span> ((<span class="ident">_node</span>, <span class="ident">section</span>), <span class="kw">_</span>) <span class="op">=</span> <span class="ident">future</span>::<span class="ident">try_join</span>(<span class="ident">bootstrap</span>, <span class="ident">others</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> ((<span class="ident">_node</span>, <span class="ident">section</span>, <span class="ident">_backlog</span>), <span class="kw">_</span>) <span class="op">=</span> <span class="ident">future</span>::<span class="ident">try_join</span>(<span class="ident">bootstrap</span>, <span class="ident">others</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">elders_info</span>(), <span class="ident">elders_info</span>);
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(), <span class="ident">pk</span>);

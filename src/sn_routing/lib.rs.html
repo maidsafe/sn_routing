@@ -250,15 +250,15 @@
 }
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
+    <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">majority</span>;
     <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
 
-    <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">majority</span>;
     <span class="macro">proptest</span><span class="macro">!</span> {
         <span class="attribute">#[<span class="ident">test</span>]</span>
-        <span class="kw">fn</span> <span class="ident">pt_strict_majority</span>(<span class="ident">a</span> <span class="kw">in</span> <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>()) {
+        <span class="kw">fn</span> <span class="ident">proptest_strict_majority</span>(<span class="ident">a</span> <span class="kw">in</span> <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>()) {
             <span class="kw">let</span> <span class="ident">maj</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">a</span>);
             <span class="kw">let</span> <span class="ident">maj_double</span> <span class="op">=</span> <span class="ident">maj</span> <span class="op">*</span> <span class="number">2</span>;
-            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
+            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
         }
     }
 }
