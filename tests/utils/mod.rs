@@ -132,32 +132,28 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
         Ok::<_, Error>((node, event_stream))
     });
 
-    for result in future::join_all(other_nodes).await {
-        nodes.push(result?);
+    for node in future::try_join_all(other_nodes).await? {
+        nodes.push(node);
     }
 
-    // Wait until the first node receives `InfantJoined` event for all the other nodes.
-    let mut not_joined = HashSet::new();
-    for (node, _) in &nodes[1..] {
-        let _ = not_joined.insert(node.name().await);
-    }
+    // Wait until the first node receives `InfantJoined`/`MemberJoined` event for all the other
+    // nodes.
+    let mut joined_count = 1;
 
     while let Some(event) = nodes[0].1.next().await {
-        if let Event::InfantJoined { name, age } = event {
-            assert_eq!(age, MIN_AGE);
-            let _ = not_joined.remove(&name);
+        match event {
+            Event::InfantJoined { name, .. } | Event::MemberJoined { name, .. } => {
+                joined_count += 1
+            }
+            _ => {}
         }
 
-        if not_joined.is_empty() {
+        if joined_count == nodes.len() {
             break;
         }
     }
 
-    assert!(
-        not_joined.is_empty(),
-        "Event::InfantJoined not received for: {:?}",
-        not_joined
-    );
+    assert_eq!(joined_count, nodes.len());
 
     Ok(nodes)
 }

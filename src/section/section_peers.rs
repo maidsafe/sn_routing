@@ -45,13 +45,6 @@ impl SectionPeers {
             .filter(|member| member.state == PeerState::Joined)
     }
 
-    /// Returns an iterator over the members that have state == `Joined` together with their proofs.
-    pub fn proven_joined(&self) -> impl Iterator<Item = &Proven<MemberInfo>> {
-        self.members
-            .values()
-            .filter(|member| member.value.state == PeerState::Joined)
-    }
-
     /// Returns joined nodes from our section with age greater than `MIN_AGE`
     pub fn mature(&self) -> impl Iterator<Item = &Peer> {
         self.joined()
@@ -105,6 +98,11 @@ impl SectionPeers {
             .get(name)
             .map(|info| info.value.state == PeerState::Joined && info.value.is_mature())
             .unwrap_or(false)
+    }
+
+    /// Returns whether the given peer is known to us (joined or left)
+    pub fn is_known(&self, name: &XorName) -> bool {
+        self.members.contains_key(name)
     }
 
     /// Update a member of our section.

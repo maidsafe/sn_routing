@@ -49,14 +49,6 @@ impl MemberInfo {
             ..self
         }
     }
-
-    // Converts this info into one with the age increased by one.
-    pub fn increment_age(self) -> Self {
-        Self {
-            peer: self.peer.increment_age(),
-            ..self
-        }
-    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]

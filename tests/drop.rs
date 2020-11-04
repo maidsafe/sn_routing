@@ -11,12 +11,20 @@ mod utils;
 use self::utils::*;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
-use sn_routing::{event::Event, DstLocation, SrcLocation};
+use sn_routing::{
+    event::{Connected, Event},
+    DstLocation, SrcLocation,
+};
 use tokio::time;
 
 #[tokio::test]
 async fn test_node_drop() -> Result<()> {
     let mut nodes = create_connected_nodes(2).await?;
+
+    // We are in the startup phase, so the second node is instantly relocated. Let's wait until it
+    // re-joins.
+    assert_next_event!(nodes[1].1, Event::RelocationStarted { .. });
+    assert_next_event!(nodes[1].1, Event::Connected(Connected::Relocate { .. }));
 
     // Drop one node
     let dropped_name = nodes.remove(1).0.name().await;

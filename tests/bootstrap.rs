@@ -13,11 +13,10 @@ use ed25519_dalek::Keypair;
 use futures::future;
 use sn_routing::{
     event::{Connected, Event},
-    EventStream, Routing, ELDER_SIZE,
+    EventStream, ELDER_SIZE,
 };
 use tokio::time;
 use utils::*;
-use xor_name::XorName;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
@@ -47,10 +46,9 @@ async fn test_node_bootstrapping() -> Result<()> {
     let genesis_handler = tokio::spawn(async move {
         assert_next_event!(event_stream, Event::Connected(Connected::First));
         assert_next_event!(event_stream, Event::PromotedToElder);
-        assert_next_event!(event_stream, Event::InfantJoined { age: 4, name: _ });
-        // TODO: Should we expect EldersChanged event too ??
-        // assert_next_event!(event_stream, Event::EldersChanged { .. })?;
-        Ok::<(), Error>(())
+        assert_next_event!(event_stream, Event::MemberJoined { .. });
+        // TODO: we should expect `EldersChanged` too.
+        // assert_next_event!(event_stream, Event::EldersChanged { .. });
     });
 
     // bootstrap a second node with genesis
@@ -63,7 +61,7 @@ async fn test_node_bootstrapping() -> Result<()> {
     assert_next_event!(event_stream, Event::Connected(Connected::First));
 
     // just await for genesis node to finish receiving all events
-    genesis_handler.await??;
+    genesis_handler.await?;
 
     let elder_size = 2;
     verify_invariants_for_node(&genesis_node, elder_size).await?;
@@ -73,58 +71,55 @@ async fn test_node_bootstrapping() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_section_bootstrapping() -> Result<()> {
+async fn test_startup_section_bootstrapping() -> Result<()> {
     let (genesis_node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let other_node_count = ELDER_SIZE - 1;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
+        let mut joined_nodes = vec![];
         // expect events for all nodes
-        let mut joined_nodes = Vec::default();
         while let Some(event) = event_stream.next().await {
-            match event {
-                Event::InfantJoined { age, name } => {
-                    assert_eq!(age, 4);
-                    joined_nodes.push(name);
-                }
-                _other => {}
+            if let Event::MemberJoined { name, .. } = event {
+                joined_nodes.push(name)
             }
 
-            if joined_nodes.len() == ELDER_SIZE {
+            if joined_nodes.len() == other_node_count {
                 break;
             }
         }
 
-        Ok::<Vec<XorName>, Error>(joined_nodes)
+        joined_nodes
     });
 
     // bootstrap several nodes with genesis to form a section
     let genesis_contact = genesis_node.our_connection_info()?;
-    let mut nodes_joining_tasks = Vec::with_capacity(ELDER_SIZE);
-    for _ in 0..ELDER_SIZE {
-        nodes_joining_tasks.push(async {
+    let nodes_joining_tasks: Vec<_> = (0..other_node_count)
+        .map(|_| async {
             let (node, mut event_stream) = RoutingBuilder::new(None)
                 .with_contact(genesis_contact)
                 .create()
                 .await?;
 
+            // During the startup phase, joining nodes are instantly relocated.
             assert_next_event!(event_stream, Event::Connected(Connected::First));
+            assert_next_event!(event_stream, Event::RelocationStarted { .. });
+            assert_next_event!(event_stream, Event::Connected(Connected::Relocate { .. }));
 
-            Ok::<Routing, Error>(node)
-        });
-    }
+            Ok::<_, Error>(node)
+        })
+        .collect();
 
-    let nodes = future::join_all(nodes_joining_tasks).await;
+    let nodes = future::try_join_all(nodes_joining_tasks).await?;
 
     // just await for genesis node to finish receiving all events
-    let joined_nodes = genesis_handler.await??;
+    let joined_nodes = genesis_handler.await?;
 
-    for result in nodes {
-        let node = result?;
+    for node in nodes {
         let name = node.name().await;
 
         // assert names of nodes joined match
-        let found = joined_nodes.iter().find(|n| **n == name);
-        assert!(found.is_some());
+        assert!(joined_nodes.contains(&name));
 
         verify_invariants_for_node(&node, ELDER_SIZE).await?;
     }

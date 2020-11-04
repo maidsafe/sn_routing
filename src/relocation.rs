@@ -9,18 +9,24 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    consensus::Proven,
     crypto::{self, Keypair, Signature, Verifier},
     error::Error,
     messages::{Message, Variant},
     network::Network,
+    peer::Peer,
     section::{MemberInfo, Section},
+    MIN_AGE,
 };
 use bytes::Bytes;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use std::net::SocketAddr;
+use std::{convert::TryInto, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::XorName;
+
+pub(crate) const MIN_STARTUP_PHASE_AGE: u8 = MIN_AGE + 1;
+pub(crate) const MAX_STARTUP_PHASE_AGE: u8 = 32;
 
 /// Find all nodes to relocate after a churn event and create the relocate actions for them.
 pub(crate) fn actions(
@@ -31,12 +37,12 @@ pub(crate) fn actions(
 ) -> Vec<(MemberInfo, RelocateAction)> {
     section
         .members()
-        .proven_joined()
-        .filter(|info| check(info.value.peer.age(), churn_signature))
+        .joined()
+        .filter(|info| check(info.peer.age(), churn_signature))
         .map(|info| {
             (
-                info.value,
-                RelocateAction::new(section, network, info, churn_name),
+                *info,
+                RelocateAction::new(section, network, &info.peer, churn_name),
             )
         })
         .collect()
@@ -61,18 +67,34 @@ impl RelocateDetails {
     pub(crate) fn new(
         section: &Section,
         network: &Network,
-        info: &MemberInfo,
+        peer: &Peer,
         destination: XorName,
+    ) -> Self {
+        Self::with_age(
+            section,
+            network,
+            peer,
+            destination,
+            peer.age().saturating_add(1),
+        )
+    }
+
+    pub(crate) fn with_age(
+        section: &Section,
+        network: &Network,
+        peer: &Peer,
+        destination: XorName,
+        age: u8,
     ) -> Self {
         let destination_key = *network
             .key_by_name(&destination)
             .unwrap_or_else(|| section.chain().first_key());
 
         Self {
-            pub_id: *info.peer.name(),
+            pub_id: *peer.name(),
             destination,
             destination_key,
-            age: info.peer.age().saturating_add(1),
+            age,
         }
     }
 }
@@ -195,26 +217,16 @@ pub(crate) enum RelocateAction {
 }
 
 impl RelocateAction {
-    pub fn new(
-        section: &Section,
-        network: &Network,
-        info: &Proven<MemberInfo>,
-        churn_name: &XorName,
-    ) -> Self {
-        let destination = destination(info.value.peer.name(), churn_name);
+    pub fn new(section: &Section, network: &Network, peer: &Peer, churn_name: &XorName) -> Self {
+        let destination = destination(peer.name(), churn_name);
 
-        if section.is_elder(info.value.peer.name()) {
+        if section.is_elder(peer.name()) {
             RelocateAction::Delayed(RelocatePromise {
-                name: *info.value.peer.name(),
+                name: *peer.name(),
                 destination,
             })
         } else {
-            RelocateAction::Instant(RelocateDetails::new(
-                section,
-                network,
-                &info.value,
-                destination,
-            ))
+            RelocateAction::Instant(RelocateDetails::new(section, network, peer, destination))
         }
     }
 
@@ -232,6 +244,16 @@ pub(crate) fn check(age: u8, churn_signature: &bls::Signature) -> bool {
     // Evaluate the formula: `signature % 2^age == 0` Which is the same as checking the signature
     // has at least `age` trailing zero bits.
     trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
+}
+
+// Generate age for relocated peer during the starup phase, using the `Online` vote signature as
+// the random seed.
+pub(crate) fn startup_phase_age(signature: &bls::Signature) -> u8 {
+    let seed = signature.to_bytes()[..32]
+        .try_into()
+        .expect("invalid signature length");
+    let mut rng = ChaCha8Rng::from_seed(seed);
+    rng.gen_range(MIN_STARTUP_PHASE_AGE, MAX_STARTUP_PHASE_AGE)
 }
 
 // Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is

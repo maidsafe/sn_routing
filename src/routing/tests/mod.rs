@@ -181,7 +181,11 @@ async fn accumulate_votes() -> Result<()> {
 #[tokio::test]
 async fn handle_consensus_on_online_of_infant() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let (elders_info, mut nodes) = create_elders_info();
+
+    // Use non-default prefix to skip the startup phase.
+    let prefix: Prefix = "0".parse().unwrap();
+
+    let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
