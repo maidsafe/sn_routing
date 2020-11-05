@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{event::Event, DstLocation, Error, SrcLocation, TransportConfig};
+use sn_routing::{DstLocation, Error, Event, SrcLocation, TransportConfig};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 

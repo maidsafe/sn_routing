@@ -11,7 +11,7 @@ mod utils;
 use self::utils::*;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
-use sn_routing::{event::Event, DstLocation, SrcLocation};
+use sn_routing::{DstLocation, Event, SrcLocation};
 use tokio::time;
 
 #[tokio::test]

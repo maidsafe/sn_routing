@@ -36,7 +36,7 @@
 use futures::future::join_all;
 use hex_fmt::HexFmt;
 use log::{info, LevelFilter};
-use sn_routing::{event::Event, Config, EventStream, Routing, TransportConfig};
+use sn_routing::{Config, Event, EventStream, Routing, TransportConfig};
 use std::{
     collections::HashSet,
     convert::TryInto,

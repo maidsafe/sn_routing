@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
-use sn_routing::{event::Event, EventStream, ELDER_SIZE};
+use sn_routing::{Event, EventStream, ELDER_SIZE};
 use tokio::time;
 use utils::*;
 
