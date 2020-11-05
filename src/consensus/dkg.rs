@@ -651,7 +651,7 @@ mod tests {
         // Expect the session to successfully complete without timed transitions.
         // NOTE: `seed` is for seeding the rng that randomizes the message order.
         #[test]
-        fn proptest_full_participation(peers in arbitrary_elder_peers(), seed: u64) {
+        fn proptest_full_participation(peers in arbitrary_elder_peers(), seed in any::<u64>()) {
             proptest_full_participation_impl(peers, seed)
         }
     }
