@@ -21,12 +21,12 @@ use bytes::Bytes;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use std::{convert::TryInto, net::SocketAddr};
+use std::{convert::TryInto, net::SocketAddr, ops::Range};
 use tokio::sync::mpsc;
 use xor_name::XorName;
 
-pub(crate) const MIN_STARTUP_PHASE_AGE: u8 = MIN_AGE + 1;
-pub(crate) const MAX_STARTUP_PHASE_AGE: u8 = 32;
+// Range from which the age of a joining node is selected during the startup phase.
+pub(crate) const STARTUP_PHASE_AGE_RANGE: Range<u8> = (MIN_AGE + 1)..32;
 
 /// Find all nodes to relocate after a churn event and create the relocate actions for them.
 pub(crate) fn actions(
@@ -35,10 +35,23 @@ pub(crate) fn actions(
     churn_name: &XorName,
     churn_signature: &bls::Signature,
 ) -> Vec<(MemberInfo, RelocateAction)> {
-    section
+    // Find the peers that pass the relocation check and take only the oldest ones to avoid
+    // relocating too many nodes at the same time.
+    let candidates: Vec<_> = section
         .members()
         .joined()
         .filter(|info| check(info.peer.age(), churn_signature))
+        .collect();
+
+    let max_age = if let Some(age) = candidates.iter().map(|info| info.peer.age()).max() {
+        age
+    } else {
+        return vec![];
+    };
+
+    candidates
+        .into_iter()
+        .filter(|info| info.peer.age() == max_age)
         .map(|info| {
             (
                 *info,
@@ -99,7 +112,7 @@ impl RelocateDetails {
     }
 }
 
-/// SignedSNRoutingMessage with Relocate message content.
+/// Message with Variant::Relocate in a convenient wrapper.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
@@ -209,6 +222,7 @@ pub(crate) enum RelocateState {
 }
 
 /// Action to relocate a node.
+#[derive(Debug)]
 pub(crate) enum RelocateAction {
     /// Relocate the node instantly.
     Instant(RelocateDetails),
@@ -236,6 +250,14 @@ impl RelocateAction {
             Self::Delayed(promise) => &promise.destination,
         }
     }
+
+    #[cfg(test)]
+    pub fn name(&self) -> &XorName {
+        match self {
+            Self::Instant(details) => &details.pub_id,
+            Self::Delayed(promise) => &promise.name,
+        }
+    }
 }
 
 // Relocation check - returns whether a member with the given age is a candidate for relocation on
@@ -253,7 +275,7 @@ pub(crate) fn startup_phase_age(signature: &bls::Signature) -> u8 {
         .try_into()
         .expect("invalid signature length");
     let mut rng = ChaCha8Rng::from_seed(seed);
-    rng.gen_range(MIN_STARTUP_PHASE_AGE, MAX_STARTUP_PHASE_AGE)
+    rng.gen_range(STARTUP_PHASE_AGE_RANGE.start, STARTUP_PHASE_AGE_RANGE.end)
 }
 
 // Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
@@ -292,6 +314,16 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        consensus::test_utils::proven, peer::test_utils::arbitrary_unique_peers,
+        section::EldersInfo, SectionProofChain, ELDER_SIZE,
+    };
+    use anyhow::Result;
+    use assert_matches::assert_matches;
+    use itertools::Itertools;
+    use proptest::prelude::*;
+    use rand::rngs::SmallRng;
+    use xor_name::Prefix;
 
     #[test]
     fn byte_slice_trailing_zeros() {
@@ -303,5 +335,128 @@ mod tests {
         assert_eq!(trailing_zeros(&[0, 0]), 16);
         assert_eq!(trailing_zeros(&[1, 0]), 8);
         assert_eq!(trailing_zeros(&[2, 0]), 9);
+    }
+
+    const MAX_AGE: u8 = MIN_AGE + 4;
+
+    proptest! {
+        #[test]
+        fn proptest_actions(
+            peers in arbitrary_unique_peers(2..ELDER_SIZE + 1, MIN_AGE..MAX_AGE),
+            signature_trailing_zeros in 0..MAX_AGE,
+            seed in any::<u64>().no_shrink())
+        {
+            proptest_actions_impl(peers, signature_trailing_zeros, seed).unwrap()
+        }
+    }
+
+    fn proptest_actions_impl(
+        peers: Vec<Peer>,
+        signature_trailing_zeros: u8,
+        seed: u64,
+    ) -> Result<()> {
+        let mut rng = SmallRng::seed_from_u64(seed);
+
+        let sk: bls::SecretKey = rng.gen();
+        let pk = sk.public_key();
+
+        // Create `Section` with `peers` as its members and set the `ELDER_SIZE` oldest peers as
+        // the elders.
+        let elders_info = EldersInfo::new(
+            peers
+                .iter()
+                .sorted_by_key(|peer| peer.age())
+                .rev()
+                .take(ELDER_SIZE)
+                .copied(),
+            Prefix::default(),
+        );
+        let elders_info = proven(&sk, elders_info)?;
+
+        let mut section = Section::new(SectionProofChain::new(pk), elders_info)?;
+
+        for peer in &peers {
+            let info = MemberInfo::joined(*peer);
+            let info = proven(&sk, info)?;
+
+            assert!(section.update_member(info));
+        }
+
+        let network = Network::new();
+
+        // Simulate a churn event whose signature has the given number of trailing zeros.
+        let churn_name = rng.gen();
+        let churn_signature = signature_with_trailing_zeros(signature_trailing_zeros as u32);
+
+        let actions = actions(&section, &network, &churn_name, &churn_signature);
+        let actions: Vec<_> = actions
+            .into_iter()
+            .map(|(_, action)| action)
+            .sorted_by_key(|action| *action.name())
+            .collect();
+
+        // Only the oldest matching peers should be relocated.
+        let expected_relocated_age = peers
+            .iter()
+            .map(Peer::age)
+            .filter(|age| *age <= signature_trailing_zeros)
+            .max();
+
+        let expected_relocated_peers: Vec<_> = peers
+            .iter()
+            .filter(|peer| Some(peer.age()) == expected_relocated_age)
+            .sorted_by_key(|peer| *peer.name())
+            .collect();
+
+        assert_eq!(expected_relocated_peers.len(), actions.len());
+
+        // Verify the relocate action is correct depending on whether the peer is elder or not.
+        // NOTE: `zip` works here, because both collections are sorted by name.
+        for (peer, action) in expected_relocated_peers.into_iter().zip(actions) {
+            assert_eq!(peer.name(), action.name());
+
+            if section.is_elder(peer.name()) {
+                assert_matches!(action, RelocateAction::Delayed(_));
+            } else {
+                assert_matches!(action, RelocateAction::Instant(_));
+            }
+        }
+
+        Ok(())
+    }
+
+    // Fetch a `bls::Signature` with the given number of trailing zeros. The signature is generated
+    // from an unspecified random data using an unspecified random `SecretKey`. That is OK because
+    // the relocation algorithm doesn't care about whether the signature is valid. It only
+    // cares about its number of trailing zeros.
+    fn signature_with_trailing_zeros(trailing_zeros_count: u32) -> bls::Signature {
+        use std::{cell::RefCell, collections::HashMap};
+
+        // Cache the signatures to avoid expensive re-computation.
+        thread_local! {
+            static CACHE: RefCell<HashMap<u32, bls::Signature>> = RefCell::new(HashMap::new());
+        }
+
+        CACHE.with(|cache| {
+            cache
+                .borrow_mut()
+                .entry(trailing_zeros_count)
+                .or_insert_with(|| gen_signature_with_trailing_zeros(trailing_zeros_count))
+                .clone()
+        })
+    }
+
+    fn gen_signature_with_trailing_zeros(trailing_zeros_count: u32) -> bls::Signature {
+        let mut rng = SmallRng::seed_from_u64(0);
+        let sk: bls::SecretKey = rng.gen();
+
+        loop {
+            let data: u64 = rng.gen();
+            let signature = sk.sign(&data.to_be_bytes());
+
+            if trailing_zeros(&signature.to_bytes()) == trailing_zeros_count {
+                return signature;
+            }
+        }
     }
 }

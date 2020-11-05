@@ -1178,7 +1178,7 @@ fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proo
 
         let signature = sk.sign(&bincode::serialize(&vote.as_signable())?);
 
-        if relocation::check(age, &signature) {
+        if relocation::check(age, &signature) && !relocation::check(age + 1, &signature) {
             let proof = Proof {
                 public_key: sk.public_key(),
                 signature,
