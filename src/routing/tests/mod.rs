@@ -179,11 +179,27 @@ async fn accumulate_votes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_infant() -> Result<()> {
+async fn handle_consensus_on_online_of_infant_during_startup_phase() -> Result<()> {
+    handle_consensus_on_online_of_infant(NetworkPhase::Startup).await
+}
+
+#[tokio::test]
+async fn handle_consensus_on_online_of_infant_after_startup_phase() -> Result<()> {
+    handle_consensus_on_online_of_infant(NetworkPhase::Regular).await
+}
+
+enum NetworkPhase {
+    Startup,
+    Regular,
+}
+
+async fn handle_consensus_on_online_of_infant(phase: NetworkPhase) -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
-    // Use non-default prefix to skip the startup phase.
-    let prefix: Prefix = "0".parse().unwrap();
+    let prefix = match phase {
+        NetworkPhase::Startup => Prefix::default(),
+        NetworkPhase::Regular => "0".parse().unwrap(),
+    };
 
     let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
     let sk_set = SecretKeySet::random();
@@ -206,29 +222,61 @@ async fn handle_consensus_on_online_of_infant() -> Result<()> {
         .await?;
 
     let mut node_approval_sent = false;
+    let mut relocate_sent = false;
 
     for command in commands {
-        if let Command::SendMessage {
-            recipients,
-            message,
-            ..
-        } = command
-        {
-            let message = Message::from_bytes(&message)?;
-            if let Variant::NodeApproval(proven_elders_info) = message.variant() {
+        let (message, recipients) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (Message::from_bytes(&message)?, recipients),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::NodeApproval(proven_elders_info) => {
                 assert_eq!(proven_elders_info.value, elders_info);
                 assert_eq!(recipients, [*new_peer.addr()]);
                 node_approval_sent = true;
             }
+            Variant::Vote { content, .. } => {
+                let message = if let Vote::SendMessage { message, .. } = content {
+                    message
+                } else {
+                    continue;
+                };
+
+                let details = if let Variant::Relocate(details) = &message.variant {
+                    details
+                } else {
+                    continue;
+                };
+
+                assert_eq!(details.pub_id, *new_peer.name());
+                assert_eq!(details.destination, *new_peer.name());
+                assert!(details.age > MIN_AGE);
+                assert_eq!(recipients, [*new_peer.addr()]);
+                relocate_sent = true;
+            }
+            _ => continue,
         }
     }
 
     assert!(node_approval_sent);
 
-    assert_matches!(event_rx.try_recv(), Ok(Event::InfantJoined { name, age, }) => {
-        assert_eq!(name, *new_peer.name());
-        assert_eq!(age, MIN_AGE);
-    });
+    match phase {
+        NetworkPhase::Startup => {
+            assert!(relocate_sent);
+            assert!(event_rx.try_recv().is_err());
+        }
+        NetworkPhase::Regular => {
+            assert_matches!(event_rx.try_recv(), Ok(Event::InfantJoined { name, age, }) => {
+                assert_eq!(name, *new_peer.name());
+                assert_eq!(age, MIN_AGE);
+            });
+        }
+    }
 
     Ok(())
 }
