@@ -1415,7 +1415,7 @@
         <span class="comment">// Expect the session to successfully complete without timed transitions.</span>
         <span class="comment">// NOTE: `seed` is for seeding the rng that randomizes the message order.</span>
         <span class="attribute">#[<span class="ident">test</span>]</span>
-        <span class="kw">fn</span> <span class="ident">proptest_full_participation</span>(<span class="ident">peers</span> <span class="kw">in</span> <span class="ident">arbitrary_elder_peers</span>(), <span class="ident">seed</span>: <span class="ident">u64</span>) {
+        <span class="kw">fn</span> <span class="ident">proptest_full_participation</span>(<span class="ident">peers</span> <span class="kw">in</span> <span class="ident">arbitrary_elder_peers</span>(), <span class="ident">seed</span> <span class="kw">in</span> <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>()) {
             <span class="ident">proptest_full_participation_impl</span>(<span class="ident">peers</span>, <span class="ident">seed</span>)
         }
     }
