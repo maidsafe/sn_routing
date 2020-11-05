@@ -1135,18 +1135,11 @@ impl Approved {
             commands.extend(self.relocate_peers(peer.name(), &signature)?);
             commands.extend(self.promote_and_demote_elders()?);
 
-            if let Some(previous_name) = previous_name {
-                self.send_event(Event::MemberJoined {
-                    name: *peer.name(),
-                    previous_name,
-                    age: peer.age(),
-                });
-            } else {
-                self.send_event(Event::InfantJoined {
-                    name: *peer.name(),
-                    age: peer.age(),
-                });
-            }
+            self.send_event(Event::MemberJoined {
+                name: *peer.name(),
+                previous_name,
+                age: peer.age(),
+            });
 
             self.print_network_stats();
         }

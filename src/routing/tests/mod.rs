@@ -271,7 +271,7 @@ async fn handle_consensus_on_online_of_infant(phase: NetworkPhase) -> Result<()>
             assert!(event_rx.try_recv().is_err());
         }
         NetworkPhase::Regular => {
-            assert_matches!(event_rx.try_recv(), Ok(Event::InfantJoined { name, age, }) => {
+            assert_matches!(event_rx.try_recv(), Ok(Event::MemberJoined { name, age, .. }) => {
                 assert_eq!(name, *new_peer.name());
                 assert_eq!(age, MIN_AGE);
             });

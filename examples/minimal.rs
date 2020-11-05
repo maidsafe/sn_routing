@@ -36,10 +36,7 @@
 use futures::future::join_all;
 use hex_fmt::HexFmt;
 use log::{info, LevelFilter};
-use sn_routing::{
-    event::{Connected, Event},
-    Config, EventStream, Routing, TransportConfig,
-};
+use sn_routing::{event::Event, Config, EventStream, Routing, TransportConfig};
 use std::{
     collections::HashSet,
     convert::TryInto,
@@ -200,6 +197,14 @@ async fn start_node(
     let contact_info = node
         .our_connection_info()
         .expect("Failed to obtain node's contact info.");
+
+    info!(
+        "Node #{} connected - name: {}, contact: {}",
+        index,
+        node.name().await,
+        contact_info
+    );
+
     let handle = run_node(index, node, event_stream);
 
     (contact_info, handle)
@@ -219,26 +224,6 @@ fn run_node(index: usize, mut node: Routing, mut event_stream: EventStream) -> J
 // Handles the event emitted by the node.
 async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
     match event {
-        Event::Connected(Connected::First) => {
-            let contact_info = node
-                .our_connection_info()
-                .expect("failed to retrieve node contact info");
-
-            info!(
-                "Node #{} connected - name: {}, contact: {}",
-                index,
-                node.name().await,
-                contact_info
-            );
-        }
-        Event::Connected(Connected::Relocate { previous_name }) => {
-            info!(
-                "Node #{} relocated - old name: {}, new name: {}",
-                index,
-                previous_name,
-                node.name().await
-            );
-        }
         Event::PromotedToElder => {
             info!("Node #{} promoted to Elder", index);
         }
@@ -254,14 +239,8 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             age,
         } => {
             info!(
-                "Node #{} member joined - name: {}, previous_name: {}, age: {}",
+                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}",
                 index, name, previous_name, age
-            );
-        }
-        Event::InfantJoined { name, age } => {
-            info!(
-                "Node #{} infant joined - name: {}, age: {}",
-                index, name, age
             );
         }
         Event::MemberLeft { name, age } => {
@@ -288,6 +267,14 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             "Node #{} relocation started - previous_name: {}",
             index, previous_name
         ),
+        Event::Relocated { previous_name } => {
+            info!(
+                "Node #{} relocated - old name: {}, new name: {}",
+                index,
+                previous_name,
+                node.name().await
+            );
+        }
         Event::RestartRequired => {
             info!("Node #{} requires restart", index);
             return false;

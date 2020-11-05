@@ -11,10 +11,7 @@ mod utils;
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
-use sn_routing::{
-    event::{Connected, Event},
-    EventStream, ELDER_SIZE,
-};
+use sn_routing::{event::Event, EventStream, ELDER_SIZE};
 use tokio::time;
 use utils::*;
 
@@ -30,7 +27,6 @@ async fn test_genesis_node() -> Result<()> {
 
     assert_eq!(pub_key, node.public_key().await);
 
-    assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::PromotedToElder);
 
     assert!(node.is_elder().await);
@@ -44,7 +40,6 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        assert_next_event!(event_stream, Event::Connected(Connected::First));
         assert_next_event!(event_stream, Event::PromotedToElder);
         assert_next_event!(event_stream, Event::MemberJoined { .. });
         // TODO: we should expect `EldersChanged` too.
@@ -53,12 +48,10 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // bootstrap a second node with genesis
     let genesis_contact = genesis_node.our_connection_info()?;
-    let (node1, mut event_stream) = RoutingBuilder::new(None)
+    let (node1, _event_stream) = RoutingBuilder::new(None)
         .with_contact(genesis_contact)
         .create()
         .await?;
-
-    assert_next_event!(event_stream, Event::Connected(Connected::First));
 
     // just await for genesis node to finish receiving all events
     genesis_handler.await?;
@@ -102,9 +95,8 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
                 .await?;
 
             // During the startup phase, joining nodes are instantly relocated.
-            assert_next_event!(event_stream, Event::Connected(Connected::First));
             assert_next_event!(event_stream, Event::RelocationStarted { .. });
-            assert_next_event!(event_stream, Event::Connected(Connected::Relocate { .. }));
+            assert_next_event!(event_stream, Event::Relocated { .. });
 
             Ok::<_, Error>(node)
         })

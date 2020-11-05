@@ -7,12 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Approved, Comm, Command};
-use crate::{
-    error::Result,
-    event::{Connected, Event},
-    messages::Message,
-    relocation::SignedRelocateDetails,
-};
+use crate::{error::Result, event::Event, messages::Message, relocation::SignedRelocateDetails};
 use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -194,7 +189,7 @@ impl Stage {
         let event_tx = state.event_tx.clone();
         *state = Approved::new(node, section, None, event_tx);
 
-        state.send_event(Event::Connected(Connected::Relocate { previous_name }));
+        state.send_event(Event::Relocated { previous_name });
 
         let commands = backlog
             .into_iter()

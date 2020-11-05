@@ -11,10 +11,7 @@ mod utils;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{
-    event::{Connected, Event},
-    DstLocation, Error, SrcLocation, TransportConfig,
-};
+use sn_routing::{event::Event, DstLocation, Error, SrcLocation, TransportConfig};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
@@ -90,9 +87,8 @@ async fn test_messages_between_nodes() -> Result<()> {
         .await?;
 
     // We are in the startup phase, so node2 is instantly relocated. Let's wait until it re-joins.
-    assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::RelocationStarted { .. });
-    assert_next_event!(event_stream, Event::Connected(Connected::Relocate { .. }));
+    assert_next_event!(event_stream, Event::Relocated { .. });
 
     let node2_name = node2.name().await;
 
