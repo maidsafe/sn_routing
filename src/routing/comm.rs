@@ -15,7 +15,12 @@ use futures::{
 };
 use lru_time_cache::LruCache;
 use qp2p::{Connection, Endpoint, QuicP2p};
-use std::{future::Future, net::SocketAddr, sync::Arc};
+use std::{
+    fmt::{self, Debug, Formatter},
+    future::Future,
+    net::SocketAddr,
+    sync::Arc,
+};
 use tokio::{
     sync::{mpsc, watch},
     task,
@@ -81,8 +86,8 @@ impl Comm {
     /// event for the peers whom we received any messages from on the first stream. This means the
     /// next message they send to us will fail the first send attempt (but will likely succeed on
     /// the subsequent one).
-    pub fn listen(&self) -> Result<IncomingMessages> {
-        Ok(IncomingMessages::new(self.endpoint.listen()?))
+    pub fn listen(&self) -> Result<IncomingConnections> {
+        Ok(IncomingConnections::new(self.endpoint.listen()?))
     }
 
     pub async fn our_connection_info(&self) -> Result<SocketAddr> {
@@ -305,26 +310,44 @@ impl SendState {
     }
 }
 
-/// Stream of incoming messages. Listens for incoming connections and multiplex all messages from
-/// those connection into a single stream.
-pub(crate) struct IncomingMessages {
-    message_rx: mpsc::Receiver<qp2p::Message>,
+pub(crate) enum ConnectionEvent {
+    Received(qp2p::Message),
+    Disconnected(SocketAddr),
+}
+
+impl Debug for ConnectionEvent {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Received(qp2p::Message::UniStream { src, .. }) => {
+                write!(f, "Received(UniStream {{ src: {}, .. }})", src)
+            }
+            Self::Received(qp2p::Message::BiStream { src, .. }) => {
+                write!(f, "Received(BiStream {{ src: {}, .. }})", src)
+            }
+            Self::Disconnected(addr) => write!(f, "Disconnected({})", addr),
+        }
+    }
+}
+
+/// Stream of incoming connection events.
+pub(crate) struct IncomingConnections {
+    event_rx: mpsc::Receiver<ConnectionEvent>,
 
     // TODO: use `mpsc::Sender::closed` instead of this when we switch to the version of tokio that
     // supports it (>= 0.3.0).
     cancel_tx: watch::Sender<bool>,
 }
 
-impl Drop for IncomingMessages {
+impl Drop for IncomingConnections {
     fn drop(&mut self) {
         let _ = self.cancel_tx.broadcast(true);
     }
 }
 
-impl IncomingMessages {
+impl IncomingConnections {
     pub fn new(incoming_conns: qp2p::IncomingConnections) -> Self {
         let (cancel_tx, mut cancel_rx) = watch::channel(false);
-        let (message_tx, message_rx) = mpsc::channel(1);
+        let (event_tx, event_rx) = mpsc::channel(1);
 
         // Need to `recv` once, otherwise we would cancel all the tasks immediatelly
         // NOTE: using block_on to avoid making this function `async`. It won't actually block,
@@ -334,23 +357,23 @@ impl IncomingMessages {
 
         let _ = task::spawn(cancellable(
             cancel_rx.clone(),
-            handle_incoming_connections(incoming_conns, message_tx, cancel_rx),
+            handle_incoming_connections(incoming_conns, event_tx, cancel_rx),
         ));
 
         Self {
-            message_rx,
+            event_rx,
             cancel_tx,
         }
     }
 
-    pub async fn next(&mut self) -> Option<qp2p::Message> {
-        self.message_rx.recv().await
+    pub async fn next(&mut self) -> Option<ConnectionEvent> {
+        self.event_rx.recv().await
     }
 }
 
 async fn handle_incoming_connections(
     mut incoming_conns: qp2p::IncomingConnections,
-    message_tx: mpsc::Sender<qp2p::Message>,
+    event_tx: mpsc::Sender<ConnectionEvent>,
     cancel_rx: watch::Receiver<bool>,
 ) {
     while let Some(incoming_msgs) = incoming_conns.next().await {
@@ -361,18 +384,22 @@ async fn handle_incoming_connections(
 
         let _ = task::spawn(cancellable(
             cancel_rx.clone(),
-            handle_incoming_messages(incoming_msgs, message_tx.clone()),
+            handle_incoming_messages(incoming_msgs, event_tx.clone()),
         ));
     }
 }
 
 async fn handle_incoming_messages(
     mut incoming_msgs: qp2p::IncomingMessages,
-    mut message_tx: mpsc::Sender<qp2p::Message>,
+    mut event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
     while let Some(msg) = incoming_msgs.next().await {
-        let _ = message_tx.send(msg).await;
+        let _ = event_tx.send(ConnectionEvent::Received(msg)).await;
     }
+
+    let _ = event_tx
+        .send(ConnectionEvent::Disconnected(incoming_msgs.remote_addr()))
+        .await;
 }
 
 async fn cancellable<F: Future>(
@@ -391,12 +418,10 @@ struct Cancelled;
 mod tests {
     use super::*;
     use anyhow::Result;
+    use assert_matches::assert_matches;
     use futures::future;
-    use std::{
-        net::{IpAddr, Ipv4Addr},
-        slice,
-        time::Duration,
-    };
+    use qp2p::Config;
+    use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
     const TIMEOUT: Duration = Duration::from_secs(1);
@@ -441,24 +466,30 @@ mod tests {
 
     #[tokio::test]
     async fn failed_send() -> Result<()> {
-        let comm = Comm::new(transport_config())?;
+        let comm = Comm::new(Config {
+            // This makes this test faster.
+            idle_timeout_msec: Some(1),
+            ..transport_config()
+        })?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        match comm
-            .send_message_to_targets(&[invalid_addr], 1, message.clone())
-            .await
-        {
-            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr]),
-            Ok(_) => panic!("unexpected success"),
-        }
+        assert_matches!(
+            comm
+                .send_message_to_targets(&[invalid_addr], 1, message.clone())
+                .await,
+            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr])
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn successful_send_after_failed_attempts() -> Result<()> {
-        let comm = Comm::new(transport_config())?;
+        let comm = Comm::new(Config {
+            idle_timeout_msec: Some(1),
+            ..transport_config()
+        })?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
@@ -473,19 +504,21 @@ mod tests {
 
     #[tokio::test]
     async fn partially_successful_send() -> Result<()> {
-        let comm = Comm::new(transport_config())?;
+        let comm = Comm::new(Config {
+            idle_timeout_msec: Some(1),
+            ..transport_config()
+        })?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
 
-        match comm
-            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
-            .await
-        {
-            Ok(_) => panic!("unexpected success"),
-            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr]),
-        }
+        assert_matches!(
+            comm
+                .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
+                .await,
+            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr])
+        );
 
         assert_eq!(peer.rx.recv().await, Some(message));
 
@@ -546,10 +579,38 @@ mod tests {
         Ok(())
     }
 
-    fn transport_config() -> qp2p::Config {
-        qp2p::Config {
-            ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            idle_timeout_msec: Some(1),
+    #[tokio::test]
+    async fn incoming_connection_lost() -> Result<()> {
+        let comm0 = Comm::new(transport_config())?;
+        let addr0 = comm0.our_connection_info().await?;
+        let mut incoming_conns0 = comm0.listen()?;
+
+        let comm1 = Comm::new(transport_config())?;
+        let addr1 = comm1.our_connection_info().await?;
+
+        // Send a message to establish the connection
+        comm1
+            .send_message_to_targets(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
+            .await?;
+        assert_matches!(
+            incoming_conns0.next().await,
+            Some(ConnectionEvent::Received(_))
+        );
+
+        // Drop `comm1` to cause connection lost.
+        drop(comm1);
+
+        assert_matches!(
+            time::timeout(TIMEOUT, incoming_conns0.next()).await?,
+            Some(ConnectionEvent::Disconnected(addr)) => assert_eq!(addr, addr1)
+        );
+
+        Ok(())
+    }
+
+    fn transport_config() -> Config {
+        Config {
+            ip: Some(Ipv4Addr::LOCALHOST.into()),
             ..Default::default()
         }
     }

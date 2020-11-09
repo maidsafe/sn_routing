@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::IncomingMessages, Command, Stage};
+use super::{
+    comm::{ConnectionEvent, IncomingConnections},
+    Command, Stage,
+};
 use crate::{event::Event, messages::Message};
 use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc};
@@ -25,12 +28,12 @@ impl Drop for Executor {
 }
 
 impl Executor {
-    pub(crate) async fn new(stage: Arc<Stage>, incoming_msgs: IncomingMessages) -> Self {
+    pub(crate) async fn new(stage: Arc<Stage>, incoming_conns: IncomingConnections) -> Self {
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
         let _ = task::spawn(async move {
             tokio::select! {
-                _ = handle_incoming_messages(stage, incoming_msgs) => (),
+                _ = handle_incoming_messages(stage, incoming_conns) => (),
                 _ = cancel_rx => (),
             }
         });
@@ -41,10 +44,10 @@ impl Executor {
     }
 }
 
-async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_msgs: IncomingMessages) {
-    while let Some(msg) = incoming_msgs.next().await {
-        match msg {
-            qp2p::Message::UniStream { bytes, src, .. } => {
+async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_conns: IncomingConnections) {
+    while let Some(event) = incoming_conns.next().await {
+        match event {
+            ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
                 trace!(
                     "New message ({} bytes) received on a uni-stream from: {}",
                     bytes.len(),
@@ -55,12 +58,12 @@ async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_msgs: Incoming
                 // potentially reported to the event stream consumer.
                 spawn_node_message_handler(stage.clone(), bytes, src);
             }
-            qp2p::Message::BiStream {
+            ConnectionEvent::Received(qp2p::Message::BiStream {
                 bytes,
                 src,
                 send,
                 recv,
-            } => {
+            }) => {
                 trace!(
                     "New message ({} bytes) received on a bi-stream from: {}",
                     bytes.len(),
@@ -79,6 +82,7 @@ async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_msgs: Incoming
 
                 stage.send_event(event).await;
             }
+            ConnectionEvent::Disconnected(addr) => trace!("Connection lost: {}", addr),
         }
     }
 }

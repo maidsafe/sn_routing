@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::IncomingMessages, Comm};
+use super::{
+    comm::{ConnectionEvent, IncomingConnections},
+    Comm,
+};
 use crate::{
     consensus::Proven,
     crypto,
@@ -35,7 +38,7 @@ const BACKLOG_CAPACITY: usize = 100;
 pub(crate) async fn infant(
     node: Node,
     comm: &Comm,
-    incoming_messages: &mut IncomingMessages,
+    incoming_conns: &mut IncomingConnections,
     bootstrap_addr: SocketAddr,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
@@ -47,7 +50,7 @@ pub(crate) async fn infant(
         state.run(vec![bootstrap_addr], None),
         future::join(
             send_messages(send_rx, comm),
-            receive_messages(incoming_messages, recv_tx),
+            receive_messages(incoming_conns, recv_tx),
         ),
     )
     .await
@@ -415,20 +418,23 @@ enum JoinResponse {
 
 // Keep receiving messages from `incoming_messages` and send them to `message_tx`.
 async fn receive_messages(
-    incoming_messages: &mut IncomingMessages,
+    incoming_conns: &mut IncomingConnections,
     mut message_tx: mpsc::Sender<(Message, SocketAddr)>,
 ) {
-    while let Some(message) = incoming_messages.next().await {
-        match message {
-            qp2p::Message::UniStream { bytes, src, .. } => match Message::from_bytes(&bytes) {
-                Ok(message) => {
-                    let _ = message_tx.send((message, src)).await;
+    while let Some(event) = incoming_conns.next().await {
+        match event {
+            ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
+                match Message::from_bytes(&bytes) {
+                    Ok(message) => {
+                        let _ = message_tx.send((message, src)).await;
+                    }
+                    Err(error) => debug!("Failed to deserialize message: {}", error),
                 }
-                Err(error) => debug!("Failed to deserialize message: {}", error),
-            },
-            qp2p::Message::BiStream { .. } => {
+            }
+            ConnectionEvent::Received(qp2p::Message::BiStream { .. }) => {
                 trace!("Ignore bi-stream messages during bootstrap");
             }
+            ConnectionEvent::Disconnected(_) => {}
         }
     }
 }
