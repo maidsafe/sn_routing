@@ -188,10 +188,6 @@ impl Approved {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
                 Ok(vec![])
             }
-            Vote::ChangeAge(member_info) => {
-                self.handle_change_age_event(member_info, proof);
-                Ok(vec![])
-            }
             Vote::SendMessage {
                 message,
                 proof_chain,
@@ -855,10 +851,13 @@ impl Approved {
         }
 
         if let Some(info) = self.section.members().get(&promise.name) {
-            let details =
-                RelocateDetails::new(&self.section, &self.network, info, promise.destination);
-            let peer = info.peer;
-            commands.extend(self.send_relocate(&peer, details)?);
+            let details = RelocateDetails::new(
+                &self.section,
+                &self.network,
+                &info.peer,
+                promise.destination,
+            );
+            commands.extend(self.send_relocate(&info.peer, details)?);
         } else {
             error!(
                 "ignore returned RelocatePromise from {} - unknown node",
@@ -944,7 +943,7 @@ impl Approved {
                 if !self.section.prefix().matches(&details.destination) {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
-                     our prefix {:?}.",
+                         our prefix {:?}.",
                         pub_id,
                         details.destination,
                         self.section.prefix()
@@ -1015,10 +1014,6 @@ impl Approved {
             .into_commands(&self.node)
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Accumulated events handling
-    ////////////////////////////////////////////////////////////////////////////
-
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     fn promote_and_demote_elders(&mut self) -> Result<Vec<Command>> {
@@ -1031,30 +1026,12 @@ impl Approved {
         Ok(commands)
     }
 
-    fn increment_ages(
+    fn relocate_peers(
         &self,
         churn_name: &XorName,
         churn_signature: &bls::Signature,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
-
-        if self.is_in_startup_phase() {
-            // We are in the startup phase - don't relocate, just increment everyones ages
-            // (excluding the new node).
-            let votes: Vec<_> = self
-                .section
-                .members()
-                .joined()
-                .filter(|info| info.peer.name() != churn_name)
-                .map(|info| Vote::ChangeAge(info.clone().increment_age()))
-                .collect();
-
-            for vote in votes {
-                commands.extend(self.vote(vote)?);
-            }
-
-            return Ok(commands);
-        }
 
         // As a measure against sybil attacks, don't relocate on infant churn.
         if !self.section.is_adult_or_elder(churn_name) {
@@ -1090,6 +1067,25 @@ impl Approved {
         Ok(commands)
     }
 
+    fn relocate_peer_in_startup_phase(
+        &self,
+        peer: Peer,
+        signature: &bls::Signature,
+    ) -> Result<Vec<Command>> {
+        let age = relocation::startup_phase_age(signature);
+        let details =
+            RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
+
+        trace!(
+            "Relocating {:?} to {} with age {} in startup phase",
+            peer,
+            details.destination,
+            details.age
+        );
+
+        self.send_relocate(&peer, details)
+    }
+
     // Are we in the startup phase? Startup phase is when the network consists of only one section
     // and it has no more than `recommended_section_size` members.
     fn is_in_startup_phase(&self) -> bool {
@@ -1104,40 +1100,49 @@ impl Approved {
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<Vec<Command>> {
-        let mut commands = Vec::new();
-
         let peer = member_info.peer;
-        let age = peer.age();
         let signature = proof.signature.clone();
 
-        if !self.section.update_member(Proven {
-            value: member_info,
-            proof,
-        }) {
-            info!("ignore Online: {:?}", peer);
-            return Ok(commands);
-        }
+        let mut commands = vec![];
 
-        info!("handle Online: {:?} (age: {})", peer, age);
+        if self.is_in_startup_phase() && peer.age() <= MIN_AGE {
+            // In startup phase, instantly relocate the joining peer in order to promote it to
+            // adult.
 
-        commands.extend(self.increment_ages(peer.name(), &signature)?);
-        commands.extend(self.promote_and_demote_elders()?);
-        commands.push(self.send_node_approval(&peer, their_knowledge)?);
+            if self.section.members().is_known(peer.name()) {
+                info!("ignore Online: {:?}", peer);
+                return Ok(vec![]);
+            }
 
-        if let Some(previous_name) = previous_name {
+            // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
+            // to send this `NodeApproval`.
+            commands.push(self.send_node_approval(&peer, their_knowledge)?);
+            commands.extend(self.relocate_peer_in_startup_phase(peer, &signature)?);
+        } else {
+            // Post startup phase, add the new peer normally.
+
+            if !self.section.update_member(Proven {
+                value: member_info,
+                proof,
+            }) {
+                info!("ignore Online: {:?}", peer);
+                return Ok(vec![]);
+            }
+
+            info!("handle Online: {:?}", peer);
+
+            commands.push(self.send_node_approval(&peer, their_knowledge)?);
+            commands.extend(self.relocate_peers(peer.name(), &signature)?);
+            commands.extend(self.promote_and_demote_elders()?);
+
             self.send_event(Event::MemberJoined {
                 name: *peer.name(),
                 previous_name,
-                age,
+                age: peer.age(),
             });
-        } else {
-            self.send_event(Event::InfantJoined {
-                name: *peer.name(),
-                age,
-            });
-        }
 
-        self.print_network_stats();
+            self.print_network_stats();
+        }
 
         Ok(commands)
     }
@@ -1163,7 +1168,7 @@ impl Approved {
 
         info!("handle Offline: {:?}", peer);
 
-        commands.extend(self.increment_ages(peer.name(), &signature)?);
+        commands.extend(self.relocate_peers(peer.name(), &signature)?);
         commands.extend(self.promote_and_demote_elders()?);
 
         self.send_event(Event::MemberLeft {
@@ -1249,13 +1254,6 @@ impl Approved {
     fn handle_their_knowledge_event(&mut self, prefix: Prefix, knowledge: u64, proof: Proof) {
         let knowledge = Proven::new((prefix, knowledge), proof);
         self.network.update_knowledge(knowledge)
-    }
-
-    fn handle_change_age_event(&mut self, member_info: MemberInfo, proof: Proof) {
-        let _ = self.section.update_member(Proven {
-            value: member_info,
-            proof,
-        });
     }
 
     fn handle_send_message_event(

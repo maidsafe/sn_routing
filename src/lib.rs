@@ -72,6 +72,7 @@ extern crate log;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
+    event::Event,
     location::{DstLocation, SrcLocation},
     routing::{Config, EventStream, Routing},
     section::{SectionProofChain, MIN_AGE},
@@ -79,8 +80,6 @@ pub use self::{
 pub use qp2p::Config as TransportConfig;
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
-/// sn_routing events.
-pub mod event;
 
 // ############################################################################
 // Private
@@ -90,6 +89,7 @@ mod consensus;
 mod crypto;
 mod delivery_group;
 mod error;
+mod event;
 mod location;
 mod message_filter;
 mod messages;

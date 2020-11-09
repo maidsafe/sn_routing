@@ -86,8 +86,8 @@ impl Comm {
     }
 
     pub fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.endpoint.our_endpoint().map_err(|err| {
-            debug!("Failed to retrieve our connection info: {:?}", err);
+        self.endpoint.our_addr().map_err(|err| {
+            error!("Failed to retrieve our connection info: {:?}", err);
             err.into()
         })
     }

@@ -53,9 +53,6 @@ pub(crate) enum Vote {
         key_index: u64,
     },
 
-    // Voted to change the age of the given node.
-    ChangeAge(MemberInfo),
-
     // Voted to send an user message whose source is our section.
     SendMessage {
         message: Box<PlainMessage>,
@@ -97,7 +94,6 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
-            Vote::ChangeAge(member_info) => member_info.serialize(serializer),
             Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
         }
     }

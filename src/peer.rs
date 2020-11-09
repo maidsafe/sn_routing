@@ -67,18 +67,25 @@ impl Display for Peer {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::MIN_AGE;
-
     use super::*;
-    use proptest::prelude::*;
+    use proptest::{collection::SizeRange, prelude::*};
     use xor_name::XOR_NAME_LEN;
 
     pub(crate) fn arbitrary_xor_name() -> impl Strategy<Value = XorName> {
         any::<[u8; XOR_NAME_LEN]>().prop_map(XorName)
     }
 
-    pub(crate) fn arbitrary_peer() -> impl Strategy<Value = Peer> {
-        (arbitrary_xor_name(), any::<SocketAddr>(), MIN_AGE..)
-            .prop_map(|(name, addr, age)| Peer::new(name, addr, age))
+    // Generate Vec<Peer> where no two peers have the same name.
+    pub(crate) fn arbitrary_unique_peers(
+        count: impl Into<SizeRange>,
+        age: impl Strategy<Value = u8>,
+    ) -> impl Strategy<Value = Vec<Peer>> {
+        proptest::collection::btree_map(arbitrary_xor_name(), (any::<SocketAddr>(), age), count)
+            .prop_map(|peers| {
+                peers
+                    .into_iter()
+                    .map(|(name, (addr, age))| Peer::new(name, addr, age))
+                    .collect()
+            })
     }
 }

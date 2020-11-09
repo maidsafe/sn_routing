@@ -26,7 +26,7 @@ use self::{
 use crate::{
     crypto,
     error::{Error, Result},
-    event::{Connected, Event},
+    event::Event,
     location::{DstLocation, SrcLocation},
     node::Node,
     peer::Peer,
@@ -96,7 +96,6 @@ impl Routing {
             let node = Node::new(keypair, comm.our_connection_info()?);
             let state = Approved::first_node(node, event_tx)?;
 
-            state.send_event(Event::Connected(Connected::First));
             state.send_event(Event::PromotedToElder);
 
             (state, comm, incoming_msgs, vec![])
@@ -109,8 +108,6 @@ impl Routing {
             let (node, section, backlog) =
                 bootstrap::infant(node, &comm, &mut incoming_msgs, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, event_tx);
-
-            state.send_event(Event::Connected(Connected::First));
 
             (state, comm, incoming_msgs, backlog)
         };

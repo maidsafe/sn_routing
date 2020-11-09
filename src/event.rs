@@ -18,18 +18,6 @@ use std::{
 };
 use xor_name::{Prefix, XorName};
 
-/// An Event raised as node complete joining
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Connected {
-    /// Node first joining the network
-    First,
-    /// Node relocating from one section to another
-    Relocate {
-        /// Previous name before relocation.
-        previous_name: XorName,
-    },
-}
-
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
 /// These are sent by sn_routing to the library's user. It allows the user to handle requests and
@@ -40,8 +28,6 @@ pub enum Connected {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
-    /// The node has successfully connected to the network.
-    Connected(Connected),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -57,19 +43,12 @@ pub enum Event {
     PromotedToAdult,
     /// The node has been demoted from elder
     Demoted,
-    /// An adult or elder joined our section.
+    /// A new peer joined our section.
     MemberJoined {
         /// Name of the node
         name: XorName,
-        /// Previous name before relocation
-        previous_name: XorName,
-        /// Age of the node
-        age: u8,
-    },
-    /// An infant node joined our section.
-    InfantJoined {
-        /// Name of the node
-        name: XorName,
+        /// Previous name before relocation or `None` if it is a new node.
+        previous_name: Option<XorName>,
         /// Age of the node
         age: u8,
     },
@@ -90,9 +69,14 @@ pub enum Event {
         elders: BTreeSet<XorName>,
     },
     /// This node has started relocating to other section. Will be followed by
-    /// `Connected(Relocate)` when the node finishes joining the destination section.
+    /// `Relocated` when the node finishes joining the destination section.
     RelocationStarted {
         /// Previous name before relocation
+        previous_name: XorName,
+    },
+    /// This node has completed relocation to other section.
+    Relocated {
+        /// Old name before the relocation.
         previous_name: XorName,
     },
     /// Disconnected or failed to connect - restart required.
@@ -113,7 +97,6 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Connected(connect_type) => write!(formatter, "Connected({:?})", connect_type),
             Self::MessageReceived { content, src, dst } => write!(
                 formatter,
                 "MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
@@ -134,11 +117,6 @@ impl Debug for Event {
                 .field("previous_name", previous_name)
                 .field("age", age)
                 .finish(),
-            Self::InfantJoined { name, age } => formatter
-                .debug_struct("InfantJoined")
-                .field("name", name)
-                .field("age", age)
-                .finish(),
             Self::MemberLeft { name, age } => formatter
                 .debug_struct("MemberLeft")
                 .field("name", name)
@@ -156,6 +134,10 @@ impl Debug for Event {
                 .finish(),
             Self::RelocationStarted { previous_name } => formatter
                 .debug_struct("RelocationStarted")
+                .field("previous_name", previous_name)
+                .finish(),
+            Self::Relocated { previous_name } => formatter
+                .debug_struct("Relocated")
                 .field("previous_name", previous_name)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),

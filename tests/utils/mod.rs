@@ -14,10 +14,7 @@ use anyhow::{bail, format_err, Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
 use itertools::Itertools;
-use sn_routing::{
-    event::{Connected, Event},
-    Config, EventStream, Routing, TransportConfig, MIN_AGE,
-};
+use sn_routing::{Config, Event, EventStream, Routing, TransportConfig, MIN_AGE};
 use std::{
     collections::{BTreeSet, HashSet},
     io::Write,
@@ -113,7 +110,6 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
 
     // Create the first node
     let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
-    assert_next_event!(event_stream, Event::Connected(Connected::First));
     assert_next_event!(event_stream, Event::PromotedToElder);
 
     let bootstrap_contact = node.our_connection_info()?;
@@ -121,43 +117,31 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
     nodes.push((node, event_stream));
 
     // Create the other nodes bootstrapping off the first node.
-    let other_nodes = (1..count).map(|_| async {
-        let (node, mut event_stream) = RoutingBuilder::new(None)
+    let other_nodes = (1..count).map(|_| {
+        RoutingBuilder::new(None)
             .with_contact(bootstrap_contact)
             .create()
-            .await?;
-
-        assert_next_event!(event_stream, Event::Connected(Connected::First));
-
-        Ok::<_, Error>((node, event_stream))
     });
 
-    for result in future::join_all(other_nodes).await {
-        nodes.push(result?);
+    for node in future::try_join_all(other_nodes).await? {
+        nodes.push(node);
     }
 
-    // Wait until the first node receives `InfantJoined` event for all the other nodes.
-    let mut not_joined = HashSet::new();
-    for (node, _) in &nodes[1..] {
-        let _ = not_joined.insert(node.name().await);
-    }
+    // Wait until the first node receives `MemberJoined` event for all the other
+    // nodes.
+    let mut joined_count = 1;
 
     while let Some(event) = nodes[0].1.next().await {
-        if let Event::InfantJoined { name, age } = event {
-            assert_eq!(age, MIN_AGE);
-            let _ = not_joined.remove(&name);
+        if let Event::MemberJoined { name, .. } = event {
+            joined_count += 1
         }
 
-        if not_joined.is_empty() {
+        if joined_count == nodes.len() {
             break;
         }
     }
 
-    assert!(
-        not_joined.is_empty(),
-        "Event::InfantJoined not received for: {:?}",
-        not_joined
-    );
+    assert_eq!(joined_count, nodes.len());
 
     Ok(nodes)
 }

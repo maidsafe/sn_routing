@@ -536,7 +536,7 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        peer::test_utils::arbitrary_peer,
+        peer::test_utils::arbitrary_unique_peers,
         section::test_utils::{gen_addr, gen_elders_info},
         ELDER_SIZE, MIN_AGE,
     };
@@ -757,6 +757,6 @@ mod tests {
     }
 
     fn arbitrary_elder_peers() -> impl Strategy<Value = Vec<Peer>> {
-        proptest::collection::vec(arbitrary_peer(), 2..=ELDER_SIZE)
+        arbitrary_unique_peers(2..=ELDER_SIZE, MIN_AGE..)
     }
 }
