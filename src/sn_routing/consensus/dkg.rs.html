@@ -1300,7 +1300,7 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">peer</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_peer</span>,
+        <span class="ident">peer</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_unique_peers</span>,
         <span class="ident">section</span>::<span class="ident">test_utils</span>::{<span class="ident">gen_addr</span>, <span class="ident">gen_elders_info</span>},
         <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
     };
@@ -1521,7 +1521,7 @@
     }
 
     <span class="kw">fn</span> <span class="ident">arbitrary_elder_peers</span>() <span class="op">-&gt;</span> <span class="kw">impl</span> <span class="ident">Strategy</span><span class="op">&lt;</span><span class="ident">Value</span> <span class="op">=</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;&gt;</span> {
-        <span class="ident">proptest</span>::<span class="ident">collection</span>::<span class="ident">vec</span>(<span class="ident">arbitrary_peer</span>(), <span class="number">2</span>..<span class="op">=</span><span class="ident">ELDER_SIZE</span>)
+        <span class="ident">arbitrary_unique_peers</span>(<span class="number">2</span>..<span class="op">=</span><span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>..)
     }
 }
 </pre></div>

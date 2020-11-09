@@ -151,24 +151,6 @@
 <span id="150">150</span>
 <span id="151">151</span>
 <span id="152">152</span>
-<span id="153">153</span>
-<span id="154">154</span>
-<span id="155">155</span>
-<span id="156">156</span>
-<span id="157">157</span>
-<span id="158">158</span>
-<span id="159">159</span>
-<span id="160">160</span>
-<span id="161">161</span>
-<span id="162">162</span>
-<span id="163">163</span>
-<span id="164">164</span>
-<span id="165">165</span>
-<span id="166">166</span>
-<span id="167">167</span>
-<span id="168">168</span>
-<span id="169">169</span>
-<span id="170">170</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -190,18 +172,6 @@
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
-<span class="doccomment">/// An Event raised as node complete joining</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Connected</span> {
-    <span class="doccomment">/// Node first joining the network</span>
-    <span class="ident">First</span>,
-    <span class="doccomment">/// Node relocating from one section to another</span>
-    <span class="ident">Relocate</span> {
-        <span class="doccomment">/// Previous name before relocation.</span>
-        <span class="ident">previous_name</span>: <span class="ident">XorName</span>,
-    },
-}
-
 <span class="doccomment">/// An Event raised by a `Node` or `Client` via its event sender.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// These are sent by sn_routing to the library&#39;s user. It allows the user to handle requests and</span>
@@ -212,8 +182,6 @@
 <span class="comment">// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Event</span> {
-    <span class="doccomment">/// The node has successfully connected to the network.</span>
-    <span class="ident">Connected</span>(<span class="ident">Connected</span>),
     <span class="doccomment">/// Received a message.</span>
     <span class="ident">MessageReceived</span> {
         <span class="doccomment">/// The content of the message.</span>
@@ -229,19 +197,12 @@
     <span class="ident">PromotedToAdult</span>,
     <span class="doccomment">/// The node has been demoted from elder</span>
     <span class="ident">Demoted</span>,
-    <span class="doccomment">/// An adult or elder joined our section.</span>
+    <span class="doccomment">/// A new peer joined our section.</span>
     <span class="ident">MemberJoined</span> {
         <span class="doccomment">/// Name of the node</span>
         <span class="ident">name</span>: <span class="ident">XorName</span>,
-        <span class="doccomment">/// Previous name before relocation</span>
-        <span class="ident">previous_name</span>: <span class="ident">XorName</span>,
-        <span class="doccomment">/// Age of the node</span>
-        <span class="ident">age</span>: <span class="ident">u8</span>,
-    },
-    <span class="doccomment">/// An infant node joined our section.</span>
-    <span class="ident">InfantJoined</span> {
-        <span class="doccomment">/// Name of the node</span>
-        <span class="ident">name</span>: <span class="ident">XorName</span>,
+        <span class="doccomment">/// Previous name before relocation or `None` if it is a new node.</span>
+        <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Age of the node</span>
         <span class="ident">age</span>: <span class="ident">u8</span>,
     },
@@ -262,9 +223,14 @@
         <span class="ident">elders</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// This node has started relocating to other section. Will be followed by</span>
-    <span class="doccomment">/// `Connected(Relocate)` when the node finishes joining the destination section.</span>
+    <span class="doccomment">/// `Relocated` when the node finishes joining the destination section.</span>
     <span class="ident">RelocationStarted</span> {
         <span class="doccomment">/// Previous name before relocation</span>
+        <span class="ident">previous_name</span>: <span class="ident">XorName</span>,
+    },
+    <span class="doccomment">/// This node has completed relocation to other section.</span>
+    <span class="ident">Relocated</span> {
+        <span class="doccomment">/// Old name before the relocation.</span>
         <span class="ident">previous_name</span>: <span class="ident">XorName</span>,
     },
     <span class="doccomment">/// Disconnected or failed to connect - restart required.</span>
@@ -285,7 +251,6 @@
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Event</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">Connected</span>(<span class="ident">connect_type</span>) <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Connected({:?})&quot;</span>, <span class="ident">connect_type</span>),
             <span class="self">Self</span>::<span class="ident">MessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span> } <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
                 <span class="ident">formatter</span>,
                 <span class="string">&quot;MessageReceived {{ content: \&quot;{:&lt;8}\&quot;, src: {:?}, dst: {:?} }}&quot;</span>,
@@ -306,11 +271,6 @@
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;age&quot;</span>, <span class="ident">age</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">InfantJoined</span> { <span class="ident">name</span>, <span class="ident">age</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;InfantJoined&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="ident">name</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;age&quot;</span>, <span class="ident">age</span>)
-                .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">MemberLeft</span> { <span class="ident">name</span>, <span class="ident">age</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;MemberLeft&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="ident">name</span>)
@@ -328,6 +288,10 @@
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">RelocationStarted</span> { <span class="ident">previous_name</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;RelocationStarted&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
+                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">Relocated</span> { <span class="ident">previous_name</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;Relocated&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">RestartRequired</span> <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;RestartRequired&quot;</span>),

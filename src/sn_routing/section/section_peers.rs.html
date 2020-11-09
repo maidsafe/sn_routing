@@ -214,8 +214,6 @@
 <span id="213">213</span>
 <span id="214">214</span>
 <span id="215">215</span>
-<span id="216">216</span>
-<span id="217">217</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -262,13 +260,6 @@
             .<span class="ident">values</span>()
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">value</span>)
             .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">member</span><span class="op">|</span> <span class="ident">member</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">PeerState</span>::<span class="ident">Joined</span>)
-    }
-
-    <span class="doccomment">/// Returns an iterator over the members that have state == `Joined` together with their proofs.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">proven_joined</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;&gt;</span> {
-        <span class="self">self</span>.<span class="ident">members</span>
-            .<span class="ident">values</span>()
-            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">member</span><span class="op">|</span> <span class="ident">member</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">PeerState</span>::<span class="ident">Joined</span>)
     }
 
     <span class="doccomment">/// Returns joined nodes from our section with age greater than `MIN_AGE`</span>
@@ -324,6 +315,11 @@
             .<span class="ident">get</span>(<span class="ident">name</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">PeerState</span>::<span class="ident">Joined</span> <span class="op">&amp;&amp;</span> <span class="ident">info</span>.<span class="ident">value</span>.<span class="ident">is_mature</span>())
             .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>)
+    }
+
+    <span class="doccomment">/// Returns whether the given peer is known to us (joined or left)</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_known</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">members</span>.<span class="ident">contains_key</span>(<span class="ident">name</span>)
     }
 
     <span class="doccomment">/// Update a member of our section.</span>
