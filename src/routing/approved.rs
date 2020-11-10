@@ -19,7 +19,7 @@ use crate::{
     message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, Variant,
-        VerifyStatus,
+        VerifyStatus, PING,
     },
     network::Network,
     node::Node,
@@ -199,8 +199,28 @@ impl Approved {
         }
     }
 
+    pub fn handle_connection_lost(&self, addr: &SocketAddr) -> Option<Command> {
+        if !self.is_elder() {
+            return None;
+        }
+
+        if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
+            trace!("Lost connection to {}", peer);
+        } else {
+            return None;
+        }
+
+        // Try to send a "ping" message to probe the peer connection. If it succeeds, the
+        // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
+        // it offline.
+        Some(Command::send_message_to_target(
+            addr,
+            Bytes::from_static(PING),
+        ))
+    }
+
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
-        let name = if let Some(peer) = self.section.find_member_from_addr(addr) {
+        let name = if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
             debug!("Lost known peer {}", peer);
             *peer.name()
         } else {

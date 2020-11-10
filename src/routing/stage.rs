@@ -76,6 +76,13 @@ impl Stage {
                 Command::HandleConsensus { vote, proof } => {
                     self.state.lock().await.handle_consensus(vote, proof)
                 }
+                Command::HandleConnectionLost(addr) => Ok(self
+                    .state
+                    .lock()
+                    .await
+                    .handle_connection_lost(&addr)
+                    .into_iter()
+                    .collect()),
                 Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
                 Command::HandleDkgParticipationResult {
                     dkg_key,

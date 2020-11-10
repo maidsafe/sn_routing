@@ -30,6 +30,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::Prefix;
 
+// Message used to probe a peer connection.
+// NOTE: ideally this would be empty, but that is currently treated as error by qp2p.
+pub(crate) const PING: &[u8] = &[0];
+
 /// Message sent over the network.
 #[derive(Clone, Eq, Serialize, Deserialize)]
 pub(crate) struct Message {

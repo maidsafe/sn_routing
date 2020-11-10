@@ -30,7 +30,7 @@ use tokio::{
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
 
 /// Maximal number of resend attempts to the same target.
-pub const RESEND_MAX_ATTEMPTS: u8 = 3;
+pub(crate) const RESEND_MAX_ATTEMPTS: u8 = 3;
 
 // Communication component of the node to interact with other nodes.
 pub(crate) struct Comm {

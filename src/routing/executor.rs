@@ -10,7 +10,10 @@ use super::{
     comm::{ConnectionEvent, IncomingConnections},
     Command, Stage,
 };
-use crate::{event::Event, messages::Message};
+use crate::{
+    event::Event,
+    messages::{Message, PING},
+};
 use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::oneshot, task};
@@ -33,7 +36,7 @@ impl Executor {
 
         let _ = task::spawn(async move {
             tokio::select! {
-                _ = handle_incoming_messages(stage, incoming_conns) => (),
+                _ = handle_events(stage, incoming_conns) => (),
                 _ = cancel_rx => (),
             }
         });
@@ -44,7 +47,7 @@ impl Executor {
     }
 }
 
-async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_conns: IncomingConnections) {
+async fn handle_events(stage: Arc<Stage>, mut incoming_conns: IncomingConnections) {
     while let Some(event) = incoming_conns.next().await {
         match event {
             ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
@@ -56,6 +59,12 @@ async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_conns: Incomin
                 // Since it's arriving on a uni-stream we treat it as a Node
                 // message which needs to be processed by us, as well as
                 // potentially reported to the event stream consumer.
+
+                // Ignore pings.
+                if bytes == PING {
+                    continue;
+                }
+
                 spawn_node_message_handler(stage.clone(), bytes, src);
             }
             ConnectionEvent::Received(qp2p::Message::BiStream {
@@ -82,7 +91,12 @@ async fn handle_incoming_messages(stage: Arc<Stage>, mut incoming_conns: Incomin
 
                 stage.send_event(event).await;
             }
-            ConnectionEvent::Disconnected(addr) => trace!("Connection lost: {}", addr),
+            ConnectionEvent::Disconnected(addr) => {
+                let _ = stage
+                    .clone()
+                    .handle_commands(Command::HandleConnectionLost(addr))
+                    .await;
+            }
         }
     }
 }
