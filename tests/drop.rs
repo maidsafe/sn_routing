@@ -9,7 +9,7 @@
 mod utils;
 
 use self::utils::*;
-use anyhow::{format_err, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use sn_routing::{DstLocation, Event, SrcLocation};
 use tokio::time;
@@ -36,21 +36,16 @@ async fn test_node_drop() -> Result<()> {
 
     let expect_event = async {
         while let Some(event) = nodes[0].1.next().await {
-            if let Event::MemberLeft { name, .. } = event {
-                assert_eq!(
-                    name, dropped_name,
-                    "unexpected dropped node {} (expecting {})",
-                    name, dropped_name
-                );
-                return Ok(());
+            match event {
+                Event::MemberLeft { name, .. } if name == dropped_name => return,
+                _ => {}
             }
         }
 
-        Err(format_err!(
-            "Event::MemberLeft not received for {}",
-            dropped_name
-        ))
+        panic!("event stream closed before receiving Event::MemberLeft");
     };
 
-    time::timeout(TIMEOUT, expect_event).await?
+    time::timeout(TIMEOUT, expect_event).await?;
+
+    Ok(())
 }
