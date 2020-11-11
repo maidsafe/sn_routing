@@ -122,6 +122,20 @@ impl DkgVoter {
             }
         }
 
+        // Special case: only one participant.
+        if elders_info.elders.len() == 1 {
+            let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
+
+            return vec![DkgCommand::HandleParticipationResult {
+                dkg_key,
+                elders_info,
+                result: Ok(DkgOutcome {
+                    public_key_set: secret_key_set.public_keys(),
+                    secret_key_share: secret_key_set.secret_key_share(0),
+                }),
+            }];
+        }
+
         let threshold = majority(elders_info.elders.len()) - 1;
         let participants = elders_info
             .elders
@@ -593,6 +607,7 @@ mod tests {
         section::test_utils::{gen_addr, gen_elders_info},
         ELDER_SIZE, MIN_AGE,
     };
+    use assert_matches::assert_matches;
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, SeedableRng};
     use std::iter;
@@ -697,6 +712,23 @@ mod tests {
         assert!(voter
             .observe_result(&dkg_key, Ok(pk1), nodes[majority - 1].name())
             .is_none());
+    }
+
+    #[test]
+    fn single_participant() {
+        // If there is only one participant, the DKG should complete immediately.
+
+        let mut voter = DkgVoter::default();
+
+        let peer = Peer::new(rand::random(), gen_addr(), MIN_AGE);
+        let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
+        let dkg_key = DkgKey::new(&elders_info);
+
+        let commands = voter.start_participating(*peer.name(), dkg_key, elders_info);
+        assert_matches!(
+            &commands[..],
+            &[DkgCommand::HandleParticipationResult { result: Ok(_), .. }]
+        );
     }
 
     proptest! {
