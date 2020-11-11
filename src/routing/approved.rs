@@ -250,6 +250,11 @@ impl Approved {
             let key = outcome.public_key_set.public_key();
             self.section_keys_provider
                 .insert_dkg_outcome(&self.node.name(), &elders_info, outcome);
+
+            if self.section.chain().has_key(&key) {
+                self.section_keys_provider.finalise_dkg(&key)
+            }
+
             Ok(key)
         } else {
             Err(())
@@ -1336,9 +1341,7 @@ impl Approved {
         let mut commands = vec![];
 
         if self.section.chain().has_key(&public_key) {
-            // Our section state is already up to date, so no need to vote. Just finalize the DKG so
-            // we can start using the new secret key share.
-            self.section_keys_provider.finalise_dkg(&public_key);
+            // Our section state is already up to date, so no need to vote.
             return Ok(commands);
         }
 

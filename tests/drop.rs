@@ -10,59 +10,56 @@ mod utils;
 
 use self::utils::*;
 use anyhow::Result;
-use bytes::Bytes;
-use sn_routing::{DstLocation, Event, SrcLocation};
-use tokio::time;
+use sn_routing::Event;
 
 #[tokio::test]
 async fn test_node_drop() -> Result<()> {
-    let mut nodes = create_connected_nodes(2).await?;
+    // NOTE: create at least 3 nodes, so when one is dropped the remaining ones still form a
+    // majority and the `Offline` votes accumulate.
+    let mut nodes = create_connected_nodes(3).await?;
 
-    // We are in the startup phase, so the second node is instantly relocated. Let's wait until it
-    // re-joins.
-    assert_next_event!(nodes[1].1, Event::RelocationStarted { .. });
-    assert_next_event!(nodes[1].1, Event::Relocated { .. });
+    // We are in the startup phase, so the second and third node are instantly relocated.
+    // Let's wait until they re-join.
+    for (_, events) in &mut nodes[1..] {
+        assert_next_event!(events, Event::RelocationStarted { .. });
+        assert_next_event!(events, Event::Relocated { .. });
+    }
 
-    // Wait for the DKG(s) to complete, to make sure there are no more messages being exchanged.
+    // Wait for the DKG(s) to complete, to make sure there are no more messages being exchanged
+    // when we drop the node. This is to verify the lost peer detection works even if there is no
+    // network traffic.
     let node_count = nodes.len();
     for (node, events) in &mut nodes {
         if node.our_elders().await.len() == node_count {
             continue;
         }
 
+        let mut received = false;
         while let Some(event) = events.next().await {
             match event {
-                Event::EldersChanged { elders, .. } if elders.len() == node_count => continue,
+                Event::EldersChanged { elders, .. } if elders.len() == node_count => {
+                    received = true;
+                    break;
+                }
                 _ => {}
             }
         }
 
-        panic!("event stream closed before receiving Event::EldersChanged");
+        assert!(
+            received,
+            "event stream closed before receiving Event::EldersChanged"
+        );
     }
 
     // Drop one node
     let dropped_name = nodes.remove(1).0.name().await;
 
-    // Send a message to the dropped node. This will cause us to detect it as gone.
-    let src = SrcLocation::Node(nodes[0].0.name().await);
-    let dst = DstLocation::Node(dropped_name);
-    nodes[0]
-        .0
-        .send_message(src, dst, Bytes::from_static(b"ping"))
-        .await?;
-
-    let expect_event = async {
-        while let Some(event) = nodes[0].1.next().await {
-            match event {
-                Event::MemberLeft { name, .. } if name == dropped_name => return,
-                _ => {}
-            }
+    while let Some(event) = nodes[0].1.next().await {
+        match event {
+            Event::MemberLeft { name, .. } if name == dropped_name => return Ok(()),
+            _ => {}
         }
+    }
 
-        panic!("event stream closed before receiving Event::MemberLeft");
-    };
-
-    time::timeout(TIMEOUT, expect_event).await?;
-
-    Ok(())
+    panic!("event stream closed before receiving Event::MemberLeft");
 }
