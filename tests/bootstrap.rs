@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
-use sn_routing::{Event, EventStream, ELDER_SIZE};
+use sn_routing::{Config, Event, EventStream, ELDER_SIZE};
 use tokio::time;
 use utils::*;
 
@@ -19,11 +19,12 @@ use utils::*;
 async fn test_genesis_node() -> Result<()> {
     let keypair = Keypair::generate(&mut rand::thread_rng());
     let pub_key = keypair.public;
-    let (node, mut event_stream) = RoutingBuilder::new(None)
-        .first()
-        .keypair(keypair)
-        .create()
-        .await?;
+    let (node, mut event_stream) = create_node(Config {
+        first: true,
+        keypair: Some(keypair),
+        ..Default::default()
+    })
+    .await?;
 
     assert_eq!(pub_key, node.public_key().await);
 
@@ -36,7 +37,11 @@ async fn test_genesis_node() -> Result<()> {
 
 #[tokio::test]
 async fn test_node_bootstrapping() -> Result<()> {
-    let (genesis_node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let (genesis_node, mut event_stream) = create_node(Config {
+        first: true,
+        ..Default::default()
+    })
+    .await?;
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
@@ -48,10 +53,7 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // bootstrap a second node with genesis
     let genesis_contact = genesis_node.our_connection_info().await?;
-    let (node1, _event_stream) = RoutingBuilder::new(None)
-        .with_contact(genesis_contact)
-        .create()
-        .await?;
+    let (node1, _event_stream) = create_node(config_with_contact(genesis_contact)).await?;
 
     // just await for genesis node to finish receiving all events
     genesis_handler.await?;
@@ -65,7 +67,11 @@ async fn test_node_bootstrapping() -> Result<()> {
 
 #[tokio::test]
 async fn test_startup_section_bootstrapping() -> Result<()> {
-    let (genesis_node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let (genesis_node, mut event_stream) = create_node(Config {
+        first: true,
+        ..Default::default()
+    })
+    .await?;
     let other_node_count = ELDER_SIZE - 1;
 
     // spawn genesis node events listener
@@ -89,10 +95,8 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
     let genesis_contact = genesis_node.our_connection_info().await?;
     let nodes_joining_tasks: Vec<_> = (0..other_node_count)
         .map(|_| async {
-            let (node, mut event_stream) = RoutingBuilder::new(None)
-                .with_contact(genesis_contact)
-                .create()
-                .await?;
+            let (node, mut event_stream) =
+                create_node(config_with_contact(genesis_contact)).await?;
 
             // During the startup phase, joining nodes are instantly relocated.
             assert_next_event!(event_stream, Event::RelocationStarted { .. });

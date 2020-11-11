@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{DstLocation, Error, Event, SrcLocation, TransportConfig};
+use sn_routing::{Config, DstLocation, Error, Event, SrcLocation, TransportConfig};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
@@ -20,7 +20,11 @@ async fn test_messages_client_node() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";
 
-    let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let (node, mut event_stream) = create_node(Config {
+        first: true,
+        ..Default::default()
+    })
+    .await?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -62,7 +66,11 @@ async fn test_messages_between_nodes() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";
 
-    let (node1, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let (node1, mut event_stream) = create_node(Config {
+        first: true,
+        ..Default::default()
+    })
+    .await?;
     let node1_contact = node1.our_connection_info().await?;
     let node1_name = node1.name().await;
 
@@ -81,10 +89,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     });
 
     // start a second node which sends a message to the first node
-    let (node2, mut event_stream) = RoutingBuilder::new(None)
-        .with_contact(node1_contact)
-        .create()
-        .await?;
+    let (node2, mut event_stream) = create_node(config_with_contact(node1_contact)).await?;
 
     // We are in the startup phase, so node2 is instantly relocated. Let's wait until it re-joins.
     assert_next_event!(event_stream, Event::RelocationStarted { .. });

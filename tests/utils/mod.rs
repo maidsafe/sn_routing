@@ -26,65 +26,38 @@ use std::{
 
 static LOG_INIT: Once = Once::new();
 
-pub struct RoutingBuilder {
-    config: Config,
+pub async fn create_node(mut config: Config) -> Result<(Routing, EventStream)> {
+    // We initialise the logger but only once for all tests
+    LOG_INIT.call_once(|| {
+        env_logger::builder()
+            // the test framework will capture the log output and show it only on failure.
+            // Run the tests with --nocapture to override.
+            .is_test(true)
+            .format(|buf, record| {
+                writeln!(
+                    buf,
+                    "{:.1} {} ({}:{})",
+                    record.level(),
+                    record.args(),
+                    record.file().unwrap_or("<unknown>"),
+                    record.line().unwrap_or(0)
+                )
+            })
+            .init()
+    });
+
+    // make sure we set 127.0.0.1 as the IP if was not set
+    if config.transport_config.ip.is_none() {
+        config.transport_config.ip = Some(Ipv4Addr::LOCALHOST.into());
+    }
+
+    Ok(Routing::new(config).await?)
 }
 
-impl<'a> RoutingBuilder {
-    pub fn new(config: Option<Config>) -> Self {
-        // We initialise the logger but only once for all tests
-        LOG_INIT.call_once(|| {
-            env_logger::builder()
-                // the test framework will capture the log output and show it only on failure.
-                // Run the tests with --nocapture to override.
-                .is_test(true)
-                .format(|buf, record| {
-                    writeln!(
-                        buf,
-                        "{:.1} {} ({}:{})",
-                        record.level(),
-                        record.args(),
-                        record.file().unwrap_or("<unknown>"),
-                        record.line().unwrap_or(0)
-                    )
-                })
-                .init()
-        });
-
-        let config = config.unwrap_or_else(Config::default);
-
-        Self { config }
-    }
-
-    pub fn first(mut self) -> Self {
-        self.config.first = true;
-        self
-    }
-
-    pub fn with_contact(mut self, contact: SocketAddr) -> Self {
-        let mut contacts = HashSet::default();
-        contacts.insert(contact);
-        self.config.transport_config.hard_coded_contacts = contacts;
-        self
-    }
-
-    pub fn keypair(mut self, keypair: Keypair) -> Self {
-        self.config.keypair = Some(keypair);
-        self
-    }
-
-    pub async fn create(self) -> Result<(Routing, EventStream)> {
-        // make sure we set 127.0.0.1 as the IP if was not set
-        let config = if self.config.transport_config.ip.is_none() {
-            let mut config = self.config;
-            config.transport_config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-            config
-        } else {
-            self.config
-        };
-
-        Ok(Routing::new(config).await?)
-    }
+pub fn config_with_contact(contact: SocketAddr) -> Config {
+    let mut config = Config::default();
+    config.transport_config.hard_coded_contacts = iter::once(contact).collect();
+    config
 }
 
 // Note: setting the timeout quite high, so that if it triggers it mostly likely indicates an
@@ -109,7 +82,11 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
     let mut nodes = vec![];
 
     // Create the first node
-    let (node, mut event_stream) = RoutingBuilder::new(None).first().create().await?;
+    let (node, mut event_stream) = create_node(Config {
+        first: true,
+        ..Default::default()
+    })
+    .await?;
     assert_next_event!(event_stream, Event::PromotedToElder);
 
     let bootstrap_contact = node.our_connection_info().await?;
@@ -117,11 +94,7 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
     nodes.push((node, event_stream));
 
     // Create the other nodes bootstrapping off the first node.
-    let other_nodes = (1..count).map(|_| {
-        RoutingBuilder::new(None)
-            .with_contact(bootstrap_contact)
-            .create()
-    });
+    let other_nodes = (1..count).map(|_| create_node(config_with_contact(bootstrap_contact)));
 
     for node in future::try_join_all(other_nodes).await? {
         nodes.push(node);
