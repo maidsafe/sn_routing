@@ -152,18 +152,13 @@ impl Stage {
         delivery_group_size: usize,
         message: Bytes,
     ) -> Vec<Command> {
-        match self
-            .comm
+        self.comm
             .send_message_to_targets(recipients, delivery_group_size, message)
             .await
-        {
-            Ok(()) => vec![],
-            Err(error) => error
-                .failed_recipients
-                .into_iter()
-                .map(Command::HandlePeerLost)
-                .collect(),
-        }
+            .1
+            .into_iter()
+            .map(Command::HandlePeerLost)
+            .collect()
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {

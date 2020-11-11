@@ -29,9 +29,6 @@ use tokio::{
 // Number of Connections to maintain in the cache
 const CONNECTIONS_CACHE_SIZE: usize = 1024;
 
-/// Maximal number of resend attempts to the same target.
-pub(crate) const RESEND_MAX_ATTEMPTS: u8 = 3;
-
 // Communication component of the node to interact with other nodes.
 pub(crate) struct Comm {
     _quic_p2p: QuicP2p,
@@ -100,18 +97,17 @@ impl Comm {
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
     /// recipients out of the `recipients` list. If a send fails, attempts to send to the next peer
     /// until `delivery_goup_size` successful sends complete or there are no more recipients to
-    /// try. Each recipient will be attempted at most `RESEND_MAX_ATTEMPTS` times. If it fails all
-    /// the attempts, it is considered as lost.
+    /// try.
     ///
     /// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that
-    /// `delivery_group_size` succeeded. The returned error contains a list of all the recipients
-    /// that failed all their respective attempts.
+    /// `delivery_group_size` succeeded. Also returns all the failed recipients which can be used
+    /// by the caller to identify lost peers.
     pub async fn send_message_to_targets(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         msg: Bytes,
-    ) -> Result<(), SendError> {
+    ) -> (Result<(), SendError>, Vec<SocketAddr>) {
         trace!(
             "Sending message ({} bytes) to {} of {:?}",
             msg.len(),
@@ -127,186 +123,87 @@ impl Comm {
             );
         }
 
-        // Use `FuturesUnordered` to execute all the send tasks concurrently, but still on the same
-        // thread. Keep track of the sending progress using the `SendState` helper.
-        let mut state = SendState::new(recipients, delivery_group_size);
-        let mut tasks = FuturesUnordered::new();
+        let delivery_group_size = delivery_group_size.min(recipients.len());
 
-        loop {
-            // Start a batch of sends.
-            while let Some(addr) = state.next() {
-                let msg = msg.clone();
-                let task = async move {
-                    let result = self.send_once(&addr, msg).await;
-                    (addr, result)
-                };
-                tasks.push(task);
-            }
+        // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
+        // the next recipient and try to send to them. Proceed until the needed number of sends
+        // succeeds or if there are no more recipients to pick.
+        let send = |recipient, msg| async move { (self.send_to(recipient, msg).await, recipient) };
 
-            // Await until one of the started sends completes.
-            if let Some((addr, result)) = tasks.next().await {
-                // Notify `SendState` about the result of the send and potentially start the next
-                // send, appending to the ones still in progress (if any).
-                match result {
-                    Ok(_) => state.success(&addr),
-                    Err(err) => {
-                        trace!(
-                            "Sending message ({} bytes) to {} failed: {}",
-                            msg.len(),
-                            addr,
-                            err
-                        );
-                        state.failure(&addr);
-                    }
-                }
+        let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
+            .iter()
+            .map(|recipient| send(recipient, msg.clone()))
+            .collect();
+
+        let mut next = delivery_group_size;
+        let mut successes = 0;
+        let mut failed_recipients = vec![];
+
+        while let Some((result, addr)) = tasks.next().await {
+            if result.is_ok() {
+                successes += 1;
             } else {
-                // No sends in progress, we are done.
-                break;
+                failed_recipients.push(*addr);
+
+                if next < recipients.len() {
+                    tasks.push(send(&recipients[next], msg.clone()));
+                    next += 1;
+                }
             }
         }
-
-        let failed_recipients = state.finish();
 
         trace!(
             "Sending message ({} bytes) finished to {}/{} recipients (failed: {:?})",
             msg.len(),
-            delivery_group_size - failed_recipients.len(),
+            successes,
             delivery_group_size,
             failed_recipients
         );
 
-        if failed_recipients.is_empty() {
+        let result = if successes == delivery_group_size {
             Ok(())
         } else {
-            Err(SendError { failed_recipients })
-        }
+            Err(SendError)
+        };
+
+        (result, failed_recipients)
     }
 
     // Low-level send
-    async fn send_once(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
+    async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
         // Cache the Connection to the node or obtain the already cached one
-        // Note: not using the entry API to avoid holding the mutex longer than necessary.
+        // NOTE: not using the entry API to avoid holding the mutex longer than necessary.
+        // NOTE: make sure the `let conn = self.node_conns.lock()...` expression is on its own line
+        //       to avoid deadlocks.
         let conn = self.node_conns.lock().await.get(recipient).cloned();
-        let conn = if let Some(conn) = conn {
-            conn
-        } else {
-            let conn = self.endpoint.connect_to(recipient).await?;
-            let conn = Arc::new(conn);
-            let _ = self
-                .node_conns
-                .lock()
-                .await
-                .insert(*recipient, Arc::clone(&conn));
-
-            conn
-        };
-
-        let result = conn.send_uni(msg).await;
-
-        // In case of error, remove the cached connection so it can be re-established on the next
-        // attempt.
-        if result.is_err() {
-            let _ = self.node_conns.lock().await.remove(recipient);
+        if let Some(conn) = conn {
+            if conn.send_uni(msg.clone()).await.is_ok() {
+                return Ok(());
+            } else {
+                let _ = self.node_conns.lock().await.remove(recipient);
+            }
         }
 
-        result
+        let conn = self.endpoint.connect_to(recipient).await?;
+        conn.send_uni(msg).await?;
+
+        let _ = self
+            .node_conns
+            .lock()
+            .await
+            .insert(*recipient, Arc::new(conn));
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Error)]
-#[error(display = "Send failed to: {:?}", failed_recipients)]
-pub struct SendError {
-    // Recipients that failed all the send attempts.
-    pub failed_recipients: Vec<SocketAddr>,
-}
+#[error(display = "Send failed")]
+pub struct SendError;
 
 impl From<SendError> for Error {
     fn from(_: SendError) -> Self {
         Error::FailedSend
-    }
-}
-
-// Helper to track the sending of a single message to potentially multiple recipients.
-struct SendState {
-    recipients: Vec<Recipient>,
-    remaining: usize,
-}
-
-struct Recipient {
-    addr: SocketAddr,
-    sending: bool,
-    attempt: u8,
-}
-
-impl SendState {
-    fn new(recipients: &[SocketAddr], delivery_group_size: usize) -> Self {
-        Self {
-            recipients: recipients
-                .iter()
-                .map(|addr| Recipient {
-                    addr: *addr,
-                    sending: false,
-                    attempt: 0,
-                })
-                .collect(),
-            remaining: delivery_group_size,
-        }
-    }
-
-    // Returns the next recipient to send to.
-    fn next(&mut self) -> Option<SocketAddr> {
-        let active = self
-            .recipients
-            .iter()
-            .filter(|recipient| recipient.sending)
-            .count();
-
-        if active >= self.remaining {
-            return None;
-        }
-
-        let recipient = self
-            .recipients
-            .iter_mut()
-            .filter(|recipient| !recipient.sending && recipient.attempt < RESEND_MAX_ATTEMPTS)
-            .min_by_key(|recipient| recipient.attempt)?;
-
-        recipient.attempt += 1;
-        recipient.sending = true;
-
-        Some(recipient.addr)
-    }
-
-    // Marks the recipient as failed.
-    fn failure(&mut self, addr: &SocketAddr) {
-        if let Some(recipient) = self
-            .recipients
-            .iter_mut()
-            .find(|recipient| recipient.addr == *addr)
-        {
-            recipient.sending = false;
-        }
-    }
-
-    // Marks the recipient as successful.
-    fn success(&mut self, addr: &SocketAddr) {
-        if let Some(index) = self
-            .recipients
-            .iter()
-            .position(|recipient| recipient.addr == *addr)
-        {
-            let _ = self.recipients.swap_remove(index);
-            self.remaining -= 1;
-        }
-    }
-
-    // Consumes the state and returns the list of recipients that failed all attempts (if any).
-    fn finish(self) -> Vec<SocketAddr> {
-        self.recipients
-            .into_iter()
-            .filter(|recipient| !recipient.sending && recipient.attempt >= RESEND_MAX_ATTEMPTS)
-            .map(|recipient| recipient.addr)
-            .collect()
     }
 }
 
@@ -435,7 +332,8 @@ mod tests {
 
         let message = Bytes::from_static(b"hello world");
         comm.send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
-            .await?;
+            .await
+            .0?;
 
         assert_eq!(peer0.rx.recv().await, Some(message.clone()));
         assert_eq!(peer1.rx.recv().await, Some(message));
@@ -452,7 +350,8 @@ mod tests {
 
         let message = Bytes::from_static(b"hello world");
         comm.send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
-            .await?;
+            .await
+            .0?;
 
         assert_eq!(peer0.rx.recv().await, Some(message));
 
@@ -474,12 +373,11 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        assert_matches!(
-            comm
-                .send_message_to_targets(&[invalid_addr], 1, message.clone())
-                .await,
-            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr])
-        );
+        let (result, failed_recipients) = comm
+            .send_message_to_targets(&[invalid_addr], 1, message.clone())
+            .await;
+        assert!(result.is_err());
+        assert_eq!(failed_recipients, [invalid_addr]);
 
         Ok(())
     }
@@ -495,7 +393,8 @@ mod tests {
 
         let message = Bytes::from_static(b"hello world");
         comm.send_message_to_targets(&[invalid_addr, peer.addr], 1, message.clone())
-            .await?;
+            .await
+            .0?;
 
         assert_eq!(peer.rx.recv().await, Some(message));
 
@@ -512,14 +411,12 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
+        let (result, failed_recipients) = comm
+            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
+            .await;
 
-        assert_matches!(
-            comm
-                .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
-                .await,
-            Err(error) => assert_eq!(error.failed_recipients, [invalid_addr])
-        );
-
+        assert!(result.is_err());
+        assert_eq!(failed_recipients, [invalid_addr]);
         assert_eq!(peer.rx.recv().await, Some(message));
 
         Ok(())
@@ -538,7 +435,8 @@ mod tests {
         let msg0 = Bytes::from_static(b"zero");
         send_comm
             .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg0.clone())
-            .await?;
+            .await
+            .0?;
 
         let mut msg0_received = false;
 
@@ -560,7 +458,8 @@ mod tests {
         let msg1 = Bytes::from_static(b"one");
         send_comm
             .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg1.clone())
-            .await?;
+            .await
+            .0?;
 
         let mut msg1_received = false;
 
@@ -591,7 +490,8 @@ mod tests {
         // Send a message to establish the connection
         comm1
             .send_message_to_targets(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
-            .await?;
+            .await
+            .0?;
         assert_matches!(
             incoming_conns0.next().await,
             Some(ConnectionEvent::Received(_))
