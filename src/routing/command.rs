@@ -134,7 +134,12 @@ impl Debug for Command {
                 .debug_struct("HandleDkgParticipationResult")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
-                .field("result", result)
+                .field(
+                    "result",
+                    &result
+                        .as_ref()
+                        .map(|outcome| outcome.public_key_set.public_key()),
+                )
                 .finish(),
             Self::HandleDkgObservationResult {
                 elders_info,

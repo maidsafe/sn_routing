@@ -23,6 +23,23 @@ async fn test_node_drop() -> Result<()> {
     assert_next_event!(nodes[1].1, Event::RelocationStarted { .. });
     assert_next_event!(nodes[1].1, Event::Relocated { .. });
 
+    // Wait for the DKG(s) to complete, to make sure there are no more messages being exchanged.
+    let node_count = nodes.len();
+    for (node, events) in &mut nodes {
+        if node.our_elders().await.len() == node_count {
+            continue;
+        }
+
+        while let Some(event) = events.next().await {
+            match event {
+                Event::EldersChanged { elders, .. } if elders.len() == node_count => continue,
+                _ => {}
+            }
+        }
+
+        panic!("event stream closed before receiving Event::EldersChanged");
+    }
+
     // Drop one node
     let dropped_name = nodes.remove(1).0.name().await;
 
