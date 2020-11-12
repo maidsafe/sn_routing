@@ -1143,6 +1143,8 @@ impl Approved {
 
         let mut commands = vec![];
 
+        let is_startup_phase = self.is_in_startup_phase();
+
         if let Some(info) = self.section.members().get(peer.name()) {
             // This node is rejoin with same name.
 
@@ -1156,7 +1158,7 @@ impl Approved {
             }
             // To avoid during startup_phase, a rejoin node being given a randmly higher age,
             // force it to be halved.
-            if self.is_in_startup_phase() || info.peer.age() / 2 > MIN_AGE {
+            if is_startup_phase || info.peer.age() / 2 > MIN_AGE {
                 // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
                 // to send this `NodeApproval`.
                 commands.push(self.send_node_approval(&peer, their_knowledge)?);
@@ -1167,7 +1169,7 @@ impl Approved {
             }
         }
 
-        if self.is_in_startup_phase() && peer.age() <= MIN_AGE {
+        if is_startup_phase && peer.age() <= MIN_AGE {
             // In startup phase, instantly relocate the joining peer in order to promote it to
             // adult.
 
@@ -1201,6 +1203,7 @@ impl Approved {
                 name: *peer.name(),
                 previous_name,
                 age: peer.age(),
+                startup_relocation: is_startup_phase,
             });
 
             self.print_network_stats();
