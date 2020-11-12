@@ -30,6 +30,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     node::Node,
     peer::Peer,
+    relocation::STARTUP_PHASE_AGE_RANGE,
     section::{EldersInfo, SectionProofChain},
     TransportConfig,
 };
@@ -94,7 +95,8 @@ impl Routing {
             let comm = Comm::new(config.transport_config)?;
             let incoming_msgs = comm.listen()?;
 
-            let node = Node::new(keypair, comm.our_connection_info().await?);
+            let node = Node::new(keypair, comm.our_connection_info().await?)
+                .with_age(STARTUP_PHASE_AGE_RANGE.end);
             let state = Approved::first_node(node, event_tx)?;
 
             state.send_event(Event::PromotedToElder);
