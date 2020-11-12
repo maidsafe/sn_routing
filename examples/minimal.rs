@@ -238,10 +238,11 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             name,
             previous_name,
             age,
+            startup_relocation,
         } => {
             info!(
-                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}",
-                index, name, previous_name, age
+                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}, startup_relocation: {}",
+                index, name, previous_name, age, startup_relocation
             );
         }
         Event::MemberLeft { name, age } => {

@@ -72,7 +72,7 @@ extern crate log;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
-    event::Event,
+    event::{Event, SendStream},
     location::{DstLocation, SrcLocation},
     routing::{Config, EventStream, Routing},
     section::{SectionProofChain, MIN_AGE},
