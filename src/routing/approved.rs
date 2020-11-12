@@ -34,7 +34,7 @@ use crate::{
     },
     RECOMMENDED_SECTION_SIZE,
 };
-use bls_dkg::key_gen::outcome::Outcome as DkgOutcome;
+use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome};
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{cmp, net::SocketAddr, slice};
@@ -1028,10 +1028,9 @@ impl Approved {
     fn handle_dkg_message(
         &mut self,
         dkg_key: DkgKey,
-        message_bytes: Bytes,
+        message: DkgMessage,
         sender: XorName,
     ) -> Result<Vec<Command>> {
-        let message = bincode::deserialize(&message_bytes[..])?;
         trace!("handle DKG message {:?} from {}", message, sender);
 
         self.dkg_voter

@@ -544,10 +544,7 @@ impl DkgCommand {
                 dkg_key,
                 message,
             } => {
-                let variant = Variant::DKGMessage {
-                    dkg_key,
-                    message: bincode::serialize(&message)?.into(),
-                };
+                let variant = Variant::DKGMessage { dkg_key, message };
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_targets(
