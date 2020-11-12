@@ -29,15 +29,15 @@ use crate::{
         SignedRelocateDetails,
     },
     section::{
-        EldersInfo, MemberInfo, Section, SectionKeyShare, SectionKeysProvider, SectionProofChain,
-        MIN_AGE,
+        EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare, SectionKeysProvider,
+        SectionProofChain, MIN_AGE,
     },
     RECOMMENDED_SECTION_SIZE,
 };
 use bls_dkg::key_gen::outcome::Outcome as DkgOutcome;
 use bytes::Bytes;
 use itertools::Itertools;
-use std::{net::SocketAddr, slice};
+use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -213,7 +213,7 @@ impl Approved {
         }
 
         if let Some(info) = self.section.members().get(&name) {
-            let info = info.clone().leave();
+            let info = info.clone().leave()?;
             self.vote(Vote::Offline(info))
         } else {
             Ok(vec![])
@@ -1086,6 +1086,20 @@ impl Approved {
         self.send_relocate(&peer, details)
     }
 
+    fn relocate_rejoin_peer(&self, peer: Peer, age: u8) -> Result<Vec<Command>> {
+        let details =
+            RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
+
+        trace!(
+            "Relocating {:?} to {} with age {} due to rejoin",
+            peer,
+            details.destination,
+            details.age
+        );
+
+        self.send_relocate(&peer, details)
+    }
+
     // Are we in the startup phase? Startup phase is when the network consists of only one section
     // and it has no more than `recommended_section_size` members.
     fn is_in_startup_phase(&self) -> bool {
@@ -1104,6 +1118,30 @@ impl Approved {
         let signature = proof.signature.clone();
 
         let mut commands = vec![];
+
+        if let Some(info) = self.section.members().get(peer.name()) {
+            // This node is rejoin with same name.
+
+            if info.state != PeerState::Left {
+                debug!(
+                    "Ignoring Online node {} - {:?} not Left.",
+                    peer.name(),
+                    info.state,
+                );
+                return Ok(commands);
+            }
+            // To avoid during startup_phase, a rejoin node being given a randmly higher age,
+            // force it to be halved.
+            if self.is_in_startup_phase() || info.peer.age() / 2 > MIN_AGE {
+                // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
+                // to send this `NodeApproval`.
+                commands.push(self.send_node_approval(&peer, their_knowledge)?);
+                commands.extend(
+                    self.relocate_rejoin_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
+                );
+                return Ok(commands);
+            }
+        }
 
         if self.is_in_startup_phase() && peer.age() <= MIN_AGE {
             // In startup phase, instantly relocate the joining peer in order to promote it to

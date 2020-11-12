@@ -449,7 +449,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .members()
         .get(remove_peer.name())
         .expect("member not found")
-        .leave();
+        .leave()?;
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
