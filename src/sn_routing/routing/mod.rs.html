@@ -322,6 +322,7 @@
 <span id="321">321</span>
 <span id="322">322</span>
 <span id="323">323</span>
+<span id="324">324</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -366,6 +367,7 @@
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="doccomment">/// Routing configuration.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Config</span> {
     <span class="doccomment">/// If true, configures the node to start a new network instead of joining an existing one.</span>
     <span class="kw">pub</span> <span class="ident">first</span>: <span class="ident">bool</span>,
@@ -418,7 +420,7 @@
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">incoming_msgs</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="kw">await</span><span class="question-mark">?</span>);
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
 
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
@@ -429,7 +431,7 @@
             <span class="kw">let</span> (<span class="ident">comm</span>, <span class="ident">bootstrap_addr</span>) <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">from_bootstrapping</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span> <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="kw">await</span><span class="question-mark">?</span>);
             <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span>
                 <span class="ident">bootstrap</span>::<span class="ident">infant</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>, <span class="ident">bootstrap_addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
@@ -488,8 +490,8 @@
     }
 
     <span class="doccomment">/// Returns connection info of this node.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Prefix of our section</span>

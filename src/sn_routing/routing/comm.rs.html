@@ -687,8 +687,8 @@
         <span class="prelude-val">Ok</span>(<span class="ident">IncomingMessages</span>::<span class="ident">new</span>(<span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>))
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">our_addr</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">socket_addr</span>().<span class="kw">await</span>.<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to retrieve our connection info: {:?}&quot;</span>, <span class="ident">err</span>);
             <span class="ident">err</span>.<span class="ident">into</span>()
         })
@@ -1007,8 +1007,8 @@
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>())<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="ident">comm</span>.<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
@@ -1024,8 +1024,8 @@
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send_to_subset</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>())<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="ident">comm</span>.<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
@@ -1061,7 +1061,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send_after_failed_attempts</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>())<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
@@ -1076,7 +1076,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">partially_successful_send</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>())<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
@@ -1100,7 +1100,7 @@
 
         <span class="kw">let</span> <span class="ident">recv_transport</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>()), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">recv_endpoint</span> <span class="op">=</span> <span class="ident">recv_transport</span>.<span class="ident">new_endpoint</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">recv_addr</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">local_addr</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">recv_addr</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">socket_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">recv_incoming_connections</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
         <span class="comment">// Send the first message.</span>
@@ -1162,11 +1162,11 @@
     }
 
     <span class="kw">impl</span> <span class="ident">Peer</span> {
-        <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
             <span class="kw">let</span> <span class="ident">transport</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>()), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 
             <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">transport</span>.<span class="ident">new_endpoint</span>()<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">local_addr</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">socket_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">incoming_connections</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">listen</span>()<span class="question-mark">?</span>;
 
             <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
