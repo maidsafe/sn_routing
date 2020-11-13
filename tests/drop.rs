@@ -10,7 +10,11 @@ mod utils;
 
 use self::utils::*;
 use anyhow::Result;
-use sn_routing::Event;
+
+use ed25519_dalek::Keypair;
+
+use sn_routing::{Config, Event, XorName, ELDER_SIZE};
+use std::iter;
 
 #[tokio::test]
 async fn test_node_drop() -> Result<()> {
@@ -45,6 +49,52 @@ async fn test_node_drop() -> Result<()> {
     for (_, events) in &mut nodes {
         assert_event!(events, Event::MemberLeft { name, .. } if name == dropped_name)
     }
+
+    Ok(())
+}
+
+// Test a node rejoin after dropped with the same keypair will be accepted with new name.
+#[tokio::test]
+async fn test_node_rejoin() -> Result<()> {
+    let mut nodes = create_connected_nodes(ELDER_SIZE).await?;
+    for (_, events) in &mut nodes[1..] {
+        assert_event!(events, Event::PromotedToElder);
+    }
+
+    // Add a target node then drop it.
+    let keypair = Keypair::generate(&mut rand::thread_rng());
+    let target_name = XorName(keypair.public.to_bytes());
+    let keypair_bytes = keypair.to_bytes();
+    let mut config = Config {
+        keypair: Some(keypair),
+        ..Default::default()
+    };
+    config.transport_config.hard_coded_contacts =
+        iter::once(nodes[0].0.our_connection_info().await?).collect();
+
+    let (node, _) = create_node(config).await?;
+    for (_, events) in &mut nodes {
+        assert_event!(events, Event::MemberJoined { .. })
+    }
+    drop(node);
+    for (_, events) in &mut nodes {
+        assert_event!(events, Event::MemberLeft { .. })
+    }
+
+    // Rejoin the target node with the same config.
+    let keypair = Keypair::from_bytes(&keypair_bytes)?;
+    let mut config = Config {
+        keypair: Some(keypair),
+        ..Default::default()
+    };
+    config.transport_config.hard_coded_contacts =
+        iter::once(nodes[0].0.our_connection_info().await?).collect();
+    let (node, _) = create_node(config).await?;
+    for (_, events) in &mut nodes {
+        assert_event!(events, Event::MemberJoined { .. })
+    }
+
+    assert!(node.name().await != target_name);
 
     Ok(())
 }

@@ -1192,15 +1192,13 @@ impl Approved {
                 return Ok(commands);
             }
 
-            if info.peer.age() / 2 > MIN_AGE {
-                // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
-                // to send this `NodeApproval`.
-                commands.push(self.send_node_approval(&peer, their_knowledge)?);
-                commands.extend(
-                    self.relocate_rejoining_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
-                );
-                return Ok(commands);
-            }
+            // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
+            // to send this `NodeApproval`.
+            commands.push(self.send_node_approval(&peer, their_knowledge)?);
+            commands.extend(
+                self.relocate_rejoining_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
+            );
+            return Ok(commands);
         }
 
         if !self.section.update_member(Proven {
