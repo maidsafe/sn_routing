@@ -391,6 +391,102 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 }
 
 #[tokio::test]
+async fn handle_consensus_on_online_of_rejoined_node() -> Result<()> {
+    // Create a section with all elders have age as 32.
+    let sk_set = SecretKeySet::random();
+    let mut nodes: Vec<_> = gen_sorted_nodes(ELDER_SIZE)
+        .into_iter()
+        .map(|node| node.with_age(32))
+        .collect();
+    let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
+    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
+
+    // Simulate a peer of age 16 is joined.
+    let existing_peer = create_peer().with_age(16);
+    let member_info = MemberInfo::joined(existing_peer);
+    let member_info = proven(sk_set.secret_key(), member_info)?;
+    let _ = section.update_member(member_info);
+
+    // Simulate such peer is Offline.
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let node = nodes.remove(0);
+    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let stage = Stage::new(state, create_comm()?);
+
+    let member_info = MemberInfo {
+        peer: existing_peer,
+        state: PeerState::Left,
+    };
+    let vote = Vote::Offline(member_info);
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    let _ = stage
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    assert_matches!(event_rx.try_recv(), Ok(Event::MemberLeft { name, age, }) => {
+        assert_eq!(name, *existing_peer.name());
+        assert_eq!(age, 16);
+    });
+
+    // Simulate peer with the same name is rejoin.
+    let member_info = MemberInfo::joined(existing_peer);
+    let vote = Vote::Online {
+        member_info,
+        previous_name: None,
+        their_knowledge: None,
+    };
+    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    let commands = stage
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+    let mut node_approval_sent = false;
+    let mut relocate_sent = false;
+    for command in commands {
+        let (message, recipients) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (Message::from_bytes(&message)?, recipients),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::NodeApproval(proven_elders_info) => {
+                assert_eq!(proven_elders_info.value, elders_info);
+                assert_eq!(recipients, [*existing_peer.addr()]);
+                node_approval_sent = true;
+            }
+            Variant::Vote { content, .. } => {
+                let message = if let Vote::SendMessage { message, .. } = content {
+                    message
+                } else {
+                    continue;
+                };
+
+                let details = if let Variant::Relocate(details) = &message.variant {
+                    details
+                } else {
+                    continue;
+                };
+
+                assert_eq!(details.pub_id, *existing_peer.name());
+                assert_eq!(details.destination, *existing_peer.name());
+                assert!(details.age == 8);
+                assert_eq!(recipients, [*existing_peer.addr()]);
+                relocate_sent = true;
+            }
+            _ => continue,
+        }
+    }
+    assert!(node_approval_sent);
+    assert!(relocate_sent);
+    assert!(event_rx.try_recv().is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
