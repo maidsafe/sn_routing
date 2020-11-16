@@ -1086,7 +1086,7 @@ impl Approved {
         self.send_relocate(&peer, details)
     }
 
-    fn relocate_rejoin_peer(&self, peer: Peer, age: u8) -> Result<Vec<Command>> {
+    fn relocate_rejoining_peer(&self, peer: Peer, age: u8) -> Result<Vec<Command>> {
         let details =
             RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
 
@@ -1137,7 +1137,7 @@ impl Approved {
                 // to send this `NodeApproval`.
                 commands.push(self.send_node_approval(&peer, their_knowledge)?);
                 commands.extend(
-                    self.relocate_rejoin_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
+                    self.relocate_rejoining_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
                 );
                 return Ok(commands);
             }
