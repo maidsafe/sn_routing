@@ -52,7 +52,12 @@ async fn test_node_drop() -> Result<()> {
     }
 
     // Drop one node
-    let dropped_name = nodes.remove(1).0.name().await;
+    let dropped_node = nodes.remove(1).0;
+    let dropped_name = dropped_node.name().await;
+    let dropped_addr = dropped_node.our_connection_info().await?;
+    drop(dropped_node);
+
+    log::info!("Dropped {} at {}", dropped_name, dropped_addr);
 
     while let Some(event) = nodes[0].1.next().await {
         match event {

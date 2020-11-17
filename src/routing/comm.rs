@@ -14,6 +14,7 @@ use qp2p::{Connection, Endpoint, QuicP2p};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
+    sync::RwLock,
 };
 use tokio::{sync::mpsc, task};
 
@@ -21,7 +22,11 @@ use tokio::{sync::mpsc, task};
 pub(crate) struct Comm {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
-    event_tx: mpsc::Sender<ConnectionEvent>,
+    // Sender for connection events. Kept here so we can clone it and pass it to the incoming
+    // messages handler every time we establish new connection. It's kept in an `Option` so we can
+    // take it out and drop it on `terminate` which together with all the incoming message handlers
+    // terminating closes the corresponding receiver.
+    event_tx: RwLock<Option<mpsc::Sender<ConnectionEvent>>>,
 }
 
 impl Comm {
@@ -43,7 +48,7 @@ impl Comm {
         Ok(Self {
             _quic_p2p: quic_p2p,
             endpoint,
-            event_tx,
+            event_tx: RwLock::new(Some(event_tx)),
         })
     }
 
@@ -70,10 +75,20 @@ impl Comm {
             Self {
                 _quic_p2p: quic_p2p,
                 endpoint,
-                event_tx,
+                event_tx: RwLock::new(Some(event_tx)),
             },
             addr,
         ))
+    }
+
+    // Close all existing connections and stop accepting new ones.
+    pub fn terminate(&self) {
+        self.endpoint.close();
+        let _ = self
+            .event_tx
+            .write()
+            .unwrap_or_else(|err| err.into_inner())
+            .take();
     }
 
     pub async fn our_connection_info(&self) -> Result<SocketAddr> {
@@ -129,14 +144,20 @@ impl Comm {
         let mut failed_recipients = vec![];
 
         while let Some((result, addr)) = tasks.next().await {
-            if result.is_ok() {
-                successes += 1;
-            } else {
-                failed_recipients.push(*addr);
+            match result {
+                Ok(()) => successes += 1,
+                Err(qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)) => {
+                    // The connection was closed by us which means we are terminating so let's cut
+                    // this short.
+                    return (Err(SendError), vec![]);
+                }
+                Err(_) => {
+                    failed_recipients.push(*addr);
 
-                if next < recipients.len() {
-                    tasks.push(send(&recipients[next], msg.clone()));
-                    next += 1;
+                    if next < recipients.len() {
+                        tasks.push(send(&recipients[next], msg.clone()));
+                        next += 1;
+                    }
                 }
             }
         }
@@ -170,17 +191,24 @@ impl Comm {
     }
 
     async fn connect_to(&self, addr: &SocketAddr) -> Result<Connection, qp2p::Error> {
-        // TODO: handle the incoming messages
         let (conn, incoming_messages) = self.endpoint.connect_to(addr).await?;
+        let event_tx = self.event_tx.read().ok().and_then(|tx| tx.clone());
 
-        if let Some(incoming_messages) = incoming_messages {
-            let _ = task::spawn(handle_incoming_messages(
-                incoming_messages,
-                self.event_tx.clone(),
-            ));
+        if let (Some(incoming_messages), Some(event_tx)) = (incoming_messages, event_tx) {
+            trace!(
+                "New outgoing connection to {}",
+                incoming_messages.remote_addr()
+            );
+            let _ = task::spawn(handle_incoming_messages(incoming_messages, event_tx));
         }
 
         Ok(conn)
+    }
+}
+
+impl Drop for Comm {
+    fn drop(&mut self) {
+        self.endpoint.close()
     }
 }
 
@@ -218,11 +246,7 @@ async fn handle_incoming_connections(
     event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
     while let Some(incoming_msgs) = incoming_conns.next().await {
-        trace!(
-            "New connection established by peer {}",
-            incoming_msgs.remote_addr()
-        );
-
+        trace!("New incoming connection to {}", incoming_msgs.remote_addr());
         let _ = task::spawn(handle_incoming_messages(incoming_msgs, event_tx.clone()));
     }
 }

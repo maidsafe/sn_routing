@@ -135,9 +135,11 @@ impl Stage {
         result
     }
 
-    // Cancels any scheduled timers, currently or in the future.
-    pub fn cancel_timers(&self) {
+    // Terminate this routing instance - cancel all scheduled timers including any future ones,
+    // close all network connections and stop accepting new connections.
+    pub fn terminate(&self) {
         let _ = self.cancel_timer_tx.broadcast(true);
+        self.comm.terminate()
     }
 
     // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
