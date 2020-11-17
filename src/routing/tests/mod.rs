@@ -209,65 +209,14 @@ async fn handle_consensus_on_online_of_infant(phase: NetworkPhase) -> Result<()>
     let stage = Stage::new(state, create_comm()?);
 
     let new_peer = create_peer();
-    let member_info = MemberInfo::joined(new_peer);
-    let vote = Vote::Online {
-        member_info,
-        previous_name: None,
-        their_knowledge: None,
-    };
-    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
 
-    let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
-        .await?;
-
-    let mut node_approval_sent = false;
-    let mut relocate_sent = false;
-
-    for command in commands {
-        let (message, recipients) = match command {
-            Command::SendMessage {
-                recipients,
-                message,
-                ..
-            } => (Message::from_bytes(&message)?, recipients),
-            _ => continue,
-        };
-
-        match message.variant() {
-            Variant::NodeApproval(proven_elders_info) => {
-                assert_eq!(proven_elders_info.value, elders_info);
-                assert_eq!(recipients, [*new_peer.addr()]);
-                node_approval_sent = true;
-            }
-            Variant::Vote { content, .. } => {
-                let message = if let Vote::SendMessage { message, .. } = content {
-                    message
-                } else {
-                    continue;
-                };
-
-                let details = if let Variant::Relocate(details) = &message.variant {
-                    details
-                } else {
-                    continue;
-                };
-
-                assert_eq!(details.pub_id, *new_peer.name());
-                assert_eq!(details.destination, *new_peer.name());
-                assert!(details.age > MIN_AGE);
-                assert_eq!(recipients, [*new_peer.addr()]);
-                relocate_sent = true;
-            }
-            _ => continue,
-        }
-    }
-
+    let (node_approval_sent, relocate_age) =
+        handle_online_command(&new_peer, &sk_set, &stage, elders_info).await?;
     assert!(node_approval_sent);
 
     match phase {
         NetworkPhase::Startup => {
-            assert!(relocate_sent);
+            assert!(relocate_age.unwrap() > MIN_AGE);
             assert!(event_rx.try_recv().is_err());
         }
         NetworkPhase::Regular => {
@@ -390,53 +339,36 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     Ok(())
 }
 
-async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u8) -> Result<()> {
-    let prefix = match phase {
-        NetworkPhase::Startup => Prefix::default(),
-        NetworkPhase::Regular => "0".parse().unwrap(),
-    };
-    let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
-    let sk_set = SecretKeySet::random();
-    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
-
-    // Make a left peer.
-    let peer = create_peer().with_age(age);
-    let member_info = MemberInfo {
-        peer,
-        state: PeerState::Left,
-    };
-    let member_info = proven(sk_set.secret_key(), member_info)?;
-    let _ = section.update_member(member_info);
-
-    // Make a Node
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let node = nodes.remove(0);
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
-
-    // Simulate peer with the same name is rejoin.
-    let member_info = MemberInfo::joined(peer);
+// Handles a concensused Online vote. Collects the resulted commands.
+// returns with (node_approval_sent, Option<relocate_age>)
+// with None of relocate age indicates no Relocate message sent.
+async fn handle_online_command(
+    peer: &Peer,
+    sk_set: &SecretKeySet,
+    stage: &Stage,
+    elders_info: EldersInfo,
+) -> Result<(bool, Option<u8>)> {
+    let member_info = MemberInfo::joined(*peer);
     let vote = Vote::Online {
         member_info,
         previous_name: None,
         their_knowledge: None,
     };
     let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
         .await?;
 
-    // Verify resulted behaviours.
-    let expected_age = cmp::max(MIN_AGE, age / 2);
     let mut node_approval_sent = false;
-    let mut relocate_sent = false;
+    let mut relocate_age = None;
     for command in commands {
         let (message, recipients) = match command {
             Command::SendMessage {
                 recipients,
                 message,
                 ..
-            } => (Message::from_bytes(&message)?, recipients),
+            } => (Message::from_bytes(&message).unwrap(), recipients),
             _ => continue,
         };
 
@@ -461,23 +393,55 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
 
                 assert_eq!(details.pub_id, *peer.name());
                 assert_eq!(details.destination, *peer.name());
-                assert!(details.age == expected_age);
+                relocate_age = Some(details.age);
                 assert_eq!(recipients, [*peer.addr()]);
-                relocate_sent = true;
             }
             _ => continue,
         }
     }
 
+    Ok((node_approval_sent, relocate_age))
+}
+
+async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u8) -> Result<()> {
+    let prefix = match phase {
+        NetworkPhase::Startup => Prefix::default(),
+        NetworkPhase::Regular => "0".parse().unwrap(),
+    };
+    let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
+    let sk_set = SecretKeySet::random();
+    let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
+
+    // Make a left peer.
+    let peer = create_peer().with_age(age);
+    let member_info = MemberInfo {
+        peer,
+        state: PeerState::Left,
+    };
+    let member_info = proven(sk_set.secret_key(), member_info)?;
+    let _ = section.update_member(member_info);
+
+    // Make a Node
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let node = nodes.remove(0);
+    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let stage = Stage::new(state, create_comm()?);
+
+    // Simulate peer with the same name is rejoin and verify resulted behaviours.
+    let (node_approval_sent, relocate_age) =
+        handle_online_command(&peer, &sk_set, &stage, elders_info).await?;
     assert!(event_rx.try_recv().is_err());
     // After startup, a rejoin node with low age will be rejected.
     if let NetworkPhase::Regular = phase {
         if age / 2 <= MIN_AGE {
+            assert!(!node_approval_sent);
+            assert!(relocate_age.is_none());
             return Ok(());
         }
     }
     assert!(node_approval_sent);
-    assert!(relocate_sent);
+    let expected_age = cmp::max(MIN_AGE, age / 2);
+    assert!(relocate_age == Some(expected_age));
 
     Ok(())
 }
