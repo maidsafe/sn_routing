@@ -1848,6 +1848,44 @@
 <span id="1847">1847</span>
 <span id="1848">1848</span>
 <span id="1849">1849</span>
+<span id="1850">1850</span>
+<span id="1851">1851</span>
+<span id="1852">1852</span>
+<span id="1853">1853</span>
+<span id="1854">1854</span>
+<span id="1855">1855</span>
+<span id="1856">1856</span>
+<span id="1857">1857</span>
+<span id="1858">1858</span>
+<span id="1859">1859</span>
+<span id="1860">1860</span>
+<span id="1861">1861</span>
+<span id="1862">1862</span>
+<span id="1863">1863</span>
+<span id="1864">1864</span>
+<span id="1865">1865</span>
+<span id="1866">1866</span>
+<span id="1867">1867</span>
+<span id="1868">1868</span>
+<span id="1869">1869</span>
+<span id="1870">1870</span>
+<span id="1871">1871</span>
+<span id="1872">1872</span>
+<span id="1873">1873</span>
+<span id="1874">1874</span>
+<span id="1875">1875</span>
+<span id="1876">1876</span>
+<span id="1877">1877</span>
+<span id="1878">1878</span>
+<span id="1879">1879</span>
+<span id="1880">1880</span>
+<span id="1881">1881</span>
+<span id="1882">1882</span>
+<span id="1883">1883</span>
+<span id="1884">1884</span>
+<span id="1885">1885</span>
+<span id="1886">1886</span>
+<span id="1887">1887</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1880,15 +1918,15 @@
         <span class="ident">SignedRelocateDetails</span>,
     },
     <span class="ident">section</span>::{
-        <span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>, <span class="ident">SectionProofChain</span>,
-        <span class="ident">MIN_AGE</span>,
+        <span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>,
+        <span class="ident">SectionProofChain</span>, <span class="ident">MIN_AGE</span>,
     },
     <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">outcome</span>::<span class="ident">Outcome</span> <span class="kw">as</span> <span class="ident">DkgOutcome</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">slice</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cmp</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">slice</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
@@ -2064,7 +2102,7 @@
         }
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">info</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>) {
-            <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">clone</span>().<span class="ident">leave</span>();
+            <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">clone</span>().<span class="ident">leave</span>()<span class="question-mark">?</span>;
             <span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">info</span>))
         } <span class="kw">else</span> {
             <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
@@ -2937,6 +2975,20 @@
         <span class="self">self</span>.<span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">details</span>)
     }
 
+    <span class="kw">fn</span> <span class="ident">relocate_rejoining_peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+        <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span>
+            <span class="ident">RelocateDetails</span>::<span class="ident">with_age</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">age</span>);
+
+        <span class="macro">trace</span><span class="macro">!</span>(
+            <span class="string">&quot;Relocating {:?} to {} with age {} due to rejoin&quot;</span>,
+            <span class="ident">peer</span>,
+            <span class="ident">details</span>.<span class="ident">destination</span>,
+            <span class="ident">details</span>.<span class="ident">age</span>
+        );
+
+        <span class="self">self</span>.<span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">details</span>)
+    }
+
     <span class="comment">// Are we in the startup phase? Startup phase is when the network consists of only one section</span>
     <span class="comment">// and it has no more than `recommended_section_size` members.</span>
     <span class="kw">fn</span> <span class="ident">is_in_startup_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
@@ -2955,6 +3007,30 @@
         <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">proof</span>.<span class="ident">signature</span>.<span class="ident">clone</span>();
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
+
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">info</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">get</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
+            <span class="comment">// This node is rejoin with same name.</span>
+
+            <span class="kw">if</span> <span class="ident">info</span>.<span class="ident">state</span> <span class="op">!=</span> <span class="ident">PeerState</span>::<span class="ident">Left</span> {
+                <span class="macro">debug</span><span class="macro">!</span>(
+                    <span class="string">&quot;Ignoring Online node {} - {:?} not Left.&quot;</span>,
+                    <span class="ident">peer</span>.<span class="ident">name</span>(),
+                    <span class="ident">info</span>.<span class="ident">state</span>,
+                );
+                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
+            }
+            <span class="comment">// To avoid during startup_phase, a rejoin node being given a randmly higher age,</span>
+            <span class="comment">// force it to be halved.</span>
+            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">||</span> <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span> <span class="op">&gt;</span> <span class="ident">MIN_AGE</span> {
+                <span class="comment">// TODO: consider handling the relocation inside the bootstrap phase, to avoid having</span>
+                <span class="comment">// to send this `NodeApproval`.</span>
+                <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">send_node_approval</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">their_knowledge</span>)<span class="question-mark">?</span>);
+                <span class="ident">commands</span>.<span class="ident">extend</span>(
+                    <span class="self">self</span>.<span class="ident">relocate_rejoining_peer</span>(<span class="ident">peer</span>, <span class="ident">cmp</span>::<span class="ident">max</span>(<span class="ident">MIN_AGE</span>, <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span>))<span class="question-mark">?</span>,
+                );
+                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
+            }
+        }
 
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">&amp;&amp;</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&lt;=</span> <span class="ident">MIN_AGE</span> {
             <span class="comment">// In startup phase, instantly relocate the joining peer in order to promote it to</span>
