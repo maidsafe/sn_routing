@@ -49,8 +49,9 @@ async fn test_messages_client_node() -> Result<()> {
     config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
-    let (_, conn) = client.connect_to(&node_addr).await?;
-    let (_, mut recv) = conn.send(Bytes::from_static(msg)).await?;
+    let client_endpoint = client.new_endpoint()?;
+    let (conn, _) = client_endpoint.connect_to(&node_addr).await?;
+    let (_, mut recv) = conn.send_bi(Bytes::from_static(msg)).await?;
 
     // just await for node to respond to client
     node_handler.await??;

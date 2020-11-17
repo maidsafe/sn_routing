@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    comm::{ConnectionEvent, IncomingConnections},
-    Comm,
-};
+use super::{comm::ConnectionEvent, Comm};
 use crate::{
     consensus::Proven,
     crypto,
@@ -38,7 +35,7 @@ const BACKLOG_CAPACITY: usize = 100;
 pub(crate) async fn infant(
     node: Node,
     comm: &Comm,
-    incoming_conns: &mut IncomingConnections,
+    incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
@@ -418,10 +415,10 @@ enum JoinResponse {
 
 // Keep receiving messages from `incoming_messages` and send them to `message_tx`.
 async fn receive_messages(
-    incoming_conns: &mut IncomingConnections,
+    incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     mut message_tx: mpsc::Sender<(Message, SocketAddr)>,
 ) {
-    while let Some(event) = incoming_conns.next().await {
+    while let Some(event) = incoming_conns.recv().await {
         match event {
             ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
                 match Message::from_bytes(&bytes) {

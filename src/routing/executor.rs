@@ -6,17 +6,17 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    comm::{ConnectionEvent, IncomingConnections},
-    Command, Stage,
-};
+use super::{comm::ConnectionEvent, Command, Stage};
 use crate::{
     event::Event,
     messages::{Message, PING},
 };
 use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{sync::oneshot, task};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task,
+};
 
 pub struct Executor {
     cancel_tx: Option<oneshot::Sender<()>>,
@@ -31,7 +31,10 @@ impl Drop for Executor {
 }
 
 impl Executor {
-    pub(crate) async fn new(stage: Arc<Stage>, incoming_conns: IncomingConnections) -> Self {
+    pub(crate) async fn new(
+        stage: Arc<Stage>,
+        incoming_conns: mpsc::Receiver<ConnectionEvent>,
+    ) -> Self {
         let (cancel_tx, cancel_rx) = oneshot::channel();
 
         let _ = task::spawn(async move {
@@ -47,8 +50,8 @@ impl Executor {
     }
 }
 
-async fn handle_events(stage: Arc<Stage>, mut incoming_conns: IncomingConnections) {
-    while let Some(event) = incoming_conns.next().await {
+async fn handle_events(stage: Arc<Stage>, mut incoming_conns: mpsc::Receiver<ConnectionEvent>) {
+    while let Some(event) = incoming_conns.recv().await {
         match event {
             ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
                 trace!(
@@ -65,7 +68,7 @@ async fn handle_events(stage: Arc<Stage>, mut incoming_conns: IncomingConnection
                     continue;
                 }
 
-                spawn_node_message_handler(stage.clone(), bytes, src);
+                let _ = task::spawn(handle_node_message(stage.clone(), bytes, src));
             }
             ConnectionEvent::Received(qp2p::Message::BiStream {
                 bytes,
@@ -101,19 +104,17 @@ async fn handle_events(stage: Arc<Stage>, mut incoming_conns: IncomingConnection
     }
 }
 
-fn spawn_node_message_handler(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
-    let _ = tokio::spawn(async move {
-        match Message::from_bytes(&msg_bytes) {
-            Ok(message) => {
-                let command = Command::HandleMessage {
-                    message,
-                    sender: Some(sender),
-                };
-                let _ = stage.handle_commands(command).await;
-            }
-            Err(error) => {
-                debug!("Failed to deserialize message: {}", error);
-            }
+async fn handle_node_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
+    match Message::from_bytes(&msg_bytes) {
+        Ok(message) => {
+            let command = Command::HandleMessage {
+                message,
+                sender: Some(sender),
+            };
+            let _ = stage.handle_commands(command).await;
         }
-    });
+        Err(error) => {
+            debug!("Failed to deserialize message: {}", error);
+        }
+    }
 }

@@ -1249,10 +1249,14 @@ fn create_node() -> Node {
 }
 
 fn create_comm() -> Result<Comm> {
-    Ok(Comm::new(qp2p::Config {
-        ip: Some(Ipv4Addr::LOCALHOST.into()),
-        ..Default::default()
-    })?)
+    let (tx, _rx) = mpsc::channel(1);
+    Ok(Comm::new(
+        qp2p::Config {
+            ip: Some(Ipv4Addr::LOCALHOST.into()),
+            ..Default::default()
+        },
+        tx,
+    )?)
 }
 
 // Generate random EldersInfo and the corresponding Nodes.
