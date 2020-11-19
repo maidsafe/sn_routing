@@ -58,6 +58,9 @@ pub(crate) enum Vote {
         message: Box<PlainMessage>,
         proof_chain: SectionProofChain,
     },
+
+    // Voted to concensus whether new node shall be allowed to join
+    JoinsAllowed(bool),
 }
 
 impl Vote {
@@ -95,6 +98,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
             Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
+            Vote::JoinsAllowed(joins_allowed) => joins_allowed.serialize(serializer),
         }
     }
 }

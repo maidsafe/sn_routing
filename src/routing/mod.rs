@@ -137,6 +137,12 @@ impl Routing {
         Ok((routing, event_stream))
     }
 
+    /// Sets the JoinsAllowed flag.
+    pub async fn set_joins_allowed(&self, joins_allowed: bool) -> Result<()> {
+        let command = Command::SetJoinsAllowed(joins_allowed);
+        self.stage.clone().handle_commands(command).await
+    }
+
     /// Returns the current age of this node.
     pub async fn age(&self) -> u8 {
         self.stage.state.lock().await.node().age
