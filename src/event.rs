@@ -9,12 +9,14 @@
 use crate::location::{DstLocation, SrcLocation};
 
 use bytes::Bytes;
+use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
+    sync::Arc,
 };
 use xor_name::{Prefix, XorName};
 
@@ -78,6 +80,8 @@ pub enum Event {
     Relocated {
         /// Old name before the relocation.
         previous_name: XorName,
+        /// New keypair to be used after relocation.
+        new_keypair: Arc<Keypair>,
     },
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
@@ -136,9 +140,13 @@ impl Debug for Event {
                 .debug_struct("RelocationStarted")
                 .field("previous_name", previous_name)
                 .finish(),
-            Self::Relocated { previous_name } => formatter
+            Self::Relocated {
+                previous_name,
+                new_keypair,
+            } => formatter
                 .debug_struct("Relocated")
                 .field("previous_name", previous_name)
+                .field("new_keypair", new_keypair)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
             Self::ClientMessageReceived { content, src, .. } => write!(

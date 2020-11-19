@@ -268,7 +268,7 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             "Node #{} relocation started - previous_name: {}",
             index, previous_name
         ),
-        Event::Relocated { previous_name } => {
+        Event::Relocated { previous_name, .. } => {
             info!(
                 "Node #{} relocated - old name: {}, new name: {}",
                 index,
