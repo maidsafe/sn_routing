@@ -191,9 +191,13 @@ impl Stage {
 
         let mut state = self.state.lock().await;
         let event_tx = state.event_tx.clone();
+        let new_keypair = node.keypair.clone();
         *state = Approved::new(node, section, None, event_tx);
 
-        state.send_event(Event::Relocated { previous_name });
+        state.send_event(Event::Relocated {
+            previous_name,
+            new_keypair,
+        });
 
         let commands = backlog
             .into_iter()
