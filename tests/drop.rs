@@ -34,21 +34,7 @@ async fn test_node_drop() -> Result<()> {
             continue;
         }
 
-        let mut received = false;
-        while let Some(event) = events.next().await {
-            match event {
-                Event::EldersChanged { elders, .. } if elders.len() == node_count => {
-                    received = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-
-        assert!(
-            received,
-            "event stream closed before receiving Event::EldersChanged"
-        );
+        assert_event!(events, Event::EldersChanged { elders, .. } if elders.len() == node_count);
     }
 
     // Drop one node
@@ -59,12 +45,9 @@ async fn test_node_drop() -> Result<()> {
 
     log::info!("Dropped {} at {}", dropped_name, dropped_addr);
 
-    while let Some(event) = nodes[0].1.next().await {
-        match event {
-            Event::MemberLeft { name, .. } if name == dropped_name => return Ok(()),
-            _ => {}
-        }
+    for (_, events) in &mut nodes {
+        assert_event!(events, Event::MemberLeft { name, .. } if name == dropped_name)
     }
 
-    panic!("event stream closed before receiving Event::MemberLeft");
+    Ok(())
 }

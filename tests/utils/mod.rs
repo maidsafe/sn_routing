@@ -68,11 +68,26 @@ pub const TIMEOUT: Duration = Duration::from_secs(60);
 /// Fails if no event, or an event that does not match the pattern is raised within `TIMEOUT`.
 #[macro_export]
 macro_rules! assert_next_event {
-    ($event_stream:expr, $pattern:pat) => {
+    ($event_stream:expr, $pattern:pat $(if $cond:expr)?) => {
         match tokio::time::timeout($crate::utils::TIMEOUT, $event_stream.next()).await {
-            Ok(Some($pattern)) => {}
+            Ok(Some($pattern)) $(if $cond)? => {}
             Ok(other) => panic!("Expecting {}, got {:?}", stringify!($pattern), other),
             Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),
+        }
+    };
+}
+
+/// Assert that at least one event in the event stream matches the given pattern.
+/// Fails if no event matching the pattern is raised within `TIMEOUT`.
+#[macro_export]
+macro_rules! assert_event {
+    ($event_stream:expr, $pattern:pat $(if $cond:expr)?) => {
+        loop {
+            match tokio::time::timeout($crate::utils::TIMEOUT, $event_stream.next()).await {
+                Ok(Some($pattern)) $(if $cond)? => break,
+                Ok(other) => log::trace!("Received {:?}", other),
+                Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),
+            }
         }
     };
 }
