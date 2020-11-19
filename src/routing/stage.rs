@@ -124,6 +124,9 @@ impl Stage {
                     self.handle_relocate(bootstrap_addrs, details, message_rx)
                         .await
                 }
+                Command::SetJoinsAllowed(joins_allowed) => {
+                    self.state.lock().await.set_joins_allowed(joins_allowed)
+                }
             }
         }
         .await;

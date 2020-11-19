@@ -55,6 +55,7 @@ pub(crate) struct Approved {
     relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    joins_allowed: bool,
 }
 
 impl Approved {
@@ -84,6 +85,7 @@ impl Approved {
             relocate_state: None,
             msg_filter: MessageFilter::new(),
             event_tx,
+            joins_allowed: true,
         }
     }
 
@@ -196,6 +198,10 @@ impl Approved {
                 proof_chain,
                 proof,
             )?]),
+            Vote::JoinsAllowed(joins_allowed) => {
+                self.joins_allowed = joins_allowed;
+                Ok(vec![])
+            }
         }
     }
 
@@ -992,6 +998,12 @@ impl Approved {
                     Some(details.pub_id),
                     Some(details.destination_key),
                 )
+            } else if !self.joins_allowed {
+                debug!(
+                    "Ignoring JoinRequest from {} - new node not acceptable.",
+                    pub_id,
+                );
+                return Ok(vec![]);
             } else {
                 (MIN_AGE, None, None)
             };
@@ -1405,6 +1417,7 @@ impl Approved {
     fn update_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
+        let old_elders_info = self.section.elders_info().clone();
         let old_is_elder = self.is_elder();
         let old_last_key_index = self.section.chain().last_key_index();
         let old_prefix = *self.section.prefix();
@@ -1476,6 +1489,9 @@ impl Approved {
 
         if !new_is_elder {
             commands.extend(self.return_relocate_promise());
+        } else if &old_elders_info != self.section.elders_info() {
+            // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
+            commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
         }
 
         Ok(commands)
@@ -1713,6 +1729,14 @@ impl Approved {
         let command = Command::send_message_to_targets(&targets, dg_size, msg.to_bytes());
 
         Ok(Some(command))
+    }
+
+    pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        if self.is_elder() && joins_allowed != self.joins_allowed {
+            commands.extend(self.vote(Vote::JoinsAllowed(joins_allowed))?);
+        }
+        Ok(commands)
     }
 
     pub fn send_user_message(

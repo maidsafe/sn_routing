@@ -81,6 +81,8 @@ pub(crate) enum Command {
         /// Message receiver to pass to the bootstrap task.
         message_rx: mpsc::Receiver<(Message, SocketAddr)>,
     },
+    /// Attempt to set JoinsAllowed flag.
+    SetJoinsAllowed(bool),
 }
 
 impl Command {
@@ -178,6 +180,10 @@ impl Debug for Command {
                 .debug_struct("Relocate")
                 .field("bootstrap_addrs", bootstrap_addrs)
                 .field("details", details)
+                .finish(),
+            Self::SetJoinsAllowed(joins_allowed) => f
+                .debug_tuple("SetJoinsAllowed")
+                .field(joins_allowed)
                 .finish(),
         }
     }
