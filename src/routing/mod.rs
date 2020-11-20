@@ -253,6 +253,8 @@ impl Routing {
     }
 
     /// Send a message.
+    /// Messages sent here, either section to section or node to node are signed
+    /// and validated upon receipt by routing itself.
     pub async fn send_message(
         &self,
         src: SrcLocation,
@@ -264,6 +266,8 @@ impl Routing {
     }
 
     /// Send a message to a client peer.
+    /// Messages sent to a client are not signed or validated as part of the
+    /// routing library.
     pub async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
