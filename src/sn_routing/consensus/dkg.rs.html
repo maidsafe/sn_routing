@@ -761,6 +761,88 @@
 <span id="760">760</span>
 <span id="761">761</span>
 <span id="762">762</span>
+<span id="763">763</span>
+<span id="764">764</span>
+<span id="765">765</span>
+<span id="766">766</span>
+<span id="767">767</span>
+<span id="768">768</span>
+<span id="769">769</span>
+<span id="770">770</span>
+<span id="771">771</span>
+<span id="772">772</span>
+<span id="773">773</span>
+<span id="774">774</span>
+<span id="775">775</span>
+<span id="776">776</span>
+<span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+<span id="805">805</span>
+<span id="806">806</span>
+<span id="807">807</span>
+<span id="808">808</span>
+<span id="809">809</span>
+<span id="810">810</span>
+<span id="811">811</span>
+<span id="812">812</span>
+<span id="813">813</span>
+<span id="814">814</span>
+<span id="815">815</span>
+<span id="816">816</span>
+<span id="817">817</span>
+<span id="818">818</span>
+<span id="819">819</span>
+<span id="820">820</span>
+<span id="821">821</span>
+<span id="822">822</span>
+<span id="823">823</span>
+<span id="824">824</span>
+<span id="825">825</span>
+<span id="826">826</span>
+<span id="827">827</span>
+<span id="828">828</span>
+<span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
+<span id="838">838</span>
+<span id="839">839</span>
+<span id="840">840</span>
+<span id="841">841</span>
+<span id="842">842</span>
+<span id="843">843</span>
+<span id="844">844</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -786,7 +868,7 @@
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">HashSet</span>},
+    <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">HashSet</span>, <span class="ident">VecDeque</span>},
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
     <span class="ident">time</span>::<span class="ident">Duration</span>,
@@ -795,6 +877,8 @@
 
 <span class="comment">// Interval to progress DKG timed phase</span>
 <span class="kw">const</span> <span class="ident">DKG_PROGRESS_INTERVAL</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">30</span>);
+
+<span class="kw">const</span> <span class="ident">BACKLOG_CAPACITY</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">100</span>;
 
 <span class="doccomment">/// Unique identified of a DKG session.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
@@ -852,6 +936,11 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">DkgVoter</span> {
     <span class="ident">participant</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Participant</span><span class="op">&gt;</span>,
     <span class="ident">observers</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">DkgKey</span>, <span class="ident">Observer</span><span class="op">&gt;</span>,
+
+    <span class="comment">// Due to the asyncronous nature of the network we might sometimes receive a DKG message before</span>
+    <span class="comment">// we created the corresponding `Participant` session. To avoid losing those messages, we store</span>
+    <span class="comment">// them in this backlog and replay them once we create the session.</span>
+    <span class="ident">backlog</span>: <span class="ident">Backlog</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">DkgVoter</span> {
@@ -859,6 +948,7 @@
         <span class="self">Self</span> {
             <span class="ident">participant</span>: <span class="prelude-val">None</span>,
             <span class="ident">observers</span>: <span class="ident">HashMap</span>::<span class="ident">new</span>(),
+            <span class="ident">backlog</span>: <span class="ident">Backlog</span>::<span class="ident">new</span>(),
         }
     }
 }
@@ -876,6 +966,20 @@
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;DKG for {} already in progress&quot;</span>, <span class="ident">elders_info</span>);
                 <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[];
             }
+        }
+
+        <span class="comment">// Special case: only one participant.</span>
+        <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="number">1</span> {
+            <span class="kw">let</span> <span class="ident">secret_key_set</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKeySet</span>::<span class="ident">random</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>());
+
+            <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">DkgCommand</span>::<span class="ident">HandleParticipationResult</span> {
+                <span class="ident">dkg_key</span>,
+                <span class="ident">elders_info</span>,
+                <span class="ident">result</span>: <span class="prelude-val">Ok</span>(<span class="ident">DkgOutcome</span> {
+                    <span class="ident">public_key_set</span>: <span class="ident">secret_key_set</span>.<span class="ident">public_keys</span>(),
+                    <span class="ident">secret_key_share</span>: <span class="ident">secret_key_set</span>.<span class="ident">secret_key_share</span>(<span class="number">0</span>),
+                }),
+            }];
         }
 
         <span class="kw">let</span> <span class="ident">threshold</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>()) <span class="op">-</span> <span class="number">1</span>;
@@ -898,6 +1002,13 @@
                 };
 
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="ident">session</span>.<span class="ident">broadcast</span>(<span class="kw-2">&amp;</span><span class="ident">our_name</span>, <span class="ident">dkg_key</span>, <span class="ident">message</span>);
+
+                <span class="ident">commands</span>.<span class="ident">extend</span>(
+                    <span class="self">self</span>.<span class="ident">backlog</span>
+                        .<span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>)
+                        .<span class="ident">into_iter</span>()
+                        .<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">message</span><span class="op">|</span> <span class="ident">session</span>.<span class="ident">process_message</span>(<span class="kw-2">&amp;</span><span class="ident">our_name</span>, <span class="ident">dkg_key</span>, <span class="ident">message</span>)),
+                );
 
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">command</span>) <span class="op">=</span> <span class="ident">session</span>.<span class="ident">check</span>() {
                     <span class="comment">// Already completed.</span>
@@ -992,9 +1103,14 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">message</span>: <span class="ident">DkgMessage</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">session</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">session</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">participant</span> {
+        <span class="kw">let</span> <span class="ident">session</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">session</span>) <span class="op">=</span> <span class="self">self</span>
+            .<span class="ident">participant</span>
+            .<span class="ident">as_mut</span>()
+            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">session</span><span class="op">|</span> <span class="ident">session</span>.<span class="ident">dkg_key</span> <span class="op">=</span><span class="op">=</span> <span class="ident">dkg_key</span>)
+        {
             <span class="ident">session</span>
         } <span class="kw">else</span> {
+            <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">push</span>(<span class="ident">dkg_key</span>, <span class="ident">message</span>);
             <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[];
         };
 
@@ -1116,10 +1232,6 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">message</span>: <span class="ident">DkgMessage</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">dkg_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">dkg_key</span> {
-            <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[];
-        }
-
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;process DKG message {:?}&quot;</span>, <span class="ident">message</span>);
         <span class="kw">let</span> <span class="ident">responses</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">key_gen</span>
@@ -1138,6 +1250,8 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">message</span>: <span class="ident">DkgMessage</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
+
         <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">elders_info</span>
             .<span class="ident">as_ref</span>()
@@ -1148,14 +1262,15 @@
             .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
 
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;broadcasting DKG message {:?} to {:?}&quot;</span>, <span class="ident">message</span>, <span class="ident">recipients</span>);
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">recipients</span>.<span class="ident">is_empty</span>() {
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;broadcasting DKG message {:?} to {:?}&quot;</span>, <span class="ident">message</span>, <span class="ident">recipients</span>);
+            <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">DkgCommand</span>::<span class="ident">SendMessage</span> {
+                <span class="ident">recipients</span>,
+                <span class="ident">dkg_key</span>,
+                <span class="ident">message</span>: <span class="ident">message</span>.<span class="ident">clone</span>(),
+            });
+        }
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
-        <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">DkgCommand</span>::<span class="ident">SendMessage</span> {
-            <span class="ident">recipients</span>,
-            <span class="ident">dkg_key</span>,
-            <span class="ident">message</span>: <span class="ident">message</span>.<span class="ident">clone</span>(),
-        });
         <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">process_message</span>(<span class="ident">our_name</span>, <span class="ident">dkg_key</span>, <span class="ident">message</span>));
         <span class="ident">commands</span>
     }
@@ -1212,6 +1327,40 @@
     <span class="ident">accumulator</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>, ()<span class="op">&gt;</span>, <span class="ident">HashSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
+<span class="kw">struct</span> <span class="ident">Backlog</span>(<span class="ident">VecDeque</span><span class="op">&lt;</span>(<span class="ident">DkgKey</span>, <span class="ident">DkgMessage</span>)<span class="op">&gt;</span>);
+
+<span class="kw">impl</span> <span class="ident">Backlog</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">VecDeque</span>::<span class="ident">with_capacity</span>(<span class="ident">BACKLOG_CAPACITY</span>))
+    }
+
+    <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>, <span class="ident">message</span>: <span class="ident">DkgMessage</span>) {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">capacity</span>() {
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">pop_front</span>();
+        }
+
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">push_back</span>((<span class="ident">dkg_key</span>, <span class="ident">message</span>))
+    }
+
+    <span class="kw">fn</span> <span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgMessage</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">output</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="ident">max</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">len</span>();
+
+        <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">max</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">message_dkg_key</span>, <span class="ident">message</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">pop_front</span>() {
+                <span class="kw">if</span> <span class="kw-2">&amp;</span><span class="ident">message_dkg_key</span> <span class="op">=</span><span class="op">=</span> <span class="ident">dkg_key</span> {
+                    <span class="ident">output</span>.<span class="ident">push</span>(<span class="ident">message</span>)
+                } <span class="kw">else</span> {
+                    <span class="self">self</span>.<span class="number">0</span>.<span class="ident">push_back</span>((<span class="ident">message_dkg_key</span>, <span class="ident">message</span>))
+                }
+            }
+        }
+
+        <span class="ident">output</span>
+    }
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">DkgCommand</span> {
     <span class="ident">SendMessage</span> {
         <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
@@ -1241,10 +1390,7 @@
                 <span class="ident">dkg_key</span>,
                 <span class="ident">message</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> {
-                    <span class="ident">dkg_key</span>,
-                    <span class="ident">message</span>: <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">message</span>)<span class="question-mark">?</span>.<span class="ident">into</span>(),
-                };
+                <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_targets</span>(
@@ -1304,6 +1450,7 @@
         <span class="ident">section</span>::<span class="ident">test_utils</span>::{<span class="ident">gen_addr</span>, <span class="ident">gen_elders_info</span>},
         <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
     };
+    <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
     <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="ident">rand</span>::{<span class="ident">rngs</span>::<span class="ident">SmallRng</span>, <span class="ident">SeedableRng</span>};
     <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">iter</span>;
@@ -1408,6 +1555,23 @@
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">voter</span>
             .<span class="ident">observe_result</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>, <span class="prelude-val">Ok</span>(<span class="ident">pk1</span>), <span class="ident">nodes</span>[<span class="ident">majority</span> <span class="op">-</span> <span class="number">1</span>].<span class="ident">name</span>())
             .<span class="ident">is_none</span>());
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">single_participant</span>() {
+        <span class="comment">// If there is only one participant, the DKG should complete immediately.</span>
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">voter</span> <span class="op">=</span> <span class="ident">DkgVoter</span>::<span class="ident">default</span>();
+
+        <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="ident">rand</span>::<span class="ident">random</span>(), <span class="ident">gen_addr</span>(), <span class="ident">MIN_AGE</span>);
+        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">iter</span>::<span class="ident">once</span>(<span class="ident">peer</span>), <span class="ident">Prefix</span>::<span class="ident">default</span>());
+        <span class="kw">let</span> <span class="ident">dkg_key</span> <span class="op">=</span> <span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>);
+
+        <span class="kw">let</span> <span class="ident">commands</span> <span class="op">=</span> <span class="ident">voter</span>.<span class="ident">start_participating</span>(<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">dkg_key</span>, <span class="ident">elders_info</span>);
+        <span class="macro">assert_matches</span><span class="macro">!</span>(
+            <span class="kw-2">&amp;</span><span class="ident">commands</span>[..],
+            <span class="kw-2">&amp;</span>[<span class="ident">DkgCommand</span>::<span class="ident">HandleParticipationResult</span> { <span class="ident">result</span>: <span class="prelude-val">Ok</span>(<span class="kw">_</span>), .. }]
+        );
     }
 
     <span class="macro">proptest</span><span class="macro">!</span> {

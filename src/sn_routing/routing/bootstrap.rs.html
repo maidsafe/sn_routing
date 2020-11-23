@@ -613,6 +613,9 @@
 <span id="612">612</span>
 <span id="613">613</span>
 <span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -622,7 +625,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">IncomingMessages</span>, <span class="ident">Comm</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">ConnectionEvent</span>, <span class="ident">Comm</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::<span class="ident">Proven</span>,
     <span class="ident">crypto</span>,
@@ -651,7 +654,7 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">infant</span>(
     <span class="ident">node</span>: <span class="ident">Node</span>,
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>,
-    <span class="ident">incoming_messages</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">IncomingMessages</span>,
+    <span class="ident">incoming_conns</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     <span class="ident">bootstrap_addr</span>: <span class="ident">SocketAddr</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
@@ -663,7 +666,7 @@
         <span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>),
         <span class="ident">future</span>::<span class="ident">join</span>(
             <span class="ident">send_messages</span>(<span class="ident">send_rx</span>, <span class="ident">comm</span>),
-            <span class="ident">receive_messages</span>(<span class="ident">incoming_messages</span>, <span class="ident">recv_tx</span>),
+            <span class="ident">receive_messages</span>(<span class="ident">incoming_conns</span>, <span class="ident">recv_tx</span>),
         ),
     )
     .<span class="ident">await</span>
@@ -1031,20 +1034,23 @@
 
 <span class="comment">// Keep receiving messages from `incoming_messages` and send them to `message_tx`.</span>
 <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">receive_messages</span>(
-    <span class="ident">incoming_messages</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">IncomingMessages</span>,
+    <span class="ident">incoming_conns</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     <span class="kw-2">mut</span> <span class="ident">message_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
 ) {
-    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span> <span class="ident">incoming_messages</span>.<span class="ident">next</span>().<span class="ident">await</span> {
-        <span class="kw">match</span> <span class="ident">message</span> {
-            <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">UniStream</span> { <span class="ident">bytes</span>, <span class="ident">src</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
-                <span class="prelude-val">Ok</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">message</span>, <span class="ident">src</span>)).<span class="ident">await</span>;
+    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">event</span>) <span class="op">=</span> <span class="ident">incoming_conns</span>.<span class="ident">recv</span>().<span class="ident">await</span> {
+        <span class="kw">match</span> <span class="ident">event</span> {
+            <span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">UniStream</span> { <span class="ident">bytes</span>, <span class="ident">src</span>, .. }) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>) {
+                    <span class="prelude-val">Ok</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">message</span>, <span class="ident">src</span>)).<span class="ident">await</span>;
+                    }
+                    <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message: {}&quot;</span>, <span class="ident">error</span>),
                 }
-                <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message: {}&quot;</span>, <span class="ident">error</span>),
-            },
-            <span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">BiStream</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
+            }
+            <span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">BiStream</span> { .. }) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore bi-stream messages during bootstrap&quot;</span>);
             }
+            <span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {}
         }
     }
 }
