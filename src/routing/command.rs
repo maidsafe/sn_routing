@@ -36,6 +36,8 @@ pub(crate) enum Command {
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
+    /// Handle lost connection to a peer.
+    HandleConnectionLost(SocketAddr),
     /// Handle peer that's been detected as lost.
     HandlePeerLost(SocketAddr),
     /// Handle vote cast either by us or some other peer.
@@ -110,6 +112,9 @@ impl Debug for Command {
                 .field("message", message)
                 .finish(),
             Self::HandleTimeout(token) => f.debug_tuple("HandleTimeout").field(token).finish(),
+            Self::HandleConnectionLost(addr) => {
+                f.debug_tuple("HandleConnectionLost").field(addr).finish()
+            }
             Self::HandlePeerLost(addr) => f.debug_tuple("HandlePeerLost").field(addr).finish(),
             Self::HandleVote { vote, proof_share } => f
                 .debug_struct("HandleVote")
@@ -129,7 +134,12 @@ impl Debug for Command {
                 .debug_struct("HandleDkgParticipationResult")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
-                .field("result", result)
+                .field(
+                    "result",
+                    &result
+                        .as_ref()
+                        .map(|outcome| outcome.public_key_set.public_key()),
+                )
                 .finish(),
             Self::HandleDkgObservationResult {
                 elders_info,

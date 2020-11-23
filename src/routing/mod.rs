@@ -12,7 +12,6 @@ mod approved;
 mod bootstrap;
 mod comm;
 mod event_stream;
-mod executor;
 mod stage;
 #[cfg(test)]
 mod tests;
@@ -20,7 +19,10 @@ mod update_barrier;
 
 pub use self::event_stream::EventStream;
 use self::{
-    approved::Approved, comm::Comm, command::Command, executor::Executor, stage::Stage,
+    approved::Approved,
+    comm::{Comm, ConnectionEvent},
+    command::Command,
+    stage::Stage,
     update_barrier::UpdateBarrier,
 };
 use crate::{
@@ -28,6 +30,7 @@ use crate::{
     error::{Error, Result},
     event::Event,
     location::{DstLocation, SrcLocation},
+    messages::{Message, PING},
     node::Node,
     peer::Peer,
     relocation::STARTUP_PHASE_AGE_RANGE,
@@ -38,7 +41,7 @@ use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
 
 /// Routing configuration.
@@ -71,7 +74,6 @@ impl Default for Config {
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Routing {
     stage: Arc<Stage>,
-    _executor: Executor,
 }
 
 impl Routing {
@@ -89,34 +91,31 @@ impl Routing {
         let node_name = crypto::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
-        let (state, comm, incoming_msgs, backlog) = if config.first {
+        let (state, comm, backlog) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            let comm = Comm::new(config.transport_config)?;
-            let incoming_msgs = comm.listen()?;
-
+            let comm = Comm::new(config.transport_config, connection_event_tx)?;
             let node = Node::new(keypair, comm.our_connection_info().await?)
                 .with_age(STARTUP_PHASE_AGE_RANGE.end);
             let state = Approved::first_node(node, event_tx)?;
 
             state.send_event(Event::PromotedToElder);
 
-            (state, comm, incoming_msgs, vec![])
+            (state, comm, vec![])
         } else {
             info!("{} Bootstrapping a new node.", node_name);
-            let (comm, bootstrap_addr) = Comm::from_bootstrapping(config.transport_config).await?;
-            let mut incoming_msgs = comm.listen()?;
-
+            let (comm, bootstrap_addr) =
+                Comm::bootstrap(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info().await?);
             let (node, section, backlog) =
-                bootstrap::infant(node, &comm, &mut incoming_msgs, bootstrap_addr).await?;
+                bootstrap::infant(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, event_tx);
 
-            (state, comm, incoming_msgs, backlog)
+            (state, comm, backlog)
         };
 
         let stage = Arc::new(Stage::new(state, comm));
-        let executor = Executor::new(stage.clone(), incoming_msgs).await;
         let event_stream = EventStream::new(event_rx);
 
         // Process message backlog
@@ -130,10 +129,10 @@ impl Routing {
                 .await?;
         }
 
-        let routing = Self {
-            stage,
-            _executor: executor,
-        };
+        // Start listening to incoming connections.
+        let _ = task::spawn(handle_connection_events(stage.clone(), connection_event_rx));
+
+        let routing = Self { stage };
 
         Ok((routing, event_stream))
     }
@@ -325,6 +324,79 @@ impl Routing {
 
 impl Drop for Routing {
     fn drop(&mut self) {
-        self.stage.cancel_timers()
+        self.stage.terminate()
+    }
+}
+
+// Listen for incoming connection events and handle them.
+async fn handle_connection_events(
+    stage: Arc<Stage>,
+    mut incoming_conns: mpsc::Receiver<ConnectionEvent>,
+) {
+    while let Some(event) = incoming_conns.recv().await {
+        match event {
+            ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
+                trace!(
+                    "New message ({} bytes) received on a uni-stream from: {}",
+                    bytes.len(),
+                    src
+                );
+                // Since it's arriving on a uni-stream we treat it as a Node
+                // message which needs to be processed by us, as well as
+                // potentially reported to the event stream consumer.
+
+                // Ignore pings.
+                if bytes == PING {
+                    continue;
+                }
+
+                let _ = task::spawn(handle_message(stage.clone(), bytes, src));
+            }
+            ConnectionEvent::Received(qp2p::Message::BiStream {
+                bytes,
+                src,
+                send,
+                recv,
+            }) => {
+                trace!(
+                    "New message ({} bytes) received on a bi-stream from: {}",
+                    bytes.len(),
+                    src
+                );
+
+                // Since it's arriving on a bi-stream we treat it as a Client
+                // message which we report directly to the event stream consumer
+                // without doing any intermediate processing.
+                let event = Event::ClientMessageReceived {
+                    content: bytes,
+                    src,
+                    send,
+                    recv,
+                };
+
+                stage.send_event(event).await;
+            }
+            ConnectionEvent::Disconnected(addr) => {
+                let _ = stage
+                    .clone()
+                    .handle_commands(Command::HandleConnectionLost(addr))
+                    .await;
+            }
+        }
+    }
+}
+
+async fn handle_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
+    match Message::from_bytes(&msg_bytes) {
+        Ok(message) => {
+            let command = Command::HandleMessage {
+                message,
+                sender: Some(sender),
+            };
+            let _ = stage.handle_commands(command).await;
+        }
+        Err(error) => {
+            debug!("Failed to deserialize message: {}", error);
+        }
     }
 }

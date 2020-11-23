@@ -23,7 +23,7 @@ hex_fmt = "~0.3.0"
 itertools = "~0.9.0"
 log = "~0.4.8"
 lru_time_cache = "~0.11.0"
-qp2p = "~0.8.8"
+qp2p = "~0.9.1"
 rand = "~0.7.3"
 rand_chacha = "~0.2.2"
 serde = { version = "1.0.117", features = ["derive"] }
@@ -38,4 +38,3 @@ env_logger = "~0.7.1"
 structopt = "~0.3.17"
 proptest = "0.10.1"
 rand = { version = "~0.7.3", features = ["small_rng"] }
-

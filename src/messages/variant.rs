@@ -14,6 +14,7 @@ use crate::{
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, Section, SectionProofChain, TrustStatus},
 };
+use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::{Deserialize, Serialize};
@@ -85,8 +86,8 @@ pub(crate) enum Variant {
     DKGMessage {
         /// The identifier of the DKG session this message is for.
         dkg_key: DkgKey,
-        /// The serialized DKG message.
-        message: Bytes,
+        /// The DKG message.
+        message: DkgMessage,
     },
     /// Message to notify current elders about the DKG result.
     DKGResult {
@@ -183,7 +184,7 @@ impl Debug for Variant {
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
                 .field("dkg_key", &dkg_key)
-                .field("message_hash", &MessageHash::from_bytes(message))
+                .field("message", message)
                 .finish(),
             Self::DKGResult { dkg_key, result } => f
                 .debug_struct("DKGResult")

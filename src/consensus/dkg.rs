@@ -22,7 +22,7 @@ use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
     time::Duration,
@@ -31,6 +31,8 @@ use xor_name::XorName;
 
 // Interval to progress DKG timed phase
 const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+
+const BACKLOG_CAPACITY: usize = 100;
 
 /// Unique identified of a DKG session.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -88,6 +90,11 @@ impl Debug for DkgKey {
 pub(crate) struct DkgVoter {
     participant: Option<Participant>,
     observers: HashMap<DkgKey, Observer>,
+
+    // Due to the asyncronous nature of the network we might sometimes receive a DKG message before
+    // we created the corresponding `Participant` session. To avoid losing those messages, we store
+    // them in this backlog and replay them once we create the session.
+    backlog: Backlog,
 }
 
 impl Default for DkgVoter {
@@ -95,6 +102,7 @@ impl Default for DkgVoter {
         Self {
             participant: None,
             observers: HashMap::new(),
+            backlog: Backlog::new(),
         }
     }
 }
@@ -112,6 +120,20 @@ impl DkgVoter {
                 trace!("DKG for {} already in progress", elders_info);
                 return vec![];
             }
+        }
+
+        // Special case: only one participant.
+        if elders_info.elders.len() == 1 {
+            let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
+
+            return vec![DkgCommand::HandleParticipationResult {
+                dkg_key,
+                elders_info,
+                result: Ok(DkgOutcome {
+                    public_key_set: secret_key_set.public_keys(),
+                    secret_key_share: secret_key_set.secret_key_share(0),
+                }),
+            }];
         }
 
         let threshold = majority(elders_info.elders.len()) - 1;
@@ -134,6 +156,13 @@ impl DkgVoter {
                 };
 
                 let mut commands = session.broadcast(&our_name, dkg_key, message);
+
+                commands.extend(
+                    self.backlog
+                        .take(&dkg_key)
+                        .into_iter()
+                        .flat_map(|message| session.process_message(&our_name, dkg_key, message)),
+                );
 
                 if let Some(command) = session.check() {
                     // Already completed.
@@ -228,9 +257,14 @@ impl DkgVoter {
         dkg_key: DkgKey,
         message: DkgMessage,
     ) -> Vec<DkgCommand> {
-        let session = if let Some(session) = &mut self.participant {
+        let session = if let Some(session) = self
+            .participant
+            .as_mut()
+            .filter(|session| session.dkg_key == dkg_key)
+        {
             session
         } else {
+            self.backlog.push(dkg_key, message);
             return vec![];
         };
 
@@ -352,10 +386,6 @@ impl Participant {
         dkg_key: DkgKey,
         message: DkgMessage,
     ) -> Vec<DkgCommand> {
-        if self.dkg_key != dkg_key {
-            return vec![];
-        }
-
         trace!("process DKG message {:?}", message);
         let responses = self
             .key_gen
@@ -374,6 +404,8 @@ impl Participant {
         dkg_key: DkgKey,
         message: DkgMessage,
     ) -> Vec<DkgCommand> {
+        let mut commands = vec![];
+
         let recipients: Vec<_> = self
             .elders_info
             .as_ref()
@@ -384,14 +416,15 @@ impl Participant {
             .copied()
             .collect();
 
-        trace!("broadcasting DKG message {:?} to {:?}", message, recipients);
+        if !recipients.is_empty() {
+            trace!("broadcasting DKG message {:?} to {:?}", message, recipients);
+            commands.push(DkgCommand::SendMessage {
+                recipients,
+                dkg_key,
+                message: message.clone(),
+            });
+        }
 
-        let mut commands = vec![];
-        commands.push(DkgCommand::SendMessage {
-            recipients,
-            dkg_key,
-            message: message.clone(),
-        });
         commands.extend(self.process_message(our_name, dkg_key, message));
         commands
     }
@@ -448,6 +481,40 @@ struct Observer {
     accumulator: HashMap<Result<bls::PublicKey, ()>, HashSet<XorName>>,
 }
 
+struct Backlog(VecDeque<(DkgKey, DkgMessage)>);
+
+impl Backlog {
+    fn new() -> Self {
+        Self(VecDeque::with_capacity(BACKLOG_CAPACITY))
+    }
+
+    fn push(&mut self, dkg_key: DkgKey, message: DkgMessage) {
+        if self.0.len() == self.0.capacity() {
+            let _ = self.0.pop_front();
+        }
+
+        self.0.push_back((dkg_key, message))
+    }
+
+    fn take(&mut self, dkg_key: &DkgKey) -> Vec<DkgMessage> {
+        let mut output = Vec::new();
+        let max = self.0.len();
+
+        for _ in 0..max {
+            if let Some((message_dkg_key, message)) = self.0.pop_front() {
+                if &message_dkg_key == dkg_key {
+                    output.push(message)
+                } else {
+                    self.0.push_back((message_dkg_key, message))
+                }
+            }
+        }
+
+        output
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum DkgCommand {
     SendMessage {
         recipients: Vec<SocketAddr>,
@@ -477,10 +544,7 @@ impl DkgCommand {
                 dkg_key,
                 message,
             } => {
-                let variant = Variant::DKGMessage {
-                    dkg_key,
-                    message: bincode::serialize(&message)?.into(),
-                };
+                let variant = Variant::DKGMessage { dkg_key, message };
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_targets(
@@ -540,6 +604,7 @@ mod tests {
         section::test_utils::{gen_addr, gen_elders_info},
         ELDER_SIZE, MIN_AGE,
     };
+    use assert_matches::assert_matches;
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, SeedableRng};
     use std::iter;
@@ -644,6 +709,23 @@ mod tests {
         assert!(voter
             .observe_result(&dkg_key, Ok(pk1), nodes[majority - 1].name())
             .is_none());
+    }
+
+    #[test]
+    fn single_participant() {
+        // If there is only one participant, the DKG should complete immediately.
+
+        let mut voter = DkgVoter::default();
+
+        let peer = Peer::new(rand::random(), gen_addr(), MIN_AGE);
+        let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
+        let dkg_key = DkgKey::new(&elders_info);
+
+        let commands = voter.start_participating(*peer.name(), dkg_key, elders_info);
+        assert_matches!(
+            &commands[..],
+            &[DkgCommand::HandleParticipationResult { result: Ok(_), .. }]
+        );
     }
 
     proptest! {

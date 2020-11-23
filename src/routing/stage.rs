@@ -76,6 +76,13 @@ impl Stage {
                 Command::HandleConsensus { vote, proof } => {
                     self.state.lock().await.handle_consensus(vote, proof)
                 }
+                Command::HandleConnectionLost(addr) => Ok(self
+                    .state
+                    .lock()
+                    .await
+                    .handle_connection_lost(&addr)
+                    .into_iter()
+                    .collect()),
                 Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
                 Command::HandleDkgParticipationResult {
                     dkg_key,
@@ -128,9 +135,11 @@ impl Stage {
         result
     }
 
-    // Cancels any scheduled timers, currently or in the future.
-    pub fn cancel_timers(&self) {
+    // Terminate this routing instance - cancel all scheduled timers including any future ones,
+    // close all network connections and stop accepting new connections.
+    pub fn terminate(&self) {
         let _ = self.cancel_timer_tx.broadcast(true);
+        self.comm.terminate()
     }
 
     // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
@@ -145,18 +154,13 @@ impl Stage {
         delivery_group_size: usize,
         message: Bytes,
     ) -> Vec<Command> {
-        match self
-            .comm
+        self.comm
             .send_message_to_targets(recipients, delivery_group_size, message)
             .await
-        {
-            Ok(()) => vec![],
-            Err(error) => error
-                .failed_recipients
-                .into_iter()
-                .map(Command::HandlePeerLost)
-                .collect(),
-        }
+            .1
+            .into_iter()
+            .map(Command::HandlePeerLost)
+            .collect()
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {

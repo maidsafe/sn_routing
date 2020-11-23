@@ -19,7 +19,7 @@ use crate::{
     message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, Variant,
-        VerifyStatus,
+        VerifyStatus, PING,
     },
     network::Network,
     node::Node,
@@ -34,7 +34,7 @@ use crate::{
     },
     RECOMMENDED_SECTION_SIZE,
 };
-use bls_dkg::key_gen::outcome::Outcome as DkgOutcome;
+use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome};
 use bytes::Bytes;
 use itertools::Itertools;
 use std::{cmp, net::SocketAddr, slice};
@@ -199,8 +199,28 @@ impl Approved {
         }
     }
 
+    pub fn handle_connection_lost(&self, addr: &SocketAddr) -> Option<Command> {
+        if !self.is_elder() {
+            return None;
+        }
+
+        if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
+            trace!("Lost connection to {}", peer);
+        } else {
+            return None;
+        }
+
+        // Try to send a "ping" message to probe the peer connection. If it succeeds, the
+        // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
+        // it offline.
+        Some(Command::send_message_to_target(
+            addr,
+            Bytes::from_static(PING),
+        ))
+    }
+
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
-        let name = if let Some(peer) = self.section.find_member_from_addr(addr) {
+        let name = if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
             debug!("Lost known peer {}", peer);
             *peer.name()
         } else {
@@ -230,6 +250,11 @@ impl Approved {
             let key = outcome.public_key_set.public_key();
             self.section_keys_provider
                 .insert_dkg_outcome(&self.node.name(), &elders_info, outcome);
+
+            if self.section.chain().has_key(&key) {
+                self.section_keys_provider.finalise_dkg(&key)
+            }
+
             Ok(key)
         } else {
             Err(())
@@ -1003,10 +1028,9 @@ impl Approved {
     fn handle_dkg_message(
         &mut self,
         dkg_key: DkgKey,
-        message_bytes: Bytes,
+        message: DkgMessage,
         sender: XorName,
     ) -> Result<Vec<Command>> {
-        let message = bincode::deserialize(&message_bytes[..])?;
         trace!("handle DKG message {:?} from {}", message, sender);
 
         self.dkg_voter
@@ -1316,9 +1340,7 @@ impl Approved {
         let mut commands = vec![];
 
         if self.section.chain().has_key(&public_key) {
-            // Our section state is already up to date, so no need to vote. Just finalize the DKG so
-            // we can start using the new secret key share.
-            self.section_keys_provider.finalise_dkg(&public_key);
+            // Our section state is already up to date, so no need to vote.
             return Ok(commands);
         }
 

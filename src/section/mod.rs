@@ -245,9 +245,9 @@ impl Section {
             .filter(move |peer| !self.is_elder(peer.name()))
     }
 
-    pub fn find_member_from_addr(&self, addr: &SocketAddr) -> Option<&Peer> {
+    pub fn find_joined_member_by_addr(&self, addr: &SocketAddr) -> Option<&Peer> {
         self.members
-            .all()
+            .joined()
             .find(|info| info.peer.addr() == addr)
             .map(|info| &info.peer)
     }
