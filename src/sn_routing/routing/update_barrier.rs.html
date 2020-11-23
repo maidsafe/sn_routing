@@ -312,7 +312,7 @@
     <span class="comment">// based on one DKG result while others will use another one and neither one will reach</span>
     <span class="comment">// consensus which would currently stall the section. Even though this situation might be</span>
     <span class="comment">// unlikely, we should still find a solution to this problem.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start_update</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start_update</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">pending_updates</span>.<span class="ident">insert</span>(<span class="ident">prefix</span>)
     }
 
@@ -402,7 +402,7 @@
     <span class="comment">// Takes out the `State` diffs to be applied to our (and siblings, in case of a split)</span>
     <span class="comment">// `Section` and `Network` if the invariants described above are met.</span>
     <span class="comment">// Returns `(our_state, sibling_state)`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">current_prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">State</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">State</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">current_prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">State</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">State</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="ident">our</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">state</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">our</span> {
             <span class="ident">state</span>
         } <span class="kw">else</span> {
@@ -413,7 +413,7 @@
             <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
         }
 
-        <span class="kw">if</span> <span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() <span class="op">==</span> <span class="ident">current_prefix</span> {
+        <span class="kw">if</span> <span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">current_prefix</span> {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sibling</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">sibling</span> {
                 <span class="kw">if</span> <span class="ident">sibling</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_extension_of</span>(<span class="ident">current_prefix</span>) {
                     <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
@@ -439,7 +439,7 @@
             <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
         }
 
-        <span class="kw">if</span> <span class="ident">our</span>.<span class="ident">network</span>.<span class="ident">get</span>(<span class="ident">sibling</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">!=</span> <span class="prelude-val">Some</span>(<span class="ident">sibling</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>()) {
+        <span class="kw">if</span> <span class="ident">our</span>.<span class="ident">network</span>.<span class="ident">get</span>(<span class="ident">sibling</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">!</span><span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">sibling</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>()) {
             <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
         }
 
@@ -447,7 +447,7 @@
             <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
         }
 
-        <span class="kw">if</span> <span class="ident">sibling</span>.<span class="ident">network</span>.<span class="ident">get</span>(<span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">!=</span> <span class="prelude-val">Some</span>(<span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>()) {
+        <span class="kw">if</span> <span class="ident">sibling</span>.<span class="ident">network</span>.<span class="ident">get</span>(<span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">!</span><span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">our</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>()) {
             <span class="kw">return</span> (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
         }
 
@@ -465,7 +465,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">State</span> {
-    <span class="kw">fn</span> <span class="ident">update_our_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">update_our_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_elders</span>(<span class="ident">elders_info</span>) {
             <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">prune_neighbours</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
             <span class="bool-val">true</span>
@@ -474,7 +474,7 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">update_neighbour_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">update_neighbour_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">update_neighbour_info</span>(<span class="ident">elders_info</span>) {
             <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">prune_neighbours</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
             <span class="bool-val">true</span>
@@ -483,8 +483,8 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">update_their_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">if</span> <span class="ident">key</span>.<span class="ident">value</span>.<span class="number">0</span> <span class="op">==</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() {
+    <span class="kw">fn</span> <span class="ident">update_their_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="kw">if</span> <span class="ident">key</span>.<span class="ident">value</span>.<span class="number">0</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() {
             <span class="comment">// Ignore our keys. Use `update_our_key` for that.</span>
             <span class="kw">return</span> <span class="bool-val">false</span>;
         }
@@ -497,7 +497,7 @@
     <span class="ident">barrier_state</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">State</span><span class="op">&gt;</span>,
     <span class="ident">current_section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>,
     <span class="ident">current_network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>,
-    <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">State</span>) <span class="op">-&gt;</span> <span class="ident">bool</span>,
+    <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">State</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>,
 ) {
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">state</span>) <span class="op">=</span> <span class="ident">barrier_state</span> {
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">f</span>(<span class="ident">state</span>);
@@ -512,10 +512,10 @@
     }
 }
 
-<span class="kw">fn</span> <span class="ident">is_our_info_in_sync_with_our_key</span>(<span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+<span class="kw">fn</span> <span class="ident">is_our_info_in_sync_with_our_key</span>(<span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="comment">// Note: the first key in the chain is signed with itself, so we need to special-case this to</span>
     <span class="comment">// avoid returning incomplete state prematurely when there is only one node in the network.</span>
-    <span class="kw">if</span> <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">prefix</span> <span class="op">==</span> <span class="ident">Prefix</span>::<span class="ident">default</span>() <span class="op">&amp;&amp;</span> <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;=</span> <span class="number">1</span>
+    <span class="kw">if</span> <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Prefix</span>::<span class="ident">default</span>() <span class="op">&amp;&amp;</span> <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="number">1</span>
     {
         <span class="kw">return</span> <span class="bool-val">false</span>;
     }
@@ -523,7 +523,7 @@
     <span class="ident">section</span>
         .<span class="ident">chain</span>()
         .<span class="ident">index_of</span>(<span class="kw-2">&amp;</span><span class="ident">section</span>.<span class="ident">proven_elders_info</span>().<span class="ident">proof</span>.<span class="ident">public_key</span>)
-        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">index</span><span class="op">|</span> <span class="ident">index</span> <span class="op">+</span> <span class="number">1</span> <span class="op">==</span> <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key_index</span>())
+        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">index</span><span class="op">|</span> <span class="ident">index</span> <span class="op">+</span> <span class="number">1</span> <span class="op">=</span><span class="op">=</span> <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key_index</span>())
         .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>)
 }
 

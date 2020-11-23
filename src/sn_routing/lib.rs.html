@@ -245,7 +245,7 @@
 <span class="doccomment">/// Number of votes required to agree</span>
 <span class="doccomment">/// with a strict majority (i.e. &gt; 50%)</span>
 <span class="attribute">#[<span class="ident">inline</span>]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">majority</span>(<span class="ident">num_possible_voters</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">majority</span>(<span class="ident">num_possible_voters</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="number">1</span> <span class="op">+</span> (<span class="ident">num_possible_voters</span> <span class="op">/</span> <span class="number">2</span>)
 }
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -258,7 +258,7 @@
         <span class="kw">fn</span> <span class="ident">proptest_strict_majority</span>(<span class="ident">a</span> <span class="kw">in</span> <span class="ident">any</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>()) {
             <span class="kw">let</span> <span class="ident">maj</span> <span class="op">=</span> <span class="ident">majority</span>(<span class="ident">a</span>);
             <span class="kw">let</span> <span class="ident">maj_double</span> <span class="op">=</span> <span class="ident">maj</span> <span class="op">*</span> <span class="number">2</span>;
-            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">||</span> <span class="ident">maj_double</span> <span class="op">==</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
+            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">maj_double</span> <span class="op">=</span><span class="op">=</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">1</span> <span class="op">|</span><span class="op">|</span> <span class="ident">maj_double</span> <span class="op">=</span><span class="op">=</span> <span class="ident">a</span> <span class="op">+</span> <span class="number">2</span>);
         }
     }
 }

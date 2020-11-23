@@ -231,7 +231,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Stage</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">state</span>: <span class="ident">Approved</span>, <span class="ident">comm</span>: <span class="ident">Comm</span>) <span class="op">-&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">state</span>: <span class="ident">Approved</span>, <span class="ident">comm</span>: <span class="ident">Comm</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> (<span class="ident">cancel_timer_tx</span>, <span class="kw-2">mut</span> <span class="ident">cancel_timer_rx</span>) <span class="op">=</span> <span class="ident">watch</span>::<span class="ident">channel</span>(<span class="bool-val">false</span>);
 
         <span class="comment">// Take out the initial value.</span>
@@ -246,14 +246,14 @@
     }
 
     <span class="doccomment">/// Send provided Event to the user which shall receive it through the EventStream</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_event</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">event</span>: <span class="ident">Event</span>) {
-        <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_event</span>(<span class="ident">event</span>)
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_event</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">event</span>: <span class="ident">Event</span>) {
+        <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">send_event</span>(<span class="ident">event</span>)
     }
 
     <span class="doccomment">/// Handles the given command and transitively any new commands that are produced during its</span>
     <span class="doccomment">/// handling.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_commands</span>(<span class="self">self</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">command</span>: <span class="ident">Command</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">commands</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">handle_command</span>(<span class="ident">command</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_commands</span>(<span class="self">self</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">command</span>: <span class="ident">Command</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">commands</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">handle_command</span>(<span class="ident">command</span>).<span class="ident">await</span><span class="question-mark">?</span>;
         <span class="kw">for</span> <span class="ident">command</span> <span class="kw">in</span> <span class="ident">commands</span> {
             <span class="self">self</span>.<span class="ident">clone</span>().<span class="ident">spawn_handle_commands</span>(<span class="ident">command</span>)
         }
@@ -262,31 +262,31 @@
     }
 
     <span class="doccomment">/// Handles a single command.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_command</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">command</span>: <span class="ident">Command</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_command</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">command</span>: <span class="ident">Command</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Handling command {:?}&quot;</span>, <span class="ident">command</span>);
 
-        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="kw">async</span> {
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">async</span> {
             <span class="kw">match</span> <span class="ident">command</span> {
-                <span class="ident">Command</span>::<span class="ident">HandleMessage</span> { <span class="ident">message</span>, <span class="ident">sender</span> } <span class="op">=&gt;</span> {
+                <span class="ident">Command</span>::<span class="ident">HandleMessage</span> { <span class="ident">message</span>, <span class="ident">sender</span> } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">state</span>
                         .<span class="ident">lock</span>()
-                        .<span class="kw">await</span>
+                        .<span class="ident">await</span>
                         .<span class="ident">handle_message</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
-                        .<span class="kw">await</span>
+                        .<span class="ident">await</span>
                 }
-                <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
-                <span class="ident">Command</span>::<span class="ident">HandleVote</span> { <span class="ident">vote</span>, <span class="ident">proof_share</span> } <span class="op">=&gt;</span> {
-                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_vote</span>(<span class="ident">vote</span>, <span class="ident">proof_share</span>)
+                <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
+                <span class="ident">Command</span>::<span class="ident">HandleVote</span> { <span class="ident">vote</span>, <span class="ident">proof_share</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_vote</span>(<span class="ident">vote</span>, <span class="ident">proof_share</span>)
                 }
-                <span class="ident">Command</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> } <span class="op">=&gt;</span> {
-                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_consensus</span>(<span class="ident">vote</span>, <span class="ident">proof</span>)
+                <span class="ident">Command</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_consensus</span>(<span class="ident">vote</span>, <span class="ident">proof</span>)
                 }
-                <span class="ident">Command</span>::<span class="ident">HandlePeerLost</span>(<span class="ident">addr</span>) <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>),
+                <span class="ident">Command</span>::<span class="ident">HandlePeerLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>),
                 <span class="ident">Command</span>::<span class="ident">HandleDkgParticipationResult</span> {
                     <span class="ident">dkg_key</span>,
                     <span class="ident">elders_info</span>,
                     <span class="ident">result</span>,
-                } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_dkg_participation_result</span>(
+                } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_dkg_participation_result</span>(
                     <span class="ident">dkg_key</span>,
                     <span class="ident">elders_info</span>,
                     <span class="ident">result</span>,
@@ -294,37 +294,37 @@
                 <span class="ident">Command</span>::<span class="ident">HandleDkgObservationResult</span> {
                     <span class="ident">elders_info</span>,
                     <span class="ident">result</span>,
-                } <span class="op">=&gt;</span> <span class="self">self</span>
+                } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
                     .<span class="ident">state</span>
                     .<span class="ident">lock</span>()
-                    .<span class="kw">await</span>
+                    .<span class="ident">await</span>
                     .<span class="ident">handle_dkg_observation_result</span>(<span class="ident">elders_info</span>, <span class="ident">result</span>),
                 <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                     <span class="ident">recipients</span>,
                     <span class="ident">delivery_group_size</span>,
                     <span class="ident">message</span>,
-                } <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+                } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                     .<span class="ident">send_message</span>(<span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">message</span>)
-                    .<span class="kw">await</span>),
-                <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> } <span class="op">=&gt;</span> {
-                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_user_message</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span>)
+                    .<span class="ident">await</span>),
+                <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">send_user_message</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span>)
                 }
-                <span class="ident">Command</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+                <span class="ident">Command</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                     .<span class="ident">handle_schedule_timeout</span>(<span class="ident">duration</span>, <span class="ident">token</span>)
-                    .<span class="kw">await</span>
+                    .<span class="ident">await</span>
                     .<span class="ident">into_iter</span>()
                     .<span class="ident">collect</span>()),
                 <span class="ident">Command</span>::<span class="ident">Relocate</span> {
                     <span class="ident">bootstrap_addrs</span>,
                     <span class="ident">details</span>,
                     <span class="ident">message_rx</span>,
-                } <span class="op">=&gt;</span> {
+                } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">handle_relocate</span>(<span class="ident">bootstrap_addrs</span>, <span class="ident">details</span>, <span class="ident">message_rx</span>)
-                        .<span class="kw">await</span>
+                        .<span class="ident">await</span>
                 }
             }
         }
-        .<span class="kw">await</span>;
+        .<span class="ident">await</span>;
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">result</span> {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Error encountered when handling command: {}&quot;</span>, <span class="ident">error</span>);
@@ -344,19 +344,19 @@
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="self">self</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
     }
 
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
+    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">SocketAddr</span>],
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
         <span class="ident">message</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="self">self</span>
             .<span class="ident">comm</span>
             .<span class="ident">send_message_to_targets</span>(<span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">message</span>)
-            .<span class="kw">await</span>
+            .<span class="ident">await</span>
         {
-            <span class="prelude-val">Ok</span>(()) <span class="op">=&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
-            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> <span class="ident">error</span>
+            <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
+            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">error</span>
                 .<span class="ident">failed_recipients</span>
                 .<span class="ident">into_iter</span>()
                 .<span class="ident">map</span>(<span class="ident">Command</span>::<span class="ident">HandlePeerLost</span>)
@@ -364,7 +364,7 @@
         }
     }
 
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_schedule_timeout</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">duration</span>: <span class="ident">Duration</span>, <span class="ident">token</span>: <span class="ident">u64</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_schedule_timeout</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">duration</span>: <span class="ident">Duration</span>, <span class="ident">token</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cancel_rx</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cancel_timer_rx</span>.<span class="ident">clone</span>();
 
         <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">cancel_rx</span>.<span class="ident">borrow</span>() {
@@ -373,24 +373,24 @@
         }
 
         <span class="ident">tokio</span>::<span class="macro">select</span><span class="macro">!</span> {
-            <span class="kw">_</span> <span class="op">=</span> <span class="ident">time</span>::<span class="ident">delay_for</span>(<span class="ident">duration</span>) <span class="op">=&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>)),
-            <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_rx</span>.<span class="ident">recv</span>() <span class="op">=&gt;</span> <span class="prelude-val">None</span>,
+            <span class="kw">_</span> <span class="op">=</span> <span class="ident">time</span>::<span class="ident">delay_for</span>(<span class="ident">duration</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>)),
+            <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_rx</span>.<span class="ident">recv</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
         }
     }
 
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_relocate</span>(
+    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_relocate</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
         <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
-        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">clone</span>();
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">node</span>().<span class="ident">clone</span>();
         <span class="kw">let</span> <span class="ident">previous_name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
 
         <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span>
-            <span class="ident">bootstrap</span>::<span class="ident">relocate</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">comm</span>, <span class="ident">message_rx</span>, <span class="ident">bootstrap_addrs</span>, <span class="ident">details</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="ident">bootstrap</span>::<span class="ident">relocate</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">comm</span>, <span class="ident">message_rx</span>, <span class="ident">bootstrap_addrs</span>, <span class="ident">details</span>).<span class="ident">await</span><span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>;
         <span class="kw">let</span> <span class="ident">event_tx</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">event_tx</span>.<span class="ident">clone</span>();
         <span class="kw-2">*</span><span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
 

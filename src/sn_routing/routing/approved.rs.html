@@ -1948,7 +1948,7 @@
 
 <span class="kw">impl</span> <span class="ident">Approved</span> {
     <span class="comment">// Creates the approved state for the first node in the network</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_node</span>(<span class="ident">node</span>: <span class="ident">Node</span>, <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_node</span>(<span class="ident">node</span>: <span class="ident">Node</span>, <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">section</span>, <span class="ident">section_key_share</span>) <span class="op">=</span> <span class="ident">Section</span>::<span class="ident">first_node</span>(<span class="ident">node</span>.<span class="ident">peer</span>())<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">Some</span>(<span class="ident">section_key_share</span>), <span class="ident">event_tx</span>))
     }
@@ -1959,7 +1959,7 @@
         <span class="ident">section</span>: <span class="ident">Section</span>,
         <span class="ident">section_key_share</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionKeyShare</span><span class="op">&gt;</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="self">Self</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">section_keys_provider</span> <span class="op">=</span> <span class="ident">SectionKeysProvider</span>::<span class="ident">new</span>(<span class="ident">section_key_share</span>);
 
         <span class="self">Self</span> {
@@ -1976,15 +1976,15 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">node</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Node</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">node</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Node</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Section</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Section</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">network</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Network</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">network</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Network</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>
     }
 
@@ -1995,16 +1995,16 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="comment">// Check if the message is for us.</span>
         <span class="kw">let</span> <span class="ident">in_dst_location</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">dst</span>().<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(), <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">in_dst_location</span> <span class="op">||</span> <span class="ident">msg</span>.<span class="ident">dst</span>().<span class="ident">is_section</span>() {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">in_dst_location</span> <span class="op">|</span><span class="op">|</span> <span class="ident">msg</span>.<span class="ident">dst</span>().<span class="ident">is_section</span>() {
             <span class="comment">// Relay closer to the destination or</span>
             <span class="comment">// broadcast to the rest of our section.</span>
             <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>);
@@ -2021,20 +2021,20 @@
         }
 
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">decide_message_status</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span> {
-            <span class="ident">MessageStatus</span>::<span class="ident">Useful</span> <span class="op">=&gt;</span> {
+            <span class="ident">MessageStatus</span>::<span class="ident">Useful</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Useful message from {:?}: {:?}&quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">update_section_knowledge</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>);
-                <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">handle_useful_message</span>(<span class="ident">sender</span>, <span class="ident">msg</span>).<span class="kw">await</span><span class="question-mark">?</span>);
+                <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">handle_useful_message</span>(<span class="ident">sender</span>, <span class="ident">msg</span>).<span class="ident">await</span><span class="question-mark">?</span>);
             }
-            <span class="ident">MessageStatus</span>::<span class="ident">Untrusted</span> <span class="op">=&gt;</span> {
+            <span class="ident">MessageStatus</span>::<span class="ident">Untrusted</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Untrusted message from {:?}: {:?} &quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
                 <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">handle_untrusted_message</span>(<span class="ident">sender</span>, <span class="ident">msg</span>)<span class="question-mark">?</span>);
             }
-            <span class="ident">MessageStatus</span>::<span class="ident">Unknown</span> <span class="op">=&gt;</span> {
+            <span class="ident">MessageStatus</span>::<span class="ident">Unknown</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Unknown message from {:?}: {:?} &quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
                 <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">handle_unknown_message</span>(<span class="ident">sender</span>, <span class="ident">msg</span>.<span class="ident">to_bytes</span>())<span class="question-mark">?</span>);
             }
-            <span class="ident">MessageStatus</span>::<span class="ident">Useless</span> <span class="op">=&gt;</span> {
+            <span class="ident">MessageStatus</span>::<span class="ident">Useless</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Useless message from {:?}: {:?}&quot;</span>, <span class="ident">sender</span>, <span class="ident">msg</span>);
             }
         }
@@ -2042,25 +2042,25 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_timeout</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">token</span>: <span class="ident">u64</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_timeout</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">token</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
             .<span class="ident">handle_timeout</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(), <span class="ident">token</span>)
             .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
     }
 
     <span class="comment">// Insert the vote into the vote accumulator and handle it if accumulated.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_vote</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>, <span class="ident">proof_share</span>: <span class="ident">ProofShare</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_vote</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>, <span class="ident">proof_share</span>: <span class="ident">ProofShare</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">vote_accumulator</span>.<span class="ident">add</span>(<span class="ident">vote</span>, <span class="ident">proof_share</span>) {
-            <span class="prelude-val">Ok</span>((<span class="ident">vote</span>, <span class="ident">proof</span>)) <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> }]),
-            <span class="prelude-val">Err</span>(<span class="ident">AccumulationError</span>::<span class="ident">NotEnoughShares</span>) <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]),
-            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Ok</span>((<span class="ident">vote</span>, <span class="ident">proof</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> }]),
+            <span class="prelude-val">Err</span>(<span class="ident">AccumulationError</span>::<span class="ident">NotEnoughShares</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]),
+            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to add vote: {}&quot;</span>, <span class="ident">error</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSignatureShare</span>)
             }
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_consensus</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>, <span class="ident">proof</span>: <span class="ident">Proof</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_consensus</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>, <span class="ident">proof</span>: <span class="ident">Proof</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;handle consensus on {:?}&quot;</span>, <span class="ident">vote</span>);
 
         <span class="kw">match</span> <span class="ident">vote</span> {
@@ -2068,19 +2068,19 @@
                 <span class="ident">member_info</span>,
                 <span class="ident">previous_name</span>,
                 <span class="ident">their_knowledge</span>,
-            } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_online_event</span>(<span class="ident">member_info</span>, <span class="ident">previous_name</span>, <span class="ident">their_knowledge</span>, <span class="ident">proof</span>),
-            <span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">member_info</span>) <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_offline_event</span>(<span class="ident">member_info</span>, <span class="ident">proof</span>),
-            <span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>) <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_section_info_event</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>),
-            <span class="ident">Vote</span>::<span class="ident">OurKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_our_key_event</span>(<span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">proof</span>),
-            <span class="ident">Vote</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_their_key_event</span>(<span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">proof</span>),
-            <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> } <span class="op">=&gt;</span> {
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_online_event</span>(<span class="ident">member_info</span>, <span class="ident">previous_name</span>, <span class="ident">their_knowledge</span>, <span class="ident">proof</span>),
+            <span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">member_info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_offline_event</span>(<span class="ident">member_info</span>, <span class="ident">proof</span>),
+            <span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_section_info_event</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>),
+            <span class="ident">Vote</span>::<span class="ident">OurKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_our_key_event</span>(<span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">proof</span>),
+            <span class="ident">Vote</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_their_key_event</span>(<span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">proof</span>),
+            <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_their_knowledge_event</span>(<span class="ident">prefix</span>, <span class="ident">key_index</span>, <span class="ident">proof</span>);
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
             }
             <span class="ident">Vote</span>::<span class="ident">SendMessage</span> {
                 <span class="ident">message</span>,
                 <span class="ident">proof_chain</span>,
-            } <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_send_message_event</span>(
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_send_message_event</span>(
                 <span class="kw-2">*</span><span class="ident">message</span>,
                 <span class="ident">proof_chain</span>,
                 <span class="ident">proof</span>,
@@ -2088,7 +2088,7 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">find_member_from_addr</span>(<span class="ident">addr</span>) {
             <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost known peer {}&quot;</span>, <span class="ident">peer</span>);
             <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()
@@ -2114,7 +2114,7 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">DkgOutcome</span>, ()<span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">outcome</span>) <span class="op">=</span> <span class="ident">result</span> {
             <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">outcome</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>();
             <span class="self">self</span>.<span class="ident">section_keys_provider</span>
@@ -2135,7 +2135,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>, ()<span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(
             <span class="string">&quot;accumulated DKG result for {}: {:?}&quot;</span>,
             <span class="ident">dkg_elders_info</span>,
@@ -2146,7 +2146,7 @@
 
         <span class="kw">for</span> <span class="ident">new_elders_info</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
             <span class="comment">// Check whether the result still corresponds to the current elder candidates.</span>
-            <span class="kw">if</span> <span class="ident">new_elders_info</span> <span class="op">==</span> <span class="ident">dkg_elders_info</span> {
+            <span class="kw">if</span> <span class="ident">new_elders_info</span> <span class="op">=</span><span class="op">=</span> <span class="ident">dkg_elders_info</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;handle DKG result for {}: {:?}&quot;</span>, <span class="ident">new_elders_info</span>, <span class="ident">result</span>);
 
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">public_key</span>) <span class="op">=</span> <span class="ident">result</span> {
@@ -2154,8 +2154,8 @@
                 } <span class="kw">else</span> {
                     <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_dkg_start</span>(<span class="ident">new_elders_info</span>)<span class="question-mark">?</span>);
                 }
-            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">new_elders_info</span>.<span class="ident">prefix</span> <span class="op">==</span> <span class="ident">dkg_elders_info</span>.<span class="ident">prefix</span>
-                <span class="op">||</span> <span class="ident">new_elders_info</span>
+            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">new_elders_info</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="ident">dkg_elders_info</span>.<span class="ident">prefix</span>
+                <span class="op">|</span><span class="op">|</span> <span class="ident">new_elders_info</span>
                     .<span class="ident">prefix</span>
                     .<span class="ident">is_extension_of</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_elders_info</span>.<span class="ident">prefix</span>)
             {
@@ -2172,13 +2172,13 @@
     }
 
     <span class="comment">// Send vote to all our elders.</span>
-    <span class="kw">fn</span> <span class="ident">vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vote</span>: <span class="ident">Vote</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">elders</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">peers</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
         <span class="self">self</span>.<span class="ident">send_vote</span>(<span class="kw-2">&amp;</span><span class="ident">elders</span>, <span class="ident">vote</span>)
     }
 
     <span class="comment">// Send `vote` to `recipients`.</span>
-    <span class="kw">fn</span> <span class="ident">send_vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">Peer</span>], <span class="ident">vote</span>: <span class="ident">Vote</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">Peer</span>], <span class="ident">vote</span>: <span class="ident">Vote</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">key_share</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section_keys_provider</span>.<span class="ident">key_share</span>()<span class="question-mark">?</span>;
 
         <span class="macro">trace</span><span class="macro">!</span>(
@@ -2211,7 +2211,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">handle</span> <span class="op">=</span> <span class="bool-val">false</span>;
 
         <span class="kw">for</span> <span class="ident">recipient</span> <span class="kw">in</span> <span class="ident">recipients</span> {
-            <span class="kw">if</span> <span class="ident">recipient</span>.<span class="ident">name</span>() <span class="op">==</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
+            <span class="kw">if</span> <span class="ident">recipient</span>.<span class="ident">name</span>() <span class="op">=</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
                 <span class="ident">handle</span> <span class="op">=</span> <span class="bool-val">true</span>;
             } <span class="kw">else</span> {
                 <span class="ident">others</span>.<span class="ident">push</span>(<span class="kw-2">*</span><span class="ident">recipient</span>.<span class="ident">addr</span>());
@@ -2239,11 +2239,11 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>,
         <span class="ident">proof_share</span>: <span class="kw-2">&amp;</span><span class="ident">ProofShare</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">public_key</span> <span class="op">=</span> <span class="ident">proof_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>();
 
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">public_key</span>)
-            <span class="op">&amp;&amp;</span> <span class="ident">public_key</span> <span class="op">!=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
+            <span class="op">&amp;&amp;</span> <span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
         {
             <span class="comment">// The key is recognized as non-last, indicating the peer is lagging.</span>
             <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">send_direct_message</span>(
@@ -2261,12 +2261,12 @@
     }
 
     <span class="doccomment">/// Is this node an elder?</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
     }
 
     <span class="doccomment">/// Returns the current BLS public key set</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section_key_share</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionKeyShare</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section_key_share</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionKeyShare</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">section_keys_provider</span>.<span class="ident">key_share</span>().<span class="ident">ok</span>()
     }
 
@@ -2274,19 +2274,19 @@
     <span class="comment">// Message handling</span>
     <span class="comment">////////////////////////////////////////////////////////////////////////////</span>
 
-    <span class="kw">fn</span> <span class="ident">decide_message_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">MessageStatus</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">decide_message_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">MessageStatus</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
-            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { .. } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Unknown</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">should_handle_user_message</span>(<span class="ident">msg</span>.<span class="ident">dst</span>()) {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Unknown</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">req</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">req</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">should_handle_join_request</span>(<span class="ident">req</span>) {
                     <span class="comment">// Note: We don&#39;t bounce this message because the current bounce-resend</span>
                     <span class="comment">// mechanism wouldn&#39;t preserve the original SocketAddr which is needed for</span>
@@ -2296,28 +2296,28 @@
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">DKGStart</span> { <span class="ident">elders_info</span>, .. } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">DKGStart</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { .. } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Unknown</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// Skip validation of these. We will validate them inside the bootstrap task.</span>
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useful</span>);
             }
-            <span class="ident">Variant</span>::<span class="ident">Vote</span> { <span class="ident">proof_share</span>, .. } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">Vote</span> { <span class="ident">proof_share</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">should_handle_vote</span>(<span class="ident">proof_share</span>) {
                     <span class="comment">// Message will be bounced if we are lagging (not known of the signing key).</span>
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Unknown</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=&gt;</span> {
-                <span class="kw">if</span> <span class="ident">promise</span>.<span class="ident">name</span> <span class="op">!=</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
+            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">promise</span>.<span class="ident">name</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
                     <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                     }
@@ -2334,7 +2334,7 @@
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="kw">_</span>)
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="kw">_</span>)
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BouncedUnknownMessage</span> { .. }
-            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { .. } <span class="op">=&gt;</span> {}
+            <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {}
         }
 
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">verify_message</span>(<span class="ident">msg</span>)<span class="question-mark">?</span> {
@@ -2344,29 +2344,29 @@
         }
     }
 
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_useful_message</span>(
+    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_useful_message</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">msg_filter</span>.<span class="ident">insert_incoming</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>);
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
-            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { <span class="ident">elders_info</span>, .. } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">msg</span>.<span class="ident">dst</span>().<span class="ident">check_is_section</span>()<span class="question-mark">?</span>;
                 <span class="self">self</span>.<span class="ident">handle_neighbour_info</span>(<span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">clone</span>(), <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>()<span class="question-mark">?</span>)
             }
-            <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_sync</span>(<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="ident">network</span>.<span class="ident">clone</span>())
             }
-            <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">check_is_section</span>()<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">signed_relocate</span> <span class="op">=</span> <span class="ident">SignedRelocateDetails</span>::<span class="ident">new</span>(<span class="ident">msg</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">handle_relocate</span>(<span class="ident">signed_relocate</span>).<span class="ident">into_iter</span>().<span class="ident">collect</span>())
             }
-            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_relocate_promise</span>(<span class="kw-2">*</span><span class="ident">promise</span>, <span class="ident">msg</span>.<span class="ident">to_bytes</span>())
             }
-            <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">name</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSource</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_bootstrap_request</span>(
                     <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_node_peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>,
@@ -2374,15 +2374,15 @@
                 )<span class="question-mark">?</span>])
             }
 
-            <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">join_request</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">join_request</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSource</span>)<span class="question-mark">?</span>;
                 <span class="self">self</span>.<span class="ident">handle_join_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_node_peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())
             }
-            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="ident">content</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="ident">content</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_user_message</span>(<span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">src_location</span>(), <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">dst</span>(), <span class="ident">content</span>.<span class="ident">clone</span>());
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
             }
-            <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSource</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="self">self</span>
                     .<span class="ident">handle_bounced_untrusted_message</span>(
@@ -2393,7 +2393,7 @@
                     .<span class="ident">into_iter</span>()
                     .<span class="ident">collect</span>())
             }
-            <span class="ident">Variant</span>::<span class="ident">BouncedUnknownMessage</span> { <span class="ident">src_key</span>, <span class="ident">message</span> } <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">BouncedUnknownMessage</span> { <span class="ident">src_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSource</span>)<span class="question-mark">?</span>;
                 <span class="self">self</span>.<span class="ident">handle_bounced_unknown_message</span>(
                     <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_node_peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>,
@@ -2404,18 +2404,18 @@
             <span class="ident">Variant</span>::<span class="ident">DKGStart</span> {
                 <span class="ident">dkg_key</span>,
                 <span class="ident">elders_info</span>,
-            } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>()),
-            <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=&gt;</span> {
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>()),
+            <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_dkg_message</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">message</span>.<span class="ident">clone</span>(), <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_node_name</span>()<span class="question-mark">?</span>)
             }
-            <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { <span class="ident">dkg_key</span>, <span class="ident">result</span> } <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+            <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { <span class="ident">dkg_key</span>, <span class="ident">result</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                 .<span class="ident">handle_dkg_result</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="kw-2">*</span><span class="ident">result</span>, <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">to_node_name</span>()<span class="question-mark">?</span>)<span class="question-mark">?</span>
                 .<span class="ident">into_iter</span>()
                 .<span class="ident">collect</span>()),
             <span class="ident">Variant</span>::<span class="ident">Vote</span> {
                 <span class="ident">content</span>,
                 <span class="ident">proof_share</span>,
-            } <span class="op">=&gt;</span> {
+            } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
                 <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">handle_vote</span>(<span class="ident">content</span>.<span class="ident">clone</span>(), <span class="ident">proof_share</span>.<span class="ident">clone</span>());
 
@@ -2426,11 +2426,11 @@
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span><span class="question-mark">?</span>);
                 <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
             }
-            <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">NodeApproval</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="ident">message_tx</span>)) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">relocate_state</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sender</span>) <span class="op">=</span> <span class="ident">sender</span> {
                         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Forwarding {:?} to the bootstrap task&quot;</span>, <span class="ident">msg</span>);
-                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">msg</span>, <span class="ident">sender</span>)).<span class="kw">await</span>;
+                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">msg</span>, <span class="ident">sender</span>)).<span class="ident">await</span>;
                     } <span class="kw">else</span> {
                         <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Missig sender of {:?}&quot;</span>, <span class="ident">msg</span>);
                     }
@@ -2443,24 +2443,24 @@
 
     <span class="comment">// Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we</span>
     <span class="comment">// reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).</span>
-    <span class="kw">fn</span> <span class="ident">should_handle_join_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="kw-2">&amp;</span><span class="ident">JoinRequest</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">is_elder</span>() <span class="op">||</span> <span class="ident">req</span>.<span class="ident">section_key</span> <span class="op">!=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
+    <span class="kw">fn</span> <span class="ident">should_handle_join_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="kw-2">&amp;</span><span class="ident">JoinRequest</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">is_elder</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">req</span>.<span class="ident">section_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
     }
 
     <span class="comment">// If elder, always handle UserMessage, otherwise handle it only if addressed directly to us</span>
     <span class="comment">// as a node.</span>
-    <span class="kw">fn</span> <span class="ident">should_handle_user_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">is_elder</span>() <span class="op">||</span> <span class="ident">dst</span>.<span class="ident">as_node</span>().<span class="ident">ok</span>() <span class="op">==</span> <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
+    <span class="kw">fn</span> <span class="ident">should_handle_user_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">is_elder</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">dst</span>.<span class="ident">as_node</span>().<span class="ident">ok</span>() <span class="op">=</span><span class="op">=</span> <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
     }
 
     <span class="comment">// Handle `Vote` message only if signed with known key, otherwise bounce.</span>
-    <span class="kw">fn</span> <span class="ident">should_handle_vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">proof_share</span>: <span class="kw-2">&amp;</span><span class="ident">ProofShare</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">should_handle_vote</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">proof_share</span>: <span class="kw-2">&amp;</span><span class="ident">ProofShare</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">section</span>
             .<span class="ident">chain</span>()
             .<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">proof_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">verify_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">verify_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">known_keys</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">chain</span>()
@@ -2469,9 +2469,9 @@
             .<span class="ident">chain</span>(<span class="self">self</span>.<span class="ident">network</span>.<span class="ident">keys</span>());
 
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">verify</span>(<span class="ident">known_keys</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>) <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>),
-            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>) <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="bool-val">false</span>),
-            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>),
+            <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="bool-val">false</span>),
+            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;Verification of {:?} failed: {}&quot;</span>, <span class="ident">msg</span>, <span class="ident">error</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">error</span>)
             }
@@ -2484,11 +2484,11 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">src_location</span>();
         <span class="kw">let</span> <span class="ident">src_name</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">src</span> {
-            <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>) <span class="op">=&gt;</span> <span class="ident">name</span>,
-            <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="ident">prefix</span>) <span class="op">=&gt;</span> <span class="ident">prefix</span>.<span class="ident">name</span>(),
+            <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">name</span>,
+            <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="ident">prefix</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">prefix</span>.<span class="ident">name</span>(),
         };
 
         <span class="kw">let</span> <span class="ident">bounce_dst_key</span> <span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>);
@@ -2521,7 +2521,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">msg_bytes</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">bounce_msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
             <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
@@ -2540,7 +2540,7 @@
             <span class="self">self</span>.<span class="ident">section</span>
                 .<span class="ident">elders_info</span>()
                 .<span class="ident">peers</span>()
-                .<span class="ident">any</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">addr</span>() <span class="op">==</span> <span class="ident">sender</span>)
+                .<span class="ident">any</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">addr</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">sender</span>)
         });
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sender</span>) <span class="op">=</span> <span class="ident">our_elder_sender</span> {
@@ -2555,7 +2555,7 @@
         <span class="ident">sender</span>: <span class="ident">Peer</span>,
         <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">bounced_msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(
             <span class="string">&quot;Received BouncedUntrustedMessage({:?}) from {:?}...&quot;</span>,
             <span class="ident">bounced_msg</span>,
@@ -2564,8 +2564,8 @@
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">dst_key</span>) <span class="op">=</span> <span class="ident">dst_key</span> {
             <span class="kw">let</span> <span class="ident">resend_msg</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">bounced_msg</span>.<span class="ident">extend_proof_chain</span>(<span class="kw-2">&amp;</span><span class="ident">dst_key</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>()) {
-                <span class="prelude-val">Ok</span>(<span class="ident">msg</span>) <span class="op">=&gt;</span> <span class="ident">msg</span>,
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=&gt;</span> {
+                <span class="prelude-val">Ok</span>(<span class="ident">msg</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">msg</span>,
+                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;...extending proof failed, discarding: {:?}&quot;</span>, <span class="ident">err</span>);
                     <span class="kw">return</span> <span class="prelude-val">None</span>;
                 }
@@ -2587,9 +2587,9 @@
         <span class="ident">sender</span>: <span class="ident">Peer</span>,
         <span class="ident">bounced_msg_bytes</span>: <span class="ident">Bytes</span>,
         <span class="ident">sender_last_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="ident">sender_last_key</span>)
-            <span class="op">||</span> <span class="ident">sender_last_key</span> <span class="op">==</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
+            <span class="op">|</span><span class="op">|</span> <span class="ident">sender_last_key</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
         {
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Received BouncedUnknownMessage({:?}) from {:?} \
@@ -2625,7 +2625,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">src_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">network</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">src_key</span>) {
@@ -2653,7 +2653,7 @@
         <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">MessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span> })
     }
 
-    <span class="kw">fn</span> <span class="ident">handle_sync</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">handle_sync</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;ignore Sync - not our section&quot;</span>);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
@@ -2662,8 +2662,8 @@
         <span class="self">self</span>.<span class="ident">update_state</span>(<span class="ident">section</span>, <span class="ident">network</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">handle_relocate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">details</span>.<span class="ident">relocate_details</span>().<span class="ident">pub_id</span> <span class="op">!=</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
+    <span class="kw">fn</span> <span class="ident">handle_relocate</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">details</span>.<span class="ident">relocate_details</span>().<span class="ident">pub_id</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
             <span class="comment">// This `Relocate` message is not for us - it&#39;s most likely a duplicate of a previous</span>
             <span class="comment">// message that we already handled.</span>
             <span class="kw">return</span> <span class="prelude-val">None</span>;
@@ -2702,23 +2702,23 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">promise</span>: <span class="ident">RelocatePromise</span>,
         <span class="ident">msg_bytes</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">if</span> <span class="ident">promise</span>.<span class="ident">name</span> <span class="op">==</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
+        <span class="kw">if</span> <span class="ident">promise</span>.<span class="ident">name</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
             <span class="comment">// Store the `RelocatePromise` message and send it back after we are demoted.</span>
             <span class="comment">// Keep it around even if we are not elder anymore, in case we need to resend it.</span>
             <span class="kw">match</span> <span class="self">self</span>.<span class="ident">relocate_state</span> {
-                <span class="prelude-val">None</span> <span class="op">=&gt;</span> {
+                <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="self">self</span>.<span class="ident">relocate_state</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">Delayed</span>(<span class="ident">msg_bytes</span>.<span class="ident">clone</span>()));
                     <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">RelocationStarted</span> {
                         <span class="ident">previous_name</span>: <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(),
                     });
                 }
-                <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="kw">_</span>)) <span class="op">=&gt;</span> {
+                <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;ignore RelocatePromise - relocation already in progress&quot;</span>);
                 }
-                <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">Delayed</span>(<span class="kw">_</span>)) <span class="op">=&gt;</span> {
+                <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">Delayed</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;ignore RelocatePromise - already have one&quot;</span>);
                 }
             }
@@ -2760,7 +2760,7 @@
     <span class="comment">// Note: As an adult, we should only give info about our section elders and they would</span>
     <span class="comment">// further guide the joining node. However this lead to a loop if the Adult is the new Elder so</span>
     <span class="comment">// we use the same code as for Elder and return Join in some cases.</span>
-    <span class="kw">fn</span> <span class="ident">handle_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">handle_bootstrap_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="macro">debug</span><span class="macro">!</span>(
             <span class="string">&quot;Received BootstrapRequest to section at {} from {:?}.&quot;</span>,
             <span class="ident">destination</span>, <span class="ident">peer</span>
@@ -2782,10 +2782,10 @@
         <span class="self">self</span>.<span class="ident">send_direct_message</span>(<span class="ident">peer</span>.<span class="ident">addr</span>(), <span class="ident">Variant</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">response</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">handle_join_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">join_request</span>: <span class="ident">JoinRequest</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">handle_join_request</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">join_request</span>: <span class="ident">JoinRequest</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Received {:?} from {}&quot;</span>, <span class="ident">join_request</span>, <span class="ident">peer</span>);
 
-        <span class="kw">if</span> <span class="ident">join_request</span>.<span class="ident">section_key</span> <span class="op">!=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>() {
+        <span class="kw">if</span> <span class="ident">join_request</span>.<span class="ident">section_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>() {
             <span class="kw">let</span> <span class="ident">response</span> <span class="op">=</span> <span class="ident">BootstrapResponse</span>::<span class="ident">Join</span> {
                 <span class="ident">elders_info</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">clone</span>(),
                 <span class="ident">section_key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
@@ -2871,7 +2871,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DKGStart for {}&quot;</span>, <span class="ident">new_elders_info</span>);
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
             .<span class="ident">start_participating</span>(<span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(), <span class="ident">dkg_key</span>, <span class="ident">new_elders_info</span>)
@@ -2883,7 +2883,7 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>, ()<span class="op">&gt;</span>,
         <span class="ident">sender</span>: <span class="ident">XorName</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
             .<span class="ident">observe_result</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>, <span class="ident">result</span>, <span class="ident">sender</span>)
             .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
@@ -2894,7 +2894,7 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">message_bytes</span>: <span class="ident">Bytes</span>,
         <span class="ident">sender</span>: <span class="ident">XorName</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">deserialize</span>(<span class="kw-2">&amp;</span><span class="ident">message_bytes</span>[..])<span class="question-mark">?</span>;
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;handle DKG message {:?} from {}&quot;</span>, <span class="ident">message</span>, <span class="ident">sender</span>);
 
@@ -2905,7 +2905,7 @@
 
     <span class="comment">// Generate a new section info based on the current set of members and vote for it if it</span>
     <span class="comment">// changed.</span>
-    <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">for</span> <span class="ident">info</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
@@ -2919,7 +2919,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">churn_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
         <span class="ident">churn_signature</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">Signature</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="comment">// As a measure against sybil attacks, don&#39;t relocate on infant churn.</span>
@@ -2944,10 +2944,10 @@
             <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">info</span>.<span class="ident">relocate</span>(<span class="kw-2">*</span><span class="ident">action</span>.<span class="ident">destination</span>())))<span class="question-mark">?</span>);
 
             <span class="kw">match</span> <span class="ident">action</span> {
-                <span class="ident">RelocateAction</span>::<span class="ident">Instant</span>(<span class="ident">details</span>) <span class="op">=&gt;</span> {
+                <span class="ident">RelocateAction</span>::<span class="ident">Instant</span>(<span class="ident">details</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">details</span>)<span class="question-mark">?</span>)
                 }
-                <span class="ident">RelocateAction</span>::<span class="ident">Delayed</span>(<span class="ident">promise</span>) <span class="op">=&gt;</span> {
+                <span class="ident">RelocateAction</span>::<span class="ident">Delayed</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_relocate_promise</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">promise</span>)<span class="question-mark">?</span>)
                 }
             }
@@ -2960,7 +2960,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">peer</span>: <span class="ident">Peer</span>,
         <span class="ident">signature</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">Signature</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">relocation</span>::<span class="ident">startup_phase_age</span>(<span class="ident">signature</span>);
         <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span>
             <span class="ident">RelocateDetails</span>::<span class="ident">with_age</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">age</span>);
@@ -2975,7 +2975,7 @@
         <span class="self">self</span>.<span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">details</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">relocate_rejoining_peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">relocate_rejoining_peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="ident">Peer</span>, <span class="ident">age</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span>
             <span class="ident">RelocateDetails</span>::<span class="ident">with_age</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">age</span>);
 
@@ -2991,9 +2991,9 @@
 
     <span class="comment">// Are we in the startup phase? Startup phase is when the network consists of only one section</span>
     <span class="comment">// and it has no more than `recommended_section_size` members.</span>
-    <span class="kw">fn</span> <span class="ident">is_in_startup_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_in_startup_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_empty</span>()
-            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">joined</span>().<span class="ident">count</span>() <span class="op">&lt;=</span> <span class="ident">RECOMMENDED_SECTION_SIZE</span>
+            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">joined</span>().<span class="ident">count</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="ident">RECOMMENDED_SECTION_SIZE</span>
     }
 
     <span class="kw">fn</span> <span class="ident">handle_online_event</span>(
@@ -3002,7 +3002,7 @@
         <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="ident">their_knowledge</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">member_info</span>.<span class="ident">peer</span>;
         <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">proof</span>.<span class="ident">signature</span>.<span class="ident">clone</span>();
 
@@ -3011,7 +3011,7 @@
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">info</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">get</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
             <span class="comment">// This node is rejoin with same name.</span>
 
-            <span class="kw">if</span> <span class="ident">info</span>.<span class="ident">state</span> <span class="op">!=</span> <span class="ident">PeerState</span>::<span class="ident">Left</span> {
+            <span class="kw">if</span> <span class="ident">info</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">PeerState</span>::<span class="ident">Left</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(
                     <span class="string">&quot;Ignoring Online node {} - {:?} not Left.&quot;</span>,
                     <span class="ident">peer</span>.<span class="ident">name</span>(),
@@ -3021,7 +3021,7 @@
             }
             <span class="comment">// To avoid during startup_phase, a rejoin node being given a randmly higher age,</span>
             <span class="comment">// force it to be halved.</span>
-            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">||</span> <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span> <span class="op">&gt;</span> <span class="ident">MIN_AGE</span> {
+            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">/</span> <span class="number">2</span> <span class="op">&gt;</span> <span class="ident">MIN_AGE</span> {
                 <span class="comment">// TODO: consider handling the relocation inside the bootstrap phase, to avoid having</span>
                 <span class="comment">// to send this `NodeApproval`.</span>
                 <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">send_node_approval</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>, <span class="ident">their_knowledge</span>)<span class="question-mark">?</span>);
@@ -3032,7 +3032,7 @@
             }
         }
 
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">&amp;&amp;</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&lt;=</span> <span class="ident">MIN_AGE</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_in_startup_phase</span>() <span class="op">&amp;&amp;</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="ident">MIN_AGE</span> {
             <span class="comment">// In startup phase, instantly relocate the joining peer in order to promote it to</span>
             <span class="comment">// adult.</span>
 
@@ -3078,7 +3078,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">member_info</span>.<span class="ident">peer</span>;
@@ -3110,11 +3110,11 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>);
 
-        <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span> <span class="op">==</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
-            <span class="op">||</span> <span class="ident">elders_info</span>
+        <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
+            <span class="op">|</span><span class="op">|</span> <span class="ident">elders_info</span>
                 .<span class="ident">value</span>
                 .<span class="ident">prefix</span>
                 .<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>())
@@ -3140,7 +3140,7 @@
         <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
         <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>(<span class="ident">key</span>, <span class="ident">proof</span>);
 
         <span class="self">self</span>.<span class="ident">update_barrier</span>.<span class="ident">handle_our_key</span>(
@@ -3158,7 +3158,7 @@
         <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
         <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>((<span class="ident">prefix</span>, <span class="ident">key</span>), <span class="ident">proof</span>);
 
         <span class="kw">if</span> <span class="ident">key</span>.<span class="ident">value</span>.<span class="number">0</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) {
@@ -3169,7 +3169,7 @@
                 <span class="ident">key</span>,
             );
             <span class="self">self</span>.<span class="ident">try_update_state</span>()
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">key</span>.<span class="ident">value</span>.<span class="number">0</span> <span class="op">!=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() {
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">key</span>.<span class="ident">value</span>.<span class="number">0</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() {
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">update_their_key</span>(<span class="ident">key</span>);
             <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
         } <span class="kw">else</span> {
@@ -3188,7 +3188,7 @@
         <span class="ident">message</span>: <span class="ident">PlainMessage</span>,
         <span class="ident">proof_chain</span>: <span class="ident">SectionProofChain</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">section_src</span>(<span class="ident">message</span>, <span class="ident">proof</span>.<span class="ident">signature</span>, <span class="ident">proof_chain</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
@@ -3201,7 +3201,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">public_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">public_key</span>) {
@@ -3237,7 +3237,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">try_update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">try_update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">let</span> (<span class="ident">our</span>, <span class="ident">sibling</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">update_barrier</span>.<span class="ident">take</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
@@ -3266,7 +3266,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">let</span> <span class="ident">old_is_elder</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">is_elder</span>();
@@ -3285,7 +3285,7 @@
         <span class="kw">let</span> <span class="ident">new_last_key_index</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key_index</span>();
         <span class="kw">let</span> <span class="ident">new_prefix</span> <span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>();
 
-        <span class="kw">if</span> <span class="ident">new_prefix</span> <span class="op">!=</span> <span class="ident">old_prefix</span> {
+        <span class="kw">if</span> <span class="ident">new_prefix</span> <span class="op">!</span><span class="op">=</span> <span class="ident">old_prefix</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Split&quot;</span>);
 
             <span class="kw">if</span> <span class="ident">new_is_elder</span> {
@@ -3299,7 +3299,7 @@
             }
         }
 
-        <span class="kw">if</span> <span class="ident">new_last_key_index</span> <span class="op">!=</span> <span class="ident">old_last_key_index</span> {
+        <span class="kw">if</span> <span class="ident">new_last_key_index</span> <span class="op">!</span><span class="op">=</span> <span class="ident">old_last_key_index</span> {
             <span class="self">self</span>.<span class="ident">msg_filter</span>.<span class="ident">reset</span>();
 
             <span class="kw">if</span> <span class="ident">new_is_elder</span> {
@@ -3314,7 +3314,7 @@
                 <span class="self">self</span>.<span class="ident">print_network_stats</span>();
             }
 
-            <span class="kw">if</span> <span class="ident">new_is_elder</span> <span class="op">||</span> <span class="ident">old_is_elder</span> {
+            <span class="kw">if</span> <span class="ident">new_is_elder</span> <span class="op">|</span><span class="op">|</span> <span class="ident">old_is_elder</span> {
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>);
             }
 
@@ -3374,7 +3374,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>,
         <span class="ident">their_knowledge</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;Our section with {:?} has approved candidate {:?}.&quot;</span>,
             <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(),
@@ -3403,11 +3403,11 @@
         ))
     }
 
-    <span class="kw">fn</span> <span class="ident">send_sync</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_sync</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">section</span>: <span class="ident">Section</span>, <span class="ident">network</span>: <span class="ident">Network</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">for</span> <span class="ident">peer</span> <span class="kw">in</span> <span class="ident">section</span>.<span class="ident">active_members</span>() {
-            <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">==</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
+            <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">=</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
                 <span class="kw">continue</span>;
             }
 
@@ -3435,7 +3435,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>, <span class="ident">details</span>: <span class="ident">RelocateDetails</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_relocate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>, <span class="ident">details</span>: <span class="ident">RelocateDetails</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// We need to construct a proof that would be trusted by the destination section.</span>
         <span class="kw">let</span> <span class="ident">knowledge_index</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">network</span>
@@ -3455,7 +3455,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>,
         <span class="ident">promise</span>: <span class="ident">RelocatePromise</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// Note: this message is first sent to a single node who then sends it back to the section</span>
         <span class="comment">// where it needs to be handled by all the elders. This is why the destination is</span>
         <span class="comment">// `Section`, not `Node`.</span>
@@ -3467,7 +3467,7 @@
         <span class="self">self</span>.<span class="ident">send_vote</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">recipient</span>), <span class="ident">vote</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">return_relocate_promise</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">return_relocate_promise</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: keep sending this periodically until we get relocated.</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">Delayed</span>(<span class="ident">bytes</span>)) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">relocate_state</span> {
             <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">send_message_to_our_elders</span>(<span class="ident">bytes</span>.<span class="ident">clone</span>()))
@@ -3481,7 +3481,7 @@
         <span class="ident">dst</span>: <span class="ident">Prefix</span>,
         <span class="ident">nonce</span>: <span class="ident">MessageHash</span>,
         <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">create_proof_chain_for_our_info</span>(<span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">network</span>.<span class="ident">knowledge_by_section</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>)));
@@ -3501,7 +3501,7 @@
         <span class="self">self</span>.<span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">send_dkg_start</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_dkg_start</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Send DKGStart for {}&quot;</span>, <span class="ident">new_elders_info</span>);
 
         <span class="kw">let</span> <span class="ident">dkg_key</span> <span class="op">=</span> <span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">new_elders_info</span>);
@@ -3528,14 +3528,14 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>, ()<span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGResult</span> { <span class="ident">dkg_key</span>, <span class="ident">result</span> };
 
         <span class="kw">let</span> <span class="ident">recipients</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">elders_info</span>()
             .<span class="ident">peers</span>()
-            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>());
+            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>());
 
         <span class="macro">trace</span><span class="macro">!</span>(
             <span class="string">&quot;Send {:?} to {:?}&quot;</span>,
@@ -3554,7 +3554,7 @@
     }
 
     <span class="comment">// Send message over the network.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">targets</span>, <span class="ident">dg_size</span>) <span class="op">=</span> <span class="ident">delivery_group</span>::<span class="ident">delivery_targets</span>(
             <span class="ident">msg</span>.<span class="ident">dst</span>(),
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(),
@@ -3584,7 +3584,7 @@
         <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">content</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">src</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
             <span class="macro">error</span><span class="macro">!</span>(
                 <span class="string">&quot;Not sending user message {:?} -&gt; {:?}: not part of the source location&quot;</span>,
@@ -3604,12 +3604,12 @@
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="ident">content</span>);
 
         <span class="kw">match</span> <span class="ident">src</span> {
-            <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// If the source is a single node, we don&#39;t even need to vote, so let&#39;s cut this short.</span>
                 <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">dst</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>.<span class="ident">into_iter</span>().<span class="ident">collect</span>())
             }
-            <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> {
+            <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">vote</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_send_message_vote</span>(<span class="ident">dst</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">recipients</span> <span class="op">=</span> <span class="ident">delivery_group</span>::<span class="ident">signature_targets</span>(
                     <span class="kw-2">&amp;</span><span class="ident">dst</span>,
@@ -3625,7 +3625,7 @@
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
         <span class="ident">proof_chain_first_index</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vote</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vote</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>, <span class="ident">proof_chain_first_index</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">dst_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="ident">dst</span>.<span class="ident">name</span>() {
             <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_key_by_name</span>(<span class="ident">name</span>)
@@ -3653,8 +3653,8 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>,
         <span class="ident">first_index</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">first_index</span> <span class="op">=</span> <span class="ident">first_index</span>.<span class="ident">unwrap_or_else</span>(<span class="op">||</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">knowledge_by_location</span>(<span class="ident">dst</span>));
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SectionProofChain</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">first_index</span> <span class="op">=</span> <span class="ident">first_index</span>.<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">knowledge_by_location</span>(<span class="ident">dst</span>));
 
         <span class="kw">let</span> <span class="ident">last_key</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section_keys_provider</span>
@@ -3665,12 +3665,12 @@
             .<span class="ident">section</span>
             .<span class="ident">chain</span>()
             .<span class="ident">index_of</span>(<span class="kw-2">&amp;</span><span class="ident">last_key</span>)
-            .<span class="ident">unwrap_or_else</span>(<span class="op">||</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key_index</span>());
+            .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key_index</span>());
 
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">slice</span>(<span class="ident">first_index</span>..<span class="op">=</span><span class="ident">last_index</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">send_direct_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">variant</span>: <span class="ident">Variant</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_direct_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">variant</span>: <span class="ident">Variant</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_target</span>(
             <span class="ident">recipient</span>,
@@ -3680,7 +3680,7 @@
 
     <span class="comment">// TODO: consider changing this so it sends only to a subset of the elders</span>
     <span class="comment">// (say 1/3 of the ones closest to our name or so)</span>
-    <span class="kw">fn</span> <span class="ident">send_message_to_our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg_bytes</span>: <span class="ident">Bytes</span>) <span class="op">-&gt;</span> <span class="ident">Command</span> {
+    <span class="kw">fn</span> <span class="ident">send_message_to_our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg_bytes</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Command</span> {
         <span class="kw">let</span> <span class="ident">targets</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">elders_info</span>()
@@ -3696,7 +3696,7 @@
     <span class="comment">////////////////////////////////////////////////////////////////////////////</span>
 
     <span class="comment">// Update our knowledge of their (sender&#39;s) section and their knowledge of our section.</span>
-    <span class="kw">fn</span> <span class="ident">update_section_knowledge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">update_section_knowledge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
@@ -3758,13 +3758,13 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">section_key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
+    <span class="kw">fn</span> <span class="ident">section_key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="ident">name</span>) {
             <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
         } <span class="kw">else</span> {
             <span class="self">self</span>.<span class="ident">network</span>
                 .<span class="ident">key_by_name</span>(<span class="ident">name</span>)
-                .<span class="ident">unwrap_or_else</span>(<span class="op">||</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">first_key</span>())
+                .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">first_key</span>())
         }
     }
 

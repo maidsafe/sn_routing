@@ -249,29 +249,29 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Event</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">MessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span> } <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
+            <span class="self">Self</span>::<span class="ident">MessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
                 <span class="ident">formatter</span>,
                 <span class="string">&quot;MessageReceived {{ content: \&quot;{:&lt;8}\&quot;, src: {:?}, dst: {:?} }}&quot;</span>,
                 <span class="ident">HexFmt</span>(<span class="ident">content</span>),
                 <span class="ident">src</span>,
                 <span class="ident">dst</span>
             ),
-            <span class="self">Self</span>::<span class="ident">PromotedToElder</span> <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;PromotedToElder&quot;</span>),
-            <span class="self">Self</span>::<span class="ident">PromotedToAdult</span> <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;PromotedToAdult&quot;</span>),
-            <span class="self">Self</span>::<span class="ident">Demoted</span> <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Demoted&quot;</span>),
+            <span class="self">Self</span>::<span class="ident">PromotedToElder</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;PromotedToElder&quot;</span>),
+            <span class="self">Self</span>::<span class="ident">PromotedToAdult</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;PromotedToAdult&quot;</span>),
+            <span class="self">Self</span>::<span class="ident">Demoted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Demoted&quot;</span>),
             <span class="self">Self</span>::<span class="ident">MemberJoined</span> {
                 <span class="ident">name</span>,
                 <span class="ident">previous_name</span>,
                 <span class="ident">age</span>,
-            } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;MemberJoined&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="ident">name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;age&quot;</span>, <span class="ident">age</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">MemberLeft</span> { <span class="ident">name</span>, <span class="ident">age</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+            <span class="self">Self</span>::<span class="ident">MemberLeft</span> { <span class="ident">name</span>, <span class="ident">age</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;MemberLeft&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="ident">name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;age&quot;</span>, <span class="ident">age</span>)
@@ -280,22 +280,22 @@
                 <span class="ident">prefix</span>,
                 <span class="ident">key</span>,
                 <span class="ident">elders</span>,
-            } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;EldersChanged&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;prefix&quot;</span>, <span class="ident">prefix</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;key&quot;</span>, <span class="ident">key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders&quot;</span>, <span class="ident">elders</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">RelocationStarted</span> { <span class="ident">previous_name</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+            <span class="self">Self</span>::<span class="ident">RelocationStarted</span> { <span class="ident">previous_name</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;RelocationStarted&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">Relocated</span> { <span class="ident">previous_name</span> } <span class="op">=&gt;</span> <span class="ident">formatter</span>
+            <span class="self">Self</span>::<span class="ident">Relocated</span> { <span class="ident">previous_name</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;Relocated&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">RestartRequired</span> <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;RestartRequired&quot;</span>),
-            <span class="self">Self</span>::<span class="ident">ClientMessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, .. } <span class="op">=&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
+            <span class="self">Self</span>::<span class="ident">RestartRequired</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;RestartRequired&quot;</span>),
+            <span class="self">Self</span>::<span class="ident">ClientMessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
                 <span class="ident">formatter</span>,
                 <span class="string">&quot;ClientMessageReceived {{ content: \&quot;{:&lt;8}\&quot;, src: {:?} }}&quot;</span>,
                 <span class="ident">HexFmt</span>(<span class="ident">content</span>),
