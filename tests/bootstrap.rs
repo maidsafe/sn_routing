@@ -11,8 +11,7 @@ mod utils;
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
-use sn_routing::{Config, Event, EventStream, ELDER_SIZE};
-use tokio::time;
+use sn_routing::{Config, Event, ELDER_SIZE};
 use utils::*;
 
 #[tokio::test]
@@ -128,27 +127,14 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
 async fn test_startup_elders() -> Result<()> {
     let mut nodes = create_connected_nodes(ELDER_SIZE).await?;
 
-    async fn expect_promote_event(stream: &mut EventStream) {
-        while let Some(event) = stream.next().await {
-            if let Event::PromotedToElder = event {
-                return;
-            }
+    future::join_all(nodes.iter_mut().map(|(node, stream)| async move {
+        if node.is_elder().await {
+            return;
         }
 
-        panic!("event stream closed before receiving Event::PromotedToElder");
-    }
-
-    let _ = time::timeout(
-        TIMEOUT,
-        future::join_all(nodes.iter_mut().map(|(node, stream)| async move {
-            if node.is_elder().await {
-                return;
-            }
-
-            expect_promote_event(stream).await
-        })),
-    )
-    .await?;
+        assert_event!(stream, Event::PromotedToElder)
+    }))
+    .await;
 
     Ok(())
 }
