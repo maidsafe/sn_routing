@@ -151,6 +151,14 @@
 <span id="150">150</span>
 <span id="151">151</span>
 <span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -163,12 +171,14 @@
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">location</span>::{<span class="ident">DstLocation</span>, <span class="ident">SrcLocation</span>};
 
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
+<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">RecvStream</span>, <span class="ident">SendStream</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
+    <span class="ident">sync</span>::<span class="ident">Arc</span>,
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
@@ -232,6 +242,8 @@
     <span class="ident">Relocated</span> {
         <span class="doccomment">/// Old name before the relocation.</span>
         <span class="ident">previous_name</span>: <span class="ident">XorName</span>,
+        <span class="doccomment">/// New keypair to be used after relocation.</span>
+        <span class="ident">new_keypair</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Keypair</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Disconnected or failed to connect - restart required.</span>
     <span class="ident">RestartRequired</span>,
@@ -290,9 +302,13 @@
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;RelocationStarted&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">Relocated</span> { <span class="ident">previous_name</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
+            <span class="self">Self</span>::<span class="ident">Relocated</span> {
+                <span class="ident">previous_name</span>,
+                <span class="ident">new_keypair</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;Relocated&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;new_keypair&quot;</span>, <span class="ident">new_keypair</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">RestartRequired</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;RestartRequired&quot;</span>),
             <span class="self">Self</span>::<span class="ident">ClientMessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
