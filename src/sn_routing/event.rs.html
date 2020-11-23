@@ -159,6 +159,10 @@
 <span id="158">158</span>
 <span id="159">159</span>
 <span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -215,6 +219,8 @@
         <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Age of the node</span>
         <span class="ident">age</span>: <span class="ident">u8</span>,
+        <span class="doccomment">/// Indication that is has been relocated during startup.</span>
+        <span class="ident">startup_relocation</span>: <span class="ident">bool</span>,
     },
     <span class="doccomment">/// A node left our section.</span>
     <span class="ident">MemberLeft</span> {
@@ -277,11 +283,13 @@
                 <span class="ident">name</span>,
                 <span class="ident">previous_name</span>,
                 <span class="ident">age</span>,
+                <span class="ident">startup_relocation</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;MemberJoined&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;name&quot;</span>, <span class="ident">name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;age&quot;</span>, <span class="ident">age</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;startup_relocation&quot;</span>, <span class="ident">startup_relocation</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">MemberLeft</span> { <span class="ident">name</span>, <span class="ident">age</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;MemberLeft&quot;</span>)
