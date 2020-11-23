@@ -137,6 +137,11 @@ impl Routing {
         Ok((routing, event_stream))
     }
 
+    /// Returns the current age of this node.
+    pub async fn age(&self) -> u8 {
+        self.stage.state.lock().await.node().age
+    }
+
     /// Returns the `PublicKey` of this node.
     pub async fn public_key(&self) -> PublicKey {
         self.stage.state.lock().await.node().keypair.public
