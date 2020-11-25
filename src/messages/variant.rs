@@ -95,8 +95,8 @@ pub(crate) enum Variant {
     DKGResult {
         /// The identifier of the DKG session the result is for.
         dkg_key: DkgKey,
-        /// The result of the DKG.
-        result: Result<bls::PublicKey, ()>,
+        /// The key outputted by the DKG.
+        public_key: bls::PublicKey,
     },
     /// Message containing a single `Vote` to be accumulated in the vote accumulator.
     Vote {
@@ -195,10 +195,13 @@ impl Debug for Variant {
                 .field("dkg_key", &dkg_key)
                 .field("message", message)
                 .finish(),
-            Self::DKGResult { dkg_key, result } => f
+            Self::DKGResult {
+                dkg_key,
+                public_key,
+            } => f
                 .debug_struct("DKGResult")
                 .field("dkg_key", dkg_key)
-                .field("result", result)
+                .field("public_key", public_key)
                 .finish(),
             Self::Vote {
                 content,

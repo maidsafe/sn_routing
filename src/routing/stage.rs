@@ -119,20 +119,20 @@ impl Stage {
             Command::HandleDkgParticipationResult {
                 dkg_key,
                 elders_info,
-                result,
+                outcome,
             } => self.state.lock().await.handle_dkg_participation_result(
                 dkg_key,
                 elders_info,
-                result,
+                outcome,
             ),
             Command::HandleDkgObservationResult {
                 elders_info,
-                result,
+                public_key,
             } => self
                 .state
                 .lock()
                 .await
-                .handle_dkg_observation_result(elders_info, result),
+                .handle_dkg_observation_result(elders_info, public_key),
             Command::SendMessage {
                 recipients,
                 delivery_group_size,

@@ -49,13 +49,13 @@ pub(crate) enum Command {
     HandleDkgParticipationResult {
         dkg_key: DkgKey,
         elders_info: EldersInfo,
-        result: Result<DkgOutcome, ()>,
+        outcome: DkgOutcome,
     },
     /// Handle the result of a DKG session that we are an observer of (that is, one of the current
     /// elders).
     HandleDkgObservationResult {
         elders_info: EldersInfo,
-        result: Result<bls::PublicKey, ()>,
+        public_key: bls::PublicKey,
     },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
@@ -131,25 +131,20 @@ impl Debug for Command {
             Self::HandleDkgParticipationResult {
                 dkg_key,
                 elders_info,
-                result,
+                outcome,
             } => f
                 .debug_struct("HandleDkgParticipationResult")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
-                .field(
-                    "result",
-                    &result
-                        .as_ref()
-                        .map(|outcome| outcome.public_key_set.public_key()),
-                )
+                .field("outcome", &outcome.public_key_set.public_key())
                 .finish(),
             Self::HandleDkgObservationResult {
                 elders_info,
-                result,
+                public_key,
             } => f
                 .debug_struct("HandleDkgObservationResult")
                 .field("elders_info", elders_info)
-                .field("result", result)
+                .field("public_key", public_key)
                 .finish(),
             Self::SendMessage {
                 recipients,
