@@ -1731,10 +1731,37 @@ impl Approved {
         Ok(Some(command))
     }
 
+    // Setting the JoinsAllowed has two effectives:
+    // 1. Trigger a round Vote::SetJoinsAllowed to update the flag once concensused. Which will
+    //    allow/disallow new nodes joining once done.
+    // 2, Trigger one infant to be relocated to the same section with age increased by 1. This makes
+    //    it an adult once join back. Using Relocation (not just increase age) to be consistent with
+    //    other process and avoid potential issue.
     pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
             commands.extend(self.vote(Vote::JoinsAllowed(joins_allowed))?);
+
+            // Only trigger infant relocation when update flag from disallow to allow.
+            if joins_allowed {
+                // Members already stored within BTreeMap, so the result is ordered.
+                if let Some(infant) = self
+                    .section
+                    .members()
+                    .joined()
+                    .find(|info| info.peer.age() == MIN_AGE)
+                {
+                    commands
+                        .extend(self.vote(Vote::Offline(infant.relocate(*infant.peer.name())))?);
+                    let details = RelocateDetails::new(
+                        &self.section,
+                        &self.network,
+                        &infant.peer,
+                        *infant.peer.name(),
+                    );
+                    commands.extend(self.send_relocate(&infant.peer, details)?);
+                }
+            }
         }
         Ok(commands)
     }
