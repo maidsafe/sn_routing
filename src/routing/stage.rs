@@ -116,23 +116,14 @@ impl Stage {
                 .into_iter()
                 .collect()),
             Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
-            Command::HandleDkgParticipationResult {
-                dkg_key,
+            Command::HandleDkgOutcome {
                 elders_info,
                 outcome,
-            } => self.state.lock().await.handle_dkg_participation_result(
-                dkg_key,
-                elders_info,
-                outcome,
-            ),
-            Command::HandleDkgObservationResult {
-                elders_info,
-                public_key,
             } => self
                 .state
                 .lock()
                 .await
-                .handle_dkg_observation_result(elders_info, public_key),
+                .handle_dkg_outcome(elders_info, outcome),
             Command::SendMessage {
                 recipients,
                 delivery_group_size,

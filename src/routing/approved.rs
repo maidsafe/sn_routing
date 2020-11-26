@@ -34,7 +34,7 @@ use crate::{
     },
     RECOMMENDED_SECTION_SIZE,
 };
-use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome};
+use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
@@ -191,6 +191,7 @@ impl Approved {
             } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
             Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
             Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
+            Vote::DKGResult(elders_info) => self.handle_dkg_result(elders_info, proof.public_key),
             Vote::OurKey { prefix, key } => self.handle_our_key_event(prefix, key, proof),
             Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
             Vote::TheirKnowledge { prefix, key_index } => {
@@ -253,29 +254,27 @@ impl Approved {
         }
     }
 
-    pub fn handle_dkg_participation_result(
+    pub fn handle_dkg_outcome(
         &mut self,
-        dkg_key: DkgKey,
         elders_info: EldersInfo,
-        outcome: DkgOutcome,
+        key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
-        let key = outcome.public_key_set.public_key();
+        let vote = Vote::DKGResult(elders_info);
+        let recipients: Vec<_> = self.section.elders_info().peers().copied().collect();
+        let result = self.send_vote_with(&recipients, vote, &key_share);
 
-        self.section_keys_provider
-            .insert_dkg_outcome(&self.node.name(), &elders_info, outcome);
+        let public_key = key_share.public_key_set.public_key();
 
-        if self.section.chain().has_key(&key) {
-            self.section_keys_provider.finalise_dkg(&key)
+        self.section_keys_provider.insert_dkg_outcome(key_share);
+
+        if self.section.chain().has_key(&public_key) {
+            self.section_keys_provider.finalise_dkg(&public_key)
         }
 
-        let mut commands = vec![];
-        commands.push(self.send_dkg_result(dkg_key, key)?);
-        commands.extend(self.handle_dkg_result(dkg_key, key, self.node.name())?);
-
-        Ok(commands)
+        result
     }
 
-    pub fn handle_dkg_observation_result(
+    pub fn handle_dkg_result(
         &mut self,
         elders_info: EldersInfo,
         public_key: bls::PublicKey,
@@ -307,11 +306,20 @@ impl Approved {
     // Send `vote` to `recipients`.
     fn send_vote(&self, recipients: &[Peer], vote: Vote) -> Result<Vec<Command>> {
         let key_share = self.section_keys_provider.key_share()?;
+        self.send_vote_with(recipients, vote, key_share)
+    }
 
+    fn send_vote_with(
+        &self,
+        recipients: &[Peer],
+        vote: Vote,
+        key_share: &SectionKeyShare,
+    ) -> Result<Vec<Command>> {
         trace!(
-            "Vote for {:?} (using {:?})",
+            "Vote for {:?} (public_key: {:?}, voters: {:?})",
             vote,
-            key_share.public_key_set.public_key()
+            key_share.public_key_set.public_key(),
+            recipients,
         );
 
         let proof_share = vote.prove(
@@ -428,17 +436,16 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DKGResult { .. } => {
-                if !self.is_elder() {
-                    return Ok(MessageStatus::Unknown);
-                }
-            }
             Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
-            Variant::Vote { proof_share, .. } => {
-                if !self.should_handle_vote(proof_share) {
+            Variant::Vote {
+                content,
+                proof_share,
+                ..
+            } => {
+                if !self.should_handle_vote(content, proof_share) {
                     // Message will be bounced if we are lagging (not known of the signing key).
                     return Ok(MessageStatus::Unknown);
                 }
@@ -536,13 +543,6 @@ impl Approved {
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
-            Variant::DKGResult {
-                dkg_key,
-                public_key,
-            } => Ok(self
-                .handle_dkg_result(*dkg_key, *public_key, msg.src().to_node_name()?)?
-                .into_iter()
-                .collect()),
             Variant::Vote {
                 content,
                 proof_share,
@@ -587,10 +587,15 @@ impl Approved {
     }
 
     // Handle `Vote` message only if signed with known key, otherwise bounce.
-    fn should_handle_vote(&self, proof_share: &ProofShare) -> bool {
-        self.section
-            .chain()
-            .has_key(&proof_share.public_key_set.public_key())
+    fn should_handle_vote(&self, vote: &Vote, proof_share: &ProofShare) -> bool {
+        // We always handle a DKGResult vote because it is signed by the new key produced by
+        // the last DKG and it is only about to be inserted into the chain.
+        // Any other vote must be signed by a known key.
+        matches!(vote, Vote::DKGResult(_))
+            || self
+                .section
+                .chain()
+                .has_key(&proof_share.public_key_set.public_key())
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
@@ -1071,18 +1076,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start_participating(self.node.name(), dkg_key, new_elders_info)
-            .into_commands(&self.node)
-    }
-
-    fn handle_dkg_result(
-        &mut self,
-        dkg_key: DkgKey,
-        section_key: bls::PublicKey,
-        sender: XorName,
-    ) -> Result<Vec<Command>> {
-        self.dkg_voter
-            .observe_result(&dkg_key, section_key, sender)
+            .start(self.node.name(), dkg_key, new_elders_info)
             .into_commands(&self.node)
     }
 
@@ -1433,8 +1427,6 @@ impl Approved {
 
         self.section_keys_provider
             .finalise_dkg(self.section.chain().last_key());
-        self.dkg_voter
-            .stop_observing(self.section.chain().last_key_index());
 
         let new_is_elder = self.is_elder();
         let new_last_key_index = self.section.chain().last_key_index();
@@ -1659,55 +1651,19 @@ impl Approved {
         self.relay_message(&msg)
     }
 
-    fn send_dkg_start(&mut self, new_elders_info: EldersInfo) -> Result<Vec<Command>> {
-        trace!("Send DKGStart for {}", new_elders_info);
+    fn send_dkg_start(&mut self, elders_info: EldersInfo) -> Result<Vec<Command>> {
+        trace!("Send DKGStart for {}", elders_info);
 
-        let dkg_key = DkgKey::new(&new_elders_info);
+        let dkg_key = DkgKey::new(&elders_info);
 
         // Send to all participants.
-        let recipients: Vec<_> = new_elders_info.elders.values().copied().collect();
+        let recipients: Vec<_> = elders_info.elders.values().copied().collect();
         let variant = Variant::DKGStart {
             dkg_key,
-            elders_info: new_elders_info.clone(),
+            elders_info,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-        let commands = self.send_vote(&recipients, vote)?;
-
-        self.dkg_voter.start_observing(
-            dkg_key,
-            new_elders_info,
-            self.section.chain().last_key_index(),
-        );
-
-        Ok(commands)
-    }
-
-    fn send_dkg_result(&self, dkg_key: DkgKey, public_key: bls::PublicKey) -> Result<Command> {
-        let variant = Variant::DKGResult {
-            dkg_key,
-            public_key,
-        };
-
-        let recipients = self
-            .section
-            .elders_info()
-            .peers()
-            .filter(|peer| peer.name() != &self.node.name());
-
-        trace!(
-            "Send {:?} to {:?}",
-            variant,
-            recipients.clone().format(", ")
-        );
-
-        let recipients: Vec<_> = recipients.map(Peer::addr).copied().collect();
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-
-        Ok(Command::send_message_to_targets(
-            &recipients,
-            recipients.len(),
-            message.to_bytes(),
-        ))
+        self.send_vote(&recipients, vote)
     }
 
     // Send message over the network.

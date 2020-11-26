@@ -33,6 +33,9 @@ pub(crate) enum Vote {
     // Voted to update the elders info of a section.
     SectionInfo(EldersInfo),
 
+    // TODO: remove this variant and use `SectionInfo` instead.
+    DKGResult(EldersInfo),
+
     // Voted to update our section key.
     OurKey {
         // In case of split, this prefix is used to differentiate the subsections. It's not part of
@@ -93,7 +96,7 @@ impl<'a> Serialize for SignableView<'a> {
         match self.0 {
             Vote::Online { member_info, .. } => member_info.serialize(serializer),
             Vote::Offline(member_info) => member_info.serialize(serializer),
-            Vote::SectionInfo(info) => info.serialize(serializer),
+            Vote::SectionInfo(info) | Vote::DKGResult(info) => info.serialize(serializer),
             Vote::OurKey { key, .. } => key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),

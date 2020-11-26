@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::EldersInfo;
 use crate::error::{Error, Result};
-use bls_dkg::key_gen::outcome::Outcome;
-use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Debug)]
@@ -43,20 +40,8 @@ impl SectionKeysProvider {
         self.current.as_ref().ok_or(Error::MissingSecretKeyShare)
     }
 
-    pub fn insert_dkg_outcome(
-        &mut self,
-        our_name: &XorName,
-        elders_info: &EldersInfo,
-        dkg_outcome: Outcome,
-    ) {
-        if let Some(index) = elders_info.position(our_name) {
-            let share = SectionKeyShare {
-                public_key_set: dkg_outcome.public_key_set,
-                index,
-                secret_key_share: dkg_outcome.secret_key_share,
-            };
-            self.pending = Some(share);
-        }
+    pub fn insert_dkg_outcome(&mut self, share: SectionKeyShare) {
+        self.pending = Some(share);
     }
 
     pub fn finalise_dkg(&mut self, public_key: &bls::PublicKey) {

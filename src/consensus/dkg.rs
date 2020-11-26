@@ -14,15 +14,15 @@ use crate::{
     node::Node,
     peer::Peer,
     routing::command::{self, Command},
-    section::EldersInfo,
+    section::{EldersInfo, SectionKeyShare},
     DstLocation,
 };
-use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome, KeyGen};
+use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::VecDeque,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
     time::Duration,
@@ -84,64 +84,67 @@ impl Debug for DkgKey {
 /// 1. First the current elders propose the new elder candidates in the form of `EldersInfo`
 ///    structure.
 /// 2. They send an accumulating message `DKGStart` containing this proposed `EldersInfo` to the
-///    new elders candidates (DKG participants) and also call `start_observing` to initialize the
-///    DKG result accumulator.
-/// 3. When the `DKGStart` message accumulates, the participants call `start_participating`.
+///    new elders candidates (DKG participants).
+/// 3. When the `DKGStart` message accumulates, the participants call `start`.
 /// 4. The participants keep exchanging the DKG messages and calling `process_message`.
-/// 7. On DKG completion or failure, the participants send `DKGResult` message to the current
-///    elders (observers)
-/// 8. The observers call `observe_result` with each received `DKGResult`.
-/// 9. When it returns success, that means we accumulated majority of successful DKG results
-///    and can proceed with voting for the section update.
-/// 10. When it fails, the observers restart the process from step 1.
+/// 5. On DKG completion, the participants send `DKGResult` vote to the current elders (observers)
+/// 6. When the observers accumulate the votesm the can proceed with voting for the section update.
 ///
 /// Note: in case of heavy churn, it can happen that more than one DKG session completes
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
 /// is currently not a responsibility of this module.
 pub(crate) struct DkgVoter {
-    participant: Option<Participant>,
-    observers: HashMap<DkgKey, Observer>,
+    session: Option<Session>,
 
     // Due to the asyncronous nature of the network we might sometimes receive a DKG message before
-    // we created the corresponding `Participant` session. To avoid losing those messages, we store
-    // them in this backlog and replay them once we create the session.
+    // we created the corresponding session. To avoid losing those messages, we store them in this
+    // backlog and replay them once we create the session.
     backlog: Backlog,
 }
 
 impl Default for DkgVoter {
     fn default() -> Self {
         Self {
-            participant: None,
-            observers: HashMap::new(),
+            session: None,
             backlog: Backlog::new(),
         }
     }
 }
 
 impl DkgVoter {
-    // Starts a new DKG session as a participant.
-    pub fn start_participating(
+    // Starts a new DKG session.
+    pub fn start(
         &mut self,
         our_name: XorName,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
     ) -> Vec<DkgCommand> {
-        if let Some(session) = &self.participant {
+        if let Some(session) = &self.session {
             if session.dkg_key == dkg_key && session.elders_info.is_some() {
                 trace!("DKG for {} already in progress", elders_info);
                 return vec![];
             }
         }
 
+        let index = if let Some(index) = elders_info.position(&our_name) {
+            index
+        } else {
+            error!(
+                "DKG for {} failed to start: {} is not a participant",
+                elders_info, our_name
+            );
+            return vec![];
+        };
+
         // Special case: only one participant.
         if elders_info.elders.len() == 1 {
             let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
 
-            return vec![DkgCommand::HandleParticipationResult {
-                dkg_key,
+            return vec![DkgCommand::HandleOutcome {
                 elders_info,
-                outcome: DkgOutcome {
+                outcome: SectionKeyShare {
                     public_key_set: secret_key_set.public_keys(),
+                    index,
                     secret_key_share: secret_key_set.secret_key_share(0),
                 },
             }];
@@ -153,7 +156,7 @@ impl DkgVoter {
         let mut next_elders_info = elders_info;
 
         loop {
-            match self.try_initialize(our_name, next_dkg_key, next_elders_info) {
+            match self.try_initialize(our_name, next_dkg_key, next_elders_info, index) {
                 Ok(commands) => break commands,
                 Err(elders_info) => {
                     next_dkg_key = next_dkg_key.retry();
@@ -168,6 +171,7 @@ impl DkgVoter {
         our_name: XorName,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
+        index: usize,
     ) -> Result<Vec<DkgCommand>, EldersInfo> {
         let threshold = majority(elders_info.elders.len()) - 1;
         let participants = elders_info
@@ -181,36 +185,35 @@ impl DkgVoter {
             Ok((key_gen, message)) => {
                 trace!("DKG for {} starting", elders_info);
 
-                let mut session = Participant {
+                let mut session = Session {
                     dkg_key,
                     key_gen,
                     elders_info: Some(elders_info),
+                    index,
                     timer_token: 0,
                 };
 
                 let mut commands = vec![];
-                commands.extend(session.broadcast(&our_name, dkg_key, message));
+                commands.extend(session.broadcast(dkg_key, message));
                 commands.extend(
                     self.backlog
                         .take(&dkg_key)
                         .into_iter()
-                        .flat_map(|message| session.process_message(&our_name, dkg_key, message)),
+                        .flat_map(|message| session.process_message(dkg_key, message)),
                 );
 
                 match session.check() {
                     None => {
                         commands.push(session.reset_timer());
-                        self.participant = Some(session);
+                        self.session = Some(session);
                         Ok(commands)
                     }
                     Some(Status::Success {
-                        dkg_key,
                         elders_info,
                         outcome,
                     }) => {
                         // Already completed.
-                        commands.push(DkgCommand::HandleParticipationResult {
-                            dkg_key,
+                        commands.push(DkgCommand::HandleOutcome {
                             elders_info,
                             outcome,
                         });
@@ -233,25 +236,9 @@ impl DkgVoter {
         }
     }
 
-    // Start a new DKG session as an observer.
-    pub fn start_observing(
-        &mut self,
-        dkg_key: DkgKey,
-        elders_info: EldersInfo,
-        section_key_index: u64,
-    ) {
-        trace!("DKG for {} observing", elders_info);
-
-        let _ = self.observers.entry(dkg_key).or_insert_with(|| Observer {
-            elders_info,
-            section_key_index,
-            accumulator: Default::default(),
-        });
-    }
-
     // Make key generator progress with timed phase.
     pub fn handle_timeout(&mut self, our_name: XorName, timer_token: u64) -> Vec<DkgCommand> {
-        let session = if let Some(session) = self.participant.as_mut() {
+        let session = if let Some(session) = self.session.as_mut() {
             session
         } else {
             return vec![];
@@ -279,7 +266,7 @@ impl DkgVoter {
                 let mut commands = vec![];
 
                 for message in messages {
-                    commands.extend(session.broadcast(&our_name, dkg_key, message));
+                    commands.extend(session.broadcast(dkg_key, message));
                 }
                 commands.push(session.reset_timer());
                 commands.extend(self.check(our_name));
@@ -290,8 +277,8 @@ impl DkgVoter {
 
                 let elders_info = session.elders_info.take().unwrap();
 
-                self.participant = None;
-                self.start_participating(our_name, dkg_key.retry(), elders_info)
+                // Restart on failure.
+                self.start(our_name, dkg_key.retry(), elders_info)
             }
         }
     }
@@ -304,7 +291,7 @@ impl DkgVoter {
         message: DkgMessage,
     ) -> Vec<DkgCommand> {
         let session = if let Some(session) = self
-            .participant
+            .session
             .as_mut()
             .filter(|session| session.dkg_key == dkg_key)
         {
@@ -314,7 +301,7 @@ impl DkgVoter {
             return vec![];
         };
 
-        let mut commands = session.process_message(&our_name, dkg_key, message);
+        let mut commands = session.process_message(dkg_key, message);
 
         // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
         if !commands.is_empty() {
@@ -325,83 +312,41 @@ impl DkgVoter {
         commands
     }
 
-    // Observe and accumulate a DKG result (either success or failure).
-    pub fn observe_result(
-        &mut self,
-        dkg_key: &DkgKey,
-        public_key: bls::PublicKey,
-        sender: XorName,
-    ) -> Option<DkgCommand> {
-        let session = self.observers.get_mut(dkg_key)?;
-
-        if !session.elders_info.elders.contains_key(&sender) {
-            return None;
-        }
-
-        let names = session.accumulator.entry(public_key).or_default();
-        if !names.insert(sender) {
-            return None;
-        }
-
-        let majority = majority(session.elders_info.elders.len());
-        if names.len() < majority {
-            return None;
-        }
-
-        let elders_info = self.observers.remove(dkg_key)?.elders_info;
-
-        Some(DkgCommand::HandleObservationResult {
-            elders_info,
-            public_key,
-        })
-    }
-
-    pub fn stop_observing(&mut self, section_key_index: u64) {
-        self.observers
-            .retain(|_, session| session.section_key_index >= section_key_index);
-    }
-
     // Check whether a key generator is finalized to give a DKG outcome.
     fn check(&mut self, our_name: XorName) -> Vec<DkgCommand> {
-        match self
-            .participant
-            .as_mut()
-            .and_then(|session| session.check())
-        {
+        match self.session.as_mut().and_then(|session| session.check()) {
             Some(Status::Success {
-                dkg_key,
                 elders_info,
                 outcome,
-            }) => vec![DkgCommand::HandleParticipationResult {
-                dkg_key,
+            }) => vec![DkgCommand::HandleOutcome {
                 elders_info,
                 outcome,
             }],
             Some(Status::Failure {
                 dkg_key,
                 elders_info,
-            }) => self.start_participating(our_name, dkg_key.retry(), elders_info),
+            }) => {
+                // Restart on failure.
+                self.start(our_name, dkg_key.retry(), elders_info)
+            }
             None => vec![],
         }
     }
 }
 
 // Data for a DKG participant.
-struct Participant {
+struct Session {
     // `None` means the session is completed.
     elders_info: Option<EldersInfo>,
+    // Our participant index.
+    index: usize,
     dkg_key: DkgKey,
     key_gen: KeyGen,
     timer_token: u64,
 }
 
-impl Participant {
-    fn process_message(
-        &mut self,
-        our_name: &XorName,
-        dkg_key: DkgKey,
-        message: DkgMessage,
-    ) -> Vec<DkgCommand> {
+impl Session {
+    fn process_message(&mut self, dkg_key: DkgKey, message: DkgMessage) -> Vec<DkgCommand> {
         trace!("process DKG message {:?}", message);
         let responses = self
             .key_gen
@@ -410,16 +355,11 @@ impl Participant {
 
         responses
             .into_iter()
-            .flat_map(|response| self.broadcast(our_name, dkg_key, response))
+            .flat_map(|response| self.broadcast(dkg_key, response))
             .collect()
     }
 
-    fn broadcast(
-        &mut self,
-        our_name: &XorName,
-        dkg_key: DkgKey,
-        message: DkgMessage,
-    ) -> Vec<DkgCommand> {
+    fn broadcast(&mut self, dkg_key: DkgKey, message: DkgMessage) -> Vec<DkgCommand> {
         let mut commands = vec![];
 
         let recipients: Vec<_> = self
@@ -427,8 +367,9 @@ impl Participant {
             .as_ref()
             .into_iter()
             .flat_map(EldersInfo::peers)
-            .filter(|peer| peer.name() != our_name)
-            .map(Peer::addr)
+            .enumerate()
+            .filter(|(index, _)| *index != self.index)
+            .map(|(_, peer)| peer.addr())
             .copied()
             .collect();
 
@@ -441,7 +382,7 @@ impl Participant {
             });
         }
 
-        commands.extend(self.process_message(our_name, dkg_key, message));
+        commands.extend(self.process_message(dkg_key, message));
         commands
     }
 
@@ -469,8 +410,13 @@ impl Participant {
                 outcome.public_key_set.public_key()
             );
 
+            let outcome = SectionKeyShare {
+                public_key_set: outcome.public_key_set,
+                index: self.index,
+                secret_key_share: outcome.secret_key_share,
+            };
+
             Some(Status::Success {
-                dkg_key: self.dkg_key,
                 elders_info,
                 outcome,
             })
@@ -489,19 +435,10 @@ impl Participant {
     }
 }
 
-// Data for a DKG observer.
-#[derive(Default)]
-struct Observer {
-    elders_info: EldersInfo,
-    section_key_index: u64,
-    accumulator: HashMap<bls::PublicKey, HashSet<XorName>>,
-}
-
 enum Status {
     Success {
-        dkg_key: DkgKey,
         elders_info: EldersInfo,
-        outcome: DkgOutcome,
+        outcome: SectionKeyShare,
     },
     Failure {
         dkg_key: DkgKey,
@@ -553,14 +490,9 @@ pub(crate) enum DkgCommand {
         duration: Duration,
         token: u64,
     },
-    HandleParticipationResult {
-        dkg_key: DkgKey,
+    HandleOutcome {
         elders_info: EldersInfo,
-        outcome: DkgOutcome,
-    },
-    HandleObservationResult {
-        elders_info: EldersInfo,
-        public_key: bls::PublicKey,
+        outcome: SectionKeyShare,
     },
 }
 
@@ -584,21 +516,12 @@ impl DkgCommand {
             Self::ScheduleTimeout { duration, token } => {
                 Ok(Command::ScheduleTimeout { duration, token })
             }
-            Self::HandleParticipationResult {
-                dkg_key,
+            Self::HandleOutcome {
                 elders_info,
                 outcome,
-            } => Ok(Command::HandleDkgParticipationResult {
-                dkg_key,
+            } => Ok(Command::HandleDkgOutcome {
                 elders_info,
                 outcome,
-            }),
-            Self::HandleObservationResult {
-                elders_info,
-                public_key,
-            } => Ok(Command::HandleDkgObservationResult {
-                elders_info,
-                public_key,
             }),
         }
     }
@@ -628,14 +551,13 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        peer::test_utils::arbitrary_unique_peers,
-        section::test_utils::{gen_addr, gen_elders_info},
-        ELDER_SIZE, MIN_AGE,
+        peer::test_utils::arbitrary_unique_peers, section::test_utils::gen_addr, ELDER_SIZE,
+        MIN_AGE,
     };
     use assert_matches::assert_matches;
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, SeedableRng};
-    use std::iter;
+    use std::{collections::HashMap, iter};
     use xor_name::Prefix;
 
     #[test]
@@ -656,82 +578,6 @@ mod tests {
     }
 
     #[test]
-    fn accumulate_results() {
-        let mut voter = DkgVoter::default();
-
-        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
-        let dkg_key = DkgKey::new(&elders_info);
-        let majority = majority(elders_info.elders.len());
-
-        voter.start_observing(dkg_key, elders_info, 0);
-
-        let pk = bls::SecretKey::random().public_key();
-
-        for sender in &nodes[..majority - 1] {
-            assert!(voter.observe_result(&dkg_key, pk, sender.name()).is_none());
-        }
-
-        assert!(voter
-            .observe_result(&dkg_key, pk, nodes[majority - 1].name())
-            .is_some());
-    }
-
-    #[test]
-    fn result_is_ignored_if_observation_not_started() {
-        let mut voter = DkgVoter::default();
-
-        let (elders_info, _) = gen_elders_info(Prefix::default(), ELDER_SIZE);
-        let dkg_key = DkgKey::new(&elders_info);
-        let pk = bls::SecretKey::random().public_key();
-
-        for sender in elders_info.elders.keys() {
-            assert!(voter.observe_result(&dkg_key, pk, *sender).is_none());
-        }
-    }
-
-    #[test]
-    fn result_is_ignored_if_not_from_participant() {
-        let mut voter = DkgVoter::default();
-
-        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
-        let dkg_key = DkgKey::new(&elders_info);
-        let majority = majority(elders_info.elders.len());
-
-        voter.start_observing(dkg_key, elders_info, 0);
-
-        let pk = bls::SecretKey::random().public_key();
-
-        for sender in &nodes[..majority - 1] {
-            assert!(voter.observe_result(&dkg_key, pk, sender.name()).is_none());
-        }
-
-        let invalid_peer: XorName = rand::random();
-        assert!(voter.observe_result(&dkg_key, pk, invalid_peer).is_none());
-    }
-
-    #[test]
-    fn unequal_results_do_not_accumulate() {
-        let mut voter = DkgVoter::default();
-
-        let (elders_info, nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
-        let dkg_key = DkgKey::new(&elders_info);
-        let majority = majority(elders_info.elders.len());
-
-        voter.start_observing(dkg_key, elders_info, 0);
-
-        let pk0 = bls::SecretKey::random().public_key();
-        let pk1 = bls::SecretKey::random().public_key();
-
-        for sender in &nodes[..majority - 1] {
-            assert!(voter.observe_result(&dkg_key, pk0, sender.name()).is_none());
-        }
-
-        assert!(voter
-            .observe_result(&dkg_key, pk1, nodes[majority - 1].name())
-            .is_none());
-    }
-
-    #[test]
     fn single_participant() {
         // If there is only one participant, the DKG should complete immediately.
 
@@ -741,11 +587,8 @@ mod tests {
         let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
         let dkg_key = DkgKey::new(&elders_info);
 
-        let commands = voter.start_participating(*peer.name(), dkg_key, elders_info);
-        assert_matches!(
-            &commands[..],
-            &[DkgCommand::HandleParticipationResult { .. }]
-        );
+        let commands = voter.start(*peer.name(), dkg_key, elders_info);
+        assert_matches!(&commands[..], &[DkgCommand::HandleOutcome { .. }]);
     }
 
     proptest! {
@@ -772,10 +615,7 @@ mod tests {
         let dkg_key = DkgKey::new(&elders_info);
 
         for actor in actors.values_mut() {
-            let commands =
-                actor
-                    .voter
-                    .start_participating(actor.name, dkg_key, elders_info.clone());
+            let commands = actor.voter.start(actor.name, dkg_key, elders_info.clone());
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))
@@ -841,11 +681,11 @@ mod tests {
                         .map(|addr| (addr, message.clone()))
                         .collect()
                 }
-                DkgCommand::HandleParticipationResult { outcome, .. } => {
+                DkgCommand::HandleOutcome { outcome, .. } => {
                     self.outcome = Some(outcome.public_key_set.public_key());
                     vec![]
                 }
-                DkgCommand::HandleObservationResult { .. } | DkgCommand::ScheduleTimeout { .. } => {
+                DkgCommand::ScheduleTimeout { .. } => {
                     vec![]
                 }
             }
