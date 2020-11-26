@@ -406,6 +406,12 @@
 <span id="405">405</span>
 <span id="406">406</span>
 <span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -544,6 +550,12 @@
         <span class="kw">let</span> <span class="ident">routing</span> <span class="op">=</span> <span class="self">Self</span> { <span class="ident">stage</span> };
 
         <span class="prelude-val">Ok</span>((<span class="ident">routing</span>, <span class="ident">event_stream</span>))
+    }
+
+    <span class="doccomment">/// Sets the JoinsAllowed flag.</span>
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">set_joins_allowed</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">joins_allowed</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SetJoinsAllowed</span>(<span class="ident">joins_allowed</span>);
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="ident">await</span>
     }
 
     <span class="doccomment">/// Returns the current age of this node.</span>

@@ -185,6 +185,10 @@
 <span id="184">184</span>
 <span id="185">185</span>
 <span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -246,6 +250,9 @@
         <span class="ident">message</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">PlainMessage</span><span class="op">&gt;</span>,
         <span class="ident">proof_chain</span>: <span class="ident">SectionProofChain</span>,
     },
+
+    <span class="comment">// Voted to concensus whether new node shall be allowed to join</span>
+    <span class="ident">JoinsAllowed</span>(<span class="ident">bool</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Vote</span> {
@@ -283,6 +290,7 @@
             <span class="ident">Vote</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key_index</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">SendMessage</span> { <span class="ident">message</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">message</span>.<span class="ident">as_signable</span>().<span class="ident">serialize</span>(<span class="ident">serializer</span>),
+            <span class="ident">Vote</span>::<span class="ident">JoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">joins_allowed</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
         }
     }
 }

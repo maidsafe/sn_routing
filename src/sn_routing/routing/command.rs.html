@@ -189,6 +189,12 @@
 <span id="188">188</span>
 <span id="189">189</span>
 <span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -273,6 +279,8 @@
         <span class="doccomment">/// Message receiver to pass to the bootstrap task.</span>
         <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     },
+    <span class="doccomment">/// Attempt to set JoinsAllowed flag.</span>
+    <span class="ident">SetJoinsAllowed</span>(<span class="ident">bool</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Command</span> {
@@ -370,6 +378,10 @@
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;Relocate&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;bootstrap_addrs&quot;</span>, <span class="ident">bootstrap_addrs</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;details&quot;</span>, <span class="ident">details</span>)
+                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">SetJoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_tuple</span>(<span class="string">&quot;SetJoinsAllowed&quot;</span>)
+                .<span class="ident">field</span>(<span class="ident">joins_allowed</span>)
                 .<span class="ident">finish</span>(),
         }
     }
