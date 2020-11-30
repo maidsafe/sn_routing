@@ -2,6 +2,91 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.38.0](https://github.com/maidsafe/sn_routing/compare/v0.37.0...v0.38.0) (2020-11-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* use `use sn_routing::Event;` instead of `use sn_routing::event::Event;`.
+* `Event` changes:
+
+- Remove `Event::Connected` - not needed because `Routing::new` now returns fully connected routing instance.
+- Add `Event::Relocated` - replaces `Event::Connected(Connected::Relocate)`
+- Remove `Event::InfantJoined` - merged with `MemberJoined`
+- Change `Event::MemberJoined::previous_name` to `Option` to allow distinguishing between new and relocated peers.
+* remove size fields within routing::Config
+* remove NetworkParams
+* some methods of `Routing` that previosuly returned `Option<T>` or `Result<T>` now return just T.
+* rename Instance to Routing
+* `Node` and `NodeConfig` are part of the public API.
+
+### Features
+
+* add bootstrap message backlog ([75f0a5c](https://github.com/maidsafe/sn_routing/commit/75f0a5c751835aba15a3cd42ae3b30900f6b1428))
+* allow rejoin with same name ([ded038d](https://github.com/maidsafe/sn_routing/commit/ded038d8526246fab6c8a9c63918a74a02a4848e))
+* cancel running timers on drop ([d8f420f](https://github.com/maidsafe/sn_routing/commit/d8f420f239ef3c2e0311681f4b620c230326d250))
+* expose `Event` directly, hide `event` module ([d940b77](https://github.com/maidsafe/sn_routing/commit/d940b77effde39376b8c7671dbf94f6607ce46ba))
+* implement DKG message bouncing ([551c427](https://github.com/maidsafe/sn_routing/commit/551c4276b0c737269716fe05da83fc2b34cfd63c))
+* implement lost peer detection ([cbc57ba](https://github.com/maidsafe/sn_routing/commit/cbc57baea9d44637d7439d62872dd8bde0df40b9))
+* implement message resending ([cc2fcbd](https://github.com/maidsafe/sn_routing/commit/cc2fcbd163eb80ec85a567b0eb8bc160fc84a312))
+* implement proper node termination ([0fbced8](https://github.com/maidsafe/sn_routing/commit/0fbced8a2efaac6be063aee2fb30b8f74f2e7df8))
+* improve Comm api and documentation ([9ecfe8a](https://github.com/maidsafe/sn_routing/commit/9ecfe8a5cf949ec741d6cf197930a83515538412))
+* joins_allowed flag to toggle accept new node or not ([5def794](https://github.com/maidsafe/sn_routing/commit/5def79408bfe16e37d7455b5c83037415429ce78))
+* make the log identifier work again ([48d7ce7](https://github.com/maidsafe/sn_routing/commit/48d7ce79d15f6b7da1cea328980aff835690b4ca))
+* make the resend delay configurable ([8a0d043](https://github.com/maidsafe/sn_routing/commit/8a0d043dc4079a4ff677b211c07bc4ffccdf9fdb))
+* minor changes to the Event enum ([56e658f](https://github.com/maidsafe/sn_routing/commit/56e658fe6a2fb0b2e1aeac8018f126512c944345))
+* notify when key got changed during relocation ([2540a27](https://github.com/maidsafe/sn_routing/commit/2540a27a3aafac61979d6b664e62655796c795ad))
+* ping peers on connection loss to detect if they went offline ([d6be64f](https://github.com/maidsafe/sn_routing/commit/d6be64f087341f31838d51dfbdfb067ed24895df))
+* relocate all joining infants during startup phase ([492f4d7](https://github.com/maidsafe/sn_routing/commit/492f4d7a5715fe48d1d1757b100fc8ac186ba669))
+* relocate one infant with age increased by one when set joins_allowed flag ([03d9827](https://github.com/maidsafe/sn_routing/commit/03d9827e591bf79fa5ecb775801ff8c325109fde))
+* **age:** add age getter API ([07430a0](https://github.com/maidsafe/sn_routing/commit/07430a07f5c4772014fc9db7108d3c9404f5702a))
+* **comm:** detect lost connections ([f4e9e3a](https://github.com/maidsafe/sn_routing/commit/f4e9e3a00ce5b8905be06d7d6ffa6ea522108466))
+* remove resend delay ([9b0971e](https://github.com/maidsafe/sn_routing/commit/9b0971e1aea11b2ada4cc56d70d1d0195631aaad))
+* remove Variant::Ping ([18a9d40](https://github.com/maidsafe/sn_routing/commit/18a9d40f9e8a8210b53a00afbe40bada2abcac3f))
+* start the first node with higher age ([d23914e](https://github.com/maidsafe/sn_routing/commit/d23914ed998eb415a0e0f7af616eca6bf6ea4333))
+* **upnp:** use new version of qp2p with UPnP and echo service ([afb609e](https://github.com/maidsafe/sn_routing/commit/afb609e030acf3002599e2cee14e80f81dae7b21))
+* relocate only the oldest peers that pass the relocation check ([d7855b5](https://github.com/maidsafe/sn_routing/commit/d7855b5cf3e18d49517f7f4daac96f0add47a8cf))
+* remove join timeout - to be handled by the upper layers instead ([cb4f6fe](https://github.com/maidsafe/sn_routing/commit/cb4f6feb6dc9949e1b865f6c8876d34cfd93322f))
+* use unbounded channel for Events ([fb5a3aa](https://github.com/maidsafe/sn_routing/commit/fb5a3aa2eb1af018d82fcdfbe11a9a3b156525b1))
+* **api:** expose an async event stream API, and adapt node module to use qp2p async API ([a42b065](https://github.com/maidsafe/sn_routing/commit/a42b065edad3225ccbcad30ed9755e7eff78cd10))
+* **node:** cache Connections to nodes ([a78c305](https://github.com/maidsafe/sn_routing/commit/a78c30596400e360b880caafb41a8c94c3bc5b67))
+
+
+### Bug Fixes
+
+* prevent losing incoming messages during bootstrapping ([3c9357e](https://github.com/maidsafe/sn_routing/commit/3c9357e9cc9d77d5da35df5fb856b08f3ac674b3))
+* **dkg:** backlog messages with unknown DKG key ([03873c1](https://github.com/maidsafe/sn_routing/commit/03873c11224d26bf587a4b3366d51e6847b91f06))
+* **dkg:** handle delayed DKG outcome ([c58611b](https://github.com/maidsafe/sn_routing/commit/c58611b5bc8343bffef08f3a5464bed3109380f8))
+* **dkg:** handle DKG with single participant ([00c2efa](https://github.com/maidsafe/sn_routing/commit/00c2efa6fb042a2e97008713f10a28e9b27a62e7))
+* bounce DKG message only if node has no ongoing session ([350b75d](https://github.com/maidsafe/sn_routing/commit/350b75db30fbdec86e14d48ff4f1740be39ddc00))
+* clear peer_mgr candidate post pfx change. ([57cd490](https://github.com/maidsafe/sn_routing/commit/57cd490069c961098e3a242fcf439ab2f1631bb5))
+* don't ack hop messages in Client state ([9539c05](https://github.com/maidsafe/sn_routing/commit/9539c05f3133a487dd5f0806418283a880eb411e))
+* expand ConnInfoReq handling conditions. ([d081800](https://github.com/maidsafe/sn_routing/commit/d0818004f90d5f67e5d03f974967ba8829ae2a6a))
+* handle invalid bootstrap response by retuning error ([d5ee338](https://github.com/maidsafe/sn_routing/commit/d5ee338bf79c21d7e136bd8becb84d49fd3a2997))
+* lost peer handling ([1d95194](https://github.com/maidsafe/sn_routing/commit/1d95194f7a074d0561a4199cf106cca541af70f4))
+* no longer use serde macro derive ([2116420](https://github.com/maidsafe/sn_routing/commit/2116420e2d205499c3c030acafa036df73c9664c))
+* Remove old compatible neighbour pfx not restricted to a strict parent/child prefix in Chain on updating neighbour_infos. ([#1579](https://github.com/maidsafe/sn_routing/issues/1579)) ([6d23fa3](https://github.com/maidsafe/sn_routing/commit/6d23fa3390cac5462988ac069e93ad5199dcc57f))
+* rename mock/quick_p2p to mock/quic_p2p ([067fab0](https://github.com/maidsafe/sn_routing/commit/067fab09f2e2dcf185dd8bd5987bf8c99c88029d))
+* resolve clippy errors of non-mock tests ([94eda60](https://github.com/maidsafe/sn_routing/commit/94eda60e3eae1fd033903038e4271a955c729112))
+* resolve failing example ([121ce95](https://github.com/maidsafe/sn_routing/commit/121ce952993ad7e29e055d27b33f164331cd9252))
+* send Event::Connected only after transition to Approved ([dbe0593](https://github.com/maidsafe/sn_routing/commit/dbe059361876c09f00323b7eb7fd8d95bcb151ee))
+* take ages into account when calculating DkgKey ([824d229](https://github.com/maidsafe/sn_routing/commit/824d2293f17e3d64a6282544556d0ffec3d5e744))
+* **comm:** try to re-connect after previously failed send ([08d9410](https://github.com/maidsafe/sn_routing/commit/08d9410b575cfb26f80cc3efe896a73da432f98d))
+* **event:** export qp2p SendStream and RecvStream for consumers to use ([65af16f](https://github.com/maidsafe/sn_routing/commit/65af16fd62055999460dd7aeec91b2e0eaab6c68))
+* use the latest section key when updating non-elders ([219f98d](https://github.com/maidsafe/sn_routing/commit/219f98d9b3e1a51e5c7eb32fd3857a5de592081f))
+* vote for sibling knowledge after parsec reset ([090663f](https://github.com/maidsafe/sn_routing/commit/090663f24dcb165b98d0ccb16b1f5d32614f3b91))
+
+
+* remove the Routing state machine ([cfa19ff](https://github.com/maidsafe/sn_routing/commit/cfa19ff2151976996d425a3a10e863b03abf6331))
+* rename Instance to Routing ([a227e3f](https://github.com/maidsafe/sn_routing/commit/a227e3fe03894545956c7899d8b120b375065281))
+* rename Node to Instance and NodeConfig to Config ([d8d6314](https://github.com/maidsafe/sn_routing/commit/d8d63149fce5742af1d2151b91ee974c24ada269))
+
+
+### api
+
+* remove NetworkParams ([686c248](https://github.com/maidsafe/sn_routing/commit/686c2482358e03b94779c0cde9a61af2b83b6575))
+* remove size fields within routing::Config ([9dfb935](https://github.com/maidsafe/sn_routing/commit/9dfb935afd9bdfe4dcc65d37e1cdbb93ac21fa06))
+
 ### [0.37.0](https://github.com/maidsafe/sn_routing/compare/v0.36.0...v0.37.0) (2018-08-28)
 * Upgrade unwrap version to 1.2.0
 * Use rust 1.28.0 stable / 2018-07-07 nightly
