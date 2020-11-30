@@ -191,8 +191,7 @@ impl Approved {
             } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
             Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
             Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
-            Vote::DKGResult(elders_info) => self.handle_dkg_result(elders_info, proof.public_key),
-            Vote::OurKey { prefix, key } => self.handle_our_key_event(prefix, key, proof),
+            Vote::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
             Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
             Vote::TheirKnowledge { prefix, key_index } => {
                 self.handle_their_knowledge_event(prefix, key_index, proof);
@@ -259,7 +258,7 @@ impl Approved {
         elders_info: EldersInfo,
         key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
-        let vote = Vote::DKGResult(elders_info);
+        let vote = Vote::SectionInfo(elders_info);
         let recipients: Vec<_> = self.section.elders_info().peers().copied().collect();
         let result = self.send_vote_with(&recipients, vote, &key_share);
 
@@ -272,29 +271,6 @@ impl Approved {
         }
 
         result
-    }
-
-    pub fn handle_dkg_result(
-        &mut self,
-        elders_info: EldersInfo,
-        public_key: bls::PublicKey,
-    ) -> Result<Vec<Command>> {
-        trace!(
-            "accumulated DKG result for {}: {:?}",
-            elders_info,
-            public_key
-        );
-
-        if self
-            .section
-            .promote_and_demote_elders(&self.node.name())
-            .contains(&elders_info)
-        {
-            debug!("handle DKG result for {}: {:?}", elders_info, public_key);
-            self.vote_for_section_update(public_key, elders_info)
-        } else {
-            Ok(vec![])
-        }
     }
 
     // Send vote to all our elders.
@@ -588,14 +564,21 @@ impl Approved {
 
     // Handle `Vote` message only if signed with known key, otherwise bounce.
     fn should_handle_vote(&self, vote: &Vote, proof_share: &ProofShare) -> bool {
-        // We always handle a DKGResult vote because it is signed by the new key produced by
-        // the last DKG and it is only about to be inserted into the chain.
+        // We always handle a `SectionInfo` vote for our section because it is signed by the new
+        // key produced by the last DKG and it is only about to be inserted into the chain.
         // Any other vote must be signed by a known key.
-        matches!(vote, Vote::DKGResult(_))
-            || self
+        match vote {
+            Vote::SectionInfo(elders_info)
+                if elders_info.prefix == *self.section.prefix()
+                    || elders_info.prefix.is_extension_of(self.section.prefix()) =>
+            {
+                true
+            }
+            _ => self
                 .section
                 .chain()
-                .has_key(&proof_share.public_key_set.public_key())
+                .has_key(&proof_share.public_key_set.public_key()),
+        }
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
@@ -1261,44 +1244,48 @@ impl Approved {
         elders_info: EldersInfo,
         proof: Proof,
     ) -> Result<Vec<Command>> {
+        let mut commands = vec![];
+
+        let prefix_is_equal = elders_info.prefix == *self.section.prefix();
+        let prefix_is_extension = elders_info.prefix.is_extension_of(self.section.prefix());
+
         let elders_info = Proven::new(elders_info, proof);
 
-        if elders_info.value.prefix == *self.section.prefix()
-            || elders_info
-                .value
-                .prefix
-                .is_extension_of(self.section.prefix())
-        {
-            self.update_barrier.handle_section_info(
-                &self.node.name(),
-                &self.section,
-                &self.network,
-                elders_info,
-            );
-            self.try_update_state()
-        } else {
-            // Other section
-            if self.network.update_neighbour_info(elders_info) {
-                self.network.prune_neighbours(self.section.prefix());
+        if prefix_is_equal || prefix_is_extension {
+            // Our section
+            if self
+                .section
+                .promote_and_demote_elders(&self.node.name())
+                .contains(&elders_info.value)
+            {
+                if prefix_is_extension {
+                    commands.extend(self.vote(Vote::TheirKey {
+                        prefix: elders_info.value.prefix,
+                        key: elders_info.proof.public_key,
+                    })?);
+                }
+
+                commands.extend(self.vote(Vote::OurElders(elders_info))?);
             }
-            Ok(vec![])
+        } else if self.network.update_neighbour_info(elders_info) {
+            // Other section
+            self.network.prune_neighbours(self.section.prefix());
         }
+
+        Ok(commands)
     }
 
-    fn handle_our_key_event(
+    fn handle_our_elders_event(
         &mut self,
-        prefix: Prefix,
-        key: bls::PublicKey,
-        proof: Proof,
+        elders_info: Proven<EldersInfo>,
+        key_proof: Proof,
     ) -> Result<Vec<Command>> {
-        let key = Proven::new(key, proof);
-
-        self.update_barrier.handle_our_key(
+        self.update_barrier.handle_our_section(
             &self.node.name(),
             &self.section,
             &self.network,
-            &prefix,
-            key,
+            elders_info,
+            key_proof,
         );
         self.try_update_state()
     }
@@ -1345,44 +1332,6 @@ impl Approved {
             message,
             sender: None,
         })
-    }
-
-    fn vote_for_section_update(
-        &mut self,
-        public_key: bls::PublicKey,
-        elders_info: EldersInfo,
-    ) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-
-        if self.section.chain().has_key(&public_key) {
-            // Our section state is already up to date, so no need to vote.
-            return Ok(commands);
-        }
-
-        if !self.update_barrier.start_update(elders_info.prefix) {
-            trace!(
-                "section update of {:?} already in progress",
-                elders_info.prefix
-            );
-            return Ok(commands);
-        }
-
-        // Casting unordered_votes will check consensus and handle accumulated immediately.
-        commands.extend(self.vote(Vote::OurKey {
-            prefix: elders_info.prefix,
-            key: public_key,
-        })?);
-
-        if elders_info.prefix.is_extension_of(self.section.prefix()) {
-            commands.extend(self.vote(Vote::TheirKey {
-                prefix: elders_info.prefix,
-                key: public_key,
-            })?);
-        }
-
-        commands.extend(self.vote(Vote::SectionInfo(elders_info))?);
-
-        Ok(commands)
     }
 
     fn try_update_state(&mut self) -> Result<Vec<Command>> {

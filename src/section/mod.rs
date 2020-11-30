@@ -61,8 +61,6 @@ impl Section {
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);
 
-        // Note: `ElderInfo` is normally signed with the previous key, but as we are the first node
-        // of the network there is no previous key. Sign with the current key instead.
         let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
 
         let mut section = Self::new(
@@ -89,30 +87,24 @@ impl Section {
     }
 
     pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.chain.self_verify() {
+        if !other.chain.self_verify() || !other.elders_info.verify(&other.chain) {
             return Err(Error::InvalidMessage);
         }
 
+        // TODO: handle forks
         self.chain
             .merge(other.chain)
             .map_err(|_| Error::UntrustedMessage)?;
 
-        match cmp_section_chain_position(&self.elders_info, &other.elders_info, &self.chain) {
-            Some(Ordering::Less) => {
+        match cmp_section_chain_position(
+            &self.elders_info.proof,
+            &other.elders_info.proof,
+            &self.chain,
+        ) {
+            Ordering::Less => {
                 self.elders_info = other.elders_info;
             }
-            Some(Ordering::Equal)
-                if self.elders_info.value.elders.len() < other.elders_info.value.elders.len() =>
-            {
-                // Note: our `EldersInfo` is normally signed with the previous key, except the very
-                // first one which is signed with the latest key. This means that the first and
-                // second `EldersInfo`s are signed with the same key and so comparing only the keys
-                // is not enough to decide which one is newer. To break the ties, we use the fact
-                // that the first `EldersInfo` always has only one elder and the second one has
-                // two.
-                self.elders_info = other.elders_info;
-            }
-            Some(Ordering::Greater) | Some(Ordering::Equal) | None => (),
+            Ordering::Greater | Ordering::Equal => (),
         }
 
         for info in other.members {
@@ -126,24 +118,27 @@ impl Section {
     }
 
     /// Update the `EldersInfo` of our section.
-    pub fn update_elders(&mut self, new_elders_info: Proven<EldersInfo>) -> bool {
-        if !new_elders_info.verify(&self.chain) {
+    pub fn update_elders(
+        &mut self,
+        new_elders_info: Proven<EldersInfo>,
+        new_key_proof: Proof,
+    ) -> bool {
+        if !new_elders_info.self_verify() {
             return false;
         }
 
-        if new_elders_info != self.elders_info {
-            self.elders_info = new_elders_info;
-            self.members
-                .prune_not_matching(&self.elders_info.value.prefix);
-
-            true
-        } else {
-            false
+        if !self
+            .chain
+            .push(new_elders_info.proof.public_key, new_key_proof.signature)
+        {
+            return false;
         }
-    }
 
-    pub fn update_chain(&mut self, key: Proven<bls::PublicKey>) -> bool {
-        self.chain.push(key.value, key.proof.signature)
+        self.elders_info = new_elders_info;
+        self.members
+            .prune_not_matching(&self.elders_info.value.prefix);
+
+        true
     }
 
     /// Update the member. Returns whether it actually changed anything.
@@ -343,25 +338,18 @@ fn create_first_proof<T: Serialize>(
     })
 }
 
-fn cmp_section_chain_position<T: Serialize>(
-    lhs: &Proven<T>,
-    rhs: &Proven<T>,
+fn cmp_section_chain_position(
+    lhs: &Proof,
+    rhs: &Proof,
     section_chain: &SectionProofChain,
-) -> Option<Ordering> {
-    match (lhs.self_verify(), rhs.self_verify()) {
-        (true, true) => (),
-        (true, false) => return Some(Ordering::Greater),
-        (false, true) => return Some(Ordering::Less),
-        (false, false) => return None,
-    }
-
-    let lhs_index = section_chain.index_of(&lhs.proof.public_key);
-    let rhs_index = section_chain.index_of(&rhs.proof.public_key);
+) -> Ordering {
+    let lhs_index = section_chain.index_of(&lhs.public_key);
+    let rhs_index = section_chain.index_of(&rhs.public_key);
 
     match (lhs_index, rhs_index) {
-        (Some(lhs_index), Some(rhs_index)) => Some(lhs_index.cmp(&rhs_index)),
-        (Some(_), None) => Some(Ordering::Greater),
-        (None, Some(_)) => Some(Ordering::Less),
-        (None, None) => None,
+        (Some(lhs_index), Some(rhs_index)) => lhs_index.cmp(&rhs_index),
+        (Some(_), None) => Ordering::Greater,
+        (None, Some(_)) => Ordering::Less,
+        (None, None) => Ordering::Equal,
     }
 }
