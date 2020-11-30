@@ -14,27 +14,22 @@ use crate::{
 use bls_signature_aggregator::Proof;
 use xor_name::{Prefix, XorName};
 
-/// Helper structure to synchronize updates to `Section` and `Network` in order to keep certain
-/// useful invariants:
+/// Helper structure to make sure that during splits, our and the sibling sections are updated
+/// consistently.
 ///
-/// - our `EldersInfo` corresponds to the latest section chain key.
-/// - in case of split, both siblings know each others latest keys
+/// # Usage
 ///
-/// Usage: each mutation to be applied to our `Section` or `Network` must pass through this barrier
-/// first.
-/// Call the corresponding handler (`handle_section_info`, `handle_our_key`, ...) and then call
+/// Each mutation to be applied to our `Section` or `Network` must pass through this barrier
+/// first. Call the corresponding handler (`handle_our_section`, `handle_their_key`) and then call
 /// `take`. If it returns `Some` for our and/or sibling section, apply it to the corresponding
 /// state, otherwise do nothing.
-///
-/// TODO: this whole machinery might not be necessary. It's possible the above invariants are not
-/// really needed. Investigate whether that is the case.
 #[derive(Default)]
-pub(crate) struct UpdateBarrier {
+pub(crate) struct SplitBarrier {
     our: Option<State>,
     sibling: Option<State>,
 }
 
-impl UpdateBarrier {
+impl SplitBarrier {
     pub fn handle_our_section(
         &mut self,
         our_name: &XorName,
@@ -171,7 +166,7 @@ impl State {
 
     fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
         if key.value.0 == *self.section.prefix() {
-            // Ignore our keys. Use `update_our_key` for that.
+            // Ignore our keys. Use `update_elders` for that.
             return false;
         }
 

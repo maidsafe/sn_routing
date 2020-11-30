@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Command, UpdateBarrier};
+use super::{Command, SplitBarrier};
 use crate::{
     consensus::{
         AccumulationError, DkgCommands, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote,
@@ -54,7 +54,7 @@ pub(crate) struct Approved {
     network: Network,
     section_keys_provider: SectionKeysProvider,
     vote_accumulator: VoteAccumulator,
-    update_barrier: UpdateBarrier,
+    split_barrier: SplitBarrier,
     // Voter for DKG
     dkg_voter: DkgVoter,
     relocate_state: Option<RelocateState>,
@@ -86,7 +86,7 @@ impl Approved {
             network: Network::new(),
             section_keys_provider,
             vote_accumulator: Default::default(),
-            update_barrier: Default::default(),
+            split_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_state: None,
             msg_filter: MessageFilter::new(),
@@ -1280,7 +1280,7 @@ impl Approved {
         elders_info: Proven<EldersInfo>,
         key_proof: Proof,
     ) -> Result<Vec<Command>> {
-        self.update_barrier.handle_our_section(
+        self.split_barrier.handle_our_section(
             &self.node.name(),
             &self.section,
             &self.network,
@@ -1299,7 +1299,7 @@ impl Approved {
         let key = Proven::new((prefix, key), proof);
 
         if key.value.0.is_extension_of(self.section.prefix()) {
-            self.update_barrier.handle_their_key(
+            self.split_barrier.handle_their_key(
                 &self.node.name(),
                 &self.section,
                 &self.network,
@@ -1337,7 +1337,7 @@ impl Approved {
     fn try_update_state(&mut self) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let (our, sibling) = self.update_barrier.take(self.section.prefix());
+        let (our, sibling) = self.split_barrier.take(self.section.prefix());
 
         if let Some(our) = our {
             trace!("update our section: {:?}", our.section.elders_info());
