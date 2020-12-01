@@ -421,9 +421,10 @@ impl Approved {
                 proof_share,
                 ..
             } => {
-                if !self.should_handle_vote(content, proof_share) {
-                    // Message will be bounced if we are lagging (not known of the signing key).
-                    return Ok(MessageStatus::Unknown);
+                if let Some(status) =
+                    self.decide_vote_status(&msg.src().to_node_name()?, content, proof_share)
+                {
+                    return Ok(status);
                 }
             }
             Variant::RelocatePromise(promise) => {
@@ -562,22 +563,39 @@ impl Approved {
         self.is_elder() || dst.as_node().ok() == Some(&self.node.name())
     }
 
-    // Handle `Vote` message only if signed with known key, otherwise bounce.
-    fn should_handle_vote(&self, vote: &Vote, proof_share: &ProofShare) -> bool {
-        // We always handle a `SectionInfo` vote for our section because it is signed by the new
-        // key produced by the last DKG and it is only about to be inserted into the chain.
-        // Any other vote must be signed by a known key.
+    // Decide how to handle a `Vote` message.
+    fn decide_vote_status(
+        &self,
+        sender: &XorName,
+        vote: &Vote,
+        proof_share: &ProofShare,
+    ) -> Option<MessageStatus> {
         match vote {
             Vote::SectionInfo(elders_info)
                 if elders_info.prefix == *self.section.prefix()
                     || elders_info.prefix.is_extension_of(self.section.prefix()) =>
             {
-                true
+                // This `SectionInfo` is voted by the DKG participants and is signed by the new key
+                // created by the DKG so we don't know it yet. We only require the sender of the
+                // vote to be one of the DKG participants.
+                if elders_info.elders.contains_key(sender) {
+                    None
+                } else {
+                    Some(MessageStatus::Useless)
+                }
             }
-            _ => self
-                .section
-                .chain()
-                .has_key(&proof_share.public_key_set.public_key()),
+            _ => {
+                // Any other vote needs to be signed by a known key.
+                if self
+                    .section
+                    .chain()
+                    .has_key(&proof_share.public_key_set.public_key())
+                {
+                    None
+                } else {
+                    Some(MessageStatus::Unknown)
+                }
+            }
         }
     }
 
