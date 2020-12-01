@@ -58,6 +58,9 @@ impl DkgKey {
         Self(output)
     }
 
+    // Create a new `DkgKey` to be used to retry a previously failed DKG session. This key is
+    // deterministically derived from `self`, so different DKG participants that fail at different
+    // times end up using the same retried key.
     pub fn retry(&self) -> Self {
         use tiny_keccak::{Hasher, Sha3};
 
@@ -166,6 +169,8 @@ impl DkgVoter {
         }
     }
 
+    // Try to initialize a DKG session. If it succeeds, returns a list of `DkgCommand`s to apply.
+    // On failure gives back `elders_info` so it can be used again to retry, avoiding a clone.
     fn try_initialize(
         &mut self,
         our_name: XorName,
