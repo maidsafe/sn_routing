@@ -37,8 +37,8 @@ pub enum Error {
     UntrustedMessage,
     #[error(display = "A signature share is invalid.")]
     InvalidSignatureShare,
-    #[error(display = "An Elder DKG result is invalid.")]
-    InvalidElderDkgResult,
+    #[error(display = "The secret key share is missing.")]
+    MissingSecretKeyShare,
     #[error(display = "Failed to send a message.")]
     FailedSend,
     #[error(display = "Invalid vote.")]
