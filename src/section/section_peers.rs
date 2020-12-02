@@ -92,14 +92,6 @@ impl SectionPeers {
             .unwrap_or(false)
     }
 
-    /// Returns whether the given peer is joined and has age > MIN_AGE.
-    pub fn is_mature(&self, name: &XorName) -> bool {
-        self.members
-            .get(name)
-            .map(|info| info.value.state == PeerState::Joined && info.value.is_mature())
-            .unwrap_or(false)
-    }
-
     /// Returns whether the given peer is known to us (joined or left)
     pub fn is_known(&self, name: &XorName) -> bool {
         self.members.contains_key(name)

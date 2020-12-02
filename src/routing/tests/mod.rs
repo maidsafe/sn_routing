@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Approved, Comm, Command, Stage};
+use super::{
+    approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF},
+    Approved, Comm, Command, Stage,
+};
 use crate::{
     consensus::{test_utils::*, Proven, Vote},
     crypto,
@@ -28,6 +31,7 @@ use anyhow::Result;
 use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
+use resource_proof::ResourceProof;
 use std::{cmp, collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -90,11 +94,48 @@ async fn receive_join_request() -> Result<()> {
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
+            resource_proof: None,
         })),
         None,
         None,
     )?;
     let mut commands = stage
+        .handle_command(Command::HandleMessage {
+            sender: Some(new_node.addr),
+            message,
+        })
+        .await?
+        .into_iter();
+
+    let response_message = assert_matches!(
+        commands.next(),
+        Some(Command::SendMessage { message, .. }) => message
+    );
+    let response_message = Message::from_bytes(&response_message)?;
+
+    let nonce = assert_matches!(
+        response_message.variant(),
+        Variant::BootstrapResponse(BootstrapResponse::ResourceProof { nonce, .. }) => nonce
+    );
+
+    let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF);
+    let data = rp.create_proof_data(nonce);
+    let mut prover = rp.create_prover(data.clone());
+    let solution = prover.solve();
+
+    let message = Message::single_src(
+        &new_node,
+        DstLocation::Direct,
+        Variant::JoinRequest(Box::new(JoinRequest {
+            section_key,
+            relocate_payload: None,
+            resource_proof: Some((solution, data)),
+        })),
+        None,
+        None,
+    )?;
+
+    commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
@@ -111,7 +152,7 @@ async fn receive_join_request() -> Result<()> {
         Vote::Online { member_info, previous_name, their_knowledge } => {
             assert_eq!(*member_info.peer.name(), new_node.name());
             assert_eq!(*member_info.peer.addr(), new_node.addr);
-            assert_eq!(member_info.peer.age(), MIN_AGE);
+            assert_eq!(member_info.peer.age(), MIN_AGE + 1);
             assert_eq!(member_info.state, PeerState::Joined);
             assert_eq!(previous_name, None);
             assert_eq!(their_knowledge, None);
@@ -179,13 +220,13 @@ async fn accumulate_votes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_infant_during_startup_phase() -> Result<()> {
-    handle_consensus_on_online_of_infant(NetworkPhase::Startup).await
+async fn handle_consensus_on_online_during_startup_phase() -> Result<()> {
+    handle_consensus_on_online(NetworkPhase::Startup).await
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_infant_after_startup_phase() -> Result<()> {
-    handle_consensus_on_online_of_infant(NetworkPhase::Regular).await
+async fn handle_consensus_on_online_after_startup_phase() -> Result<()> {
+    handle_consensus_on_online(NetworkPhase::Regular).await
 }
 
 enum NetworkPhase {
@@ -193,7 +234,7 @@ enum NetworkPhase {
     Regular,
 }
 
-async fn handle_consensus_on_online_of_infant(phase: NetworkPhase) -> Result<()> {
+async fn handle_consensus_on_online(phase: NetworkPhase) -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
     let prefix = match phase {

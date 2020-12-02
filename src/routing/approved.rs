@@ -37,12 +37,18 @@ use crate::{
 use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome};
 use bytes::Bytes;
 use itertools::Itertools;
+use lru_time_cache::LruCache;
+use resource_proof::ResourceProof;
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
+pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 256;
+pub(crate) const RESOURCE_PROOF_DIFF: u8 = 8;
+const RESOURCE_PROOF_ENTRIES: usize = 100;
+
 // The approved stage - node is a full member of a section and is performing its duties according
-// to its persona (infant, adult or elder).
+// to its persona (adult or elder).
 pub(crate) struct Approved {
     node: Node,
     section: Section,
@@ -56,6 +62,8 @@ pub(crate) struct Approved {
     msg_filter: MessageFilter,
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
     joins_allowed: bool,
+    resource_proof: ResourceProof,
+    nonces: LruCache<XorName, [u8; 32]>,
 }
 
 impl Approved {
@@ -86,6 +94,8 @@ impl Approved {
             msg_filter: MessageFilter::new(),
             event_tx,
             joins_allowed: true,
+            resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF),
+            nonces: LruCache::with_capacity(RESOURCE_PROOF_ENTRIES),
         }
     }
 
@@ -924,7 +934,11 @@ impl Approved {
         self.send_direct_message(peer.addr(), Variant::BootstrapResponse(response))
     }
 
-    fn handle_join_request(&self, peer: Peer, join_request: JoinRequest) -> Result<Vec<Command>> {
+    fn handle_join_request(
+        &mut self,
+        peer: Peer,
+        join_request: JoinRequest,
+    ) -> Result<Vec<Command>> {
         debug!("Received {:?} from {}", join_request, peer);
 
         if join_request.section_key != *self.section.chain().last_key() {
@@ -1005,14 +1019,33 @@ impl Approved {
                 );
                 return Ok(vec![]);
             } else {
-                (MIN_AGE, None, None)
+                // Start as Adult as long as passed resource proofing.
+                (MIN_AGE + 1, None, None)
             };
 
-        self.vote(Vote::Online {
-            member_info: MemberInfo::joined(peer.with_age(age)),
-            previous_name,
-            their_knowledge,
-        })
+        if let Some((solution, data)) = join_request.resource_proof {
+            if let Some(nonce) = self.nonces.get(peer.name()) {
+                if self.resource_proof.validate_all(nonce, &data, solution) {
+                    return self.vote(Vote::Online {
+                        member_info: MemberInfo::joined(peer.with_age(age)),
+                        previous_name,
+                        their_knowledge,
+                    });
+                }
+            }
+        }
+
+        let nonce: [u8; 32] = rand::random();
+        let _ = self.nonces.insert(*peer.name(), nonce);
+        let response = BootstrapResponse::ResourceProof {
+            data_size: RESOURCE_PROOF_DATA_SIZE,
+            difficulty: RESOURCE_PROOF_DIFF,
+            nonce,
+        };
+        Ok(vec![self.send_direct_message(
+            peer.addr(),
+            Variant::BootstrapResponse(response),
+        )?])
     }
 
     fn handle_dkg_start(
@@ -1068,12 +1101,6 @@ impl Approved {
         churn_signature: &bls::Signature,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
-
-        // As a measure against sybil attacks, don't relocate on infant churn.
-        if !self.section.is_adult_or_elder(churn_name) {
-            trace!("Skip relocation on infant churn");
-            return Ok(commands);
-        }
 
         let relocations =
             relocation::actions(&self.section, &self.network, churn_name, churn_signature);
@@ -1732,36 +1759,12 @@ impl Approved {
     }
 
     // Setting the JoinsAllowed has two effectives:
-    // 1. Trigger a round Vote::SetJoinsAllowed to update the flag once concensused. Which will
-    //    allow/disallow new nodes joining once done.
-    // 2, Trigger one infant to be relocated to the same section with age increased by 1. This makes
-    //    it an adult once join back. Using Relocation (not just increase age) to be consistent with
-    //    other process and avoid potential issue.
+    // Trigger a round Vote::SetJoinsAllowed to update the flag once concensused. Which will
+    // allow/disallow new nodes joining once done.
     pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
             commands.extend(self.vote(Vote::JoinsAllowed(joins_allowed))?);
-
-            // Only trigger infant relocation when update flag from disallow to allow.
-            if joins_allowed {
-                // Members already stored within BTreeMap, so the result is ordered.
-                if let Some(infant) = self
-                    .section
-                    .members()
-                    .joined()
-                    .find(|info| info.peer.age() == MIN_AGE)
-                {
-                    commands
-                        .extend(self.vote(Vote::Offline(infant.relocate(*infant.peer.name())))?);
-                    let details = RelocateDetails::new(
-                        &self.section,
-                        &self.network,
-                        &infant.peer,
-                        *infant.peer.name(),
-                    );
-                    commands.extend(self.send_relocate(&infant.peer, details)?);
-                }
-            }
         }
         Ok(commands)
     }

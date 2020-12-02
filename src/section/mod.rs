@@ -214,11 +214,6 @@ impl Section {
         }
     }
 
-    /// Returns whether the given peer adult or elder.
-    pub fn is_adult_or_elder(&self, name: &XorName) -> bool {
-        self.members.is_mature(name) || self.is_elder(name)
-    }
-
     // Prefix of our section.
     pub fn prefix(&self) -> &Prefix {
         &self.elders_info().prefix

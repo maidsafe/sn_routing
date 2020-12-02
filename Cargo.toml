@@ -25,6 +25,7 @@ qp2p = "~0.9.1"
 rand = "~0.7.3"
 rand_chacha = "~0.2.2"
 xor_name = "1.1.0"
+resource_proof = "0.8.0"
 
   [dependencies.bls]
   package = "threshold_crypto"

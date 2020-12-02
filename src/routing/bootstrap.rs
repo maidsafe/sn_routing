@@ -21,18 +21,19 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::future;
+use resource_proof::ResourceProof;
 use std::{collections::VecDeque, mem, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::Prefix;
 
 const BACKLOG_CAPACITY: usize = 100;
 
-/// Bootstrap into the network as an infant node.
+/// Bootstrap into the network as an adult node.
 ///
 /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
 /// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
 /// for example by using a timeout.
-pub(crate) async fn infant(
+pub(crate) async fn adult(
     node: Node,
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
@@ -154,6 +155,12 @@ impl<'a> State<'a> {
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
+                BootstrapResponse::ResourceProof { .. } => {
+                    error!(
+                        "{} Received an unexpected ResourceProof request from {:?}",
+                        self.node, sender,
+                    );
+                }
             }
         }
     }
@@ -229,16 +236,28 @@ impl<'a> State<'a> {
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
     // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
-    // completing the bootstrap.
+    // completing the bootstrap. If it is `ResourceProff`, carries out a resource proof calculation.
     async fn join(
         mut self,
-        mut elders_info: EldersInfo,
+        elders_info: EldersInfo,
         mut section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+        let mut join_request = JoinRequest {
+            section_key,
+            relocate_payload: relocate_payload.clone(),
+            resource_proof: None,
+        };
+        let mut recipients: Vec<_> = elders_info
+            .elders
+            .values()
+            .map(Peer::addr)
+            .copied()
+            .collect();
         loop {
-            self.send_join_requests(&elders_info, section_key, relocate_payload.as_ref())
-                .await?;
+            self.send_join_requests(&join_request, &recipients).await?;
+            // avoid sending duplicates.
+            recipients.clear();
 
             let (response, sender) = self
                 .receive_join_response(relocate_payload.as_ref())
@@ -256,26 +275,52 @@ impl<'a> State<'a> {
                     ));
                 }
                 JoinResponse::Rejoin {
-                    elders_info: new_elders_info,
+                    elders_info,
                     section_key: new_section_key,
                 } => {
                     if new_section_key == section_key {
                         continue;
                     }
 
-                    if new_elders_info.prefix.matches(&self.node.name()) {
+                    if elders_info.prefix.matches(&self.node.name()) {
                         info!(
                             "{} Newer Join response for our prefix {:?} from {:?}",
-                            self.node, new_elders_info, sender
+                            self.node, elders_info, sender
                         );
-                        elders_info = new_elders_info;
                         section_key = new_section_key;
+                        join_request = JoinRequest {
+                            section_key,
+                            relocate_payload: relocate_payload.clone(),
+                            resource_proof: None,
+                        };
+                        recipients = elders_info
+                            .elders
+                            .values()
+                            .map(Peer::addr)
+                            .copied()
+                            .collect();
                     } else {
                         warn!(
                             "Newer Join response not for our prefix {:?} from {:?}",
-                            new_elders_info, sender,
+                            elders_info, sender,
                         );
                     }
+                }
+                JoinResponse::ResourceProof {
+                    data_size,
+                    difficulty,
+                    nonce,
+                } => {
+                    let rp = ResourceProof::new(data_size, difficulty);
+                    let data = rp.create_proof_data(&nonce);
+                    let mut prover = rp.create_prover(data.clone());
+                    let proof = prover.solve();
+                    join_request = JoinRequest {
+                        section_key,
+                        relocate_payload: relocate_payload.clone(),
+                        resource_proof: Some((proof, data)),
+                    };
+                    recipients.push(sender);
                 }
             }
         }
@@ -283,31 +328,21 @@ impl<'a> State<'a> {
 
     async fn send_join_requests(
         &mut self,
-        elders_info: &EldersInfo,
-        section_key: bls::PublicKey,
-        relocate_payload: Option<&RelocatePayload>,
+        join_request: &JoinRequest,
+        socket_addrs: &[SocketAddr],
     ) -> Result<()> {
-        let recipients: Vec<_> = elders_info
-            .elders
-            .values()
-            .map(Peer::addr)
-            .copied()
-            .collect();
-
-        let join_request = JoinRequest {
-            section_key,
-            relocate_payload: relocate_payload.cloned(),
-        };
-
         info!(
             "{} Sending {:?} to {:?}",
-            self.node, join_request, recipients
+            self.node, join_request, socket_addrs
         );
 
-        let variant = Variant::JoinRequest(Box::new(join_request));
+        let variant = Variant::JoinRequest(Box::new(join_request.clone()));
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
-        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
+        let _ = self
+            .send_tx
+            .send((message.to_bytes(), socket_addrs.to_vec()))
+            .await;
 
         Ok(())
     }
@@ -330,6 +365,24 @@ impl<'a> State<'a> {
                         JoinResponse::Rejoin {
                             elders_info: elders_info.clone(),
                             section_key: *section_key,
+                        },
+                        sender,
+                    ));
+                }
+                Variant::BootstrapResponse(BootstrapResponse::ResourceProof {
+                    data_size,
+                    difficulty,
+                    nonce,
+                }) => {
+                    if !self.verify_message(&message, None) {
+                        continue;
+                    }
+
+                    return Ok((
+                        JoinResponse::ResourceProof {
+                            data_size: *data_size,
+                            difficulty: *difficulty,
+                            nonce: *nonce,
                         },
                         sender,
                     ));
@@ -412,6 +465,11 @@ enum JoinResponse {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     },
+    ResourceProof {
+        data_size: usize,
+        difficulty: u8,
+        nonce: [u8; 32],
+    },
 }
 
 // Receiver of incoming messages that can be backed either by a raw `qp2p::ConnectionEvent` receiver
@@ -465,7 +523,7 @@ mod tests {
     use tokio::task;
 
     #[tokio::test]
-    async fn bootstrap_as_infant() -> Result<()> {
+    async fn bootstrap_as_adult() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
