@@ -12,7 +12,7 @@ use bls_dkg::key_gen::outcome::Outcome;
 use xor_name::XorName;
 
 /// All the key material needed to sign or combine signature for our section key.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SectionKeyShare {
     /// Public key set to verify threshold signatures and combine shares.
     pub public_key_set: bls::PublicKeySet,
@@ -40,7 +40,7 @@ impl SectionKeysProvider {
     }
 
     pub fn key_share(&self) -> Result<&SectionKeyShare> {
-        self.current.as_ref().ok_or(Error::InvalidElderDkgResult)
+        self.current.as_ref().ok_or(Error::MissingSecretKeyShare)
     }
 
     pub fn insert_dkg_outcome(
