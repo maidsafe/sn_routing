@@ -7,7 +7,7 @@ license = "GPL-3.0"
 name = "sn_routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/sn_routing"
-version = "0.38.0"
+version = "0.39.0"
 edition = "2018"
 
 [dependencies]
