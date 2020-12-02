@@ -19,6 +19,7 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::VecDeque,
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
 };
@@ -215,6 +216,12 @@ pub enum BootstrapResponse {
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<SocketAddr>),
+    /// Expecting the new peer to carry out a resouce proofing.
+    ResourceProof {
+        data_size: usize,
+        difficulty: u8,
+        nonce: [u8; 32],
+    },
 }
 
 /// Request to join a section
@@ -224,6 +231,8 @@ pub(crate) struct JoinRequest {
     pub section_key: bls::PublicKey,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     pub relocate_payload: Option<RelocatePayload>,
+    /// Proof of the resouce proofing
+    pub resource_proof: Option<(u64, VecDeque<u8>)>,
 }
 
 impl Debug for JoinRequest {
@@ -237,6 +246,10 @@ impl Debug for JoinRequest {
                     .relocate_payload
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
+            )
+            .field(
+                "resouce_proof",
+                &self.resource_proof.as_ref().map(|(solution, _)| solution),
             )
             .finish()
     }
