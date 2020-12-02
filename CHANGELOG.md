@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.39.0](https://github.com/maidsafe/sn_routing/compare/v0.38.0...v0.39.0) (2020-12-02)
+
+
+### ⚠ BREAKING CHANGES
+
+*     - remove `Routing::secret_key_share` (use `Routing::sign_with_secret_key_share` instead).
+    - Rename `Error::InvalidElderDkgResult` to `Error::MissingSecretKeyShare`
+    - `Routing::public_key_set` and `Routing::our_index` now return `MissingSecretKeyShare` instead of `InvalidState` on error.
+
+### Features
+
+* do not expose BLS secret key share ([e8fa12e](https://github.com/maidsafe/sn_routing/commit/e8fa12e4b528ce1e23657c2a2450f48adc3d20de))
+
 ## [0.38.0](https://github.com/maidsafe/sn_routing/compare/v0.37.0...v0.38.0) (2020-11-30)
 
 
