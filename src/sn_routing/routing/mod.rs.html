@@ -410,8 +410,6 @@
 <span id="409">409</span>
 <span id="410">410</span>
 <span id="411">411</span>
-<span id="412">412</span>
-<span id="413">413</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -448,9 +446,8 @@
     <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">PING</span>},
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">relocation</span>::<span class="ident">STARTUP_PHASE_AGE_RANGE</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
-    <span class="ident">TransportConfig</span>,
+    <span class="ident">TransportConfig</span>, <span class="ident">MIN_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>};
@@ -511,8 +508,7 @@
         <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">backlog</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the seed node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>)<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>)
-                .<span class="ident">with_age</span>(<span class="ident">STARTUP_PHASE_AGE_RANGE</span>.<span class="ident">end</span>);
+            <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>).<span class="ident">with_age</span>(<span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>);
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
 
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
@@ -524,7 +520,7 @@
                 <span class="ident">Comm</span>::<span class="ident">bootstrap</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>).<span class="ident">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>);
             <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span>
-                <span class="ident">bootstrap</span>::<span class="ident">infant</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">connection_event_rx</span>, <span class="ident">bootstrap_addr</span>).<span class="ident">await</span><span class="question-mark">?</span>;
+                <span class="ident">bootstrap</span>::<span class="ident">initial</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">connection_event_rx</span>, <span class="ident">bootstrap_addr</span>).<span class="ident">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
 
             (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">backlog</span>)
