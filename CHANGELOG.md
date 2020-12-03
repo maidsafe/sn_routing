@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.1](https://github.com/maidsafe/sn_routing/compare/v0.39.0...v0.39.1) (2020-12-03)
+
+
+### Features
+
+* carry out resource proofing during bootstrap ([a047ca1](https://github.com/maidsafe/sn_routing/commit/a047ca1f88c65cc1d9b99c0602b856bb7acb4f9b))
+* relocation during startup no-longer required ([cf937e4](https://github.com/maidsafe/sn_routing/commit/cf937e47bf41cc8b8724e7496f5040e69f95d67e))
+
 ## [0.39.0](https://github.com/maidsafe/sn_routing/compare/v0.38.0...v0.39.0) (2020-12-02)
 
 
