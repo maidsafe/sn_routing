@@ -33,9 +33,8 @@ use crate::{
     messages::{Message, PING},
     node::Node,
     peer::Peer,
-    relocation::STARTUP_PHASE_AGE_RANGE,
     section::{EldersInfo, SectionProofChain},
-    TransportConfig,
+    TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
@@ -96,8 +95,7 @@ impl Routing {
         let (state, comm, backlog) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
             let comm = Comm::new(config.transport_config, connection_event_tx)?;
-            let node = Node::new(keypair, comm.our_connection_info().await?)
-                .with_age(STARTUP_PHASE_AGE_RANGE.end);
+            let node = Node::new(keypair, comm.our_connection_info().await?).with_age(MIN_AGE + 1);
             let state = Approved::first_node(node, event_tx)?;
 
             state.send_event(Event::PromotedToElder);
