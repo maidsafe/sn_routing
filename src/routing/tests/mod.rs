@@ -17,8 +17,7 @@ use crate::{
     location::DstLocation,
     majority,
     messages::{
-        BootstrapResponse, JoinRequest, Message, PlainMessage, Proof as ResourceProofingProof,
-        Variant,
+        BootstrapResponse, JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant,
     },
     network::Network,
     node::Node,
@@ -97,7 +96,7 @@ async fn receive_join_request() -> Result<()> {
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
-            proof: None,
+            resource_proof_response: None,
         })),
         None,
         None,
@@ -116,9 +115,9 @@ async fn receive_join_request() -> Result<()> {
     );
     let response_message = Message::from_bytes(&response_message)?;
 
-    let (nonce, signature) = assert_matches!(
+    let (nonce, nonce_signature) = assert_matches!(
         response_message.variant(),
-        Variant::Challenge { nonce, signature, .. } => (*nonce, *signature)
+        Variant::ResourceChallenge { nonce, nonce_signature, .. } => (*nonce, *nonce_signature)
     );
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
@@ -132,11 +131,11 @@ async fn receive_join_request() -> Result<()> {
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
-            proof: Some(ResourceProofingProof {
+            resource_proof_response: Some(ResourceProofResponse {
                 solution,
                 data,
                 nonce,
-                signature,
+                nonce_signature,
             }),
         })),
         None,
