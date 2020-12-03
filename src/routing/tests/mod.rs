@@ -82,7 +82,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 }
 
 #[tokio::test]
-async fn receive_join_request() -> Result<()> {
+async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
@@ -115,10 +115,26 @@ async fn receive_join_request() -> Result<()> {
     );
     let response_message = Message::from_bytes(&response_message)?;
 
-    let (nonce, nonce_signature) = assert_matches!(
+    assert_matches!(
         response_message.variant(),
-        Variant::ResourceChallenge { nonce, nonce_signature, .. } => (*nonce, *nonce_signature)
+        Variant::ResourceChallenge { .. }
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn receive_join_request_with_resource_proof_response() -> Result<()> {
+    let node = create_node();
+    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let stage = Stage::new(state, create_comm()?);
+
+    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let section_key = *stage.state.lock().await.section().chain().last_key();
+
+    let nonce: [u8; 32] = rand::random();
+    let serialized = bincode::serialize(&(new_node.name(), nonce))?;
+    let nonce_signature = crypto::sign(&serialized, &stage.state.lock().await.node().keypair);
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
     let data = rp.create_proof_data(&nonce);
@@ -142,7 +158,7 @@ async fn receive_join_request() -> Result<()> {
         None,
     )?;
 
-    commands = stage
+    let mut commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
