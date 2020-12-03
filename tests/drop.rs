@@ -18,11 +18,8 @@ async fn test_node_drop() -> Result<()> {
     // majority and the `Offline` votes accumulate.
     let mut nodes = create_connected_nodes(3).await?;
 
-    // We are in the startup phase, so the second and third node are instantly relocated.
-    // Let's wait until they re-join.
     for (_, events) in &mut nodes[1..] {
-        assert_next_event!(events, Event::RelocationStarted { .. });
-        assert_next_event!(events, Event::Relocated { .. });
+        assert_event!(events, Event::PromotedToElder);
     }
 
     // Wait for the DKG(s) to complete, to make sure there are no more messages being exchanged

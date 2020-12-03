@@ -9,6 +9,7 @@
 use super::{Message, MessageHash, VerifyStatus};
 use crate::{
     consensus::{DkgKey, ProofShare, Proven, Vote},
+    crypto::Signature,
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
@@ -101,6 +102,13 @@ pub(crate) enum Variant {
     Vote {
         content: Vote,
         proof_share: ProofShare,
+    },
+    /// Challenge sent from existing elder nodes to the joining peer for resource proofing.
+    Challenge {
+        data_size: usize,
+        difficulty: u8,
+        nonce: [u8; 32],
+        signature: Signature,
     },
 }
 
@@ -200,6 +208,15 @@ impl Debug for Variant {
                 .field("content", content)
                 .field("proof_share", proof_share)
                 .finish(),
+            Self::Challenge {
+                data_size,
+                difficulty,
+                ..
+            } => f
+                .debug_struct("Challenge")
+                .field("data_size", data_size)
+                .field("difficulty", difficulty)
+                .finish(),
         }
     }
 }
@@ -216,12 +233,15 @@ pub enum BootstrapResponse {
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<SocketAddr>),
-    /// Expecting the new peer to carry out a resouce proofing.
-    ResourceProof {
-        data_size: usize,
-        difficulty: u8,
-        nonce: [u8; 32],
-    },
+}
+
+/// Joining peer's proof of resolvement of given resource proofing challenge.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Proof {
+    pub(crate) solution: u64,
+    pub(crate) data: VecDeque<u8>,
+    pub(crate) nonce: [u8; 32],
+    pub(crate) signature: Signature,
 }
 
 /// Request to join a section
@@ -232,7 +252,7 @@ pub(crate) struct JoinRequest {
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     pub relocate_payload: Option<RelocatePayload>,
     /// Proof of the resouce proofing
-    pub resource_proof: Option<(u64, VecDeque<u8>)>,
+    pub proof: Option<Proof>,
 }
 
 impl Debug for JoinRequest {
@@ -247,10 +267,7 @@ impl Debug for JoinRequest {
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
             )
-            .field(
-                "resouce_proof",
-                &self.resource_proof.as_ref().map(|(solution, _)| solution),
-            )
+            .field("proof", &self.proof.as_ref().map(|proof| proof.solution))
             .finish()
     }
 }
