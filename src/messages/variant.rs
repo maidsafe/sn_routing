@@ -104,11 +104,11 @@ pub(crate) enum Variant {
         proof_share: ProofShare,
     },
     /// Challenge sent from existing elder nodes to the joining peer for resource proofing.
-    Challenge {
+    ResourceChallenge {
         data_size: usize,
         difficulty: u8,
         nonce: [u8; 32],
-        signature: Signature,
+        nonce_signature: Signature,
     },
 }
 
@@ -208,12 +208,12 @@ impl Debug for Variant {
                 .field("content", content)
                 .field("proof_share", proof_share)
                 .finish(),
-            Self::Challenge {
+            Self::ResourceChallenge {
                 data_size,
                 difficulty,
                 ..
             } => f
-                .debug_struct("Challenge")
+                .debug_struct("ResourceChallenge")
                 .field("data_size", data_size)
                 .field("difficulty", difficulty)
                 .finish(),
@@ -237,22 +237,22 @@ pub enum BootstrapResponse {
 
 /// Joining peer's proof of resolvement of given resource proofing challenge.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Proof {
+pub(crate) struct ResourceProofResponse {
     pub(crate) solution: u64,
     pub(crate) data: VecDeque<u8>,
     pub(crate) nonce: [u8; 32],
-    pub(crate) signature: Signature,
+    pub(crate) nonce_signature: Signature,
 }
 
 /// Request to join a section
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct JoinRequest {
-    /// The public key of the section to join
+    /// The public key of the section to join.
     pub section_key: bls::PublicKey,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     pub relocate_payload: Option<RelocatePayload>,
-    /// Proof of the resouce proofing
-    pub proof: Option<Proof>,
+    /// Proof of the resouce proofing.
+    pub resource_proof_response: Option<ResourceProofResponse>,
 }
 
 impl Debug for JoinRequest {
@@ -267,7 +267,13 @@ impl Debug for JoinRequest {
                     .as_ref()
                     .map(|payload| payload.relocate_details()),
             )
-            .field("proof", &self.proof.as_ref().map(|proof| proof.solution))
+            .field(
+                "resource_proof_response",
+                &self
+                    .resource_proof_response
+                    .as_ref()
+                    .map(|proof| proof.solution),
+            )
             .finish()
     }
 }

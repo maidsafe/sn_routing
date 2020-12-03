@@ -12,7 +12,9 @@ use crate::{
     crypto::{self, Signature},
     error::{Error, Result},
     location::DstLocation,
-    messages::{BootstrapResponse, JoinRequest, Message, Proof, Variant, VerifyStatus},
+    messages::{
+        BootstrapResponse, JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus,
+    },
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -28,7 +30,7 @@ use xor_name::Prefix;
 
 const BACKLOG_CAPACITY: usize = 100;
 
-/// Bootstrap into the network as an adult node.
+/// Bootstrap into the network as new node.
 ///
 /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
 /// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
@@ -240,7 +242,7 @@ impl<'a> State<'a> {
         let mut join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
-            proof: None,
+            resource_proof_response: None,
         };
         let mut recipients: Vec<_> = elders_info
             .elders
@@ -285,7 +287,7 @@ impl<'a> State<'a> {
                         join_request = JoinRequest {
                             section_key,
                             relocate_payload: relocate_payload.clone(),
-                            proof: None,
+                            resource_proof_response: None,
                         };
                         recipients = elders_info
                             .elders
@@ -300,11 +302,11 @@ impl<'a> State<'a> {
                         );
                     }
                 }
-                JoinResponse::Challenge {
+                JoinResponse::ResourceChallenge {
                     data_size,
                     difficulty,
                     nonce,
-                    signature,
+                    nonce_signature,
                 } => {
                     let rp = ResourceProof::new(data_size, difficulty);
                     let data = rp.create_proof_data(&nonce);
@@ -313,11 +315,11 @@ impl<'a> State<'a> {
                     join_request = JoinRequest {
                         section_key,
                         relocate_payload: relocate_payload.clone(),
-                        proof: Some(Proof {
+                        resource_proof_response: Some(ResourceProofResponse {
                             solution,
                             data,
                             nonce,
-                            signature,
+                            nonce_signature,
                         }),
                     };
                     recipients.push(sender);
@@ -369,22 +371,22 @@ impl<'a> State<'a> {
                         sender,
                     ));
                 }
-                Variant::Challenge {
+                Variant::ResourceChallenge {
                     data_size,
                     difficulty,
                     nonce,
-                    signature,
+                    nonce_signature,
                 } => {
                     if !self.verify_message(&message, None) {
                         continue;
                     }
 
                     return Ok((
-                        JoinResponse::Challenge {
+                        JoinResponse::ResourceChallenge {
                             data_size: *data_size,
                             difficulty: *difficulty,
                             nonce: *nonce,
-                            signature: *signature,
+                            nonce_signature: *nonce_signature,
                         },
                         sender,
                     ));
@@ -467,11 +469,11 @@ enum JoinResponse {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     },
-    Challenge {
+    ResourceChallenge {
         data_size: usize,
         difficulty: u8,
         nonce: [u8; 32],
-        signature: Signature,
+        nonce_signature: Signature,
     },
 }
 

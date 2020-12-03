@@ -19,7 +19,7 @@ use crate::{
     message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
-        Proof as ResourceProofingProof, Variant, VerifyStatus, PING,
+        ResourceProofResponse, Variant, VerifyStatus, PING,
     },
     network::Network,
     node::Node,
@@ -43,8 +43,8 @@ use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
-pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 128;
-pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 4;
+pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
+pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (adult or elder).
@@ -478,7 +478,7 @@ impl Approved {
                     }
                 }
             }
-            Variant::Challenge { .. } => {
+            Variant::ResourceChallenge { .. } => {
                 // Already approved, no need to resolve challenge.
                 return Ok(MessageStatus::Useless);
             }
@@ -591,7 +591,7 @@ impl Approved {
 
                 Ok(vec![])
             }
-            Variant::Challenge { .. } => {
+            Variant::ResourceChallenge { .. } => {
                 trace!("Already got approved to join, no need to resolve challenge");
                 Ok(vec![])
             }
@@ -1028,19 +1028,19 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
-        if let Some(ResourceProofingProof {
+        if let Some(ResourceProofResponse {
             solution,
             data,
             nonce,
-            signature,
-        }) = join_request.proof
+            nonce_signature,
+        }) = join_request.resource_proof_response
         {
             let serialized = bincode::serialize(&(*peer.name(), nonce))?;
             if self
                 .node
                 .keypair
                 .public
-                .verify(&serialized, &signature)
+                .verify(&serialized, &nonce_signature)
                 .is_ok()
                 && self.resource_proof.validate_all(&nonce, &data, solution)
             {
@@ -1054,11 +1054,11 @@ impl Approved {
 
         let nonce: [u8; 32] = rand::random();
         let serialized = bincode::serialize(&(*peer.name(), nonce))?;
-        let response = Variant::Challenge {
+        let response = Variant::ResourceChallenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
             difficulty: RESOURCE_PROOF_DIFFICULTY,
             nonce,
-            signature: crypto::sign(&serialized, &self.node.keypair),
+            nonce_signature: crypto::sign(&serialized, &self.node.keypair),
         };
         Ok(vec![self.send_direct_message(peer.addr(), response)?])
     }
@@ -1736,9 +1736,7 @@ impl Approved {
         Ok(Some(command))
     }
 
-    // Setting the JoinsAllowed has two effectives:
-    // Trigger a round Vote::SetJoinsAllowed to update the flag once concensused. Which will
-    // allow/disallow new nodes joining once done.
+    // Setting the JoinsAllowed triggers a round Vote::SetJoinsAllowed to update the flag.
     pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
