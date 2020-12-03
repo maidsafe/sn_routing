@@ -12,14 +12,14 @@ use crate::{
         AccumulationError, DkgCommands, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote,
         VoteAccumulator,
     },
-    delivery_group,
+    crypto, delivery_group,
     error::{Error, Result},
     event::Event,
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, Variant,
-        VerifyStatus, PING,
+        BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
+        Proof as ResourceProofingProof, Variant, VerifyStatus, PING,
     },
     network::Network,
     node::Node,
@@ -36,16 +36,15 @@ use crate::{
 };
 use bls_dkg::key_gen::{message::Message as DkgMessage, outcome::Outcome as DkgOutcome};
 use bytes::Bytes;
+use ed25519_dalek::Verifier;
 use itertools::Itertools;
-use lru_time_cache::LruCache;
 use resource_proof::ResourceProof;
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
-pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 256;
-pub(crate) const RESOURCE_PROOF_DIFF: u8 = 8;
-const RESOURCE_PROOF_ENTRIES: usize = 100;
+pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 128;
+pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 4;
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (adult or elder).
@@ -63,7 +62,6 @@ pub(crate) struct Approved {
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
     joins_allowed: bool,
     resource_proof: ResourceProof,
-    nonces: LruCache<XorName, [u8; 32]>,
 }
 
 impl Approved {
@@ -94,8 +92,7 @@ impl Approved {
             msg_filter: MessageFilter::new(),
             event_tx,
             joins_allowed: true,
-            resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF),
-            nonces: LruCache::with_capacity(RESOURCE_PROOF_ENTRIES),
+            resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
         }
     }
 
@@ -481,6 +478,10 @@ impl Approved {
                     }
                 }
             }
+            Variant::Challenge { .. } => {
+                // Already approved, no need to resolve challenge.
+                return Ok(MessageStatus::Useless);
+            }
             Variant::Sync { .. }
             | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
@@ -588,6 +589,10 @@ impl Approved {
                     }
                 }
 
+                Ok(vec![])
+            }
+            Variant::Challenge { .. } => {
+                trace!("Already got approved to join, no need to resolve challenge");
                 Ok(vec![])
             }
         }
@@ -1023,29 +1028,39 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
-        if let Some((solution, data)) = join_request.resource_proof {
-            if let Some(nonce) = self.nonces.get(peer.name()) {
-                if self.resource_proof.validate_all(nonce, &data, solution) {
-                    return self.vote(Vote::Online {
-                        member_info: MemberInfo::joined(peer.with_age(age)),
-                        previous_name,
-                        their_knowledge,
-                    });
-                }
+        if let Some(ResourceProofingProof {
+            solution,
+            data,
+            nonce,
+            signature,
+        }) = join_request.proof
+        {
+            let serialized = bincode::serialize(&(*peer.name(), nonce))?;
+            if self
+                .node
+                .keypair
+                .public
+                .verify(&serialized, &signature)
+                .is_ok()
+                && self.resource_proof.validate_all(&nonce, &data, solution)
+            {
+                return self.vote(Vote::Online {
+                    member_info: MemberInfo::joined(peer.with_age(age)),
+                    previous_name,
+                    their_knowledge,
+                });
             }
         }
 
         let nonce: [u8; 32] = rand::random();
-        let _ = self.nonces.insert(*peer.name(), nonce);
-        let response = BootstrapResponse::ResourceProof {
+        let serialized = bincode::serialize(&(*peer.name(), nonce))?;
+        let response = Variant::Challenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
-            difficulty: RESOURCE_PROOF_DIFF,
+            difficulty: RESOURCE_PROOF_DIFFICULTY,
             nonce,
+            signature: crypto::sign(&serialized, &self.node.keypair),
         };
-        Ok(vec![self.send_direct_message(
-            peer.addr(),
-            Variant::BootstrapResponse(response),
-        )?])
+        Ok(vec![self.send_direct_message(peer.addr(), response)?])
     }
 
     fn handle_dkg_start(

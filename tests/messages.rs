@@ -92,9 +92,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     // start a second node which sends a message to the first node
     let (node2, mut event_stream) = create_node(config_with_contact(node1_contact)).await?;
 
-    // We are in the startup phase, so node2 is instantly relocated. Let's wait until it re-joins.
-    assert_next_event!(event_stream, Event::RelocationStarted { .. });
-    assert_next_event!(event_stream, Event::Relocated { .. });
+    assert_event!(event_stream, Event::PromotedToElder);
 
     let node2_name = node2.name().await;
 

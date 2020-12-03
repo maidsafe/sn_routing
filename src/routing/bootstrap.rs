@@ -9,10 +9,10 @@
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
     consensus::Proven,
-    crypto,
+    crypto::{self, Signature},
     error::{Error, Result},
     location::DstLocation,
-    messages::{BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
+    messages::{BootstrapResponse, JoinRequest, Message, Proof, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -33,7 +33,7 @@ const BACKLOG_CAPACITY: usize = 100;
 /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
 /// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
 /// for example by using a timeout.
-pub(crate) async fn adult(
+pub(crate) async fn initial(
     node: Node,
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
@@ -155,12 +155,6 @@ impl<'a> State<'a> {
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
-                BootstrapResponse::ResourceProof { .. } => {
-                    error!(
-                        "{} Received an unexpected ResourceProof request from {:?}",
-                        self.node, sender,
-                    );
-                }
             }
         }
     }
@@ -236,7 +230,7 @@ impl<'a> State<'a> {
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
     // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
-    // completing the bootstrap. If it is `ResourceProff`, carries out a resource proof calculation.
+    // completing the bootstrap. If it is `Challenge`, carries out a resource proof calculation.
     async fn join(
         mut self,
         elders_info: EldersInfo,
@@ -246,7 +240,7 @@ impl<'a> State<'a> {
         let mut join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
-            resource_proof: None,
+            proof: None,
         };
         let mut recipients: Vec<_> = elders_info
             .elders
@@ -291,7 +285,7 @@ impl<'a> State<'a> {
                         join_request = JoinRequest {
                             section_key,
                             relocate_payload: relocate_payload.clone(),
-                            resource_proof: None,
+                            proof: None,
                         };
                         recipients = elders_info
                             .elders
@@ -306,19 +300,25 @@ impl<'a> State<'a> {
                         );
                     }
                 }
-                JoinResponse::ResourceProof {
+                JoinResponse::Challenge {
                     data_size,
                     difficulty,
                     nonce,
+                    signature,
                 } => {
                     let rp = ResourceProof::new(data_size, difficulty);
                     let data = rp.create_proof_data(&nonce);
                     let mut prover = rp.create_prover(data.clone());
-                    let proof = prover.solve();
+                    let solution = prover.solve();
                     join_request = JoinRequest {
                         section_key,
                         relocate_payload: relocate_payload.clone(),
-                        resource_proof: Some((proof, data)),
+                        proof: Some(Proof {
+                            solution,
+                            data,
+                            nonce,
+                            signature,
+                        }),
                     };
                     recipients.push(sender);
                 }
@@ -369,20 +369,22 @@ impl<'a> State<'a> {
                         sender,
                     ));
                 }
-                Variant::BootstrapResponse(BootstrapResponse::ResourceProof {
+                Variant::Challenge {
                     data_size,
                     difficulty,
                     nonce,
-                }) => {
+                    signature,
+                } => {
                     if !self.verify_message(&message, None) {
                         continue;
                     }
 
                     return Ok((
-                        JoinResponse::ResourceProof {
+                        JoinResponse::Challenge {
                             data_size: *data_size,
                             difficulty: *difficulty,
                             nonce: *nonce,
+                            signature: *signature,
                         },
                         sender,
                     ));
@@ -465,10 +467,11 @@ enum JoinResponse {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     },
-    ResourceProof {
+    Challenge {
         data_size: usize,
         difficulty: u8,
         nonce: [u8; 32],
+        signature: Signature,
     },
 }
 

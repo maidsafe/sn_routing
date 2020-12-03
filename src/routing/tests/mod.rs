@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF},
+    approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
     Approved, Comm, Command, Stage,
 };
 use crate::{
@@ -16,7 +16,10 @@ use crate::{
     event::Event,
     location::DstLocation,
     majority,
-    messages::{BootstrapResponse, JoinRequest, Message, PlainMessage, Variant},
+    messages::{
+        BootstrapResponse, JoinRequest, Message, PlainMessage, Proof as ResourceProofingProof,
+        Variant,
+    },
     network::Network,
     node::Node,
     peer::Peer,
@@ -94,7 +97,7 @@ async fn receive_join_request() -> Result<()> {
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
-            resource_proof: None,
+            proof: None,
         })),
         None,
         None,
@@ -113,13 +116,13 @@ async fn receive_join_request() -> Result<()> {
     );
     let response_message = Message::from_bytes(&response_message)?;
 
-    let nonce = assert_matches!(
+    let (nonce, signature) = assert_matches!(
         response_message.variant(),
-        Variant::BootstrapResponse(BootstrapResponse::ResourceProof { nonce, .. }) => nonce
+        Variant::Challenge { nonce, signature, .. } => (*nonce, *signature)
     );
 
-    let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFF);
-    let data = rp.create_proof_data(nonce);
+    let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
+    let data = rp.create_proof_data(&nonce);
     let mut prover = rp.create_prover(data.clone());
     let solution = prover.solve();
 
@@ -129,7 +132,12 @@ async fn receive_join_request() -> Result<()> {
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
-            resource_proof: Some((solution, data)),
+            proof: Some(ResourceProofingProof {
+                solution,
+                data,
+                nonce,
+                signature,
+            }),
         })),
         None,
         None,
@@ -220,27 +228,10 @@ async fn accumulate_votes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_during_startup_phase() -> Result<()> {
-    handle_consensus_on_online(NetworkPhase::Startup).await
-}
-
-#[tokio::test]
-async fn handle_consensus_on_online_after_startup_phase() -> Result<()> {
-    handle_consensus_on_online(NetworkPhase::Regular).await
-}
-
-enum NetworkPhase {
-    Startup,
-    Regular,
-}
-
-async fn handle_consensus_on_online(phase: NetworkPhase) -> Result<()> {
+async fn handle_consensus_on_online() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
-    let prefix = match phase {
-        NetworkPhase::Startup => Prefix::default(),
-        NetworkPhase::Regular => "0".parse().unwrap(),
-    };
+    let prefix = Prefix::default();
 
     let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
     let sk_set = SecretKeySet::random();
@@ -254,19 +245,12 @@ async fn handle_consensus_on_online(phase: NetworkPhase) -> Result<()> {
     let (node_approval_sent, relocate_age) =
         handle_online_command(&new_peer, &sk_set, &stage, elders_info).await?;
     assert!(node_approval_sent);
+    assert!(relocate_age.is_none());
 
-    match phase {
-        NetworkPhase::Startup => {
-            assert!(relocate_age.unwrap() > MIN_AGE);
-            assert!(event_rx.try_recv().is_err());
-        }
-        NetworkPhase::Regular => {
-            assert_matches!(event_rx.try_recv(), Ok(Event::MemberJoined { name, age, .. }) => {
-                assert_eq!(name, *new_peer.name());
-                assert_eq!(age, MIN_AGE);
-            });
-        }
-    }
+    assert_matches!(event_rx.try_recv(), Ok(Event::MemberJoined { name, age, .. }) => {
+        assert_eq!(name, *new_peer.name());
+        assert_eq!(age, MIN_AGE);
+    });
 
     Ok(())
 }
@@ -444,6 +428,11 @@ async fn handle_online_command(
     Ok((node_approval_sent, relocate_age))
 }
 
+enum NetworkPhase {
+    Startup,
+    Regular,
+}
+
 async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u8) -> Result<()> {
     let prefix = match phase {
         NetworkPhase::Startup => Prefix::default(),
@@ -472,13 +461,11 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let (node_approval_sent, relocate_age) =
         handle_online_command(&peer, &sk_set, &stage, elders_info).await?;
     assert!(event_rx.try_recv().is_err());
-    // After startup, a rejoin node with low age will be rejected.
-    if let NetworkPhase::Regular = phase {
-        if age / 2 <= MIN_AGE {
-            assert!(!node_approval_sent);
-            assert!(relocate_age.is_none());
-            return Ok(());
-        }
+    // A rejoin node with low age will be rejected.
+    if age / 2 <= MIN_AGE {
+        assert!(!node_approval_sent);
+        assert!(relocate_age.is_none());
+        return Ok(());
     }
     assert!(node_approval_sent);
     let expected_age = cmp::max(MIN_AGE, age / 2);

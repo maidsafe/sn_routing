@@ -14,7 +14,7 @@ mod variant;
 pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
     plain_message::PlainMessage,
-    variant::{BootstrapResponse, JoinRequest, Variant},
+    variant::{BootstrapResponse, JoinRequest, Proof, Variant},
 };
 use crate::{
     crypto::{self, name, Verifier},
