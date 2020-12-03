@@ -92,11 +92,6 @@ impl SectionPeers {
             .unwrap_or(false)
     }
 
-    /// Returns whether the given peer is known to us (joined or left)
-    pub fn is_known(&self, name: &XorName) -> bool {
-        self.members.contains_key(name)
-    }
-
     /// Update a member of our section.
     /// Returns whether anything actually changed.
     pub fn update(&mut self, new_info: Proven<MemberInfo>) -> bool {

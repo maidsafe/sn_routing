@@ -15,18 +15,12 @@ use crate::{
     network::Network,
     peer::Peer,
     section::{MemberInfo, Section},
-    MIN_AGE,
 };
 use bytes::Bytes;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use std::{convert::TryInto, net::SocketAddr, ops::Range};
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::XorName;
-
-// Range from which the age of a joining node is selected during the startup phase.
-pub(crate) const STARTUP_PHASE_AGE_RANGE: Range<u8> = (MIN_AGE + 1)..32;
 
 /// Find all nodes to relocate after a churn event and create the relocate actions for them.
 pub(crate) fn actions(
@@ -268,16 +262,6 @@ pub(crate) fn check(age: u8, churn_signature: &bls::Signature) -> bool {
     trailing_zeros(&churn_signature.to_bytes()[..]) >= age as u32
 }
 
-// Generate age for relocated peer during the starup phase, using the `Online` vote signature as
-// the random seed.
-pub(crate) fn startup_phase_age(signature: &bls::Signature) -> u8 {
-    let seed = signature.to_bytes()[..32]
-        .try_into()
-        .expect("invalid signature length");
-    let mut rng = ChaCha8Rng::from_seed(seed);
-    rng.gen_range(STARTUP_PHASE_AGE_RANGE.start, STARTUP_PHASE_AGE_RANGE.end)
-}
-
 // Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
 // the name of the joined/left node that triggered the relocation.
 fn destination(relocating_name: &XorName, churn_name: &XorName) -> XorName {
@@ -316,13 +300,13 @@ mod tests {
     use super::*;
     use crate::{
         consensus::test_utils::proven, peer::test_utils::arbitrary_unique_peers,
-        section::EldersInfo, SectionProofChain, ELDER_SIZE,
+        section::EldersInfo, SectionProofChain, ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
     use assert_matches::assert_matches;
     use itertools::Itertools;
     use proptest::prelude::*;
-    use rand::rngs::SmallRng;
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
     use xor_name::Prefix;
 
     #[test]

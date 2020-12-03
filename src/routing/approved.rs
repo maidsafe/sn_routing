@@ -1130,25 +1130,6 @@ impl Approved {
         Ok(commands)
     }
 
-    fn relocate_peer_in_startup_phase(
-        &self,
-        peer: Peer,
-        signature: &bls::Signature,
-    ) -> Result<Vec<Command>> {
-        let age = relocation::startup_phase_age(signature);
-        let details =
-            RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
-
-        trace!(
-            "Relocating {:?} to {} with age {} in startup phase",
-            peer,
-            details.destination,
-            details.age
-        );
-
-        self.send_relocate(&peer, details)
-    }
-
     fn relocate_rejoining_peer(&self, peer: Peer, age: u8) -> Result<Vec<Command>> {
         let details =
             RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
@@ -1195,9 +1176,8 @@ impl Approved {
                 );
                 return Ok(commands);
             }
-            // To avoid during startup_phase, a rejoin node being given a randmly higher age,
-            // force it to be halved.
-            if is_startup_phase || info.peer.age() / 2 > MIN_AGE {
+
+            if info.peer.age() / 2 > MIN_AGE {
                 // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
                 // to send this `NodeApproval`.
                 commands.push(self.send_node_approval(&peer, their_knowledge)?);
@@ -1208,45 +1188,28 @@ impl Approved {
             }
         }
 
-        if is_startup_phase && peer.age() <= MIN_AGE {
-            // In startup phase, instantly relocate the joining peer in order to promote it to
-            // adult.
-
-            if self.section.members().is_known(peer.name()) {
-                info!("ignore Online: {:?}", peer);
-                return Ok(vec![]);
-            }
-
-            // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
-            // to send this `NodeApproval`.
-            commands.push(self.send_node_approval(&peer, their_knowledge)?);
-            commands.extend(self.relocate_peer_in_startup_phase(peer, &signature)?);
-        } else {
-            // Post startup phase, add the new peer normally.
-
-            if !self.section.update_member(Proven {
-                value: member_info,
-                proof,
-            }) {
-                info!("ignore Online: {:?}", peer);
-                return Ok(vec![]);
-            }
-
-            info!("handle Online: {:?}", peer);
-
-            commands.push(self.send_node_approval(&peer, their_knowledge)?);
-            commands.extend(self.relocate_peers(peer.name(), &signature)?);
-            commands.extend(self.promote_and_demote_elders()?);
-
-            self.send_event(Event::MemberJoined {
-                name: *peer.name(),
-                previous_name,
-                age: peer.age(),
-                startup_relocation: is_startup_phase,
-            });
-
-            self.print_network_stats();
+        if !self.section.update_member(Proven {
+            value: member_info,
+            proof,
+        }) {
+            info!("ignore Online: {:?}", peer);
+            return Ok(vec![]);
         }
+
+        info!("handle Online: {:?}", peer);
+
+        commands.push(self.send_node_approval(&peer, their_knowledge)?);
+        commands.extend(self.relocate_peers(peer.name(), &signature)?);
+        commands.extend(self.promote_and_demote_elders()?);
+
+        self.send_event(Event::MemberJoined {
+            name: *peer.name(),
+            previous_name,
+            age: peer.age(),
+            startup_relocation: is_startup_phase,
+        });
+
+        self.print_network_stats();
 
         Ok(commands)
     }

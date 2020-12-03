@@ -97,9 +97,7 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
             let (node, mut event_stream) =
                 create_node(config_with_contact(genesis_contact)).await?;
 
-            // During the startup phase, joining nodes are instantly relocated.
-            assert_next_event!(event_stream, Event::RelocationStarted { .. });
-            assert_next_event!(event_stream, Event::Relocated { .. });
+            assert_event!(event_stream, Event::PromotedToElder);
 
             Ok::<_, Error>(node)
         })
