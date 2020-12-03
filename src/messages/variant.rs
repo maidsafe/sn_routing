@@ -8,7 +8,7 @@
 
 use super::{Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{DkgKey, ProofShare, Proven, Vote},
+    consensus::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proven, Vote},
     crypto::Signature,
     error::{Error, Result},
     network::Network,
@@ -90,6 +90,17 @@ pub(crate) enum Variant {
         dkg_key: DkgKey,
         /// The DKG message.
         message: DkgMessage,
+    },
+    /// Broadcasted to the other DKG participants when a DKG failure is observed.
+    DKGFailureObservation {
+        dkg_key: DkgKey,
+        proof: DkgFailureProof,
+    },
+    /// Sent to the current elders by the DKG participants when at least majority of them observe
+    /// a DKG failure.
+    DKGFailureAgreement {
+        elders_info: EldersInfo,
+        proofs: DkgFailureProofSet,
     },
     /// Message containing a single `Vote` to be accumulated in the vote accumulator.
     Vote {
@@ -187,6 +198,19 @@ impl Debug for Variant {
                 .debug_struct("DKGMessage")
                 .field("dkg_key", &dkg_key)
                 .field("message", message)
+                .finish(),
+            Self::DKGFailureObservation { dkg_key, proof } => f
+                .debug_struct("DKGFailureObservation")
+                .field("dkg_key", dkg_key)
+                .field("proof", proof)
+                .finish(),
+            Self::DKGFailureAgreement {
+                elders_info,
+                proofs,
+            } => f
+                .debug_struct("DKGFailureAgreement")
+                .field("elders_info", elders_info)
+                .field("proofs", proofs)
                 .finish(),
             Self::Vote {
                 content,

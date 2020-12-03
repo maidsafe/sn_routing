@@ -59,3 +59,22 @@ pub fn gen_keypair_within_range(range: &RangeInclusive<XorName>) -> Keypair {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+    use ed25519_dalek::SECRET_KEY_LENGTH;
+    use proptest::prelude::*;
+
+    pub(crate) fn arbitrary_keypair() -> impl Strategy<Value = Keypair> {
+        any::<[u8; SECRET_KEY_LENGTH]>().prop_map(|bytes| {
+            // OK to unwrap because `from_bytes` returns error only if the input slice has incorrect
+            // length. But here we only generate arrays of size `SECRET_KEY_LENGTH` which is the
+            // correct one.
+            let secret = SecretKey::from_bytes(&bytes[..]).unwrap();
+            let public = PublicKey::from(&secret);
+
+            Keypair { public, secret }
+        })
+    }
+}

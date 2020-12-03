@@ -9,8 +9,8 @@
 use super::{Command, SplitBarrier};
 use crate::{
     consensus::{
-        AccumulationError, DkgCommands, DkgKey, DkgVoter, Proof, ProofShare, Proven, Vote,
-        VoteAccumulator,
+        AccumulationError, DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter,
+        Proof, ProofShare, Proven, Vote, VoteAccumulator,
     },
     crypto, delivery_group,
     error::{Error, Result},
@@ -164,7 +164,7 @@ impl Approved {
 
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
         self.dkg_voter
-            .handle_timeout(self.node.name(), token)
+            .handle_timeout(&self.node.keypair, token)
             .into_commands(&self.node)
     }
 
@@ -271,6 +271,20 @@ impl Approved {
         }
 
         result
+    }
+
+    pub fn handle_dkg_failure(
+        &mut self,
+        elders_info: EldersInfo,
+        proofs: DkgFailureProofSet,
+    ) -> Result<Command> {
+        let variant = Variant::DKGFailureAgreement {
+            elders_info,
+            proofs,
+        };
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+
+        Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 
     // Send vote to all our elders.
@@ -446,6 +460,8 @@ impl Approved {
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGMessage { .. }
+            | Variant::DKGFailureObservation { .. }
+            | Variant::DKGFailureAgreement { .. }
             | Variant::ResourceChallenge { .. } => {}
         }
 
@@ -520,6 +536,17 @@ impl Approved {
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
+            Variant::DKGFailureObservation { dkg_key, proof } => {
+                self.handle_dkg_failure_observation(*dkg_key, *proof)
+            }
+            Variant::DKGFailureAgreement {
+                elders_info,
+                proofs,
+            } => self.handle_dkg_failure_agreement(
+                &msg.src().to_node_name()?,
+                elders_info.clone(),
+                proofs,
+            ),
             Variant::Vote {
                 content,
                 proof_share,
@@ -1077,7 +1104,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start(self.node.name(), dkg_key, new_elders_info)
+            .start(&self.node.keypair, dkg_key, new_elders_info)
             .into_commands(&self.node)
     }
 
@@ -1090,8 +1117,59 @@ impl Approved {
         trace!("handle DKG message {:?} from {}", message, sender);
 
         self.dkg_voter
-            .process_message(self.node.name(), dkg_key, message)
+            .process_message(&self.node.keypair, dkg_key, message)
             .into_commands(&self.node)
+    }
+
+    fn handle_dkg_failure_observation(
+        &mut self,
+        dkg_key: DkgKey,
+        proof: DkgFailureProof,
+    ) -> Result<Vec<Command>> {
+        self.dkg_voter
+            .process_failure(dkg_key, proof)
+            .into_commands(&self.node)
+    }
+
+    fn handle_dkg_failure_agreement(
+        &self,
+        sender: &XorName,
+        elders_info: EldersInfo,
+        proofs: &DkgFailureProofSet,
+    ) -> Result<Vec<Command>> {
+        let sender = &self
+            .section
+            .members()
+            .get(sender)
+            .ok_or(Error::InvalidSource)?
+            .peer;
+
+        if !proofs.verify(&elders_info) {
+            error!(
+                "Ignore DKG failure agreement with invalid proofs: {}",
+                elders_info
+            );
+            return Ok(vec![]);
+        }
+
+        if !self
+            .section
+            .promote_and_demote_elders(&self.node.name())
+            .contains(&elders_info)
+        {
+            trace!(
+                "Ignore DKG failure agreement for outdated participants: {}",
+                elders_info
+            );
+            return Ok(vec![]);
+        }
+
+        trace!(
+            "Received DKG failure agreement - restarting: {}",
+            elders_info
+        );
+
+        self.send_dkg_start_to(elders_info, slice::from_ref(sender))
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
@@ -1618,19 +1696,26 @@ impl Approved {
         self.relay_message(&msg)
     }
 
-    fn send_dkg_start(&mut self, elders_info: EldersInfo) -> Result<Vec<Command>> {
-        trace!("Send DKGStart for {}", elders_info);
-
-        let dkg_key = DkgKey::new(&elders_info);
-
+    fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
         // Send to all participants.
         let recipients: Vec<_> = elders_info.elders.values().copied().collect();
+        self.send_dkg_start_to(elders_info, &recipients)
+    }
+
+    fn send_dkg_start_to(
+        &self,
+        elders_info: EldersInfo,
+        recipients: &[Peer],
+    ) -> Result<Vec<Command>> {
+        trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
+
+        let dkg_key = DkgKey::new(&elders_info);
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-        self.send_vote(&recipients, vote)
+        self.send_vote(recipients, vote)
     }
 
     // Send message over the network.

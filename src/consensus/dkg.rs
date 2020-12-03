@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::Digest256,
+    crypto::{self, Digest256, Keypair, PublicKey, Signature, Verifier},
     error::Result,
     majority,
     messages::{Message, Variant},
@@ -24,10 +24,11 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     fmt::{self, Debug, Formatter},
+    iter, mem,
     net::SocketAddr,
     time::Duration,
 };
-use xor_name::XorName;
+use tiny_keccak::{Hasher, Sha3};
 
 // Interval to progress DKG timed phase
 const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
@@ -40,8 +41,6 @@ pub struct DkgKey(Digest256);
 
 impl DkgKey {
     pub fn new(elders_info: &EldersInfo) -> Self {
-        use tiny_keccak::{Hasher, Sha3};
-
         // Calculate the hash without involving serialization to avoid having to return `Result`.
         let mut hasher = Sha3::v256();
         let mut output = Digest256::default();
@@ -53,21 +52,6 @@ impl DkgKey {
 
         hasher.update(&elders_info.prefix.name().0);
         hasher.update(&elders_info.prefix.bit_count().to_le_bytes());
-        hasher.finalize(&mut output);
-
-        Self(output)
-    }
-
-    // Create a new `DkgKey` to be used to retry a previously failed DKG session. This key is
-    // deterministically derived from `self`, so different DKG participants that fail at different
-    // times end up using the same retried key.
-    pub fn retry(&self) -> Self {
-        use tiny_keccak::{Hasher, Sha3};
-
-        let mut hasher = Sha3::v256();
-        let mut output = Digest256::default();
-
-        hasher.update(&self.0);
         hasher.finalize(&mut output);
 
         Self(output)
@@ -91,7 +75,7 @@ impl Debug for DkgKey {
 /// 3. When the `DKGStart` message accumulates, the participants call `start`.
 /// 4. The participants keep exchanging the DKG messages and calling `process_message`.
 /// 5. On DKG completion, the participants send `DKGResult` vote to the current elders (observers)
-/// 6. When the observers accumulate the votesm the can proceed with voting for the section update.
+/// 6. When the observers accumulate the votes, they can proceed with voting for the section update.
 ///
 /// Note: in case of heavy churn, it can happen that more than one DKG session completes
 /// successfully. Some kind of disambiguation strategy needs to be employed in that case, but that
@@ -118,23 +102,24 @@ impl DkgVoter {
     // Starts a new DKG session.
     pub fn start(
         &mut self,
-        our_name: XorName,
+        keypair: &Keypair,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
     ) -> Vec<DkgCommand> {
         if let Some(session) = &self.session {
-            if session.dkg_key == dkg_key && session.elders_info.is_some() {
+            if session.dkg_key == dkg_key && !session.complete {
                 trace!("DKG for {} already in progress", elders_info);
                 return vec![];
             }
         }
 
-        let index = if let Some(index) = elders_info.position(&our_name) {
+        let name = crypto::name(&keypair.public);
+        let index = if let Some(index) = elders_info.position(&name) {
             index
         } else {
             error!(
                 "DKG for {} failed to start: {} is not a participant",
-                elders_info, our_name
+                elders_info, name
             );
             return vec![];
         };
@@ -153,31 +138,6 @@ impl DkgVoter {
             }];
         }
 
-        // Keep trying to initialize until we succeed. This should always terminate in a finite
-        // number of iterations (usually small).
-        let mut next_dkg_key = dkg_key;
-        let mut next_elders_info = elders_info;
-
-        loop {
-            match self.try_initialize(our_name, next_dkg_key, next_elders_info, index) {
-                Ok(commands) => break commands,
-                Err(elders_info) => {
-                    next_dkg_key = next_dkg_key.retry();
-                    next_elders_info = elders_info;
-                }
-            }
-        }
-    }
-
-    // Try to initialize a DKG session. If it succeeds, returns a list of `DkgCommand`s to apply.
-    // On failure gives back `elders_info` so it can be used again to retry, avoiding a clone.
-    fn try_initialize(
-        &mut self,
-        our_name: XorName,
-        dkg_key: DkgKey,
-        elders_info: EldersInfo,
-        index: usize,
-    ) -> Result<Vec<DkgCommand>, EldersInfo> {
         let threshold = majority(elders_info.elders.len()) - 1;
         let participants = elders_info
             .elders
@@ -186,209 +146,261 @@ impl DkgVoter {
             .copied()
             .collect();
 
-        match KeyGen::initialize(our_name, threshold, participants) {
+        match KeyGen::initialize(name, threshold, participants) {
             Ok((key_gen, message)) => {
                 trace!("DKG for {} starting", elders_info);
 
                 let mut session = Session {
                     dkg_key,
                     key_gen,
-                    elders_info: Some(elders_info),
+                    elders_info,
                     index,
                     timer_token: 0,
+                    failures: Default::default(),
+                    complete: false,
                 };
 
                 let mut commands = vec![];
-                commands.extend(session.broadcast(dkg_key, message));
+                commands.extend(session.broadcast(keypair, message));
                 commands.extend(
                     self.backlog
                         .take(&dkg_key)
                         .into_iter()
-                        .flat_map(|message| session.process_message(dkg_key, message)),
+                        .flat_map(|message| session.process_message(keypair, message)),
                 );
 
-                match session.check() {
-                    None => {
-                        commands.push(session.reset_timer());
-                        self.session = Some(session);
-                        Ok(commands)
-                    }
-                    Some(Status::Success {
-                        elders_info,
-                        outcome,
-                    }) => {
-                        // Already completed.
-                        commands.push(DkgCommand::HandleOutcome {
-                            elders_info,
-                            outcome,
-                        });
-                        Ok(commands)
-                    }
-                    Some(Status::Failure { elders_info, .. }) => {
-                        // This might happen if processing the backlogged messages causes failure.
-                        // We retry the initialization when this happens, but using a different DKG
-                        // key so we won't process the same backlog again. Thus the process should
-                        // eventually terminate.
-                        Err(elders_info)
-                    }
-                }
+                self.session = Some(session);
+
+                commands
             }
             Err(error) => {
                 // TODO: return a separate error here.
                 error!("DKG for {} failed to start: {}", elders_info, error);
-                Ok(vec![])
+                vec![]
             }
         }
     }
 
     // Make key generator progress with timed phase.
-    pub fn handle_timeout(&mut self, our_name: XorName, timer_token: u64) -> Vec<DkgCommand> {
-        let session = if let Some(session) = self.session.as_mut() {
-            session
+    pub fn handle_timeout(&mut self, keypair: &Keypair, timer_token: u64) -> Vec<DkgCommand> {
+        if let Some(session) = self.session.as_mut() {
+            session.handle_timeout(keypair, timer_token)
         } else {
-            return vec![];
-        };
-
-        if session.timer_token != timer_token {
-            return vec![];
-        }
-
-        let elders_info = if let Some(elders_info) = session.elders_info.as_ref() {
-            elders_info
-        } else {
-            return vec![];
-        };
-
-        let dkg_key = session.dkg_key;
-
-        trace!("DKG for {} progressing", elders_info);
-
-        match session
-            .key_gen
-            .timed_phase_transition(&mut rand::thread_rng())
-        {
-            Ok(messages) => {
-                let mut commands = vec![];
-
-                for message in messages {
-                    commands.extend(session.broadcast(dkg_key, message));
-                }
-                commands.push(session.reset_timer());
-                commands.extend(self.check(our_name));
-                commands
-            }
-            Err(error) => {
-                trace!("DKG for {} failed: {}", elders_info, error);
-
-                let elders_info = session.elders_info.take().unwrap();
-
-                // Restart on failure.
-                self.start(our_name, dkg_key.retry(), elders_info)
-            }
+            vec![]
         }
     }
 
     // Handle a received DkgMessage.
     pub fn process_message(
         &mut self,
-        our_name: XorName,
+        keypair: &Keypair,
         dkg_key: DkgKey,
         message: DkgMessage,
     ) -> Vec<DkgCommand> {
-        let session = if let Some(session) = self
+        if let Some(session) = self
             .session
             .as_mut()
             .filter(|session| session.dkg_key == dkg_key)
         {
-            session
+            session.process_message(keypair, message)
         } else {
             self.backlog.push(dkg_key, message);
-            return vec![];
-        };
-
-        let mut commands = session.process_message(dkg_key, message);
-
-        // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
-        if !commands.is_empty() {
-            commands.push(session.reset_timer());
+            vec![]
         }
-
-        commands.extend(self.check(our_name));
-        commands
     }
 
-    // Check whether a key generator is finalized to give a DKG outcome.
-    fn check(&mut self, our_name: XorName) -> Vec<DkgCommand> {
-        match self.session.as_mut().and_then(|session| session.check()) {
-            Some(Status::Success {
-                elders_info,
-                outcome,
-            }) => vec![DkgCommand::HandleOutcome {
-                elders_info,
-                outcome,
-            }],
-            Some(Status::Failure {
-                dkg_key,
-                elders_info,
-            }) => {
-                // Restart on failure.
-                self.start(our_name, dkg_key.retry(), elders_info)
-            }
-            None => vec![],
-        }
+    pub fn process_failure(
+        &mut self,
+        dkg_key: DkgKey,
+        proof: DkgFailureProof,
+    ) -> Option<DkgCommand> {
+        self.session
+            .as_mut()
+            .filter(|session| session.dkg_key == dkg_key)?
+            .process_failure(proof)
     }
 }
 
 // Data for a DKG participant.
 struct Session {
-    // `None` means the session is completed.
-    elders_info: Option<EldersInfo>,
+    elders_info: EldersInfo,
     // Our participant index.
     index: usize,
     dkg_key: DkgKey,
     key_gen: KeyGen,
     timer_token: u64,
+    failures: DkgFailureProofSet,
+    // Flag to track whether this session has completed (either with success or failure). We don't
+    // remove complete sessions because the other participants might still need us to respond to
+    // their messages.
+    complete: bool,
 }
 
 impl Session {
-    fn process_message(&mut self, dkg_key: DkgKey, message: DkgMessage) -> Vec<DkgCommand> {
+    fn process_message(&mut self, keypair: &Keypair, message: DkgMessage) -> Vec<DkgCommand> {
         trace!("process DKG message {:?}", message);
         let responses = self
             .key_gen
             .handle_message(&mut rand::thread_rng(), message)
             .unwrap_or_default();
 
-        responses
+        // Only a valid DkgMessage, which results in some responses, shall reset the ticker.
+        let reset_timer = if responses.is_empty() {
+            None
+        } else {
+            Some(self.reset_timer())
+        };
+
+        let mut commands: Vec<_> = responses
             .into_iter()
-            .flat_map(|response| self.broadcast(dkg_key, response))
-            .collect()
+            .flat_map(|response| self.broadcast(keypair, response))
+            .chain(reset_timer)
+            .collect();
+        commands.extend(self.check(keypair));
+        commands
     }
 
-    fn broadcast(&mut self, dkg_key: DkgKey, message: DkgMessage) -> Vec<DkgCommand> {
-        let mut commands = vec![];
-
-        let recipients: Vec<_> = self
-            .elders_info
-            .as_ref()
-            .into_iter()
-            .flat_map(EldersInfo::peers)
+    fn recipients(&self) -> Vec<SocketAddr> {
+        self.elders_info
+            .peers()
             .enumerate()
             .filter(|(index, _)| *index != self.index)
             .map(|(_, peer)| peer.addr())
             .copied()
-            .collect();
+            .collect()
+    }
 
+    fn broadcast(&mut self, keypair: &Keypair, message: DkgMessage) -> Vec<DkgCommand> {
+        let mut commands = vec![];
+
+        let recipients = self.recipients();
         if !recipients.is_empty() {
             trace!("broadcasting DKG message {:?} to {:?}", message, recipients);
             commands.push(DkgCommand::SendMessage {
                 recipients,
-                dkg_key,
+                dkg_key: self.dkg_key,
                 message: message.clone(),
             });
         }
 
-        commands.extend(self.process_message(dkg_key, message));
+        commands.extend(self.process_message(keypair, message));
         commands
+    }
+
+    fn handle_timeout(&mut self, keypair: &Keypair, timer_token: u64) -> Vec<DkgCommand> {
+        if self.timer_token != timer_token {
+            return vec![];
+        }
+
+        if self.complete {
+            return vec![];
+        }
+
+        trace!("DKG for {} progressing", self.elders_info);
+
+        match self.key_gen.timed_phase_transition(&mut rand::thread_rng()) {
+            Ok(messages) => {
+                let mut commands: Vec<_> = messages
+                    .into_iter()
+                    .flat_map(|message| self.broadcast(keypair, message))
+                    .collect();
+                commands.push(self.reset_timer());
+                commands.extend(self.check(keypair));
+                commands
+            }
+            Err(error) => {
+                trace!("DKG for {} failed: {}", self.elders_info, error);
+                self.report_failure(keypair)
+            }
+        }
+    }
+
+    // Check whether a key generator is finalized to give a DKG outcome.
+    fn check(&mut self, keypair: &Keypair) -> Vec<DkgCommand> {
+        if self.complete {
+            return vec![];
+        }
+
+        if !self.key_gen.is_finalized() {
+            return vec![];
+        }
+
+        let (participants, outcome) = if let Some(tuple) = self.key_gen.generate_keys() {
+            tuple
+        } else {
+            return vec![];
+        };
+
+        if participants.iter().eq(self.elders_info.elders.keys()) {
+            trace!(
+                "DKG for {} complete: {:?}",
+                self.elders_info,
+                outcome.public_key_set.public_key()
+            );
+
+            self.complete = true;
+
+            let outcome = SectionKeyShare {
+                public_key_set: outcome.public_key_set,
+                index: self.index,
+                secret_key_share: outcome.secret_key_share,
+            };
+
+            vec![DkgCommand::HandleOutcome {
+                elders_info: self.elders_info.clone(),
+                outcome,
+            }]
+        } else {
+            trace!(
+                "DKG for {} failed: unexpected participants: {:?}",
+                self.elders_info,
+                participants.iter().format(", ")
+            );
+
+            self.report_failure(keypair)
+        }
+    }
+
+    fn report_failure(&mut self, keypair: &Keypair) -> Vec<DkgCommand> {
+        let proof = DkgFailureProof::new(keypair, &self.dkg_key);
+
+        if !self.failures.insert(proof) {
+            return vec![];
+        }
+
+        self.check_failure_agreement()
+            .into_iter()
+            .chain(iter::once(DkgCommand::SendFailureObservation {
+                recipients: self.recipients(),
+                dkg_key: self.dkg_key,
+                proof,
+            }))
+            .collect()
+    }
+
+    fn process_failure(&mut self, proof: DkgFailureProof) -> Option<DkgCommand> {
+        if !proof.verify(&self.dkg_key) {
+            return None;
+        }
+
+        if !self.failures.insert(proof) {
+            return None;
+        }
+
+        self.check_failure_agreement()
+    }
+
+    fn check_failure_agreement(&mut self) -> Option<DkgCommand> {
+        if self.failures.has_agreement(&self.elders_info) {
+            self.complete = true;
+
+            Some(DkgCommand::HandleFailureAgreement {
+                elders_info: self.elders_info.clone(),
+                proofs: mem::take(&mut self.failures),
+            })
+        } else {
+            None
+        }
     }
 
     fn reset_timer(&mut self) -> DkgCommand {
@@ -398,57 +410,80 @@ impl Session {
             token: self.timer_token,
         }
     }
+}
 
-    // Check whether a key generator is finalized to give a DKG outcome.
-    fn check(&mut self) -> Option<Status> {
-        if !self.key_gen.is_finalized() {
-            return None;
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub(crate) struct DkgFailureProof {
+    public_key: PublicKey,
+    signature: Signature,
+}
+
+impl DkgFailureProof {
+    fn new(keypair: &Keypair, dkg_key: &DkgKey) -> Self {
+        Self {
+            public_key: keypair.public,
+            signature: crypto::sign(&failure_proof_hash(dkg_key), keypair),
         }
+    }
 
-        let (participants, outcome) = self.key_gen.generate_keys()?;
-        let elders_info = self.elders_info.take()?;
-
-        if participants.iter().eq(elders_info.elders.keys()) {
-            trace!(
-                "DKG for {} complete: {:?}",
-                elders_info,
-                outcome.public_key_set.public_key()
-            );
-
-            let outcome = SectionKeyShare {
-                public_key_set: outcome.public_key_set,
-                index: self.index,
-                secret_key_share: outcome.secret_key_share,
-            };
-
-            Some(Status::Success {
-                elders_info,
-                outcome,
-            })
-        } else {
-            trace!(
-                "DKG for {} failed: unexpected participants: {:?}",
-                elders_info,
-                participants.iter().format(", ")
-            );
-
-            Some(Status::Failure {
-                dkg_key: self.dkg_key,
-                elders_info,
-            })
-        }
+    fn verify(&self, dkg_key: &DkgKey) -> bool {
+        let hash = failure_proof_hash(dkg_key);
+        self.public_key.verify(&hash, &self.signature).is_ok()
     }
 }
 
-enum Status {
-    Success {
-        elders_info: EldersInfo,
-        outcome: SectionKeyShare,
-    },
-    Failure {
-        dkg_key: DkgKey,
-        elders_info: EldersInfo,
-    },
+#[derive(Default, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub(crate) struct DkgFailureProofSet(Vec<DkgFailureProof>);
+
+impl DkgFailureProofSet {
+    fn insert(&mut self, proof: DkgFailureProof) -> bool {
+        if self
+            .0
+            .iter()
+            .all(|existing_proof| existing_proof.public_key != proof.public_key)
+        {
+            self.0.push(proof);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn has_agreement(&self, elders_info: &EldersInfo) -> bool {
+        self.0.len() >= majority(elders_info.elders.len())
+    }
+
+    pub fn verify(&self, elders_info: &EldersInfo) -> bool {
+        let hash = failure_proof_hash(&DkgKey::new(elders_info));
+        let votes = self
+            .0
+            .iter()
+            .filter(|proof| {
+                elders_info
+                    .elders
+                    .contains_key(&crypto::name(&proof.public_key))
+            })
+            .filter(|proof| proof.public_key.verify(&hash, &proof.signature).is_ok())
+            .count();
+
+        votes >= majority(elders_info.elders.len())
+    }
+}
+
+// Create a value whose signature serves as the proof that a failure of a DKG session with the given
+// `dkg_key` was observed.
+fn failure_proof_hash(dkg_key: &DkgKey) -> Digest256 {
+    // Scramble the bytes by XOR-ing them with this, so that the signature of the resulting digest
+    // is different from a signature of just the `dkg_key`.
+    const SCRAMBLE: &[u8] = b"failure";
+
+    let mut output = dkg_key.0;
+
+    for (o, s) in output.iter_mut().zip(SCRAMBLE.iter().cycle()) {
+        *o ^= s;
+    }
+
+    output
 }
 
 struct Backlog(VecDeque<(DkgKey, DkgMessage)>);
@@ -499,6 +534,15 @@ pub(crate) enum DkgCommand {
         elders_info: EldersInfo,
         outcome: SectionKeyShare,
     },
+    SendFailureObservation {
+        recipients: Vec<SocketAddr>,
+        dkg_key: DkgKey,
+        proof: DkgFailureProof,
+    },
+    HandleFailureAgreement {
+        elders_info: EldersInfo,
+        proofs: DkgFailureProofSet,
+    },
 }
 
 impl DkgCommand {
@@ -528,6 +572,27 @@ impl DkgCommand {
                 elders_info,
                 outcome,
             }),
+            Self::SendFailureObservation {
+                recipients,
+                dkg_key,
+                proof,
+            } => {
+                let variant = Variant::DKGFailureObservation { dkg_key, proof };
+                let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
+
+                Ok(Command::send_message_to_targets(
+                    &recipients,
+                    recipients.len(),
+                    message.to_bytes(),
+                ))
+            }
+            Self::HandleFailureAgreement {
+                elders_info,
+                proofs,
+            } => Ok(Command::HandleDkgFailure {
+                elders_info,
+                proofs,
+            }),
         }
     }
 }
@@ -556,7 +621,7 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        peer::test_utils::arbitrary_unique_peers, section::test_utils::gen_addr, ELDER_SIZE,
+        node::test_utils::arbitrary_unique_nodes, section::test_utils::gen_addr, ELDER_SIZE,
         MIN_AGE,
     };
     use assert_matches::assert_matches;
@@ -588,11 +653,11 @@ mod tests {
 
         let mut voter = DkgVoter::default();
 
-        let peer = Peer::new(rand::random(), gen_addr(), MIN_AGE);
-        let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
+        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());
         let dkg_key = DkgKey::new(&elders_info);
 
-        let commands = voter.start(*peer.name(), dkg_key, elders_info);
+        let commands = voter.start(&node.keypair, dkg_key, elders_info);
         assert_matches!(&commands[..], &[DkgCommand::HandleOutcome { .. }]);
     }
 
@@ -601,26 +666,28 @@ mod tests {
         // Expect the session to successfully complete without timed transitions.
         // NOTE: `seed` is for seeding the rng that randomizes the message order.
         #[test]
-        fn proptest_full_participation(peers in arbitrary_elder_peers(), seed in any::<u64>()) {
-            proptest_full_participation_impl(peers, seed)
+        fn proptest_full_participation(nodes in arbitrary_elder_nodes(), seed in any::<u64>()) {
+            proptest_full_participation_impl(nodes, seed)
         }
     }
 
-    fn proptest_full_participation_impl(peers: Vec<Peer>, seed: u64) {
+    fn proptest_full_participation_impl(nodes: Vec<Node>, seed: u64) {
         // Rng used to randomize the message order.
         let mut rng = SmallRng::seed_from_u64(seed);
         let mut messages = Vec::new();
 
-        let mut actors: HashMap<_, _> = peers
-            .iter()
-            .map(|peer| (*peer.addr(), Actor::new(*peer.name())))
-            .collect();
-
-        let elders_info = EldersInfo::new(peers, Prefix::default());
+        let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
         let dkg_key = DkgKey::new(&elders_info);
 
+        let mut actors: HashMap<_, _> = nodes
+            .into_iter()
+            .map(|node| (node.addr, Actor::new(node)))
+            .collect();
+
         for actor in actors.values_mut() {
-            let commands = actor.voter.start(actor.name, dkg_key, elders_info.clone());
+            let commands = actor
+                .voter
+                .start(&actor.node.keypair, dkg_key, elders_info.clone());
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))
@@ -645,7 +712,9 @@ mod tests {
             let (addr, message) = messages.swap_remove(index);
 
             let actor = actors.get_mut(&addr).expect("unknown message recipient");
-            let commands = actor.voter.process_message(actor.name, dkg_key, message);
+            let commands = actor
+                .voter
+                .process_message(&actor.node.keypair, dkg_key, message);
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))
@@ -654,15 +723,15 @@ mod tests {
     }
 
     struct Actor {
-        name: XorName,
+        node: Node,
         voter: DkgVoter,
         outcome: Option<bls::PublicKey>,
     }
 
     impl Actor {
-        fn new(name: XorName) -> Self {
+        fn new(node: Node) -> Self {
             Self {
-                name,
+                node,
                 voter: DkgVoter::default(),
                 outcome: None,
             }
@@ -693,11 +762,15 @@ mod tests {
                 DkgCommand::ScheduleTimeout { .. } => {
                     vec![]
                 }
+                DkgCommand::SendFailureObservation { .. }
+                | DkgCommand::HandleFailureAgreement { .. } => {
+                    panic!("unexpected command: {:?}", command)
+                }
             }
         }
     }
 
-    fn arbitrary_elder_peers() -> impl Strategy<Value = Vec<Peer>> {
-        arbitrary_unique_peers(2..=ELDER_SIZE, MIN_AGE..)
+    fn arbitrary_elder_nodes() -> impl Strategy<Value = Vec<Node>> {
+        arbitrary_unique_nodes(2..=ELDER_SIZE, MIN_AGE..)
     }
 }

@@ -63,3 +63,36 @@ impl Debug for Node {
             .finish()
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+    use itertools::Itertools;
+    use proptest::{collection::SizeRange, prelude::*};
+
+    pub(crate) fn arbitrary_node(age: impl Strategy<Value = u8>) -> impl Strategy<Value = Node> {
+        (
+            crypto::test_utils::arbitrary_keypair(),
+            any::<SocketAddr>(),
+            age,
+        )
+            .prop_map(|(keypair, addr, age)| Node::new(keypair, addr).with_age(age))
+    }
+
+    // Generate Vec<Node> where no two nodes have the same name.
+    pub(crate) fn arbitrary_unique_nodes(
+        count: impl Into<SizeRange>,
+        age: impl Strategy<Value = u8>,
+    ) -> impl Strategy<Value = Vec<Node>> {
+        proptest::collection::vec(arbitrary_node(age), count).prop_filter(
+            "non-unique keys",
+            |nodes| {
+                nodes
+                    .iter()
+                    .unique_by(|node| node.keypair.secret.as_bytes())
+                    .count()
+                    == nodes.len()
+            },
+        )
+    }
+}

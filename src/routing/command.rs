@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{ProofShare, Vote},
+    consensus::{DkgFailureProofSet, ProofShare, Vote},
     location::{DstLocation, SrcLocation},
     messages::Message,
     relocation::SignedRelocateDetails,
@@ -48,6 +48,11 @@ pub(crate) enum Command {
     HandleDkgOutcome {
         elders_info: EldersInfo,
         outcome: SectionKeyShare,
+    },
+    /// Handle DKG failure
+    HandleDkgFailure {
+        elders_info: EldersInfo,
+        proofs: DkgFailureProofSet,
     },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
@@ -127,6 +132,14 @@ impl Debug for Command {
                 .debug_struct("HandleDkgOutcome")
                 .field("elders_info", elders_info)
                 .field("outcome", &outcome.public_key_set.public_key())
+                .finish(),
+            Self::HandleDkgFailure {
+                elders_info,
+                proofs,
+            } => f
+                .debug_struct("HandleDkgFailure")
+                .field("elders_info", elders_info)
+                .field("proofs", proofs)
                 .finish(),
             Self::SendMessage {
                 recipients,
