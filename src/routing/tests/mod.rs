@@ -24,6 +24,8 @@ use crate::{
     peer::Peer,
     relocation,
     relocation::RelocateDetails,
+    relocation::RelocatePayload,
+    relocation::SignedRelocateDetails,
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
@@ -182,6 +184,100 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
             assert_eq!(their_knowledge, None);
         }
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn receive_join_request_from_relocated_node() -> Result<()> {
+    let (elders_info, mut nodes) = create_elders_info();
+
+    let sk_set = SecretKeySet::random();
+    let pk_set = sk_set.public_keys();
+    let section_key = pk_set.public_key();
+
+    let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
+    let node = nodes.remove(0);
+    let state = Approved::new(
+        node,
+        section,
+        Some(section_key_share),
+        mpsc::unbounded_channel().0,
+    );
+    let stage = Stage::new(state, create_comm()?);
+
+    let relocated_node_old_keypair = crypto::gen_keypair();
+    let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
+    let relocated_node = Node::new(crypto::gen_keypair(), gen_addr()).with_age(MIN_AGE + 2);
+
+    let relocate_details = RelocateDetails {
+        pub_id: relocated_node_old_name,
+        destination: rand::random(),
+        destination_key: section_key,
+        age: relocated_node.age,
+    };
+
+    let relocate_message = PlainMessage {
+        src: Prefix::default(),
+        dst: DstLocation::Node(relocated_node_old_name),
+        dst_key: section_key,
+        variant: Variant::Relocate(relocate_details),
+    };
+    let signature = sk_set
+        .secret_key()
+        .sign(&bincode::serialize(&relocate_message.as_signable())?);
+    let proof_chain = SectionProofChain::new(section_key);
+    let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
+    let relocate_details = SignedRelocateDetails::new(relocate_message)?;
+    let relocate_payload = RelocatePayload::new(
+        relocate_details,
+        &relocated_node.name(),
+        &relocated_node_old_keypair,
+    )?;
+
+    let join_request = Message::single_src(
+        &relocated_node,
+        DstLocation::Direct,
+        Variant::JoinRequest(Box::new(JoinRequest {
+            section_key,
+            relocate_payload: Some(relocate_payload),
+            resource_proof_response: None,
+        })),
+        None,
+        None,
+    )?;
+
+    let commands = stage
+        .handle_command(Command::HandleMessage {
+            sender: Some(relocated_node.addr),
+            message: join_request,
+        })
+        .await?;
+
+    let mut online_voted = false;
+
+    for command in commands {
+        let vote = match command {
+            Command::HandleVote { vote, .. } => vote,
+            _ => continue,
+        };
+
+        if let Vote::Online {
+            member_info,
+            previous_name,
+            their_knowledge,
+        } = vote
+        {
+            assert_eq!(member_info.peer, relocated_node.peer());
+            assert_eq!(member_info.state, PeerState::Joined);
+            assert_eq!(previous_name, Some(relocated_node_old_name));
+            assert_eq!(their_knowledge, Some(section_key));
+
+            online_voted = true;
+        }
+    }
+
+    assert!(online_voted);
 
     Ok(())
 }
