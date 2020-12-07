@@ -1028,12 +1028,13 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
-        if let Some(ResourceProofResponse {
+        // Only carry out resource proofing for new joined node.
+        if let (true, Some(ResourceProofResponse {
             solution,
             data,
             nonce,
             nonce_signature,
-        }) = join_request.resource_proof_response
+        })) = (previous_name.is_none(), join_request.resource_proof_response)
         {
             let serialized = bincode::serialize(&(*peer.name(), nonce))?;
             if self
