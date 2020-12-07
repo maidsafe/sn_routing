@@ -1028,39 +1028,64 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
-        if let Some(ResourceProofResponse {
-            solution,
-            data,
-            nonce,
-            nonce_signature,
-        }) = join_request.resource_proof_response
-        {
-            let serialized = bincode::serialize(&(*peer.name(), nonce))?;
-            if self
-                .node
-                .keypair
-                .public
-                .verify(&serialized, &nonce_signature)
-                .is_ok()
-                && self.resource_proof.validate_all(&nonce, &data, solution)
-            {
-                return self.vote(Vote::Online {
-                    member_info: MemberInfo::joined(peer.with_age(age)),
-                    previous_name,
-                    their_knowledge,
-                });
+        // Require resource proof only if joining as a new node.
+        if previous_name.is_none() {
+            if let Some(response) = join_request.resource_proof_response {
+                if !self.validate_resource_proof_response(peer.name(), response) {
+                    debug!(
+                        "Ignoring JoinRequest from {} - invalid resource proof response",
+                        pub_id
+                    );
+                    return Ok(vec![]);
+                }
+            } else {
+                return Ok(vec![self.send_resource_proof_challenge(&peer)?]);
             }
         }
 
+        self.vote(Vote::Online {
+            member_info: MemberInfo::joined(peer.with_age(age)),
+            previous_name,
+            their_knowledge,
+        })
+    }
+
+    fn validate_resource_proof_response(
+        &self,
+        peer_name: &XorName,
+        response: ResourceProofResponse,
+    ) -> bool {
+        let serialized = if let Ok(serialized) = bincode::serialize(&(peer_name, &response.nonce)) {
+            serialized
+        } else {
+            return false;
+        };
+
+        if self
+            .node
+            .keypair
+            .public
+            .verify(&serialized, &response.nonce_signature)
+            .is_err()
+        {
+            return false;
+        }
+
+        self.resource_proof
+            .validate_all(&response.nonce, &response.data, response.solution)
+    }
+
+    fn send_resource_proof_challenge(&self, peer: &Peer) -> Result<Command> {
         let nonce: [u8; 32] = rand::random();
-        let serialized = bincode::serialize(&(*peer.name(), nonce))?;
+        let serialized = bincode::serialize(&(peer.name(), &nonce))?;
         let response = Variant::ResourceChallenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
             difficulty: RESOURCE_PROOF_DIFFICULTY,
             nonce,
             nonce_signature: crypto::sign(&serialized, &self.node.keypair),
         };
-        Ok(vec![self.send_direct_message(peer.addr(), response)?])
+
+        self.send_direct_message(peer.addr(), response)
     }
 
     fn handle_dkg_start(
