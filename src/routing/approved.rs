@@ -478,16 +478,13 @@ impl Approved {
                     }
                 }
             }
-            Variant::ResourceChallenge { .. } => {
-                // Already approved, no need to resolve challenge.
-                return Ok(MessageStatus::Useless);
-            }
             Variant::Sync { .. }
             | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGMessage { .. } => {}
+            | Variant::DKGMessage { .. }
+            | Variant::ResourceChallenge { .. } => {}
         }
 
         if self.verify_message(msg)? {
@@ -579,7 +576,9 @@ impl Approved {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
+            Variant::NodeApproval(_)
+            | Variant::BootstrapResponse(_)
+            | Variant::ResourceChallenge { .. } => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
@@ -589,10 +588,6 @@ impl Approved {
                     }
                 }
 
-                Ok(vec![])
-            }
-            Variant::ResourceChallenge { .. } => {
-                trace!("Already got approved to join, no need to resolve challenge");
                 Ok(vec![])
             }
         }
