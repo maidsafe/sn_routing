@@ -35,7 +35,6 @@
 
 use futures::future::join_all;
 use hex_fmt::HexFmt;
-use log::{info, LevelFilter};
 use sn_routing::{Config, Event, EventStream, Routing, TransportConfig};
 use std::{
     collections::HashSet,
@@ -45,6 +44,8 @@ use std::{
 };
 use structopt::StructOpt;
 use tokio::task::JoinHandle;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 /// Minimal example node.
 #[derive(Debug, StructOpt)]
@@ -263,18 +264,17 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             index,
             src,
             dst,
-            HexFmt(content)
+            HexFmt(&content)
         ),
         Event::RelocationStarted { previous_name } => info!(
             "Node #{} relocation started - previous_name: {}",
             index, previous_name
         ),
         Event::Relocated { previous_name, .. } => {
+            let new_name = node.name().await;
             info!(
                 "Node #{} relocated - old name: {}, new name: {}",
-                index,
-                previous_name,
-                node.name().await
+                index, previous_name, new_name,
             );
         }
         Event::RestartRequired => {
@@ -285,40 +285,21 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             "Node #{} received message from client: {:?}, content: {}",
             index,
             src,
-            HexFmt(content)
+            HexFmt(&content)
         ),
     }
 
     true
 }
 
-const TARGET_SELF: &str = "minimal";
-const TARGET_ROUTING: &str = "sn_routing";
-
 fn init_log(verbosity: u8) {
-    let mut builder = env_logger::builder();
+    let filter = match verbosity {
+        0 => EnvFilter::new("minimal=info,sn_routing=warn"),
+        1 => EnvFilter::new("minimal,sn_routing=info"),
+        2 => EnvFilter::new("minimal,sn_routing=debug"),
+        3 => EnvFilter::new("minimal,sn_routing=trace"),
+        _ => EnvFilter::new("trace"),
+    };
 
-    // By default, show only logs from this example.
-    builder
-        .filter(None, LevelFilter::Off)
-        .filter(Some(TARGET_SELF), LevelFilter::Info);
-
-    if verbosity > 0 {
-        // Enable info logs from sn_routing.
-        builder.filter(Some(TARGET_ROUTING), LevelFilter::Info);
-    }
-    if verbosity > 1 {
-        // Enable debug logs from sn_routing
-        builder.filter(Some(TARGET_ROUTING), LevelFilter::Debug);
-    }
-    if verbosity > 2 {
-        // Enable trace logs from sn_routing
-        builder.filter(Some(TARGET_ROUTING), LevelFilter::Trace);
-    }
-    if verbosity > 3 {
-        // Enable trace logs from all crates
-        builder.filter(None, LevelFilter::Trace);
-    }
-
-    builder.init()
+    tracing_subscriber::fmt().with_env_filter(filter).init()
 }

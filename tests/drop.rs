@@ -40,7 +40,7 @@ async fn test_node_drop() -> Result<()> {
     let dropped_addr = dropped_node.our_connection_info().await?;
     drop(dropped_node);
 
-    log::info!("Dropped {} at {}", dropped_name, dropped_addr);
+    tracing::info!("Dropped {} at {}", dropped_name, dropped_addr);
 
     for (_, events) in &mut nodes {
         assert_event!(events, Event::MemberLeft { name, .. } if name == dropped_name)

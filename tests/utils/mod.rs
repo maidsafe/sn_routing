@@ -17,32 +17,26 @@ use itertools::Itertools;
 use sn_routing::{Config, Event, EventStream, Routing, TransportConfig, MIN_AGE};
 use std::{
     collections::{BTreeSet, HashSet},
-    io::Write,
     iter,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Once,
     time::Duration,
 };
+use tracing_subscriber::EnvFilter;
 
 static LOG_INIT: Once = Once::new();
 
 pub async fn create_node(mut config: Config) -> Result<(Routing, EventStream)> {
     // We initialise the logger but only once for all tests
     LOG_INIT.call_once(|| {
-        env_logger::builder()
+        tracing_subscriber::fmt()
+            // NOTE: comment out this line for more compact (but less readable) log output.
+            .pretty()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_target(false)
             // the test framework will capture the log output and show it only on failure.
             // Run the tests with --nocapture to override.
-            .is_test(true)
-            .format(|buf, record| {
-                writeln!(
-                    buf,
-                    "{:.1} {} ({}:{})",
-                    record.level(),
-                    record.args(),
-                    record.file().unwrap_or("<unknown>"),
-                    record.line().unwrap_or(0)
-                )
-            })
+            .with_test_writer()
             .init()
     });
 
@@ -85,7 +79,7 @@ macro_rules! assert_event {
         loop {
             match tokio::time::timeout($crate::utils::TIMEOUT, $event_stream.next()).await {
                 Ok(Some($pattern)) $(if $cond)? => break,
-                Ok(other) => log::trace!("Received {:?}", other),
+                Ok(other) => tracing::trace!("Received {:?}", other),
                 Err(_) => panic!("Timeout when expecting {}", stringify!($pattern)),
             }
         }
