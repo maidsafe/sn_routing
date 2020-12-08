@@ -476,12 +476,7 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let (node_approval_sent, relocate_age) =
         handle_online_command(&peer, &sk_set, &stage, elders_info).await?;
     assert!(event_rx.try_recv().is_err());
-    // A rejoin node with low age will be rejected.
-    if age / 2 <= MIN_AGE {
-        assert!(!node_approval_sent);
-        assert!(relocate_age.is_none());
-        return Ok(());
-    }
+
     assert!(node_approval_sent);
     let expected_age = cmp::max(MIN_AGE, age / 2);
     assert!(relocate_age == Some(expected_age));

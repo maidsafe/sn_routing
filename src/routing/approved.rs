@@ -1028,6 +1028,8 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
+        let mut valid_online = previous_name.is_some();
+
         if let Some(ResourceProofResponse {
             solution,
             data,
@@ -1036,31 +1038,33 @@ impl Approved {
         }) = join_request.resource_proof_response
         {
             let serialized = bincode::serialize(&(*peer.name(), nonce))?;
-            if self
-                .node
-                .keypair
-                .public
-                .verify(&serialized, &nonce_signature)
-                .is_ok()
-                && self.resource_proof.validate_all(&nonce, &data, solution)
-            {
-                return self.vote(Vote::Online {
-                    member_info: MemberInfo::joined(peer.with_age(age)),
-                    previous_name,
-                    their_knowledge,
-                });
-            }
+            valid_online = valid_online
+                || (self
+                    .node
+                    .keypair
+                    .public
+                    .verify(&serialized, &nonce_signature)
+                    .is_ok()
+                    && self.resource_proof.validate_all(&nonce, &data, solution));
         }
 
-        let nonce: [u8; 32] = rand::random();
-        let serialized = bincode::serialize(&(*peer.name(), nonce))?;
-        let response = Variant::ResourceChallenge {
-            data_size: RESOURCE_PROOF_DATA_SIZE,
-            difficulty: RESOURCE_PROOF_DIFFICULTY,
-            nonce,
-            nonce_signature: crypto::sign(&serialized, &self.node.keypair),
-        };
-        Ok(vec![self.send_direct_message(peer.addr(), response)?])
+        if valid_online {
+            self.vote(Vote::Online {
+                member_info: MemberInfo::joined(peer.with_age(age)),
+                previous_name,
+                their_knowledge,
+            })
+        } else {
+            let nonce: [u8; 32] = rand::random();
+            let serialized = bincode::serialize(&(*peer.name(), nonce))?;
+            let response = Variant::ResourceChallenge {
+                data_size: RESOURCE_PROOF_DATA_SIZE,
+                difficulty: RESOURCE_PROOF_DIFFICULTY,
+                nonce,
+                nonce_signature: crypto::sign(&serialized, &self.node.keypair),
+            };
+            Ok(vec![self.send_direct_message(peer.addr(), response)?])
+        }
     }
 
     fn handle_dkg_start(

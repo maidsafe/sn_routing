@@ -13,7 +13,7 @@ use anyhow::Result;
 
 use ed25519_dalek::Keypair;
 
-use sn_routing::{Config, Event, XorName, ELDER_SIZE};
+use sn_routing::{Config, Event, XorName};
 use std::iter;
 
 #[tokio::test]
@@ -53,10 +53,10 @@ async fn test_node_drop() -> Result<()> {
     Ok(())
 }
 
-// Test a node rejoin after dropped with the same keypair will be accepted with new name.
+// Test a node rejoin with the same keypair, shall be accepted with new name.
 #[tokio::test]
 async fn test_node_rejoin() -> Result<()> {
-    let mut nodes = create_connected_nodes(ELDER_SIZE).await?;
+    let mut nodes = create_connected_nodes(3).await?;
     for (_, events) in &mut nodes[1..] {
         assert_event!(events, Event::PromotedToElder);
     }
@@ -89,12 +89,10 @@ async fn test_node_rejoin() -> Result<()> {
     };
     config.transport_config.hard_coded_contacts =
         iter::once(nodes[0].0.our_connection_info().await?).collect();
-    let (node, _) = create_node(config).await?;
+    let (_node, _event_stream) = create_node(config).await?;
     for (_, events) in &mut nodes {
-        assert_event!(events, Event::MemberJoined { .. })
+        assert_event!(events, Event::MemberJoined { name, .. } if target_name != name);
     }
-
-    assert!(node.name().await != target_name);
 
     Ok(())
 }
