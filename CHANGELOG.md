@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.4](https://github.com/maidsafe/sn_routing/compare/v0.39.3...v0.39.4) (2020-12-09)
+
+
+### Bug Fixes
+
+* **test:** account for relocations in test_startup_section_bootstrapping ([53196a5](https://github.com/maidsafe/sn_routing/commit/53196a5ef8a82a073383f56f1f58ac84dbf28b9f))
+* consider also relocated current elders for elder candidates ([fffc946](https://github.com/maidsafe/sn_routing/commit/fffc94696fc82b73711b48c1ba4d83d21e2dd09b))
+* do not require resource proof for relocated node + test ([667e1fb](https://github.com/maidsafe/sn_routing/commit/667e1fb156aa1dfad68388f95082d87807898a3f))
+* forward ResurceChallenge to the bootstrap task ([2552f06](https://github.com/maidsafe/sn_routing/commit/2552f0631e32a8e442ef1291b537c1ef969bca6d))
+* **test:** dont assert new joining node is not instantly relocated ([9a18b4c](https://github.com/maidsafe/sn_routing/commit/9a18b4c0230142dda3a3c64a5fd8aaa0c67fc3b6))
+
 ### [0.39.3](https://github.com/maidsafe/sn_routing/compare/v0.39.2...v0.39.3) (2020-12-09)
 
 
