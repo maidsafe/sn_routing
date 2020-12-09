@@ -25,16 +25,6 @@
 <span id="24">24</span>
 <span id="25">25</span>
 <span id="26">26</span>
-<span id="27">27</span>
-<span id="28">28</span>
-<span id="29">29</span>
-<span id="30">30</span>
-<span id="31">31</span>
-<span id="32">32</span>
-<span id="33">33</span>
-<span id="34">34</span>
-<span id="35">35</span>
-<span id="36">36</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -44,8 +34,6 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cmp</span>, <span class="ident">iter</span>};
-
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">NetworkStats</span> {
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">known_elders</span>: <span class="ident">u64</span>,
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">total_elders</span>: <span class="ident">u64</span>,
@@ -54,21 +42,13 @@
 
 <span class="kw">impl</span> <span class="ident">NetworkStats</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">print</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="kw">const</span> <span class="ident">LEVEL</span>: <span class="ident">log</span>::<span class="ident">Level</span> <span class="op">=</span> <span class="ident">log</span>::<span class="ident">Level</span>::<span class="ident">Info</span>;
-
-        <span class="kw">if</span> <span class="ident">log</span>::<span class="macro">log_enabled</span><span class="macro">!</span>(<span class="ident">LEVEL</span>) {
-            <span class="kw">let</span> <span class="ident">status_str</span> <span class="op">=</span> <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;Known elders: {:3}&quot;</span>, <span class="self">self</span>.<span class="ident">known_elders</span>);
-            <span class="kw">let</span> <span class="ident">network_estimate</span> <span class="op">=</span> <span class="kw">if</span> <span class="self">self</span>.<span class="ident">total_elders_exact</span> {
-                <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;Exact total network elders: {}&quot;</span>, <span class="self">self</span>.<span class="ident">total_elders</span>)
-            } <span class="kw">else</span> {
-                <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;Estimated total network elders: {}&quot;</span>, <span class="self">self</span>.<span class="ident">total_elders</span>)
-            };
-            <span class="kw">let</span> <span class="ident">sep_len</span> <span class="op">=</span> <span class="ident">cmp</span>::<span class="ident">max</span>(<span class="ident">status_str</span>.<span class="ident">len</span>(), <span class="ident">network_estimate</span>.<span class="ident">len</span>());
-            <span class="kw">let</span> <span class="ident">sep_str</span> <span class="op">=</span> <span class="ident">iter</span>::<span class="ident">repeat</span>(<span class="string">&#39;-&#39;</span>).<span class="ident">take</span>(<span class="ident">sep_len</span>).<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>();
-            <span class="macro">log</span><span class="macro">!</span>(<span class="ident">target</span>: <span class="string">&quot;stats&quot;</span>, <span class="ident">LEVEL</span>, <span class="string">&quot; -{}- &quot;</span>, <span class="ident">sep_str</span>);
-            <span class="macro">log</span><span class="macro">!</span>(<span class="ident">target</span>: <span class="string">&quot;stats&quot;</span>, <span class="ident">LEVEL</span>, <span class="string">&quot;| {:&lt;1$} |&quot;</span>, <span class="ident">status_str</span>, <span class="ident">sep_len</span>);
-            <span class="macro">log</span><span class="macro">!</span>(<span class="ident">target</span>: <span class="string">&quot;stats&quot;</span>, <span class="ident">LEVEL</span>, <span class="string">&quot;| {:&lt;1$} |&quot;</span>, <span class="ident">network_estimate</span>, <span class="ident">sep_len</span>);
-            <span class="macro">log</span><span class="macro">!</span>(<span class="ident">target</span>: <span class="string">&quot;stats&quot;</span>, <span class="ident">LEVEL</span>, <span class="string">&quot; -{}- &quot;</span>, <span class="ident">sep_str</span>);
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">total_elders_exact</span> {
+            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;*** Exact total network elders: {} ***&quot;</span>, <span class="self">self</span>.<span class="ident">known_elders</span>)
+        } <span class="kw">else</span> {
+            <span class="macro">info</span><span class="macro">!</span>(
+                <span class="string">&quot;*** Known network elders: {}, Estimated total network elders: {} ***&quot;</span>,
+                <span class="self">self</span>.<span class="ident">known_elders</span>, <span class="self">self</span>.<span class="ident">total_elders</span>
+            )
         }
     }
 }
