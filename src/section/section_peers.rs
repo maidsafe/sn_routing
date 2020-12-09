@@ -64,7 +64,7 @@ impl SectionPeers {
             current_elders,
             self.members
                 .values()
-                .filter(|info| info.value.state == PeerState::Joined),
+                .filter(|info| is_active(&info.value, current_elders)),
         )
     }
 
@@ -162,6 +162,8 @@ impl IntoIterator for SectionPeers {
 }
 
 // Returns the nodes that should become the next elders out of the given members, sorted by names.
+// It is assumed that `members` contains only "active" peers (see the `is_active` function below
+// for explanation)
 fn elder_candidates<'a, I>(elder_size: usize, current_elders: &EldersInfo, members: I) -> Vec<Peer>
 where
     I: IntoIterator<Item = &'a Proven<MemberInfo>>,
@@ -174,8 +176,7 @@ where
         .collect()
 }
 
-// Compare candidates for the next elders. The one comparing `Less` is more likely to become
-// elder.
+// Compare candidates for the next elders. The one comparing `Less` wins.
 fn cmp_elder_candidates(
     lhs: &Proven<MemberInfo>,
     rhs: &Proven<MemberInfo>,
@@ -184,13 +185,11 @@ fn cmp_elder_candidates(
     // Older nodes are preferred. In case of a tie, prefer current elders. If still a tie, break
     // it comparing by the proof signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
-    rhs.value
-        .peer
-        .age()
-        .cmp(&lhs.value.peer.age())
+    cmp_elder_candidates_by_peer_state(&lhs.value.state, &rhs.value.state)
+        .then_with(|| rhs.value.peer.age().cmp(&lhs.value.peer.age()))
         .then_with(|| {
-            let lhs_is_elder = current_elders.elders.contains_key(lhs.value.peer.name());
-            let rhs_is_elder = current_elders.elders.contains_key(rhs.value.peer.name());
+            let lhs_is_elder = is_elder(&lhs.value, current_elders);
+            let rhs_is_elder = is_elder(&rhs.value, current_elders);
 
             match (lhs_is_elder, rhs_is_elder) {
                 (true, false) => Ordering::Less,
@@ -199,4 +198,33 @@ fn cmp_elder_candidates(
             }
         })
         .then_with(|| lhs.proof.signature.cmp(&rhs.proof.signature))
+}
+
+// Compare candidates for the next elders according to their peer state. The one comparing `Less`
+// wins. `Joined` is preferred over `Relocated` which is preferred over `Left`.
+// NOTE: we only consider `Relocated` peers as elder candidates if we don't have enough `Joined`
+// members to reach `ELDER_SIZE`.
+fn cmp_elder_candidates_by_peer_state(lhs: &PeerState, rhs: &PeerState) -> Ordering {
+    use PeerState::*;
+
+    match (lhs, rhs) {
+        (Joined, Joined) | (Relocated(_), Relocated(_)) => Ordering::Equal,
+        (Joined, Relocated(_)) | (_, Left) => Ordering::Less,
+        (Relocated(_), Joined) | (Left, _) => Ordering::Greater,
+    }
+}
+
+// A peer is considered active if either it is joined or it is a current elder who is being
+// relocated. This is because such elder still fulfils its duties and only when demoted can it
+// leave.
+fn is_active(info: &MemberInfo, current_elders: &EldersInfo) -> bool {
+    match info.state {
+        PeerState::Joined => true,
+        PeerState::Relocated(_) if is_elder(info, current_elders) => true,
+        _ => false,
+    }
+}
+
+fn is_elder(info: &MemberInfo, current_elders: &EldersInfo) -> bool {
+    current_elders.elders.contains_key(info.peer.name())
 }
