@@ -290,7 +290,7 @@ impl Routing {
     }
 
     /// Returns the current BLS public key set if this node has one, or
-    /// `Error::MissingSecretKeyShare` otherwise.
+    /// `Error::InvalidState` otherwise.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
         self.stage
             .state
@@ -298,11 +298,23 @@ impl Routing {
             .await
             .section_key_share()
             .map(|share| share.public_key_set.clone())
+            .ok_or(Error::InvalidState)
+    }
+
+    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
+    /// elder.
+    pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
+        self.stage
+            .state
+            .lock()
+            .await
+            .section_key_share()
+            .map(|share| share.secret_key_share.clone())
             .ok_or(Error::MissingSecretKeyShare)
     }
 
     /// Signs `data` with the BLS secret key share of this node, if it has any. Returns
-    // `Error::MissingSecretKeyShare` otherwise.
+    /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn sign_with_secret_key_share(&self, data: &[u8]) -> Result<bls::SignatureShare> {
         self.stage
             .state
