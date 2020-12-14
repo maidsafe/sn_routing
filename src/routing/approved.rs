@@ -1793,7 +1793,18 @@ impl Approved {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
                 let msg = Message::single_src(&self.node, dst, variant, None, None)?;
-                Ok(self.relay_message(&msg)?.into_iter().collect())
+                let mut commands = vec![];
+
+                if dst.contains(&self.node.name(), self.section.prefix()) {
+                    commands.push(Command::HandleMessage {
+                        sender: Some(self.node.addr),
+                        message: msg.clone(),
+                    });
+                }
+
+                commands.extend(self.relay_message(&msg)?);
+
+                Ok(commands)
             }
             SrcLocation::Section(_) => {
                 let vote = self.create_send_message_vote(dst, variant, None)?;

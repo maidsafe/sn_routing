@@ -14,7 +14,7 @@ use crate::{
     consensus::{test_utils::*, Proven, Vote},
     crypto,
     event::Event,
-    location::DstLocation,
+    location::{DstLocation, SrcLocation},
     majority,
     messages::{
         BootstrapResponse, JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant,
@@ -22,10 +22,7 @@ use crate::{
     network::Network,
     node::Node,
     peer::Peer,
-    relocation,
-    relocation::RelocateDetails,
-    relocation::RelocatePayload,
-    relocation::SignedRelocateDetails,
+    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
         SectionProofChain, MIN_AGE,
@@ -1384,6 +1381,55 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     }
 
     assert!(relocate_sent);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn node_message_to_self() -> Result<()> {
+    message_to_self(MessageDst::Node).await
+}
+
+#[tokio::test]
+async fn section_message_to_self() -> Result<()> {
+    message_to_self(MessageDst::Section).await
+}
+
+enum MessageDst {
+    Node,
+    Section,
+}
+
+async fn message_to_self(dst: MessageDst) -> Result<()> {
+    let node = create_node();
+    let peer = node.peer();
+    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let stage = Stage::new(state, create_comm()?);
+
+    let src = SrcLocation::Node(*peer.name());
+    let dst = match dst {
+        MessageDst::Node => DstLocation::Node(*peer.name()),
+        MessageDst::Section => DstLocation::Section(rand::random()),
+    };
+    let content = Bytes::from_static(b"hello");
+
+    let commands = stage
+        .handle_command(Command::SendUserMessage {
+            src,
+            dst,
+            content: content.clone(),
+        })
+        .await?;
+
+    assert_matches!(&commands[..], [Command::HandleMessage { sender, message }] => {
+        assert_eq!(sender.as_ref(), Some(peer.addr()));
+        assert_eq!(message.src().src_location(), src);
+        assert_eq!(message.dst(), &dst);
+        assert_matches!(
+            message.variant(),
+            Variant::UserMessage(actual_content) if actual_content == &content
+        );
+    });
 
     Ok(())
 }
