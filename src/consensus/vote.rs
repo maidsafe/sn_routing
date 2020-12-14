@@ -34,8 +34,15 @@ pub(crate) enum Vote {
     SectionInfo(EldersInfo),
 
     // Voted to update the elders in our section.
-    // NOTE: the `EldersInfo` is already signed with the new key. All that's left to do is to sign
-    // the new key using our current key, which is what this vote is for.
+    // NOTE: the `EldersInfo` is already signed with the new key. This vote is only to signs the
+    // new key with the current key. That way, when it accumulates, we obtain all the following
+    // pieces of information at the same time:
+    //   1. the new elders info
+    //   2. the new key
+    //   3. the signature of the new elders info using the new key
+    //   4. the signature of the new key using the current key
+    // Which we can use to update the section elders info and the section chain at the same time as
+    // a single atomic operation without needing to cache anything.
     OurElders(Proven<EldersInfo>),
 
     // Voted to update their section key.

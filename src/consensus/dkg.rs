@@ -379,6 +379,14 @@ impl Session {
     }
 
     fn process_failure(&mut self, proof: DkgFailureProof) -> Option<DkgCommand> {
+        if !self
+            .elders_info
+            .elders
+            .contains_key(&crypto::name(&proof.public_key))
+        {
+            return None;
+        }
+
         if !proof.verify(&self.dkg_key) {
             return None;
         }
@@ -436,6 +444,8 @@ impl DkgFailureProof {
 pub(crate) struct DkgFailureProofSet(Vec<DkgFailureProof>);
 
 impl DkgFailureProofSet {
+    // Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was
+    // not already present in the set and `false` otherwise.
     fn insert(&mut self, proof: DkgFailureProof) -> bool {
         if self
             .0
@@ -449,6 +459,8 @@ impl DkgFailureProofSet {
         }
     }
 
+    // Check whether we have proofs from a majority of the participants. The contained proofs are
+    // assumed valid.
     fn has_agreement(&self, elders_info: &EldersInfo) -> bool {
         self.0.len() >= majority(elders_info.elders.len())
     }

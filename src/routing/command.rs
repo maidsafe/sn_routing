@@ -49,7 +49,7 @@ pub(crate) enum Command {
         elders_info: EldersInfo,
         outcome: SectionKeyShare,
     },
-    /// Handle DKG failure
+    /// Handle a DKG failure that was observed by a majority of the DKG participants.
     HandleDkgFailure {
         elders_info: EldersInfo,
         proofs: DkgFailureProofSet,
