@@ -314,6 +314,7 @@ pub enum VerifyStatus {
 }
 
 /// Status of an incomming message.
+#[derive(Eq, PartialEq)]
 pub enum MessageStatus {
     /// Message is useful and should be handled.
     Useful,

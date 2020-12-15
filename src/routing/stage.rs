@@ -116,23 +116,23 @@ impl Stage {
                 .into_iter()
                 .collect()),
             Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
-            Command::HandleDkgParticipationResult {
-                dkg_key,
+            Command::HandleDkgOutcome {
                 elders_info,
-                result,
-            } => self.state.lock().await.handle_dkg_participation_result(
-                dkg_key,
-                elders_info,
-                result,
-            ),
-            Command::HandleDkgObservationResult {
-                elders_info,
-                result,
+                outcome,
             } => self
                 .state
                 .lock()
                 .await
-                .handle_dkg_observation_result(elders_info, result),
+                .handle_dkg_outcome(elders_info, outcome),
+            Command::HandleDkgFailure {
+                elders_info,
+                proofs,
+            } => self
+                .state
+                .lock()
+                .await
+                .handle_dkg_failure(elders_info, proofs)
+                .map(|command| vec![command]),
             Command::SendMessage {
                 recipients,
                 delivery_group_size,

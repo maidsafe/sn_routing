@@ -12,18 +12,18 @@ mod approved;
 mod bootstrap;
 mod comm;
 mod event_stream;
+mod split_barrier;
 mod stage;
 #[cfg(test)]
 mod tests;
-mod update_barrier;
 
 pub use self::event_stream::EventStream;
 use self::{
     approved::Approved,
     comm::{Comm, ConnectionEvent},
     command::Command,
+    split_barrier::SplitBarrier,
     stage::Stage,
-    update_barrier::UpdateBarrier,
 };
 use crate::{
     crypto,

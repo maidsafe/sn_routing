@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulationError, Proof, ProofShare, SignatureAggregator};
+use super::{AccumulationError, Proof, ProofShare, Proven, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
@@ -33,13 +33,17 @@ pub(crate) enum Vote {
     // Voted to update the elders info of a section.
     SectionInfo(EldersInfo),
 
-    // Voted to update our section key.
-    OurKey {
-        // In case of split, this prefix is used to differentiate the subsections. It's not part of
-        // the proof and thus not serialised when signing.
-        prefix: Prefix,
-        key: bls::PublicKey,
-    },
+    // Voted to update the elders in our section.
+    // NOTE: the `EldersInfo` is already signed with the new key. This vote is only to signs the
+    // new key with the current key. That way, when it accumulates, we obtain all the following
+    // pieces of information at the same time:
+    //   1. the new elders info
+    //   2. the new key
+    //   3. the signature of the new elders info using the new key
+    //   4. the signature of the new key using the current key
+    // Which we can use to update the section elders info and the section chain at the same time as
+    // a single atomic operation without needing to cache anything.
+    OurElders(Proven<EldersInfo>),
 
     // Voted to update their section key.
     TheirKey {
@@ -94,7 +98,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::Online { member_info, .. } => member_info.serialize(serializer),
             Vote::Offline(member_info) => member_info.serialize(serializer),
             Vote::SectionInfo(info) => info.serialize(serializer),
-            Vote::OurKey { key, .. } => key.serialize(serializer),
+            Vote::OurElders(info) => info.proof.public_key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
             Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
@@ -131,22 +135,24 @@ impl Serialize for SignableWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::section;
+    use crate::{consensus, section};
+    use anyhow::Result;
     use rand::Rng;
     use std::fmt::Debug;
 
     #[test]
-    fn serialize_for_signing() {
+    fn serialize_for_signing() -> Result<()> {
         // Vote::SectionInfo
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
         let vote = Vote::SectionInfo(elders_info.clone());
         verify_serialize_for_signing(&vote, &elders_info);
 
-        // Vote::OurKey
-        let prefix = gen_prefix();
-        let key = bls::SecretKey::random().public_key();
-        let vote = Vote::OurKey { prefix, key };
-        verify_serialize_for_signing(&vote, &key);
+        // Vote::OurElders
+        let new_sk = bls::SecretKey::random();
+        let new_pk = new_sk.public_key();
+        let proven_elders_info = consensus::test_utils::proven(&new_sk, elders_info)?;
+        let vote = Vote::OurElders(proven_elders_info);
+        verify_serialize_for_signing(&vote, &new_pk);
 
         // Vote::TheirKey
         let prefix = gen_prefix();
@@ -159,6 +165,8 @@ mod tests {
         let key_index = rand::random();
         let vote = Vote::TheirKnowledge { prefix, key_index };
         verify_serialize_for_signing(&vote, &(prefix, key_index));
+
+        Ok(())
     }
 
     // Verify that `SignableView(vote)` serializes the same as `should_serialize_as`.

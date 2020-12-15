@@ -11,50 +11,32 @@ use crate::{
     network::Network,
     section::{EldersInfo, Section},
 };
-use std::collections::HashSet;
+use bls_signature_aggregator::Proof;
 use xor_name::{Prefix, XorName};
 
-/// Helper structure to synchronize updates to `Section` and `Network` in order to keep certain
-/// useful invariants:
+/// Helper structure to make sure that during splits, our and the sibling sections are updated
+/// consistently.
 ///
-/// - our `EldersInfo` corresponds to the latest section chain key.
-/// - in case of split, both siblings know each others latest keys
+/// # Usage
 ///
-/// Usage: each mutation to be applied to our `Section` or `Network` must pass through this barrier
-/// first.
-/// Call the corresponding handler (`handle_section_info`, `handle_our_key`, ...) and then call
+/// Each mutation to be applied to our `Section` or `Network` must pass through this barrier
+/// first. Call the corresponding handler (`handle_our_section`, `handle_their_key`) and then call
 /// `take`. If it returns `Some` for our and/or sibling section, apply it to the corresponding
 /// state, otherwise do nothing.
-///
-/// TODO: this whole machinery might not be necessary. It's possible the above invariants are not
-/// really needed. Investigate whether that is the case.
 #[derive(Default)]
-pub(crate) struct UpdateBarrier {
+pub(crate) struct SplitBarrier {
     our: Option<State>,
     sibling: Option<State>,
-    pending_updates: HashSet<Prefix>,
 }
 
-impl UpdateBarrier {
-    // Mark the section update for the given prefix as started. This prevents starting another
-    // update while one is still in progress.
-    //
-    // FIXME: this is not bullet-proof. In case of a heavy churn, it can happen that we get two or
-    // more successful DKG results around the same time, but they will not necessary be received in
-    // the same order by everyone. So it can happen that some nodes will start the section update
-    // based on one DKG result while others will use another one and neither one will reach
-    // consensus which would currently stall the section. Even though this situation might be
-    // unlikely, we should still find a solution to this problem.
-    pub fn start_update(&mut self, prefix: Prefix) -> bool {
-        self.pending_updates.insert(prefix)
-    }
-
-    pub fn handle_section_info(
+impl SplitBarrier {
+    pub fn handle_our_section(
         &mut self,
         our_name: &XorName,
         current_section: &Section,
         current_network: &Network,
         elders_info: Proven<EldersInfo>,
+        key_proof: Proof,
     ) {
         if elders_info
             .value
@@ -63,7 +45,7 @@ impl UpdateBarrier {
         {
             if elders_info.value.prefix.matches(our_name) {
                 update(&mut self.our, current_section, current_network, |state| {
-                    state.update_our_info(elders_info.clone())
+                    state.update_elders(elders_info.clone(), key_proof)
                 });
                 update(
                     &mut self.sibling,
@@ -76,7 +58,7 @@ impl UpdateBarrier {
                     &mut self.sibling,
                     current_section,
                     current_network,
-                    |state| state.update_our_info(elders_info.clone()),
+                    |state| state.update_elders(elders_info.clone(), key_proof),
                 );
                 update(&mut self.our, current_section, current_network, |state| {
                     state.update_neighbour_info(elders_info)
@@ -84,30 +66,8 @@ impl UpdateBarrier {
             }
         } else {
             update(&mut self.our, current_section, current_network, |state| {
-                state.update_our_info(elders_info.clone())
+                state.update_elders(elders_info, key_proof)
             });
-        }
-    }
-
-    pub fn handle_our_key(
-        &mut self,
-        our_name: &XorName,
-        current_section: &Section,
-        current_network: &Network,
-        prefix: &Prefix,
-        key: Proven<bls::PublicKey>,
-    ) {
-        if prefix.matches(our_name) {
-            update(&mut self.our, current_section, current_network, |state| {
-                state.section.update_chain(key)
-            })
-        } else {
-            update(
-                &mut self.sibling,
-                current_section,
-                current_network,
-                |state| state.section.update_chain(key),
-            )
         }
     }
 
@@ -142,18 +102,12 @@ impl UpdateBarrier {
             return (None, None);
         };
 
-        if !is_our_info_in_sync_with_our_key(&our.section) {
-            return (None, None);
-        }
-
         if our.section.prefix() == current_prefix {
             if let Some(sibling) = &self.sibling {
                 if sibling.section.prefix().is_extension_of(current_prefix) {
                     return (None, None);
                 }
             } else {
-                self.pending_updates.clear();
-
                 return (self.our.take(), None);
             }
         }
@@ -163,10 +117,6 @@ impl UpdateBarrier {
         } else {
             return (None, None);
         };
-
-        if !is_our_info_in_sync_with_our_key(&sibling.section) {
-            return (None, None);
-        }
 
         if !our.network.has_key(sibling.section.chain().last_key()) {
             return (None, None);
@@ -184,8 +134,6 @@ impl UpdateBarrier {
             return (None, None);
         }
 
-        self.pending_updates.clear();
-
         (self.our.take(), self.sibling.take())
     }
 }
@@ -198,8 +146,8 @@ pub(crate) struct State {
 }
 
 impl State {
-    fn update_our_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
-        if self.section.update_elders(elders_info) {
+    fn update_elders(&mut self, elders_info: Proven<EldersInfo>, key_proof: Proof) -> bool {
+        if self.section.update_elders(elders_info, key_proof) {
             self.network.prune_neighbours(self.section.prefix());
             true
         } else {
@@ -218,7 +166,7 @@ impl State {
 
     fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
         if key.value.0 == *self.section.prefix() {
-            // Ignore our keys. Use `update_our_key` for that.
+            // Ignore our keys. Use `update_elders` for that.
             return false;
         }
 
@@ -243,21 +191,6 @@ fn update(
             *barrier_state = Some(state);
         }
     }
-}
-
-fn is_our_info_in_sync_with_our_key(section: &Section) -> bool {
-    // Note: the first key in the chain is signed with itself, so we need to special-case this to
-    // avoid returning incomplete state prematurely when there is only one node in the network.
-    if section.elders_info().prefix == Prefix::default() && section.elders_info().elders.len() <= 1
-    {
-        return false;
-    }
-
-    section
-        .chain()
-        .index_of(&section.proven_elders_info().proof.public_key)
-        .map(|index| index + 1 == section.chain().last_key_index())
-        .unwrap_or(false)
 }
 
 // TODO: write tests
