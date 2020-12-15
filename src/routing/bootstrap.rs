@@ -262,10 +262,11 @@ impl<'a> State<'a> {
             match response {
                 JoinResponse::Approval {
                     elders_info,
+                    age,
                     section_chain,
                 } => {
                     return Ok((
-                        self.node,
+                        self.node.with_age(age),
                         Section::new(section_chain, elders_info)?,
                         self.backlog.into_iter().collect(),
                     ));
@@ -391,7 +392,10 @@ impl<'a> State<'a> {
                         sender,
                     ));
                 }
-                Variant::NodeApproval(elders_info) => {
+                Variant::NodeApproval {
+                    elders_info,
+                    member_info,
+                } => {
                     let trusted_key = if let Some(payload) = relocate_payload {
                         Some(&payload.relocate_details().destination_key)
                     } else {
@@ -413,6 +417,7 @@ impl<'a> State<'a> {
                     return Ok((
                         JoinResponse::Approval {
                             elders_info: elders_info.clone(),
+                            age: member_info.value.peer.age(),
                             section_chain,
                         },
                         sender,
@@ -463,6 +468,7 @@ impl<'a> State<'a> {
 enum JoinResponse {
     Approval {
         elders_info: Proven<EldersInfo>,
+        age: u8,
         section_chain: SectionProofChain,
     },
     Rejoin {
@@ -521,7 +527,9 @@ async fn send_messages(mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>, comm: &
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus::test_utils::*, section::test_utils::*, ELDER_SIZE};
+    use crate::{
+        consensus::test_utils::*, section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_AGE,
+    };
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use futures::future;
@@ -541,7 +549,7 @@ mod tests {
         let pk = sk.public_key();
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
-        let node_name = node.name();
+        let peer = node.peer();
         let state = State::new(node, send_tx, recv_rx)?;
 
         // Create the bootstrap task, but don't run it yet.
@@ -562,7 +570,7 @@ mod tests {
 
             assert_eq!(recipients, [bootstrap_addr]);
             assert_matches!(message.variant(), Variant::BootstrapRequest(name) => {
-                assert_eq!(*name, node_name);
+                assert_eq!(name, peer.name());
             });
 
             // Send BootstrapResponse
@@ -591,12 +599,16 @@ mod tests {
             });
 
             // Send NodeApproval
-            let proven_elders_info = proven(&sk, elders_info.clone())?;
+            let elders_info = proven(&sk, elders_info.clone())?;
+            let member_info = proven(&sk, MemberInfo::joined(peer.with_age(MIN_AGE + 1)))?;
             let proof_chain = SectionProofChain::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::NodeApproval(proven_elders_info),
+                Variant::NodeApproval {
+                    elders_info,
+                    member_info,
+                },
                 Some(proof_chain),
                 None,
             )?;
@@ -607,10 +619,11 @@ mod tests {
         };
 
         // Drive both tasks to completion concurrently (but on the same thread).
-        let ((_node, section, _backlog), _) = future::try_join(bootstrap, others).await?;
+        let ((node, section, _backlog), _) = future::try_join(bootstrap, others).await?;
 
         assert_eq!(*section.elders_info(), elders_info);
         assert_eq!(*section.chain().last_key(), pk);
+        assert_eq!(node.age, MIN_AGE + 1);
 
         Ok(())
     }

@@ -369,12 +369,15 @@ mod tests {
     use super::*;
     use crate::{
         consensus, crypto,
-        section::{self, test_utils::gen_addr},
+        peer::Peer,
+        section::{self, test_utils::gen_addr, MemberInfo},
+        MIN_AGE,
     };
+    use anyhow::Result;
     use std::iter;
 
     #[test]
-    fn extend_proof_chain() {
+    fn extend_proof_chain() -> Result<()> {
         let node = Node::new(crypto::gen_keypair(), gen_addr());
 
         let sk0 = bls::SecretKey::random();
@@ -384,42 +387,44 @@ mod tests {
         let pk1 = sk1.public_key();
 
         let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
-        let pk1_sig = sk0.sign(&bincode::serialize(&pk1).unwrap());
+        let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
         let _ = full_proof_chain.push(pk1, pk1_sig);
 
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
-        let elders_info = consensus::test_utils::proven(&sk1, elders_info).unwrap();
+        let elders_info = consensus::test_utils::proven(&sk1, elders_info)?;
 
-        let variant = Variant::NodeApproval(elders_info);
+        let peer = Peer::new(rand::random(), gen_addr(), MIN_AGE);
+        let member_info = MemberInfo::joined(peer);
+        let member_info = consensus::test_utils::proven(&sk1, member_info)?;
+
+        let variant = Variant::NodeApproval {
+            elders_info,
+            member_info,
+        };
         let message = Message::single_src(
             &node,
             DstLocation::Direct,
             variant,
             Some(full_proof_chain.slice(1..)),
             Some(pk1),
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(
-            message
-                .verify(iter::once((&Prefix::default(), &pk1)))
-                .unwrap(),
+            message.verify(iter::once((&Prefix::default(), &pk1)))?,
             VerifyStatus::Full
         );
         assert_eq!(
-            message
-                .verify(iter::once((&Prefix::default(), &pk0)))
-                .unwrap(),
+            message.verify(iter::once((&Prefix::default(), &pk0)))?,
             VerifyStatus::Unknown
         );
 
-        let message = message.extend_proof_chain(&pk0, &full_proof_chain).unwrap();
+        let message = message.extend_proof_chain(&pk0, &full_proof_chain)?;
 
         assert_eq!(
-            message
-                .verify(iter::once((&Prefix::default(), &pk0)))
-                .unwrap(),
+            message.verify(iter::once((&Prefix::default(), &pk0)))?,
             VerifyStatus::Full
         );
+
+        Ok(())
     }
 }

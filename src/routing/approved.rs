@@ -426,7 +426,7 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::NodeApproval(_) | Variant::BootstrapResponse(_) => {
+            Variant::NodeApproval { .. } | Variant::BootstrapResponse(_) => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
@@ -561,7 +561,7 @@ impl Approved {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::NodeApproval(_)
+            Variant::NodeApproval { .. }
             | Variant::BootstrapResponse(_)
             | Variant::ResourceChallenge { .. } => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
@@ -1219,9 +1219,9 @@ impl Approved {
         Ok(commands)
     }
 
-    fn relocate_rejoining_peer(&self, peer: Peer, age: u8) -> Result<Vec<Command>> {
+    fn relocate_rejoining_peer(&self, peer: &Peer, age: u8) -> Result<Vec<Command>> {
         let details =
-            RelocateDetails::with_age(&self.section, &self.network, &peer, *peer.name(), age);
+            RelocateDetails::with_age(&self.section, &self.network, peer, *peer.name(), age);
 
         trace!(
             "Relocating {:?} to {} with age {} due to rejoin",
@@ -1230,7 +1230,7 @@ impl Approved {
             details.age
         );
 
-        self.send_relocate(&peer, details)
+        self.send_relocate(peer, details)
     }
 
     // Are we in the startup phase? Startup phase is when the network consists of only one section
@@ -1242,61 +1242,63 @@ impl Approved {
 
     fn handle_online_event(
         &mut self,
-        member_info: MemberInfo,
+        new_info: MemberInfo,
         previous_name: Option<XorName>,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<Vec<Command>> {
-        let peer = member_info.peer;
-        let signature = proof.signature.clone();
-
         let mut commands = vec![];
 
         let is_startup_phase = self.is_in_startup_phase();
 
-        if let Some(info) = self.section.members().get(peer.name()) {
+        if let Some(old_info) = self.section.members().get_proven(new_info.peer.name()) {
             // This node is rejoin with same name.
 
-            if info.state != PeerState::Left {
+            if old_info.value.state != PeerState::Left {
                 debug!(
                     "Ignoring Online node {} - {:?} not Left.",
-                    peer.name(),
-                    info.state,
+                    new_info.peer.name(),
+                    old_info.value.state,
                 );
+
                 return Ok(commands);
             }
 
-            if info.peer.age() / 2 > MIN_AGE {
-                // TODO: consider handling the relocation inside the bootstrap phase, to avoid having
-                // to send this `NodeApproval`.
-                commands.push(self.send_node_approval(&peer, their_knowledge)?);
-                commands.extend(
-                    self.relocate_rejoining_peer(peer, cmp::max(MIN_AGE, info.peer.age() / 2))?,
-                );
+            let new_age = cmp::max(MIN_AGE, old_info.value.peer.age() / 2);
+
+            if new_age > MIN_AGE {
+                // TODO: consider handling the relocation inside the bootstrap phase, to avoid
+                // having to send this `NodeApproval`.
+                commands.push(self.send_node_approval(old_info.clone(), their_knowledge)?);
+                commands.extend(self.relocate_rejoining_peer(&old_info.value.peer, new_age)?);
+
                 return Ok(commands);
             }
         }
 
-        if !self.section.update_member(Proven {
-            value: member_info,
+        let new_info = Proven {
+            value: new_info,
             proof,
-        }) {
-            info!("ignore Online: {:?}", peer);
+        };
+
+        if !self.section.update_member(new_info.clone()) {
+            info!("ignore Online: {:?}", new_info.value.peer);
             return Ok(vec![]);
         }
 
-        info!("handle Online: {:?}", peer);
-
-        commands.push(self.send_node_approval(&peer, their_knowledge)?);
-        commands.extend(self.relocate_peers(peer.name(), &signature)?);
-        commands.extend(self.promote_and_demote_elders()?);
+        info!("handle Online: {:?}", new_info.value.peer);
 
         self.send_event(Event::MemberJoined {
-            name: *peer.name(),
+            name: *new_info.value.peer.name(),
             previous_name,
-            age: peer.age(),
+            age: new_info.value.peer.age(),
             startup_relocation: is_startup_phase,
         });
+
+        commands
+            .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.proof.signature)?);
+        commands.extend(self.promote_and_demote_elders()?);
+        commands.push(self.send_node_approval(new_info, their_knowledge)?);
 
         self.print_network_stats();
 
@@ -1564,26 +1566,39 @@ impl Approved {
     // Message sending
     ////////////////////////////////////////////////////////////////////////////
 
-    // Send NodeApproval to the current candidate which makes them a section member
+    // Send NodeApproval to a joining node which makes them a section member
     fn send_node_approval(
         &self,
-        peer: &Peer,
+        member_info: Proven<MemberInfo>,
         their_knowledge: Option<bls::PublicKey>,
     ) -> Result<Command> {
         info!(
-            "Our section with {:?} has approved candidate {:?}.",
+            "Our section with {:?} has approved peer {:?}.",
             self.section.prefix(),
-            peer
+            member_info.value.peer
         );
 
-        let their_knowledge = their_knowledge.and_then(|key| self.section.chain().index_of(&key));
-        let proof_chain = self
+        let addr = *member_info.value.peer.addr();
+
+        // Attach proof chain that includes the key the approved node knows (if any), the key its
+        // `MemberInfo` is signed with and the last key of our section chain.
+        let last_index = self.section.chain().last_key_index();
+        let their_knowledge_index = their_knowledge
+            .and_then(|key| self.section.chain().index_of(&key))
+            .unwrap_or(last_index);
+        let member_info_key_index = self
             .section
-            .create_proof_chain_for_our_info(their_knowledge);
+            .chain()
+            .index_of(&member_info.proof.public_key)
+            .unwrap_or(last_index);
+        let start_index = their_knowledge_index.min(member_info_key_index);
+        let proof_chain = self.section.chain().slice(start_index..);
 
-        let variant = Variant::NodeApproval(self.section.proven_elders_info().clone());
+        let variant = Variant::NodeApproval {
+            elders_info: self.section.proven_elders_info().clone(),
+            member_info,
+        };
 
-        trace!("Send {:?} to {:?}", variant, peer);
         let message = Message::single_src(
             &self.node,
             DstLocation::Direct,
@@ -1592,10 +1607,7 @@ impl Approved {
             None,
         )?;
 
-        Ok(Command::send_message_to_target(
-            peer.addr(),
-            message.to_bytes(),
-        ))
+        Ok(Command::send_message_to_target(&addr, message.to_bytes()))
     }
 
     fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
