@@ -189,6 +189,14 @@
 <span id="188">188</span>
 <span id="189">189</span>
 <span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -198,7 +206,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">SignatureAggregator</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">SignatureAggregator</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">PlainMessage</span>,
@@ -225,13 +233,17 @@
     <span class="comment">// Voted to update the elders info of a section.</span>
     <span class="ident">SectionInfo</span>(<span class="ident">EldersInfo</span>),
 
-    <span class="comment">// Voted to update our section key.</span>
-    <span class="ident">OurKey</span> {
-        <span class="comment">// In case of split, this prefix is used to differentiate the subsections. It&#39;s not part of</span>
-        <span class="comment">// the proof and thus not serialised when signing.</span>
-        <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
-        <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    },
+    <span class="comment">// Voted to update the elders in our section.</span>
+    <span class="comment">// NOTE: the `EldersInfo` is already signed with the new key. This vote is only to signs the</span>
+    <span class="comment">// new key with the current key. That way, when it accumulates, we obtain all the following</span>
+    <span class="comment">// pieces of information at the same time:</span>
+    <span class="comment">//   1. the new elders info</span>
+    <span class="comment">//   2. the new key</span>
+    <span class="comment">//   3. the signature of the new elders info using the new key</span>
+    <span class="comment">//   4. the signature of the new key using the current key</span>
+    <span class="comment">// Which we can use to update the section elders info and the section chain at the same time as</span>
+    <span class="comment">// a single atomic operation without needing to cache anything.</span>
+    <span class="ident">OurElders</span>(<span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>),
 
     <span class="comment">// Voted to update their section key.</span>
     <span class="ident">TheirKey</span> {
@@ -286,7 +298,7 @@
             <span class="ident">Vote</span>::<span class="ident">Online</span> { <span class="ident">member_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">member_info</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">member_info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">member_info</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">info</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
-            <span class="ident">Vote</span>::<span class="ident">OurKey</span> { <span class="ident">key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">key</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
+            <span class="ident">Vote</span>::<span class="ident">OurElders</span>(<span class="ident">info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">info</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>.<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">prefix</span>, <span class="ident">key_index</span>).<span class="ident">serialize</span>(<span class="ident">serializer</span>),
             <span class="ident">Vote</span>::<span class="ident">SendMessage</span> { <span class="ident">message</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">message</span>.<span class="ident">as_signable</span>().<span class="ident">serialize</span>(<span class="ident">serializer</span>),
@@ -323,22 +335,24 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">section</span>;
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>, <span class="ident">section</span>};
+    <span class="kw">use</span> <span class="ident">anyhow</span>::<span class="prelude-ty">Result</span>;
     <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">Rng</span>;
     <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::<span class="ident">Debug</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">serialize_for_signing</span>() {
+    <span class="kw">fn</span> <span class="ident">serialize_for_signing</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="comment">// Vote::SectionInfo</span>
         <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="number">4</span>);
         <span class="kw">let</span> <span class="ident">vote</span> <span class="op">=</span> <span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>.<span class="ident">clone</span>());
         <span class="ident">verify_serialize_for_signing</span>(<span class="kw-2">&amp;</span><span class="ident">vote</span>, <span class="kw-2">&amp;</span><span class="ident">elders_info</span>);
 
-        <span class="comment">// Vote::OurKey</span>
-        <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">gen_prefix</span>();
-        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>();
-        <span class="kw">let</span> <span class="ident">vote</span> <span class="op">=</span> <span class="ident">Vote</span>::<span class="ident">OurKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> };
-        <span class="ident">verify_serialize_for_signing</span>(<span class="kw-2">&amp;</span><span class="ident">vote</span>, <span class="kw-2">&amp;</span><span class="ident">key</span>);
+        <span class="comment">// Vote::OurElders</span>
+        <span class="kw">let</span> <span class="ident">new_sk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
+        <span class="kw">let</span> <span class="ident">new_pk</span> <span class="op">=</span> <span class="ident">new_sk</span>.<span class="ident">public_key</span>();
+        <span class="kw">let</span> <span class="ident">proven_elders_info</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">new_sk</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">vote</span> <span class="op">=</span> <span class="ident">Vote</span>::<span class="ident">OurElders</span>(<span class="ident">proven_elders_info</span>);
+        <span class="ident">verify_serialize_for_signing</span>(<span class="kw-2">&amp;</span><span class="ident">vote</span>, <span class="kw-2">&amp;</span><span class="ident">new_pk</span>);
 
         <span class="comment">// Vote::TheirKey</span>
         <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">gen_prefix</span>();
@@ -351,6 +365,8 @@
         <span class="kw">let</span> <span class="ident">key_index</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">random</span>();
         <span class="kw">let</span> <span class="ident">vote</span> <span class="op">=</span> <span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key_index</span> };
         <span class="ident">verify_serialize_for_signing</span>(<span class="kw-2">&amp;</span><span class="ident">vote</span>, <span class="kw-2">&amp;</span>(<span class="ident">prefix</span>, <span class="ident">key_index</span>));
+
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="comment">// Verify that `SignableView(vote)` serializes the same as `should_serialize_as`.</span>

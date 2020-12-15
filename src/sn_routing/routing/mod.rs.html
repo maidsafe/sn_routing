@@ -437,18 +437,18 @@
 <span class="kw">mod</span> <span class="ident">bootstrap</span>;
 <span class="kw">mod</span> <span class="ident">comm</span>;
 <span class="kw">mod</span> <span class="ident">event_stream</span>;
+<span class="kw">mod</span> <span class="ident">split_barrier</span>;
 <span class="kw">mod</span> <span class="ident">stage</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span>;
-<span class="kw">mod</span> <span class="ident">update_barrier</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">event_stream</span>::<span class="ident">EventStream</span>;
 <span class="kw">use</span> <span class="self">self</span>::{
     <span class="ident">approved</span>::<span class="ident">Approved</span>,
     <span class="ident">comm</span>::{<span class="ident">Comm</span>, <span class="ident">ConnectionEvent</span>},
     <span class="ident">command</span>::<span class="ident">Command</span>,
+    <span class="ident">split_barrier</span>::<span class="ident">SplitBarrier</span>,
     <span class="ident">stage</span>::<span class="ident">Stage</span>,
-    <span class="ident">update_barrier</span>::<span class="ident">UpdateBarrier</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>,

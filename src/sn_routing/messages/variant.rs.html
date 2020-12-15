@@ -278,6 +278,18 @@
 <span id="277">277</span>
 <span id="278">278</span>
 <span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -289,7 +301,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">VerifyStatus</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::{<span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">Vote</span>},
+    <span class="ident">consensus</span>::{<span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">Vote</span>},
     <span class="ident">crypto</span>::<span class="ident">Signature</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
@@ -372,12 +384,16 @@
         <span class="doccomment">/// The DKG message.</span>
         <span class="ident">message</span>: <span class="ident">DkgMessage</span>,
     },
-    <span class="doccomment">/// Message to notify current elders about the DKG result.</span>
-    <span class="ident">DKGResult</span> {
-        <span class="doccomment">/// The identifier of the DKG session the result is for.</span>
+    <span class="doccomment">/// Broadcasted to the other DKG participants when a DKG failure is observed.</span>
+    <span class="ident">DKGFailureObservation</span> {
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
-        <span class="doccomment">/// The result of the DKG.</span>
-        <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>, ()<span class="op">&gt;</span>,
+        <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>,
+    },
+    <span class="doccomment">/// Sent to the current elders by the DKG participants when at least majority of them observe</span>
+    <span class="doccomment">/// a DKG failure.</span>
+    <span class="ident">DKGFailureAgreement</span> {
+        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">proofs</span>: <span class="ident">DkgFailureProofSet</span>,
     },
     <span class="doccomment">/// Message containing a single `Vote` to be accumulated in the vote accumulator.</span>
     <span class="ident">Vote</span> {
@@ -476,10 +492,18 @@
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">dkg_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">DKGResult</span> { <span class="ident">dkg_key</span>, <span class="ident">result</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;DKGResult&quot;</span>)
+            <span class="self">Self</span>::<span class="ident">DKGFailureObservation</span> { <span class="ident">dkg_key</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;DKGFailureObservation&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="ident">dkg_key</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;result&quot;</span>, <span class="ident">result</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;proof&quot;</span>, <span class="ident">proof</span>)
+                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">DKGFailureAgreement</span> {
+                <span class="ident">elders_info</span>,
+                <span class="ident">proofs</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;DKGFailureAgreement&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;proofs&quot;</span>, <span class="ident">proofs</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">Vote</span> {
                 <span class="ident">content</span>,

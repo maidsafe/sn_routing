@@ -423,6 +423,7 @@
 <span id="422">422</span>
 <span id="423">423</span>
 <span id="424">424</span>
+<span id="425">425</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -740,6 +741,7 @@
 }
 
 <span class="doccomment">/// Status of an incomming message.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">MessageStatus</span> {
     <span class="doccomment">/// Message is useful and should be handled.</span>
     <span class="ident">Useful</span>,
