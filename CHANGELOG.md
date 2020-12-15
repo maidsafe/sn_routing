@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.7](https://github.com/maidsafe/sn_routing/compare/v0.39.6...v0.39.7) (2020-12-15)
+
+
+### Bug Fixes
+
+* reject SectionInfo votes not voted by a participant ([c40dc12](https://github.com/maidsafe/sn_routing/commit/c40dc12bb1f64f6b22695c0541479c2dbc26fd8f))
+
 ### [0.39.6](https://github.com/maidsafe/sn_routing/compare/v0.39.5...v0.39.6) (2020-12-14)
 
 
