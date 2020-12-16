@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.8](https://github.com/maidsafe/sn_routing/compare/v0.39.7...v0.39.8) (2020-12-16)
+
+
+### Bug Fixes
+
+* use age assigned by section ([4db6351](https://github.com/maidsafe/sn_routing/commit/4db63514d4b4f8fe226bc76d97ca33f0e646165a))
+
 ### [0.39.7](https://github.com/maidsafe/sn_routing/compare/v0.39.6...v0.39.7) (2020-12-15)
 
 
