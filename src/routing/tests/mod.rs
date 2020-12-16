@@ -506,7 +506,10 @@ async fn handle_online_command(
         };
 
         match message.variant() {
-            Variant::NodeApproval(proven_elders_info) => {
+            Variant::NodeApproval {
+                elders_info: proven_elders_info,
+                ..
+            } => {
                 assert_eq!(proven_elders_info.value, *elders_info);
                 assert_eq!(recipients, [*peer.addr()]);
                 status.node_approval_sent = true;

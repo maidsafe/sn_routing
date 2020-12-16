@@ -244,9 +244,8 @@ impl Section {
 
     fn elders_info_signing_key_index(&self) -> u64 {
         // NOTE: we assume that the key the current `EldersInfo` is signed with is always
-        // present in our section proof chain. This is currently guaranteed, because we use the
-        // `UpdateBarrier` and so we always update the current `EldersInfo` and the current
-        // section key at the same time.
+        // present in our section proof chain. This is guaranteed, because we update both the
+        // elders info and the section chain together in a single operation.
         self.chain
             .index_of(&self.elders_info.proof.public_key)
             .unwrap_or_else(|| unreachable!("EldersInfo signed with unknown key"))

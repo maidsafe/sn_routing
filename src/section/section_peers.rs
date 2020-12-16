@@ -57,6 +57,11 @@ impl SectionPeers {
         self.members.get(name).map(|info| &info.value)
     }
 
+    /// Get proven info for the member with the given name.
+    pub fn get_proven(&self, name: &XorName) -> Option<&Proven<MemberInfo>> {
+        self.members.get(name)
+    }
+
     /// Returns the candidates for elders out of all the nodes in this section.
     pub fn elder_candidates(&self, elder_size: usize, current_elders: &EldersInfo) -> Vec<Peer> {
         elder_candidates(

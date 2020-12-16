@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, Section, SectionProofChain, TrustStatus},
+    section::{EldersInfo, MemberInfo, Section, SectionProofChain, TrustStatus},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -43,7 +43,10 @@ pub(crate) enum Variant {
     UserMessage(Bytes),
     /// Message sent to newly joined node containing the necessary info to become a member of our
     /// section.
-    NodeApproval(Proven<EldersInfo>),
+    NodeApproval {
+        elders_info: Proven<EldersInfo>,
+        member_info: Proven<MemberInfo>,
+    },
     /// Message sent to all members to update them about the state of our section.
     Sync {
         // Information about our section.
@@ -126,10 +129,17 @@ impl Variant {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         match self {
-            Self::NodeApproval(elders_info) => {
+            Self::NodeApproval {
+                elders_info,
+                member_info,
+            } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
+                    return Err(Error::UntrustedMessage);
+                }
+
+                if !member_info.verify(proof_chain) {
                     return Err(Error::UntrustedMessage);
                 }
 
@@ -166,7 +176,14 @@ impl Debug for Variant {
                 .field("nonce", nonce)
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
-            Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
+            Self::NodeApproval {
+                elders_info,
+                member_info,
+            } => f
+                .debug_struct("NodeApproval")
+                .field("elders_info", elders_info)
+                .field("member_info", member_info)
+                .finish(),
             Self::Sync { section, .. } => f
                 .debug_struct("Sync")
                 .field("elders_info", section.elders_info())

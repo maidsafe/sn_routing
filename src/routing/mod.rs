@@ -105,7 +105,7 @@ impl Routing {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) =
                 Comm::bootstrap(config.transport_config, connection_event_tx).await?;
-            let node = Node::new(keypair, comm.our_connection_info().await?);
+            let node = Node::new(keypair, comm.our_connection_info().await?).with_age(MIN_AGE + 1);
             let (node, section, backlog) =
                 bootstrap::initial(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, event_tx);
