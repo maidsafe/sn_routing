@@ -353,7 +353,6 @@
 <span id="352">352</span>
 <span id="353">353</span>
 <span id="354">354</span>
-<span id="355">355</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -601,9 +600,8 @@
 
     <span class="kw">fn</span> <span class="ident">elders_info_signing_key_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
         <span class="comment">// NOTE: we assume that the key the current `EldersInfo` is signed with is always</span>
-        <span class="comment">// present in our section proof chain. This is currently guaranteed, because we use the</span>
-        <span class="comment">// `UpdateBarrier` and so we always update the current `EldersInfo` and the current</span>
-        <span class="comment">// section key at the same time.</span>
+        <span class="comment">// present in our section proof chain. This is guaranteed, because we update both the</span>
+        <span class="comment">// elders info and the section chain together in a single operation.</span>
         <span class="self">self</span>.<span class="ident">chain</span>
             .<span class="ident">index_of</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">elders_info</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>)
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">unreachable</span><span class="macro">!</span>(<span class="string">&quot;EldersInfo signed with unknown key&quot;</span>))

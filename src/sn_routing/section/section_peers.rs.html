@@ -229,6 +229,11 @@
 <span id="228">228</span>
 <span id="229">229</span>
 <span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -287,6 +292,11 @@
     <span class="doccomment">/// Get info for the member with the given name.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">members</span>.<span class="ident">get</span>(<span class="ident">name</span>).<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">value</span>)
+    }
+
+    <span class="doccomment">/// Get proven info for the member with the given name.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_proven</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">members</span>.<span class="ident">get</span>(<span class="ident">name</span>)
     }
 
     <span class="doccomment">/// Returns the candidates for elders out of all the nodes in this section.</span>
