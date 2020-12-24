@@ -785,8 +785,6 @@
 <span id="784">784</span>
 <span id="785">785</span>
 <span id="786">786</span>
-<span id="787">787</span>
-<span id="788">788</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1561,9 +1559,7 @@
                     <span class="self">self</span>.<span class="ident">outcome</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">outcome</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>());
                     <span class="macro">vec</span><span class="macro">!</span>[]
                 }
-                <span class="ident">DkgCommand</span>::<span class="ident">ScheduleTimeout</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="macro">vec</span><span class="macro">!</span>[]
-                }
+                <span class="ident">DkgCommand</span>::<span class="ident">ScheduleTimeout</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">vec</span><span class="macro">!</span>[],
                 <span class="ident">DkgCommand</span>::<span class="ident">SendFailureObservation</span> { .. }
                 <span class="op">|</span> <span class="ident">DkgCommand</span>::<span class="ident">HandleFailureAgreement</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">panic</span><span class="macro">!</span>(<span class="string">&quot;unexpected command: {:?}&quot;</span>, <span class="ident">command</span>)

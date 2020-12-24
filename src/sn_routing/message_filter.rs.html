@@ -91,6 +91,13 @@
 <span id="90">90</span>
 <span id="91">91</span>
 <span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -110,6 +117,7 @@
 
 <span class="kw">const</span> <span class="ident">INCOMING_EXPIRY_DURATION</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">20</span> <span class="op">*</span> <span class="number">60</span>);
 <span class="kw">const</span> <span class="ident">OUTGOING_EXPIRY_DURATION</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">10</span> <span class="op">*</span> <span class="number">60</span>);
+<span class="kw">const</span> <span class="ident">MAX_ENTRIES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">5_000</span>;
 
 <span class="doccomment">/// An enum representing a result of message filtering</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
@@ -138,8 +146,14 @@
 <span class="kw">impl</span> <span class="ident">MessageFilter</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">incoming</span>: <span class="ident">LruCache</span>::<span class="ident">with_expiry_duration</span>(<span class="ident">INCOMING_EXPIRY_DURATION</span>),
-            <span class="ident">outgoing</span>: <span class="ident">LruCache</span>::<span class="ident">with_expiry_duration</span>(<span class="ident">OUTGOING_EXPIRY_DURATION</span>),
+            <span class="ident">incoming</span>: <span class="ident">LruCache</span>::<span class="ident">with_expiry_duration_and_capacity</span>(
+                <span class="ident">INCOMING_EXPIRY_DURATION</span>,
+                <span class="ident">MAX_ENTRIES</span>,
+            ),
+            <span class="ident">outgoing</span>: <span class="ident">LruCache</span>::<span class="ident">with_expiry_duration_and_capacity</span>(
+                <span class="ident">OUTGOING_EXPIRY_DURATION</span>,
+                <span class="ident">MAX_ENTRIES</span>,
+            ),
         }
     }
 
