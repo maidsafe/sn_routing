@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.9](https://github.com/maidsafe/sn_routing/compare/v0.39.8...v0.39.9) (2020-12-24)
+
+
+### Features
+
+* set filter number boundary ([c129bff](https://github.com/maidsafe/sn_routing/commit/c129bff69d92400202bcefd1983eb028e3a26155))
+
 ### [0.39.8](https://github.com/maidsafe/sn_routing/compare/v0.39.7...v0.39.8) (2020-12-16)
 
 
