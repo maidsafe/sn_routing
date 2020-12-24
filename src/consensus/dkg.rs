@@ -771,9 +771,7 @@ mod tests {
                     self.outcome = Some(outcome.public_key_set.public_key());
                     vec![]
                 }
-                DkgCommand::ScheduleTimeout { .. } => {
-                    vec![]
-                }
+                DkgCommand::ScheduleTimeout { .. } => vec![],
                 DkgCommand::SendFailureObservation { .. }
                 | DkgCommand::HandleFailureAgreement { .. } => {
                     panic!("unexpected command: {:?}", command)
