@@ -1972,6 +1972,16 @@
 <span id="1971">1971</span>
 <span id="1972">1972</span>
 <span id="1973">1973</span>
+<span id="1974">1974</span>
+<span id="1975">1975</span>
+<span id="1976">1976</span>
+<span id="1977">1977</span>
+<span id="1978">1978</span>
+<span id="1979">1979</span>
+<span id="1980">1980</span>
+<span id="1981">1981</span>
+<span id="1982">1982</span>
+<span id="1983">1983</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2007,7 +2017,7 @@
         <span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">Section</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>,
         <span class="ident">SectionProofChain</span>, <span class="ident">MIN_AGE</span>,
     },
-    <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
+    <span class="ident">ELDER_SIZE</span>, <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
@@ -3166,18 +3176,28 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
+        <span class="comment">// Do not carry out relocation when there is not enough elder nodes.</span>
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">ELDER_SIZE</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
+        }
+
         <span class="kw">let</span> <span class="ident">relocations</span> <span class="op">=</span>
             <span class="ident">relocation</span>::<span class="ident">actions</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>, <span class="ident">churn_name</span>, <span class="ident">churn_signature</span>);
 
         <span class="kw">for</span> (<span class="ident">info</span>, <span class="ident">action</span>) <span class="kw">in</span> <span class="ident">relocations</span> {
+            <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">peer</span>;
+
+            <span class="comment">// The newly joined node is not being relocated immediately.</span>
+            <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">churn_name</span> {
+                <span class="kw">continue</span>;
+            }
+
             <span class="macro">debug</span><span class="macro">!</span>(
                 <span class="string">&quot;Relocating {:?} to {} (on churn of {})&quot;</span>,
-                <span class="ident">info</span>.<span class="ident">peer</span>,
+                <span class="ident">peer</span>,
                 <span class="ident">action</span>.<span class="ident">destination</span>(),
                 <span class="ident">churn_name</span>
             );
-
-            <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">info</span>.<span class="ident">peer</span>;
 
             <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">Offline</span>(<span class="ident">info</span>.<span class="ident">relocate</span>(<span class="kw-2">*</span><span class="ident">action</span>.<span class="ident">destination</span>())))<span class="question-mark">?</span>);
 
