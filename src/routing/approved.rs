@@ -32,7 +32,7 @@ use crate::{
         EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare, SectionKeysProvider,
         SectionProofChain, MIN_AGE,
     },
-    RECOMMENDED_SECTION_SIZE,
+    ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -1191,18 +1191,28 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
+        // Do not carry out relocation when there is not enough elder nodes.
+        if self.section.elders_info().elders.len() < ELDER_SIZE {
+            return Ok(commands);
+        }
+
         let relocations =
             relocation::actions(&self.section, &self.network, churn_name, churn_signature);
 
         for (info, action) in relocations {
+            let peer = info.peer;
+
+            // The newly joined node is not being relocated immediately.
+            if peer.name() == churn_name {
+                continue;
+            }
+
             debug!(
                 "Relocating {:?} to {} (on churn of {})",
-                info.peer,
+                peer,
                 action.destination(),
                 churn_name
             );
-
-            let peer = info.peer;
 
             commands.extend(self.vote(Vote::Offline(info.relocate(*action.destination())))?);
 
