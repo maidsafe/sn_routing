@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.10](https://github.com/maidsafe/sn_routing/compare/v0.39.9...v0.39.10) (2020-12-25)
+
+
+### Bug Fixes
+
+* avoid over relocation ([989529c](https://github.com/maidsafe/sn_routing/commit/989529cafd1903e9009f4f66b1d111819d89be9c))
+
 ### [0.39.9](https://github.com/maidsafe/sn_routing/compare/v0.39.8...v0.39.9) (2020-12-24)
 
 
