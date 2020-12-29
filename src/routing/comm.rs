@@ -8,7 +8,6 @@
 
 use crate::error::{Error, Result};
 use bytes::Bytes;
-use err_derive::Error;
 use futures::stream::{FuturesUnordered, StreamExt};
 use qp2p::{Connection, Endpoint, QuicP2p};
 use std::{
@@ -16,6 +15,7 @@ use std::{
     net::SocketAddr,
     sync::RwLock,
 };
+use thiserror::Error;
 use tokio::{sync::mpsc, task};
 
 // Communication component of the node to interact with other nodes.
@@ -213,7 +213,7 @@ impl Drop for Comm {
 }
 
 #[derive(Debug, Error)]
-#[error(display = "Send failed")]
+#[error("Send failed")]
 pub struct SendError;
 
 impl From<SendError> for Error {
