@@ -260,6 +260,23 @@ impl Routing {
             .collect()
     }
 
+    /// Returns the info about the section matches the name.
+    pub async fn match_section(
+        &self,
+        name: &XorName,
+    ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+        let state = self.stage.state.lock().await;
+        if state.section().prefix().matches(name) {
+            let section = state.section();
+            (
+                Some(*section.chain().last_key()),
+                Some(section.elders_info().clone()),
+            )
+        } else {
+            state.network().section_by_name(name)
+        }
+    }
+
     /// Send a message.
     /// Messages sent here, either section to section or node to node are signed
     /// and validated upon receipt by routing itself.

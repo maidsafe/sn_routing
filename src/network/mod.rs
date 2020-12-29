@@ -170,6 +170,17 @@ impl Network {
         self.keys.get_matching(name).map(|entry| &entry.value.1)
     }
 
+    /// Returns the elders_info and the latest known key for the prefix that matches `name`,
+    /// excluding self section.
+    pub fn section_by_name(&self, name: &XorName) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+        (
+            self.keys.get_matching(name).map(|entry| entry.value.1),
+            self.neighbours
+                .get_matching(name)
+                .map(|entry| entry.value.clone()),
+        )
+    }
+
     /// Returns the index of the public key in our_history that will be trusted by the given
     /// section.
     pub fn knowledge_by_section(&self, prefix: &Prefix) -> u64 {
