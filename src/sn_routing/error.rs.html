@@ -54,7 +54,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="ident">err_derive</span>::<span class="ident">Error</span>;
+<span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 
 <span class="doccomment">/// The type returned by the sn_routing message handling methods.</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">E</span> <span class="op">=</span> <span class="ident">Error</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">std</span>::<span class="ident">result</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">E</span><span class="op">&gt;</span>;
@@ -63,33 +63,33 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Error</span> {
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Invalid requester or handler locations.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid requester or handler locations.&quot;</span>)]</span>
     <span class="ident">BadLocation</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Failed signature check.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Failed signature check.&quot;</span>)]</span>
     <span class="ident">FailedSignature</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Cannot route.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot route.&quot;</span>)]</span>
     <span class="ident">CannotRoute</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Network layer error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
-    <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">error</span>(<span class="ident">source</span>)]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Bincode error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
-    <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">error</span>(<span class="ident">source</span>)]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Invalid source.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source.&quot;</span>)]</span>
     <span class="ident">InvalidSource</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Invalid destination.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid destination.&quot;</span>)]</span>
     <span class="ident">InvalidDestination</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Content of a received message is inconsistent.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Content of a received message is inconsistent.&quot;</span>)]</span>
     <span class="ident">InvalidMessage</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;A signed message could not be trusted.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;A signed message could not be trusted.&quot;</span>)]</span>
     <span class="ident">UntrustedMessage</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;A signature share is invalid.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;A signature share is invalid.&quot;</span>)]</span>
     <span class="ident">InvalidSignatureShare</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;The secret key share is missing.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The secret key share is missing.&quot;</span>)]</span>
     <span class="ident">MissingSecretKeyShare</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Failed to send a message.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Failed to send a message.&quot;</span>)]</span>
     <span class="ident">FailedSend</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Invalid vote.&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid vote.&quot;</span>)]</span>
     <span class="ident">InvalidVote</span>,
 }
 </pre></div>

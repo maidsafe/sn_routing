@@ -580,13 +580,13 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="ident">err_derive</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">HashSet</span>,
     <span class="ident">iter</span>, <span class="ident">mem</span>,
     <span class="ident">ops</span>::{<span class="ident">Bound</span>, <span class="ident">RangeBounds</span>},
 };
+<span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 
 <span class="doccomment">/// Chain of section BLS keys where every key is proven (signed) by the previous key, except the</span>
 <span class="doccomment">/// first one.</span>
@@ -867,17 +867,17 @@
 <span class="doccomment">/// Error returned from `SectionProofChain::extend`</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ExtendError</span> {
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;invalid first key&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;invalid first key&quot;</span>)]</span>
     <span class="ident">InvalidFirstKey</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;invalid last key&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;invalid last key&quot;</span>)]</span>
     <span class="ident">InvalidLastKey</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;proof chain already sufficient&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;proof chain already sufficient&quot;</span>)]</span>
     <span class="ident">AlreadySufficient</span>,
 }
 
 <span class="doccomment">/// Error returned from `SectionProofChain::merge`</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
-<span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;incompatible chains cannot be merged&quot;</span>)]</span>
+<span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;incompatible chains cannot be merged&quot;</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MergeError</span>;
 
 <span class="comment">// Block of the section proof chain. Contains the section BLS public key and is signed by the</span>

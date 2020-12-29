@@ -457,9 +457,9 @@
 };
 
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
-<span class="kw">use</span> <span class="ident">err_derive</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>};
+<span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
 <span class="comment">// Message used to probe a peer connection.</span>
@@ -761,9 +761,9 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">CreateError</span> {
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;bincode error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
-    <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">error</span>(<span class="ident">source</span>)]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;signature check failed&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;bincode error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;signature check failed&quot;</span>)]</span>
     <span class="ident">FailedSignature</span>,
 }
 
@@ -779,12 +779,12 @@
 <span class="doccomment">/// Error returned from `Message::extend_proof_chain`.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ExtendProofChainError</span> {
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;message has no proof chain&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;message has no proof chain&quot;</span>)]</span>
     <span class="ident">NoProofChain</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;failed to extend proof chain: {}&quot;</span>, <span class="ident">_0</span>)]</span>
-    <span class="ident">Extend</span>(<span class="attribute">#[<span class="ident">error</span>(<span class="ident">source</span>)]</span> <span class="ident">ExtendError</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;failed to re-create message: {}&quot;</span>, <span class="ident">_0</span>)]</span>
-    <span class="ident">Create</span>(<span class="attribute">#[<span class="ident">error</span>(<span class="ident">source</span>)]</span> <span class="ident">CreateError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;failed to extend proof chain: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="ident">Extend</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ExtendError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;failed to re-create message: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="ident">Create</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">CreateError</span>),
 }
 
 <span class="comment">// View of a message that can be serialized for the purpose of signing.</span>
