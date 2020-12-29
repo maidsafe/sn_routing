@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use err_derive::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     iter, mem,
     ops::{Bound, RangeBounds},
 };
+use thiserror::Error;
 
 /// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
 /// first one.
@@ -293,17 +293,17 @@ pub enum TrustStatus {
 /// Error returned from `SectionProofChain::extend`
 #[derive(Debug, Error)]
 pub enum ExtendError {
-    #[error(display = "invalid first key")]
+    #[error("invalid first key")]
     InvalidFirstKey,
-    #[error(display = "invalid last key")]
+    #[error("invalid last key")]
     InvalidLastKey,
-    #[error(display = "proof chain already sufficient")]
+    #[error("proof chain already sufficient")]
     AlreadySufficient,
 }
 
 /// Error returned from `SectionProofChain::merge`
 #[derive(Debug, Error, Eq, PartialEq)]
-#[error(display = "incompatible chains cannot be merged")]
+#[error("incompatible chains cannot be merged")]
 pub struct MergeError;
 
 // Block of the section proof chain. Contains the section BLS public key and is signed by the
