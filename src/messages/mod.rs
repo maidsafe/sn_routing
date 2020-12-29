@@ -25,9 +25,9 @@ use crate::{
 };
 
 use bytes::Bytes;
-use err_derive::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
+use thiserror::Error;
 use xor_name::Prefix;
 
 // Message used to probe a peer connection.
@@ -329,9 +329,9 @@ pub enum MessageStatus {
 
 #[derive(Debug, Error)]
 pub enum CreateError {
-    #[error(display = "bincode error: {}", _0)]
-    Bincode(#[error(source)] bincode::Error),
-    #[error(display = "signature check failed")]
+    #[error("bincode error: {}", _0)]
+    Bincode(#[from] bincode::Error),
+    #[error("signature check failed")]
     FailedSignature,
 }
 
@@ -347,12 +347,12 @@ impl From<CreateError> for Error {
 /// Error returned from `Message::extend_proof_chain`.
 #[derive(Debug, Error)]
 pub enum ExtendProofChainError {
-    #[error(display = "message has no proof chain")]
+    #[error("message has no proof chain")]
     NoProofChain,
-    #[error(display = "failed to extend proof chain: {}", _0)]
-    Extend(#[error(source)] ExtendError),
-    #[error(display = "failed to re-create message: {}", _0)]
-    Create(#[error(source)] CreateError),
+    #[error("failed to extend proof chain: {}", _0)]
+    Extend(#[from] ExtendError),
+    #[error("failed to re-create message: {}", _0)]
+    Create(#[from] CreateError),
 }
 
 // View of a message that can be serialized for the purpose of signing.

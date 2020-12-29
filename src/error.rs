@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use err_derive::Error;
+use thiserror::Error;
 
 /// The type returned by the sn_routing message handling methods.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -15,32 +15,32 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
 pub enum Error {
-    #[error(display = "Invalid requester or handler locations.")]
+    #[error("Invalid requester or handler locations.")]
     BadLocation,
-    #[error(display = "Failed signature check.")]
+    #[error("Failed signature check.")]
     FailedSignature,
-    #[error(display = "Cannot route.")]
+    #[error("Cannot route.")]
     CannotRoute,
-    #[error(display = "Network layer error: {}", _0)]
-    Network(#[error(source)] qp2p::Error),
-    #[error(display = "The node is not in a state to handle the action.")]
+    #[error("Network layer error: {}", _0)]
+    Network(#[from] qp2p::Error),
+    #[error("The node is not in a state to handle the action.")]
     InvalidState,
-    #[error(display = "Bincode error: {}", _0)]
-    Bincode(#[error(source)] bincode::Error),
-    #[error(display = "Invalid source.")]
+    #[error("Bincode error: {}", _0)]
+    Bincode(#[from] bincode::Error),
+    #[error("Invalid source.")]
     InvalidSource,
-    #[error(display = "Invalid destination.")]
+    #[error("Invalid destination.")]
     InvalidDestination,
-    #[error(display = "Content of a received message is inconsistent.")]
+    #[error("Content of a received message is inconsistent.")]
     InvalidMessage,
-    #[error(display = "A signed message could not be trusted.")]
+    #[error("A signed message could not be trusted.")]
     UntrustedMessage,
-    #[error(display = "A signature share is invalid.")]
+    #[error("A signature share is invalid.")]
     InvalidSignatureShare,
-    #[error(display = "The secret key share is missing.")]
+    #[error("The secret key share is missing.")]
     MissingSecretKeyShare,
-    #[error(display = "Failed to send a message.")]
+    #[error("Failed to send a message.")]
     FailedSend,
-    #[error(display = "Invalid vote.")]
+    #[error("Invalid vote.")]
     InvalidVote,
 }
