@@ -165,6 +165,8 @@ deny = [
     # not specified, all versions will be matched.
     #{ name = "ansi_term", version = "=0.11.0" },
     #
+    { name = "openssl" },
+    { name = "rust-openssl"}
     # Wrapper crates can optionally be specified to allow the crate when it
     # is a direct dependency of the otherwise banned crate
     #{ name = "ansi_term", version = "=0.11.0", wrappers = [] },
