@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{Config, DstLocation, Error, Event, SrcLocation, TransportConfig};
+use sn_routing::{Config, DstLocation, Error, Event, SrcLocation};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
@@ -45,7 +45,10 @@ async fn test_messages_client_node() -> Result<()> {
 
     // create a client which sends a message to the node
     let node_addr = node.our_connection_info().await?;
-    let mut config = TransportConfig::default();
+    let mut config = sn_routing::TransportConfig {
+        ip: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+        ..Default::default()
+    };
     config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
