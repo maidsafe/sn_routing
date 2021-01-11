@@ -92,19 +92,23 @@ async fn main() -> Result<()> {
     }
 
     // Init logging.
-    if let Some(path) = opts.log {
+    let _log_guard = if let Some(path) = opts.log {
         let builder = tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env());
 
         if path == "-" {
-            builder.init()
+            builder.init();
+            None
         } else {
-            let file = File::open(path)?;
+            let file = File::create(path)?;
             let file = BufWriter::new(file);
-            let (writer, _) = tracing_appender::non_blocking(file);
+            let (writer, guard) = tracing_appender::non_blocking(file);
 
-            builder.with_writer(writer).init()
+            builder.with_writer(writer).init();
+            Some(guard)
         }
-    }
+    } else {
+        None
+    };
 
     let schedule = ChurnSchedule::parse(&opts.schedule)?;
 
@@ -404,7 +408,9 @@ impl Network {
         });
 
         for (node, name, prefix) in nodes {
-            let dst = *cache.entry(prefix).or_insert_with(rand::random);
+            let dst = *cache
+                .entry(prefix)
+                .or_insert_with(|| prefix.substituted_in(rand::random()));
             self.try_send_probe(node, *name, dst).await?;
             self.probe_tracker.send(*prefix, dst);
         }
