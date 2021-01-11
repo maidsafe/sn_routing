@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, MemberInfo, Section, SectionProofChain, TrustStatus},
+    section::{EldersInfo, MemberInfo, Section, SectionProofChain},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -136,31 +136,24 @@ impl Variant {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(Error::UntrustedMessage);
+                    return Err(Error::InvalidMessage);
                 }
 
                 if !member_info.verify(proof_chain) {
-                    return Err(Error::UntrustedMessage);
+                    return Err(Error::InvalidMessage);
                 }
 
-                match proof_chain.check_trust(trusted_keys) {
-                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
-                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(Error::UntrustedMessage),
-                }
+                proof_chain.check_trust(trusted_keys).into()
             }
+            Self::Sync { section, .. } => section.chain().check_trust(trusted_keys).into(),
             Self::NeighbourInfo { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(Error::UntrustedMessage);
+                    return Err(Error::InvalidMessage);
                 }
 
-                match proof_chain.check_trust(trusted_keys) {
-                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
-                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(Error::UntrustedMessage),
-                }
+                proof_chain.check_trust(trusted_keys).into()
             }
             _ => Ok(VerifyStatus::Full),
         }

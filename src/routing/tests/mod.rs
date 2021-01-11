@@ -1292,7 +1292,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         })
         .await;
 
-    assert_matches!(result, Err(Error::UntrustedMessage));
+    assert_matches!(result, Err(Error::InvalidMessage));
 
     Ok(())
 }
@@ -1443,8 +1443,6 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     Ok(())
 }
 
-// FIXME: currently failing
-#[ignore]
 #[tokio::test]
 async fn handle_elders_update() -> Result<()> {
     // Start with section that has `ELDER_SIZE` elders with age 6, 1 non-elder with age 5 and one
@@ -1475,14 +1473,17 @@ async fn handle_elders_update() -> Result<()> {
     let demoted_peer = other_elder_peers.remove(0);
 
     // Create `HandleConsensus` command for an `OurElders` vote. This will demote one of the
-    // current elders and promote the age 7 peer.
+    // current elders and promote the oldest peer.
     let elders_info1 = EldersInfo::new(
         iter::once(node.peer())
             .chain(other_elder_peers.clone())
             .chain(iter::once(promoted_peer)),
         Prefix::default(),
     );
+    let elder_names1: BTreeSet<_> = elders_info1.elders.keys().copied().collect();
+
     let sk_set1 = SecretKeySet::random();
+    let pk1 = sk_set1.secret_key().public_key();
 
     let proven_elders_info1 = proven(sk_set1.secret_key(), elders_info1)?;
     let vote = Vote::OurElders(proven_elders_info1);
@@ -1491,15 +1492,11 @@ async fn handle_elders_update() -> Result<()> {
         .sign(&bincode::serialize(&vote.as_signable())?);
     let proof = Proof {
         signature,
-        public_key: sk_set0.secret_key().public_key(),
+        public_key: pk0,
     };
 
-    let state = Approved::new(
-        node,
-        section0.clone(),
-        Some(section_key_share),
-        mpsc::unbounded_channel().0,
-    );
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let state = Approved::new(node, section0.clone(), Some(section_key_share), event_tx);
     let stage = Stage::new(state, create_comm()?);
 
     let commands = stage
@@ -1524,21 +1521,7 @@ async fn handle_elders_update() -> Result<()> {
             _ => continue,
         };
 
-        assert_eq!(recipients.len(), 1);
-        let recipient = recipients[0];
-
-        if &recipient == adult_peer.addr() || &recipient == demoted_peer.addr() {
-            // adults get only the latest key
-            assert_eq!(section.chain().len(), 1);
-        } else {
-            // elders get the full chain
-            assert_eq!(section.chain().len(), 2);
-        }
-
-        assert_eq!(
-            section.chain().last_key(),
-            &sk_set1.secret_key().public_key()
-        );
+        assert_eq!(section.chain().last_key(), &pk1);
 
         // The message is trusted even by peers who don't yet know the new section key.
         assert_matches!(
@@ -1549,7 +1532,7 @@ async fn handle_elders_update() -> Result<()> {
         // Merging the section contained in the message with the original section succeeds.
         assert_matches!(section0.clone().merge(section.clone()), Ok(()));
 
-        assert!(sync_actual_recipients.insert(recipient));
+        sync_actual_recipients.extend(recipients);
     }
 
     let sync_expected_recipients: HashSet<_> = other_elder_peers
@@ -1561,6 +1544,14 @@ async fn handle_elders_update() -> Result<()> {
         .collect();
 
     assert_eq!(sync_actual_recipients, sync_expected_recipients);
+
+    assert_matches!(
+        event_rx.try_recv(),
+        Ok(Event::EldersChanged { key, elders, .. }) => {
+            assert_eq!(key, pk1);
+            assert_eq!(elders, elder_names1);
+        }
+    );
 
     Ok(())
 }

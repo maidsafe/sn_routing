@@ -214,11 +214,7 @@ impl Message {
                     .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
                     .map(|(_, key)| key);
 
-                match proof_chain.check_trust(trusted_keys) {
-                    TrustStatus::Trusted => Ok(VerifyStatus::Full),
-                    TrustStatus::Unknown => Ok(VerifyStatus::Unknown),
-                    TrustStatus::Invalid => Err(Error::UntrustedMessage),
-                }
+                proof_chain.check_trust(trusted_keys).into()
             }
         }
     }
@@ -262,10 +258,12 @@ impl Message {
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
-        section_proof_chain: &SectionProofChain,
+        full_chain: &SectionProofChain,
     ) -> Result<Self, ExtendProofChainError> {
-        if let Some(proof_chain) = self.proof_chain.as_mut() {
-            proof_chain.extend(new_first_key, section_proof_chain)?;
+        if let Variant::Sync { section, .. } = &mut self.variant {
+            section.extend_chain(new_first_key, full_chain)?
+        } else if let Some(proof_chain) = &mut self.proof_chain {
+            proof_chain.extend(new_first_key, full_chain)?
         } else {
             return Err(ExtendProofChainError::NoProofChain);
         }
@@ -311,6 +309,16 @@ pub enum VerifyStatus {
     // even though it is valid. The message should be relayed to other nodes who might be able to
     // verify it.
     Unknown,
+}
+
+impl Into<Result<VerifyStatus>> for TrustStatus {
+    fn into(self) -> Result<VerifyStatus> {
+        match self {
+            Self::Trusted => Ok(VerifyStatus::Full),
+            Self::Unknown => Ok(VerifyStatus::Unknown),
+            Self::Invalid => Err(Error::InvalidMessage),
+        }
+    }
 }
 
 /// Status of an incomming message.

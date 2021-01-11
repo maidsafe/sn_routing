@@ -177,17 +177,17 @@ impl SectionProofChain {
     pub(crate) fn extend(
         &mut self,
         new_first_key: &bls::PublicKey,
-        full_proof_chain: &Self,
+        full_chain: &Self,
     ) -> Result<(), ExtendError> {
         if self.has_key(new_first_key) {
             return Err(ExtendError::AlreadySufficient);
         }
 
-        let index_from = full_proof_chain
+        let index_from = full_chain
             .index_of(new_first_key)
             .ok_or(ExtendError::InvalidFirstKey)?;
 
-        let index_to = full_proof_chain
+        let index_to = full_chain
             .index_of(self.last_key())
             .ok_or(ExtendError::InvalidLastKey)?;
 
@@ -195,7 +195,7 @@ impl SectionProofChain {
             return Err(ExtendError::InvalidFirstKey);
         }
 
-        *self = full_proof_chain.slice(index_from..=index_to);
+        *self = full_chain.slice(index_from..=index_to);
 
         Ok(())
     }
