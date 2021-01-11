@@ -1,4 +1,4 @@
-// Copyright 2020 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -62,10 +62,10 @@ struct Options {
     ///
     /// Given as a list of numbers which are taken in groups of three. Each triple defines one churn
     /// period. The first number defines the duration of the period in seconds, the second number
-    /// the number of nodes to add during this period and the third number the number of nodes to
-    /// remove. The actual times of the churn events are chosen randomly within the period. Multiple
-    /// periods can be specified and are then executed sequentially. If the number of entries is not
-    /// divisible by three, the missing numbers are assumed to be zeroes.
+    /// defines the number of nodes to add during this period and the third number defines the
+    /// number of nodes to remove. The actual times of the churn events are chosen randomly within
+    /// the period. Multiple periods can be specified and are then executed sequentially. If the
+    /// number of entries is not divisible by three, the missing numbers are assumed to be zeroes.
     ///
     /// Example
     ///
@@ -354,7 +354,8 @@ impl Network {
                     self.probe_tracker.receive(&dst, message.proof_share);
                 }
                 _ => {
-                    // TODO
+                    // Currently ignore the other event variants. This might change in the future,
+                    // if we come up with something interesting to use those events for.
                 }
             },
         }
@@ -370,7 +371,7 @@ impl Network {
         id
     }
 
-    // Returns the socket address to bootstrap against.
+    // Returns the socket addresses to bootstrap against.
     async fn get_bootstrap_addrs(&self) -> Result<Vec<SocketAddr>> {
         // Number of bootstrap contacts to use. Use more than one to increase the chance of
         // successful bootstrap in case some of the bootstrap nodes get dropped.
