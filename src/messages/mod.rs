@@ -198,7 +198,7 @@ impl Message {
                 self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
             }
             SrcAuthority::Section { prefix, signature } => {
-                // Proof chain is requires for section-src messages.
+                // Proof chain is required for section-src messages.
                 let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
                     proof_chain
                 } else {

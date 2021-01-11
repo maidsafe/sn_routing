@@ -18,6 +18,7 @@ use crate::{
     majority,
     messages::{
         BootstrapResponse, JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant,
+        VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -34,7 +35,12 @@ use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
-use std::{collections::BTreeSet, iter, net::Ipv4Addr, ops::Deref};
+use std::{
+    collections::{BTreeSet, HashSet},
+    iter,
+    net::Ipv4Addr,
+    ops::Deref,
+};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -1433,6 +1439,128 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
             Variant::UserMessage(actual_content) if actual_content == &content
         );
     });
+
+    Ok(())
+}
+
+// FIXME: currently failing
+#[ignore]
+#[tokio::test]
+async fn handle_elders_update() -> Result<()> {
+    // Start with section that has `ELDER_SIZE` elders with age 6, 1 non-elder with age 5 and one
+    // to-be-elder with age 7:
+    let node = create_node().with_age(MIN_AGE + 2);
+    let mut other_elder_peers: Vec<_> = iter::repeat_with(|| create_peer().with_age(MIN_AGE + 2))
+        .take(ELDER_SIZE - 1)
+        .collect();
+    let adult_peer = create_peer().with_age(MIN_AGE + 1);
+    let promoted_peer = create_peer().with_age(MIN_AGE + 3);
+
+    let sk_set0 = SecretKeySet::random();
+    let pk0 = sk_set0.secret_key().public_key();
+
+    let elders_info0 = EldersInfo::new(
+        iter::once(node.peer()).chain(other_elder_peers.clone()),
+        Prefix::default(),
+    );
+
+    let (mut section0, section_key_share) = create_section(&sk_set0, &elders_info0)?;
+
+    for peer in &[adult_peer, promoted_peer] {
+        let member_info = MemberInfo::joined(*peer);
+        let member_info = proven(sk_set0.secret_key(), member_info)?;
+        assert!(section0.update_member(member_info));
+    }
+
+    let demoted_peer = other_elder_peers.remove(0);
+
+    // Create `HandleConsensus` command for an `OurElders` vote. This will demote one of the
+    // current elders and promote the age 7 peer.
+    let elders_info1 = EldersInfo::new(
+        iter::once(node.peer())
+            .chain(other_elder_peers.clone())
+            .chain(iter::once(promoted_peer)),
+        Prefix::default(),
+    );
+    let sk_set1 = SecretKeySet::random();
+
+    let proven_elders_info1 = proven(sk_set1.secret_key(), elders_info1)?;
+    let vote = Vote::OurElders(proven_elders_info1);
+    let signature = sk_set0
+        .secret_key()
+        .sign(&bincode::serialize(&vote.as_signable())?);
+    let proof = Proof {
+        signature,
+        public_key: sk_set0.secret_key().public_key(),
+    };
+
+    let state = Approved::new(
+        node,
+        section0.clone(),
+        Some(section_key_share),
+        mpsc::unbounded_channel().0,
+    );
+    let stage = Stage::new(state, create_comm()?);
+
+    let commands = stage
+        .handle_command(Command::HandleConsensus { vote, proof })
+        .await?;
+
+    let mut sync_actual_recipients = HashSet::new();
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+        let section = match message.variant() {
+            Variant::Sync { section, .. } => section,
+            _ => continue,
+        };
+
+        assert_eq!(recipients.len(), 1);
+        let recipient = recipients[0];
+
+        if &recipient == adult_peer.addr() || &recipient == demoted_peer.addr() {
+            // adults get only the latest key
+            assert_eq!(section.chain().len(), 1);
+        } else {
+            // elders get the full chain
+            assert_eq!(section.chain().len(), 2);
+        }
+
+        assert_eq!(
+            section.chain().last_key(),
+            &sk_set1.secret_key().public_key()
+        );
+
+        // The message is trusted even by peers who don't yet know the new section key.
+        assert_matches!(
+            message.verify(iter::once((&Prefix::default(), &pk0))),
+            Ok(VerifyStatus::Full)
+        );
+
+        // Merging the section contained in the message with the original section succeeds.
+        assert_matches!(section0.clone().merge(section.clone()), Ok(()));
+
+        assert!(sync_actual_recipients.insert(recipient));
+    }
+
+    let sync_expected_recipients: HashSet<_> = other_elder_peers
+        .into_iter()
+        .map(|peer| *peer.addr())
+        .chain(iter::once(*promoted_peer.addr()))
+        .chain(iter::once(*demoted_peer.addr()))
+        .chain(iter::once(*adult_peer.addr()))
+        .collect();
+
+    assert_eq!(sync_actual_recipients, sync_expected_recipients);
 
     Ok(())
 }
