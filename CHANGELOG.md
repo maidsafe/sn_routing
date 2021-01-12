@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.39.14](https://github.com/maidsafe/sn_routing/compare/v0.39.13...v0.39.14) (2021-01-12)
+
+
+### Features
+
+* add stress test example ([cf25c48](https://github.com/maidsafe/sn_routing/commit/cf25c48d3ba613db0a1e631620727a31f87d2661))
+
+
+### Bug Fixes
+
+* **stress test:** fix log to file and probe message destination ([c933605](https://github.com/maidsafe/sn_routing/commit/c933605df7847b05afd5a0b497cc315381e99955))
+* **stress test:** fix sent probe messages counter ([b9b7530](https://github.com/maidsafe/sn_routing/commit/b9b7530fe383142541da5164e46455fe84287565))
+
 ### [0.39.13](https://github.com/maidsafe/sn_routing/compare/v0.39.12...v0.39.13) (2021-01-05)
 
 ### [0.39.12](https://github.com/maidsafe/sn_routing/compare/v0.39.11...v0.39.12) (2020-12-29)
