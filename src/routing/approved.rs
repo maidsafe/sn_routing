@@ -1476,7 +1476,7 @@ impl Approved {
 
         let old_elders_info = self.section.elders_info().clone();
         let old_is_elder = self.is_elder();
-        let old_last_key_index = self.section.chain().last_key_index();
+        let old_last_key = *self.section.chain().last_key();
         let old_prefix = *self.section.prefix();
 
         self.section.merge(section)?;
@@ -1486,7 +1486,7 @@ impl Approved {
             .finalise_dkg(self.section.chain().last_key());
 
         let new_is_elder = self.is_elder();
-        let new_last_key_index = self.section.chain().last_key_index();
+        let new_last_key = *self.section.chain().last_key();
         let new_prefix = *self.section.prefix();
 
         if new_prefix != old_prefix {
@@ -1498,12 +1498,12 @@ impl Approved {
                 // though, to accumulate the signatures.
                 commands.extend(self.vote(Vote::TheirKnowledge {
                     prefix: new_prefix.sibling(),
-                    key_index: new_last_key_index,
+                    key_index: self.section.chain().last_key_index(),
                 })?);
             }
         }
 
-        if new_last_key_index != old_last_key_index {
+        if new_last_key != old_last_key {
             self.msg_filter.reset();
 
             if new_is_elder {
