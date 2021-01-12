@@ -49,7 +49,8 @@ const PROBE_WINDOW: Duration = Duration::from_secs(60);
 /// Stress test for sn-routing.
 #[derive(Debug, StructOpt)]
 struct Options {
-    /// Enable logging. Takes path to a file to log to or "-" to log to stdout.
+    /// Enable logging. Takes path to a file to log to or "-" to log to stdout. If omitted, logging
+    /// is disabled.
     #[structopt(short, long, name = "PATH")]
     log: Option<String>,
     /// How many probe messages to send per second.
@@ -398,7 +399,8 @@ impl Network {
 
     // Send messages to probe network health.
     async fn send_probes(&mut self) -> Result<()> {
-        // Cache the (src, dst) pairs of already sent messages.
+        // Cache the (src, dst) pairs of sent messages to ensure every node from the same
+        // section sends the same message.
         let mut cache = BTreeMap::new();
 
         let nodes = self.nodes.values().filter_map(|node| match node {
@@ -412,8 +414,10 @@ impl Network {
             let dst = *cache
                 .entry(prefix)
                 .or_insert_with(|| prefix.substituted_in(rand::random()));
-            self.try_send_probe(node, *name, dst).await?;
-            self.probe_tracker.send(*prefix, dst);
+
+            if self.try_send_probe(node, *name, dst).await? {
+                self.probe_tracker.send(*prefix, dst);
+            }
         }
 
         self.probe_tracker.prune();
@@ -423,12 +427,12 @@ impl Network {
         Ok(())
     }
 
-    async fn try_send_probe(&self, node: &Routing, src: XorName, dst: XorName) -> Result<()> {
+    async fn try_send_probe(&self, node: &Routing, src: XorName, dst: XorName) -> Result<bool> {
         let public_key_set = if let Ok(public_key_set) = node.public_key_set().await {
             public_key_set
         } else {
             // The node doesn't have BLS keys. Skip.
-            return Ok(());
+            return Ok(false);
         };
 
         // The message dst is unique so we use it also as its indentifier.
@@ -449,7 +453,7 @@ impl Network {
         node.send_message(SrcLocation::Node(src), DstLocation::Section(dst), bytes)
             .await?;
 
-        Ok(())
+        Ok(true)
     }
 
     fn try_print_status(&mut self) {
