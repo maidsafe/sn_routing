@@ -33,8 +33,6 @@ pub enum Error {
     InvalidDestination,
     #[error("Content of a received message is inconsistent.")]
     InvalidMessage,
-    #[error("A signed message could not be trusted.")]
-    UntrustedMessage,
     #[error("A signature share is invalid.")]
     InvalidSignatureShare,
     #[error("The secret key share is missing.")]

@@ -45,7 +45,8 @@ impl Section {
     /// (`elders_info`).
     pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
         if !chain.has_key(&elders_info.proof.public_key) {
-            return Err(Error::UntrustedMessage);
+            // TODO: consider more specific error here.
+            return Err(Error::InvalidMessage);
         }
 
         Ok(Self {
@@ -86,6 +87,8 @@ impl Section {
         Ok((section, section_key_share))
     }
 
+    /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
+    /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
         if !other.chain.self_verify() || !other.elders_info.verify(&other.chain) {
             return Err(Error::InvalidMessage);
@@ -94,7 +97,7 @@ impl Section {
         // TODO: handle forks
         self.chain
             .merge(other.chain)
-            .map_err(|_| Error::UntrustedMessage)?;
+            .map_err(|_| Error::InvalidMessage)?;
 
         match cmp_section_chain_position(
             &self.elders_info.proof,
