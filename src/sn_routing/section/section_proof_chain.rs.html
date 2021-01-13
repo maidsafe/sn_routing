@@ -751,17 +751,17 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">extend</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">new_first_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-        <span class="ident">full_proof_chain</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>,
+        <span class="ident">full_chain</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">ExtendError</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">has_key</span>(<span class="ident">new_first_key</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ExtendError</span>::<span class="ident">AlreadySufficient</span>);
         }
 
-        <span class="kw">let</span> <span class="ident">index_from</span> <span class="op">=</span> <span class="ident">full_proof_chain</span>
+        <span class="kw">let</span> <span class="ident">index_from</span> <span class="op">=</span> <span class="ident">full_chain</span>
             .<span class="ident">index_of</span>(<span class="ident">new_first_key</span>)
             .<span class="ident">ok_or</span>(<span class="ident">ExtendError</span>::<span class="ident">InvalidFirstKey</span>)<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="ident">index_to</span> <span class="op">=</span> <span class="ident">full_proof_chain</span>
+        <span class="kw">let</span> <span class="ident">index_to</span> <span class="op">=</span> <span class="ident">full_chain</span>
             .<span class="ident">index_of</span>(<span class="self">self</span>.<span class="ident">last_key</span>())
             .<span class="ident">ok_or</span>(<span class="ident">ExtendError</span>::<span class="ident">InvalidLastKey</span>)<span class="question-mark">?</span>;
 
@@ -769,7 +769,7 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ExtendError</span>::<span class="ident">InvalidFirstKey</span>);
         }
 
-        <span class="kw-2">*</span><span class="self">self</span> <span class="op">=</span> <span class="ident">full_proof_chain</span>.<span class="ident">slice</span>(<span class="ident">index_from</span>..<span class="op">=</span><span class="ident">index_to</span>);
+        <span class="kw-2">*</span><span class="self">self</span> <span class="op">=</span> <span class="ident">full_chain</span>.<span class="ident">slice</span>(<span class="ident">index_from</span>..<span class="op">=</span><span class="ident">index_to</span>);
 
         <span class="prelude-val">Ok</span>(())
     }
