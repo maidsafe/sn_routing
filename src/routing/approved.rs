@@ -1454,13 +1454,16 @@ impl Approved {
                 sibling.section.elders_info()
             );
 
-            // We can update the sibling knowledge already because we know they also reached consensus
-            // on our `OurKey` so they know our latest key. Need to vote for it first though, to
-            // accumulate the signatures.
-            commands.extend(self.vote(Vote::TheirKnowledge {
-                prefix: *sibling.section.prefix(),
-                key_index: self.section.chain().last_key_index(),
-            })?);
+            if self.is_elder() {
+                // We can update the sibling knowledge already because we know they also reached
+                // consensus on our `OurKey` so they know our latest key. Need to vote for it first
+                // though, to accumulate the signatures.
+                commands.extend(self.vote(Vote::TheirKnowledge {
+                    prefix: *sibling.section.prefix(),
+                    key_index: self.section.chain().last_key_index(),
+                })?);
+            }
+
             commands.extend(self.send_sync(sibling.section, sibling.network)?);
         }
 
