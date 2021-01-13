@@ -437,20 +437,16 @@ impl<'a> State<'a> {
         // the message source. By using empty prefix, we make sure `trusted_key` is always used.
         let prefix = Prefix::default();
 
-        let result = message
-            .verify(trusted_key.map(|key| (&prefix, key)))
-            .and_then(|status| match (status, trusted_key) {
-                (VerifyStatus::Full, _) | (VerifyStatus::Unknown, None) => Ok(()),
-                (VerifyStatus::Unknown, Some(_)) => Err(Error::InvalidMessage),
-            });
-
-        match result {
-            Ok(()) => true,
+        match message.verify(trusted_key.map(|key| (&prefix, key))) {
+            Ok(VerifyStatus::Full) => true,
+            Ok(VerifyStatus::Unknown) if trusted_key.is_none() => true,
+            Ok(VerifyStatus::Unknown) => {
+                // TODO: bounce
+                error!("Verification failed - untrusted message: {:?}", message);
+                false
+            }
             Err(error) => {
-                error!(
-                    "{} Verification of {:?} failed: {}",
-                    self.node, message, error
-                );
+                error!("Verification failed - {}: {:?}", error, message);
                 false
             }
         }
