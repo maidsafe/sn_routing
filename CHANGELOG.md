@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.40.0](https://github.com/maidsafe/sn_routing/compare/v0.39.16...v0.40.0) (2021-01-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* this affects the `Error` type which is a part of the public API.
+
+### Bug Fixes
+
+* trust check failure of Sync message sent to non-elders ([5520c18](https://github.com/maidsafe/sn_routing/commit/5520c182e1f3c29ce560d3fbb6e1e7e74324ac47))
+* use keys not key indices to check whether elders changed ([a99a07f](https://github.com/maidsafe/sn_routing/commit/a99a07f80b706d7fe84b5d970ee10999910db395))
+
+
+* remove `Error::UntrustedMessage` ([dbcf0db](https://github.com/maidsafe/sn_routing/commit/dbcf0db471f2b234342fdeeb68d5cf7aaff50846))
+
 ### [0.39.16](https://github.com/maidsafe/sn_routing/compare/v0.39.15...v0.39.16) (2021-01-13)
 
 ### [0.39.15](https://github.com/maidsafe/sn_routing/compare/v0.39.14...v0.39.15) (2021-01-13)
