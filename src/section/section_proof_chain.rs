@@ -58,7 +58,11 @@ impl SectionProofChain {
 
     /// Pushed a new key into the chain without validating the signature. For testing only.
     #[cfg(test)]
-    pub fn push_without_validation(&mut self, key: bls::PublicKey, signature: bls::Signature) {
+    pub(crate) fn push_without_validation(
+        &mut self,
+        key: bls::PublicKey,
+        signature: bls::Signature,
+    ) {
         self.tail.push(Block { key, signature })
     }
 

@@ -201,6 +201,7 @@ impl<'a> State<'a> {
         }
 
         error!("{} Message sender unexpectedly closed", self.node);
+        // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
 
@@ -239,22 +240,15 @@ impl<'a> State<'a> {
         mut section_key: bls::PublicKey,
         relocate_payload: Option<RelocatePayload>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
-        let mut join_request = JoinRequest {
+        let join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
             resource_proof_response: None,
         };
-        let mut recipients: Vec<_> = elders_info
-            .elders
-            .values()
-            .map(Peer::addr)
-            .copied()
-            .collect();
-        loop {
-            self.send_join_requests(&join_request, &recipients).await?;
-            // avoid sending duplicates.
-            recipients.clear();
+        let recipients = elders_info.peers().map(Peer::addr).copied().collect();
+        self.send_join_requests(join_request, recipients).await?;
 
+        loop {
             let (response, sender) = self
                 .receive_join_response(relocate_payload.as_ref())
                 .await?;
@@ -285,17 +279,13 @@ impl<'a> State<'a> {
                             self.node, elders_info, sender
                         );
                         section_key = new_section_key;
-                        join_request = JoinRequest {
+                        let join_request = JoinRequest {
                             section_key,
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        recipients = elders_info
-                            .elders
-                            .values()
-                            .map(Peer::addr)
-                            .copied()
-                            .collect();
+                        let recipients = elders_info.peers().map(Peer::addr).copied().collect();
+                        self.send_join_requests(join_request, recipients).await?;
                     } else {
                         warn!(
                             "Newer Join response not for our prefix {:?} from {:?}",
@@ -313,7 +303,8 @@ impl<'a> State<'a> {
                     let data = rp.create_proof_data(&nonce);
                     let mut prover = rp.create_prover(data.clone());
                     let solution = prover.solve();
-                    join_request = JoinRequest {
+
+                    let join_request = JoinRequest {
                         section_key,
                         relocate_payload: relocate_payload.clone(),
                         resource_proof_response: Some(ResourceProofResponse {
@@ -323,7 +314,8 @@ impl<'a> State<'a> {
                             nonce_signature,
                         }),
                     };
-                    recipients.push(sender);
+                    let recipients = vec![sender];
+                    self.send_join_requests(join_request, recipients).await?;
                 }
             }
         }
@@ -331,21 +323,18 @@ impl<'a> State<'a> {
 
     async fn send_join_requests(
         &mut self,
-        join_request: &JoinRequest,
-        socket_addrs: &[SocketAddr],
+        join_request: JoinRequest,
+        recipients: Vec<SocketAddr>,
     ) -> Result<()> {
         info!(
             "{} Sending {:?} to {:?}",
-            self.node, join_request, socket_addrs
+            self.node, join_request, recipients
         );
 
-        let variant = Variant::JoinRequest(Box::new(join_request.clone()));
+        let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
-        let _ = self
-            .send_tx
-            .send((message.to_bytes(), socket_addrs.to_vec()))
-            .await;
+        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
 
         Ok(())
     }
@@ -378,6 +367,11 @@ impl<'a> State<'a> {
                     nonce,
                     nonce_signature,
                 } => {
+                    if relocate_payload.is_some() {
+                        trace!("Ignore ResourceChallenge when relocating");
+                        continue;
+                    }
+
                     if !self.verify_message(&message, None) {
                         continue;
                     }
@@ -396,6 +390,11 @@ impl<'a> State<'a> {
                     elders_info,
                     member_info,
                 } => {
+                    if member_info.value.peer.name() != &self.node.name() {
+                        trace!("Ignore NodeApproval not for us");
+                        continue;
+                    }
+
                     let trusted_key = if let Some(payload) = relocate_payload {
                         Some(&payload.relocate_details().destination_key)
                     } else {
@@ -429,6 +428,7 @@ impl<'a> State<'a> {
         }
 
         error!("{} Message sender unexpectedly closed", self.node);
+        // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
 

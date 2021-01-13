@@ -955,32 +955,31 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         debug!("Received {:?} from {}", join_request, peer);
 
+        if !self.section.prefix().matches(peer.name()) {
+            debug!(
+                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
+                peer,
+                self.section.prefix()
+            );
+            return Ok(vec![]);
+        }
+
         if join_request.section_key != *self.section.chain().last_key() {
             let response = BootstrapResponse::Join {
                 elders_info: self.section.elders_info().clone(),
                 section_key: *self.section.chain().last_key(),
             };
-            trace!("Resending BootstrapResponse {:?} to {}", response, peer,);
+            trace!("Resending BootstrapResponse {:?} to {}", response, peer);
             return Ok(vec![self.send_direct_message(
                 peer.addr(),
                 Variant::BootstrapResponse(response),
             )?]);
         }
 
-        let pub_id = *peer.name();
-        if !self.section.prefix().matches(&pub_id) {
-            debug!(
-                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
-                pub_id,
-                self.section.prefix()
-            );
-            return Ok(vec![]);
-        }
-
-        if self.section.members().is_joined(&pub_id) {
+        if self.section.members().is_joined(peer.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
-                pub_id
+                peer
             );
             return Ok(vec![]);
         }
@@ -988,10 +987,10 @@ impl Approved {
         // This joining node is being relocated to us.
         let (age, previous_name, their_knowledge) =
             if let Some(payload) = join_request.relocate_payload {
-                if !payload.verify_identity(&pub_id) {
+                if !payload.verify_identity(peer.name()) {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - invalid signature.",
-                        pub_id
+                        peer
                     );
                     return Ok(vec![]);
                 }
@@ -1003,7 +1002,7 @@ impl Approved {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                          our prefix {:?}.",
-                        pub_id,
+                        peer,
                         details.destination,
                         self.section.prefix()
                     );
@@ -1014,10 +1013,7 @@ impl Approved {
                     .verify_message(payload.details.signed_msg())
                     .unwrap_or(false)
                 {
-                    debug!(
-                        "Ignoring relocation JoinRequest from {} - untrusted.",
-                        pub_id
-                    );
+                    debug!("Ignoring relocation JoinRequest from {} - untrusted.", peer);
                     return Ok(vec![]);
                 }
 
@@ -1029,7 +1025,7 @@ impl Approved {
             } else if !self.joins_allowed {
                 debug!(
                     "Ignoring JoinRequest from {} - new node not acceptable.",
-                    pub_id,
+                    peer,
                 );
                 return Ok(vec![]);
             } else {
@@ -1043,7 +1039,7 @@ impl Approved {
                 if !self.validate_resource_proof_response(peer.name(), response) {
                     debug!(
                         "Ignoring JoinRequest from {} - invalid resource proof response",
-                        pub_id
+                        peer
                     );
                     return Ok(vec![]);
                 }

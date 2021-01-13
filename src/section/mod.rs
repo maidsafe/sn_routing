@@ -29,6 +29,7 @@ use crate::{
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_signature_aggregator::Proof;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
@@ -134,6 +135,12 @@ impl Section {
             .chain
             .push(new_elders_info.proof.public_key, new_key_proof.signature)
         {
+            error!(
+                "fork attempt detected: new key: {:?}, expected current key: {:?}, actual current chain: {:?}",
+                new_elders_info.proof.public_key,
+                new_key_proof.public_key,
+                self.chain.keys().format("->"),
+            );
             return false;
         }
 
