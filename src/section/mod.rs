@@ -45,7 +45,8 @@ impl Section {
     /// (`elders_info`).
     pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
         if !chain.has_key(&elders_info.proof.public_key) {
-            return Err(Error::UntrustedMessage);
+            // TODO: consider more specific error here.
+            return Err(Error::InvalidMessage);
         }
 
         Ok(Self {
@@ -86,6 +87,8 @@ impl Section {
         Ok((section, section_key_share))
     }
 
+    /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
+    /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
         if !other.chain.self_verify() || !other.elders_info.verify(&other.chain) {
             return Err(Error::InvalidMessage);
@@ -94,7 +97,7 @@ impl Section {
         // TODO: handle forks
         self.chain
             .merge(other.chain)
-            .map_err(|_| Error::UntrustedMessage)?;
+            .map_err(|_| Error::InvalidMessage)?;
 
         match cmp_section_chain_position(
             &self.elders_info.proof,
@@ -150,8 +153,14 @@ impl Section {
         self.members.update(member_info)
     }
 
-    pub fn to_minimal(&self) -> Self {
-        let first_key_index = self.elders_info_signing_key_index();
+    // Returns a trimmed version of this `Section` which contains only the elders info and the
+    // section chain truncated to the given length (the chain is truncated from the end, so it
+    // always contains the latest key). If `chain_len` is zero, it is silently replaced with one.
+    pub fn trimmed(&self, chain_len: usize) -> Self {
+        let first_key_index = self
+            .chain
+            .last_key_index()
+            .saturating_sub(chain_len.saturating_sub(1) as u64);
 
         Self {
             elders_info: self.elders_info.clone(),
@@ -162,6 +171,15 @@ impl Section {
 
     pub fn chain(&self) -> &SectionProofChain {
         &self.chain
+    }
+
+    // Extend the section chain so it starts at `new_first_key` while keeping the last key intact.
+    pub(crate) fn extend_chain(
+        &mut self,
+        new_first_key: &bls::PublicKey,
+        full_chain: &SectionProofChain,
+    ) -> Result<(), ExtendError> {
+        self.chain.extend(new_first_key, full_chain)
     }
 
     // Creates the shortest proof chain that includes both the key at `their_knowledge`

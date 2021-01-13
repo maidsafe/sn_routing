@@ -441,7 +441,7 @@ impl<'a> State<'a> {
             .verify(trusted_key.map(|key| (&prefix, key)))
             .and_then(|status| match (status, trusted_key) {
                 (VerifyStatus::Full, _) | (VerifyStatus::Unknown, None) => Ok(()),
-                (VerifyStatus::Unknown, Some(_)) => Err(Error::UntrustedMessage),
+                (VerifyStatus::Unknown, Some(_)) => Err(Error::InvalidMessage),
             });
 
         match result {

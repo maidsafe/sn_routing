@@ -102,7 +102,7 @@ pub(crate) mod test_utils {
         ([192, 0, 2, 0], port).into()
     }
 
-    // Create ELDER_SIZE Nodes sorted by their names.
+    // Create `count` Nodes sorted by their names.
     pub(crate) fn gen_sorted_nodes(count: usize) -> Vec<Node> {
         (0..count)
             .map(|_| Node::new(crypto::gen_keypair(), gen_addr()).with_age(MIN_AGE + 1))

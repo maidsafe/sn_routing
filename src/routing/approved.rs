@@ -1476,7 +1476,7 @@ impl Approved {
 
         let old_elders_info = self.section.elders_info().clone();
         let old_is_elder = self.is_elder();
-        let old_last_key_index = self.section.chain().last_key_index();
+        let old_last_key = *self.section.chain().last_key();
         let old_prefix = *self.section.prefix();
 
         self.section.merge(section)?;
@@ -1486,7 +1486,7 @@ impl Approved {
             .finalise_dkg(self.section.chain().last_key());
 
         let new_is_elder = self.is_elder();
-        let new_last_key_index = self.section.chain().last_key_index();
+        let new_last_key = *self.section.chain().last_key();
         let new_prefix = *self.section.prefix();
 
         if new_prefix != old_prefix {
@@ -1498,12 +1498,12 @@ impl Approved {
                 // though, to accumulate the signatures.
                 commands.extend(self.vote(Vote::TheirKnowledge {
                     prefix: new_prefix.sibling(),
-                    key_index: new_last_key_index,
+                    key_index: self.section.chain().last_key_index(),
                 })?);
             }
         }
 
-        if new_last_key_index != old_last_key_index {
+        if new_last_key != old_last_key {
             self.msg_filter.reset();
 
             if new_is_elder {
@@ -1536,7 +1536,7 @@ impl Approved {
 
         if old_is_elder && !new_is_elder {
             info!("Demoted");
-            self.section = self.section.to_minimal();
+            self.section = self.section.trimmed(1);
             self.network = Network::new();
             self.section_keys_provider = SectionKeysProvider::new(None);
             self.send_event(Event::Demoted);
@@ -1621,33 +1621,41 @@ impl Approved {
     }
 
     fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
-        let mut commands = vec![];
+        let send = |variant, recipients: Vec<_>| -> Result<_> {
+            trace!("Send {:?} to {:?}", variant, recipients);
 
-        for peer in section.active_members() {
-            if peer.name() == &self.node.name() {
-                continue;
-            }
-
-            let variant = if section.is_elder(peer.name()) {
-                Variant::Sync {
-                    section: section.clone(),
-                    network: network.clone(),
-                }
-            } else {
-                Variant::Sync {
-                    section: section.to_minimal(),
-                    network: Network::new(),
-                }
-            };
-
-            trace!("Send {:?} to {:?}", variant, peer);
             let message =
                 Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-            commands.push(Command::send_message_to_target(
-                peer.addr(),
+            let recipients: Vec<_> = recipients.iter().map(Peer::addr).copied().collect();
+
+            Ok(Command::send_message_to_targets(
+                &recipients,
+                recipients.len(),
                 message.to_bytes(),
             ))
-        }
+        };
+
+        let mut commands = vec![];
+
+        let (elders, non_elders): (Vec<_>, _) = section
+            .active_members()
+            .filter(|peer| peer.name() != &self.node.name())
+            .copied()
+            .partition(|peer| section.is_elder(peer.name()));
+
+        // Send the trimmed state to non-elders. The trimmed state contains only the latest
+        // section key and one key before that which is the key the recipients should know so they
+        // will be able to trust it.
+        let variant = Variant::Sync {
+            section: section.trimmed(2),
+            network: Network::new(),
+        };
+        commands.push(send(variant, non_elders)?);
+
+        // Send the full state to elders.
+        // The full state contains the whole section chain.
+        let variant = Variant::Sync { section, network };
+        commands.push(send(variant, elders)?);
 
         Ok(commands)
     }
