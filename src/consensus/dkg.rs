@@ -105,16 +105,17 @@ impl DkgVoter {
         keypair: &Keypair,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
+        key_index: u64,
     ) -> Vec<DkgCommand> {
         if let Some(session) = self.sessions.get(&dkg_key) {
-            if !session.complete {
+            if !session.complete && session.key_index >= key_index {
                 trace!("DKG for {} already in progress", elders_info);
                 return vec![];
             }
         }
 
         let name = crypto::name(&keypair.public);
-        let index = if let Some(index) = elders_info.position(&name) {
+        let participant_index = if let Some(index) = elders_info.position(&name) {
             index
         } else {
             error!(
@@ -132,7 +133,7 @@ impl DkgVoter {
                 elders_info,
                 outcome: SectionKeyShare {
                     public_key_set: secret_key_set.public_keys(),
-                    index,
+                    index: participant_index,
                     secret_key_share: secret_key_set.secret_key_share(0),
                 },
             }];
@@ -153,7 +154,8 @@ impl DkgVoter {
                 let mut session = Session {
                     key_gen,
                     elders_info,
-                    index,
+                    key_index,
+                    participant_index,
                     timer_token: 0,
                     failures: Default::default(),
                     complete: false,
@@ -169,6 +171,8 @@ impl DkgVoter {
                 );
 
                 let _ = self.sessions.insert(dkg_key, session);
+                self.sessions
+                    .retain(|_, session| session.key_index >= key_index);
 
                 commands
             }
@@ -222,8 +226,10 @@ impl DkgVoter {
 // Data for a DKG participant.
 struct Session {
     elders_info: EldersInfo,
+    // Section chain index of the key to be generated.
+    key_index: u64,
     // Our participant index.
-    index: usize,
+    participant_index: usize,
     key_gen: KeyGen,
     timer_token: u64,
     failures: DkgFailureProofSet,
@@ -266,7 +272,7 @@ impl Session {
         self.elders_info
             .peers()
             .enumerate()
-            .filter(|(index, _)| *index != self.index)
+            .filter(|(index, _)| *index != self.participant_index)
             .map(|(_, peer)| peer.addr())
             .copied()
             .collect()
@@ -345,7 +351,7 @@ impl Session {
 
             let outcome = SectionKeyShare {
                 public_key_set: outcome.public_key_set,
-                index: self.index,
+                index: self.participant_index,
                 secret_key_share: outcome.secret_key_share,
             };
 
@@ -672,7 +678,7 @@ mod tests {
         let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());
         let dkg_key = DkgKey::new(&elders_info);
 
-        let commands = voter.start(&node.keypair, dkg_key, elders_info);
+        let commands = voter.start(&node.keypair, dkg_key, elders_info, 0);
         assert_matches!(&commands[..], &[DkgCommand::HandleOutcome { .. }]);
     }
 
@@ -702,7 +708,7 @@ mod tests {
         for actor in actors.values_mut() {
             let commands = actor
                 .voter
-                .start(&actor.node.keypair, dkg_key, elders_info.clone());
+                .start(&actor.node.keypair, dkg_key, elders_info.clone(), 0);
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))

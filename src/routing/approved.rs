@@ -532,7 +532,8 @@ impl Approved {
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
+                key_index,
+            } => self.handle_dkg_start(*dkg_key, elders_info.clone(), *key_index),
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
@@ -1097,10 +1098,11 @@ impl Approved {
         &mut self,
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
+        key_index: u64,
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_elders_info)
+            .start(&self.node.keypair, dkg_key, new_elders_info, key_index)
             .into_commands(&self.node)
     }
 
@@ -1742,6 +1744,7 @@ impl Approved {
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,
+            key_index: self.section.chain().last_key_index() + 1,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
         self.send_vote(recipients, vote)

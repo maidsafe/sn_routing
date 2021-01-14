@@ -86,6 +86,8 @@ pub(crate) enum Variant {
         dkg_key: DkgKey,
         /// The DKG particpants.
         elders_info: EldersInfo,
+        /// The section chain index of the key to be generated.
+        key_index: u64,
     },
     /// Message exchanged for DKG process.
     DKGMessage {
@@ -199,10 +201,12 @@ impl Debug for Variant {
             Self::DKGStart {
                 dkg_key,
                 elders_info,
+                key_index,
             } => f
                 .debug_struct("DKGStart")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
+                .field("key_index", key_index)
                 .finish(),
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
