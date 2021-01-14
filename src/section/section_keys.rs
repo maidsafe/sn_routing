@@ -40,6 +40,10 @@ impl SectionKeysProvider {
         self.current.as_ref().ok_or(Error::MissingSecretKeyShare)
     }
 
+    pub fn has_key_share(&self) -> bool {
+        self.current.is_some()
+    }
+
     pub fn insert_dkg_outcome(&mut self, share: SectionKeyShare) {
         self.pending = Some(share);
     }

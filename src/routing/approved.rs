@@ -1456,7 +1456,7 @@ impl Approved {
                 sibling.section.elders_info()
             );
 
-            if self.is_elder() {
+            if self.section_keys_provider.has_key_share() {
                 // We can update the sibling knowledge already because we know they also reached
                 // consensus on our `OurKey` so they know our latest key. Need to vote for it first
                 // though, to accumulate the signatures.
@@ -1475,7 +1475,6 @@ impl Approved {
     fn update_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let old_elders_info = self.section.elders_info().clone();
         let old_is_elder = self.is_elder();
         let old_last_key = *self.section.chain().last_key();
         let old_prefix = *self.section.prefix();
@@ -1493,7 +1492,7 @@ impl Approved {
         if new_prefix != old_prefix {
             info!("Split");
 
-            if new_is_elder {
+            if new_is_elder && self.section_keys_provider.has_key_share() {
                 // We can update the sibling knowledge already because we know they also reached
                 // consensus on our `OurKey` so they know our latest key. Need to vote for it first
                 // though, to accumulate the signatures.
@@ -1515,7 +1514,12 @@ impl Approved {
                     self.section.elders_info().peers().format(", ")
                 );
 
-                commands.extend(self.promote_and_demote_elders()?);
+                if self.section_keys_provider.has_key_share() {
+                    commands.extend(self.promote_and_demote_elders()?);
+                    // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
+                    commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
+                }
+
                 self.print_network_stats();
             }
 
@@ -1545,9 +1549,6 @@ impl Approved {
 
         if !new_is_elder {
             commands.extend(self.return_relocate_promise());
-        } else if &old_elders_info != self.section.elders_info() {
-            // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
-            commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
         }
 
         Ok(commands)
