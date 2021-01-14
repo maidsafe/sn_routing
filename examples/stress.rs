@@ -21,7 +21,8 @@ use rand::{
 };
 use serde::{Deserialize, Serialize};
 use sn_routing::{
-    Config, DstLocation, Event as RoutingEvent, Routing, SrcLocation, TransportConfig,
+    Config, DstLocation, Error as RoutingError, Event as RoutingEvent, Routing, SrcLocation,
+    TransportConfig,
 };
 use std::{
     collections::BTreeMap,
@@ -450,10 +451,14 @@ impl Network {
         };
         let bytes = bincode::serialize(&message)?.into();
 
-        node.send_message(SrcLocation::Node(src), DstLocation::Section(dst), bytes)
-            .await?;
-
-        Ok(true)
+        match node
+            .send_message(SrcLocation::Node(src), DstLocation::Section(dst), bytes)
+            .await
+        {
+            Ok(()) => Ok(true),
+            Err(RoutingError::InvalidSource) => Ok(false), // node name changed
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn try_print_status(&mut self) {

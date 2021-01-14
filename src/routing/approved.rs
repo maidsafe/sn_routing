@@ -1793,7 +1793,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: not part of the source location",
                 src, dst
             );
-            return Err(Error::BadLocation);
+            return Err(Error::InvalidSource);
         }
 
         if matches!(dst, DstLocation::Direct) {
@@ -1801,7 +1801,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
                 src, dst
             );
-            return Err(Error::BadLocation);
+            return Err(Error::InvalidDestination);
         }
 
         let variant = Variant::UserMessage(content);
