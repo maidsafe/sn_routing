@@ -495,7 +495,7 @@ impl Approved {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
             }
             Variant::BootstrapRequest(name) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bootstrap_request(
                     msg.src().to_node_peer(sender)?,
                     *name,
@@ -503,7 +503,7 @@ impl Approved {
             }
 
             Variant::JoinRequest(join_request) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
@@ -511,7 +511,7 @@ impl Approved {
                 Ok(vec![])
             }
             Variant::BouncedUntrustedMessage(message) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(self
                     .handle_bounced_untrusted_message(
                         msg.src().to_node_peer(sender)?,
@@ -522,7 +522,7 @@ impl Approved {
                     .collect())
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_bounced_unknown_message(
                     msg.src().to_node_peer(sender)?,
                     message.clone(),
@@ -941,7 +941,7 @@ impl Approved {
             let conn_infos = section.peers().map(Peer::addr).copied().collect();
             BootstrapResponse::Rebootstrap(conn_infos)
         } else {
-            return Err(Error::InvalidDestination);
+            return Err(Error::InvalidDstLocation);
         };
 
         debug!("Sending BootstrapResponse {:?} to {}", response, peer);
@@ -1137,7 +1137,7 @@ impl Approved {
             .section
             .members()
             .get(sender)
-            .ok_or(Error::InvalidSource)?
+            .ok_or(Error::InvalidSrcLocation)?
             .peer;
 
         if !proofs.verify(&elders_info) {
@@ -1793,7 +1793,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: not part of the source location",
                 src, dst
             );
-            return Err(Error::InvalidSource);
+            return Err(Error::InvalidSrcLocation);
         }
 
         if matches!(dst, DstLocation::Direct) {
@@ -1801,7 +1801,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
                 src, dst
             );
-            return Err(Error::InvalidDestination);
+            return Err(Error::InvalidDstLocation);
         }
 
         let variant = Variant::UserMessage(content);

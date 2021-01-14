@@ -456,7 +456,7 @@ impl Network {
             .await
         {
             Ok(()) => Ok(true),
-            Err(RoutingError::InvalidSource) => Ok(false), // node name changed
+            Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
             Err(error) => Err(error.into()),
         }
     }
