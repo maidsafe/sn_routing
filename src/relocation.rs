@@ -168,17 +168,13 @@ pub(crate) struct RelocatePayload {
 }
 
 impl RelocatePayload {
-    pub fn new(
-        details: SignedRelocateDetails,
-        new_name: &XorName,
-        old_keypair: &Keypair,
-    ) -> Result<Self, Error> {
+    pub fn new(details: SignedRelocateDetails, new_name: &XorName, old_keypair: &Keypair) -> Self {
         let signature_of_new_name_with_old_key = crypto::sign(&new_name.0, old_keypair);
 
-        Ok(Self {
+        Self {
             details,
             signature_of_new_name_with_old_key,
-        })
+        }
     }
 
     pub fn verify_identity(&self, new_name: &XorName) -> bool {

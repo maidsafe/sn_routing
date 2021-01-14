@@ -236,7 +236,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         relocate_details,
         &relocated_node.name(),
         &relocated_node_old_keypair,
-    )?;
+    );
 
     let join_request = Message::single_src(
         &relocated_node,

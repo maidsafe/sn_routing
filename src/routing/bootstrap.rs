@@ -113,7 +113,7 @@ impl<'a> State<'a> {
             .await?;
 
         let relocate_payload = if let Some(details) = relocate_details {
-            Some(self.process_relocation(&elders_info, details)?)
+            Some(self.process_relocation(&elders_info, details))
         } else {
             None
         };
@@ -210,7 +210,7 @@ impl<'a> State<'a> {
         &mut self,
         elders_info: &EldersInfo,
         relocate_details: SignedRelocateDetails,
-    ) -> Result<RelocatePayload> {
+    ) -> RelocatePayload {
         // We are relocating so we need to change our name.
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
@@ -223,12 +223,12 @@ impl<'a> State<'a> {
         let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
         let relocate_payload =
-            RelocatePayload::new(relocate_details, &new_name, &self.node.keypair)?;
+            RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 
         info!("{} Changing name to {}.", self.node, new_name);
         self.node = Node::new(new_keypair, self.node.addr).with_age(age);
 
-        Ok(relocate_payload)
+        relocate_payload
     }
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the

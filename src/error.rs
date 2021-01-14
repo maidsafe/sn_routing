@@ -21,11 +21,11 @@ pub enum Error {
     FailedSignature,
     #[error("Cannot route.")]
     CannotRoute,
-    #[error("Network layer error: {}", _0)]
+    #[error("Network layer error: {}", .0)]
     Network(#[from] qp2p::Error),
     #[error("The node is not in a state to handle the action.")]
     InvalidState,
-    #[error("Bincode error: {}", _0)]
+    #[error("Bincode error: {}", .0)]
     Bincode(#[from] bincode::Error),
     #[error("Invalid source.")]
     InvalidSource,
