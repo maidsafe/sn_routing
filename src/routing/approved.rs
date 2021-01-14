@@ -1113,7 +1113,7 @@ impl Approved {
         trace!("handle DKG message {:?} from {}", message, sender);
 
         self.dkg_voter
-            .process_message(&self.node.keypair, dkg_key, message)
+            .process_message(&self.node.keypair, &dkg_key, message)
             .into_commands(&self.node)
     }
 
@@ -1123,7 +1123,7 @@ impl Approved {
         proof: DkgFailureProof,
     ) -> Result<Vec<Command>> {
         self.dkg_voter
-            .process_failure(dkg_key, proof)
+            .process_failure(&dkg_key, proof)
             .into_commands(&self.node)
     }
 
