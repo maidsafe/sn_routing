@@ -837,14 +837,21 @@ impl Approved {
         }
 
         debug!(
-            "Received Relocate message to join the section at {}.",
+            "Received Relocate message to join the section at {}",
             details.relocate_details().destination
         );
 
-        if self.relocate_state.is_none() {
-            self.send_event(Event::RelocationStarted {
-                previous_name: self.node.name(),
-            });
+        match self.relocate_state {
+            Some(RelocateState::InProgress(_)) => {
+                trace!("Ignore Relocate - relocation already in progress");
+                return None;
+            }
+            Some(RelocateState::Delayed(_)) => (),
+            None => {
+                self.send_event(Event::RelocationStarted {
+                    previous_name: self.node.name(),
+                });
+            }
         }
 
         let (message_tx, message_rx) = mpsc::channel(1);
