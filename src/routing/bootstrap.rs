@@ -44,7 +44,7 @@ pub(crate) async fn initial(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
-    let state = State::new(node, send_tx, recv_rx)?;
+    let state = State::new(node, send_tx, recv_rx);
 
     future::join(
         state.run(vec![bootstrap_addr], None),
@@ -69,7 +69,7 @@ pub(crate) async fn relocate(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-    let state = State::new(node, send_tx, recv_rx)?;
+    let state = State::new(node, send_tx, recv_rx);
 
     future::join(
         state.run(bootstrap_addrs, Some(relocate_details)),
@@ -94,13 +94,13 @@ impl<'a> State<'a> {
         node: Node,
         send_tx: mpsc::Sender<(Bytes, Vec<SocketAddr>)>,
         recv_rx: MessageReceiver<'a>,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             send_tx,
             recv_rx,
             node,
             backlog: VecDeque::with_capacity(BACKLOG_CAPACITY),
-        })
+        }
     }
 
     async fn run(
@@ -555,7 +555,7 @@ mod tests {
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
         let peer = node.peer();
-        let state = State::new(node, send_tx, recv_rx)?;
+        let state = State::new(node, send_tx, recv_rx);
 
         // Create the bootstrap task, but don't run it yet.
         let bootstrap = async move {
@@ -642,7 +642,7 @@ mod tests {
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
-        let mut state = State::new(node, send_tx, recv_rx)?;
+        let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
         let test_task = async {
@@ -699,7 +699,7 @@ mod tests {
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
-        let mut state = State::new(node, send_tx, recv_rx)?;
+        let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
         let test_task = async {
@@ -769,7 +769,7 @@ mod tests {
             }
         };
 
-        let mut state = State::new(node, send_tx, recv_rx)?;
+        let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
 
@@ -842,7 +842,7 @@ mod tests {
             }
         };
 
-        let state = State::new(node, send_tx, recv_rx)?;
+        let state = State::new(node, send_tx, recv_rx);
 
         let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
         let section_key = bls::SecretKey::random().public_key();
