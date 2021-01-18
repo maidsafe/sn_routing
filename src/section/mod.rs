@@ -96,9 +96,19 @@ impl Section {
         }
 
         // TODO: handle forks
-        self.chain
-            .merge(other.chain)
-            .map_err(|_| Error::InvalidMessage)?;
+        match self.chain.merge(other.chain.clone()) {
+            Ok(()) => (),
+            Err(_) => {
+                error!(
+                    "fork attempt detected: new chain: {:?}, new prefix: ({:b}), current chain: {:?}, current prefix: ({:b})",
+                    other.chain.keys().format("->"),
+                    other.prefix(),
+                    self.chain.keys().format("->"),
+                    self.prefix(),
+                );
+                return Err(Error::InvalidMessage);
+            }
+        }
 
         match cmp_section_chain_position(
             &self.elders_info.proof,
@@ -136,10 +146,12 @@ impl Section {
             .push(new_elders_info.proof.public_key, new_key_proof.signature)
         {
             error!(
-                "fork attempt detected: new key: {:?}, expected current key: {:?}, actual current chain: {:?}",
+                "fork attempt detected: new key: {:?}, new prefix: ({:b}), expected current key: {:?}, current chain: {:?}, current prefix: ({:b})",
                 new_elders_info.proof.public_key,
+                new_elders_info.value.prefix,
                 new_key_proof.public_key,
                 self.chain.keys().format("->"),
+                self.prefix(),
             );
             return false;
         }
