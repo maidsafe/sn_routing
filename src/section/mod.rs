@@ -137,6 +137,12 @@ impl Section {
         new_elders_info: Proven<EldersInfo>,
         new_key_proof: Proof,
     ) -> bool {
+        if new_elders_info.value.prefix != *self.prefix()
+            && !new_elders_info.value.prefix.is_extension_of(self.prefix())
+        {
+            return false;
+        }
+
         if !new_elders_info.self_verify() {
             return false;
         }
