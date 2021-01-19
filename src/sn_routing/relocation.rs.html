@@ -441,10 +441,6 @@
 <span id="440">440</span>
 <span id="441">441</span>
 <span id="442">442</span>
-<span id="443">443</span>
-<span id="444">444</span>
-<span id="445">445</span>
-<span id="446">446</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2019 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -616,17 +612,13 @@
 }
 
 <span class="kw">impl</span> <span class="ident">RelocatePayload</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
-        <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
-        <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">signature_of_new_name_with_old_key</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">new_name</span>.<span class="number">0</span>, <span class="ident">old_keypair</span>);
 
-        <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
+        <span class="self">Self</span> {
             <span class="ident">details</span>,
             <span class="ident">signature_of_new_name_with_old_key</span>,
-        })
+        }
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {

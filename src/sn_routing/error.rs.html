@@ -41,8 +41,6 @@
 <span id="40">40</span>
 <span id="41">41</span>
 <span id="42">42</span>
-<span id="43">43</span>
-<span id="44">44</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -61,22 +59,20 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Error</span> {
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid requester or handler locations.&quot;</span>)]</span>
-    <span class="ident">BadLocation</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Failed signature check.&quot;</span>)]</span>
     <span class="ident">FailedSignature</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot route.&quot;</span>)]</span>
     <span class="ident">CannotRoute</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {}&quot;</span>, .<span class="number">0</span>)]</span>
     <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {}&quot;</span>, .<span class="number">0</span>)]</span>
     <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source.&quot;</span>)]</span>
-    <span class="ident">InvalidSource</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid destination.&quot;</span>)]</span>
-    <span class="ident">InvalidDestination</span>,
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source location.&quot;</span>)]</span>
+    <span class="ident">InvalidSrcLocation</span>,
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid destination location.&quot;</span>)]</span>
+    <span class="ident">InvalidDstLocation</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Content of a received message is inconsistent.&quot;</span>)]</span>
     <span class="ident">InvalidMessage</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;A signature share is invalid.&quot;</span>)]</span>

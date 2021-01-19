@@ -300,6 +300,10 @@
 <span id="299">299</span>
 <span id="300">300</span>
 <span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -389,6 +393,8 @@
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="doccomment">/// The DKG particpants.</span>
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="doccomment">/// The section chain index of the key to be generated.</span>
+        <span class="ident">key_index</span>: <span class="ident">u64</span>,
     },
     <span class="doccomment">/// Message exchanged for DKG process.</span>
     <span class="ident">DKGMessage</span> {
@@ -502,10 +508,12 @@
             <span class="self">Self</span>::<span class="ident">DKGStart</span> {
                 <span class="ident">dkg_key</span>,
                 <span class="ident">elders_info</span>,
+                <span class="ident">key_index</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DKGStart&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="ident">dkg_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;key_index&quot;</span>, <span class="ident">key_index</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DKGMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DKGMessage&quot;</span>)
