@@ -495,7 +495,7 @@ impl Approved {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
             }
             Variant::BootstrapRequest(name) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bootstrap_request(
                     msg.src().to_node_peer(sender)?,
                     *name,
@@ -503,7 +503,7 @@ impl Approved {
             }
 
             Variant::JoinRequest(join_request) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
@@ -511,7 +511,7 @@ impl Approved {
                 Ok(vec![])
             }
             Variant::BouncedUntrustedMessage(message) => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(self
                     .handle_bounced_untrusted_message(
                         msg.src().to_node_peer(sender)?,
@@ -522,7 +522,7 @@ impl Approved {
                     .collect())
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
-                let sender = sender.ok_or(Error::InvalidSource)?;
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_bounced_unknown_message(
                     msg.src().to_node_peer(sender)?,
                     message.clone(),
@@ -532,7 +532,8 @@ impl Approved {
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
+                key_index,
+            } => self.handle_dkg_start(*dkg_key, elders_info.clone(), *key_index),
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
@@ -836,14 +837,21 @@ impl Approved {
         }
 
         debug!(
-            "Received Relocate message to join the section at {}.",
+            "Received Relocate message to join the section at {}",
             details.relocate_details().destination
         );
 
-        if self.relocate_state.is_none() {
-            self.send_event(Event::RelocationStarted {
-                previous_name: self.node.name(),
-            });
+        match self.relocate_state {
+            Some(RelocateState::InProgress(_)) => {
+                trace!("Ignore Relocate - relocation already in progress");
+                return None;
+            }
+            Some(RelocateState::Delayed(_)) => (),
+            None => {
+                self.send_event(Event::RelocationStarted {
+                    previous_name: self.node.name(),
+                });
+            }
         }
 
         let (message_tx, message_rx) = mpsc::channel(1);
@@ -941,7 +949,7 @@ impl Approved {
             let conn_infos = section.peers().map(Peer::addr).copied().collect();
             BootstrapResponse::Rebootstrap(conn_infos)
         } else {
-            return Err(Error::InvalidDestination);
+            return Err(Error::InvalidDstLocation);
         };
 
         debug!("Sending BootstrapResponse {:?} to {}", response, peer);
@@ -955,32 +963,31 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         debug!("Received {:?} from {}", join_request, peer);
 
+        if !self.section.prefix().matches(peer.name()) {
+            debug!(
+                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
+                peer,
+                self.section.prefix()
+            );
+            return Ok(vec![]);
+        }
+
         if join_request.section_key != *self.section.chain().last_key() {
             let response = BootstrapResponse::Join {
                 elders_info: self.section.elders_info().clone(),
                 section_key: *self.section.chain().last_key(),
             };
-            trace!("Resending BootstrapResponse {:?} to {}", response, peer,);
+            trace!("Resending BootstrapResponse {:?} to {}", response, peer);
             return Ok(vec![self.send_direct_message(
                 peer.addr(),
                 Variant::BootstrapResponse(response),
             )?]);
         }
 
-        let pub_id = *peer.name();
-        if !self.section.prefix().matches(&pub_id) {
-            debug!(
-                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
-                pub_id,
-                self.section.prefix()
-            );
-            return Ok(vec![]);
-        }
-
-        if self.section.members().is_joined(&pub_id) {
+        if self.section.members().is_joined(peer.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
-                pub_id
+                peer
             );
             return Ok(vec![]);
         }
@@ -988,10 +995,10 @@ impl Approved {
         // This joining node is being relocated to us.
         let (age, previous_name, their_knowledge) =
             if let Some(payload) = join_request.relocate_payload {
-                if !payload.verify_identity(&pub_id) {
+                if !payload.verify_identity(peer.name()) {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - invalid signature.",
-                        pub_id
+                        peer
                     );
                     return Ok(vec![]);
                 }
@@ -1003,7 +1010,7 @@ impl Approved {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                          our prefix {:?}.",
-                        pub_id,
+                        peer,
                         details.destination,
                         self.section.prefix()
                     );
@@ -1014,10 +1021,7 @@ impl Approved {
                     .verify_message(payload.details.signed_msg())
                     .unwrap_or(false)
                 {
-                    debug!(
-                        "Ignoring relocation JoinRequest from {} - untrusted.",
-                        pub_id
-                    );
+                    debug!("Ignoring relocation JoinRequest from {} - untrusted.", peer);
                     return Ok(vec![]);
                 }
 
@@ -1029,7 +1033,7 @@ impl Approved {
             } else if !self.joins_allowed {
                 debug!(
                     "Ignoring JoinRequest from {} - new node not acceptable.",
-                    pub_id,
+                    peer,
                 );
                 return Ok(vec![]);
             } else {
@@ -1043,7 +1047,7 @@ impl Approved {
                 if !self.validate_resource_proof_response(peer.name(), response) {
                     debug!(
                         "Ignoring JoinRequest from {} - invalid resource proof response",
-                        pub_id
+                        peer
                     );
                     return Ok(vec![]);
                 }
@@ -1101,10 +1105,11 @@ impl Approved {
         &mut self,
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
+        key_index: u64,
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_elders_info)
+            .start(&self.node.keypair, dkg_key, new_elders_info, key_index)
             .into_commands(&self.node)
     }
 
@@ -1117,7 +1122,7 @@ impl Approved {
         trace!("handle DKG message {:?} from {}", message, sender);
 
         self.dkg_voter
-            .process_message(&self.node.keypair, dkg_key, message)
+            .process_message(&self.node.keypair, &dkg_key, message)
             .into_commands(&self.node)
     }
 
@@ -1127,7 +1132,7 @@ impl Approved {
         proof: DkgFailureProof,
     ) -> Result<Vec<Command>> {
         self.dkg_voter
-            .process_failure(dkg_key, proof)
+            .process_failure(&dkg_key, proof)
             .into_commands(&self.node)
     }
 
@@ -1141,7 +1146,7 @@ impl Approved {
             .section
             .members()
             .get(sender)
-            .ok_or(Error::InvalidSource)?
+            .ok_or(Error::InvalidSrcLocation)?
             .peer;
 
         if !proofs.verify(&elders_info) {
@@ -1458,13 +1463,16 @@ impl Approved {
                 sibling.section.elders_info()
             );
 
-            // We can update the sibling knowledge already because we know they also reached consensus
-            // on our `OurKey` so they know our latest key. Need to vote for it first though, to
-            // accumulate the signatures.
-            commands.extend(self.vote(Vote::TheirKnowledge {
-                prefix: *sibling.section.prefix(),
-                key_index: self.section.chain().last_key_index(),
-            })?);
+            if self.section_keys_provider.has_key_share() {
+                // We can update the sibling knowledge already because we know they also reached
+                // consensus on our `OurKey` so they know our latest key. Need to vote for it first
+                // though, to accumulate the signatures.
+                commands.extend(self.vote(Vote::TheirKnowledge {
+                    prefix: *sibling.section.prefix(),
+                    key_index: self.section.chain().last_key_index(),
+                })?);
+            }
+
             commands.extend(self.send_sync(sibling.section, sibling.network)?);
         }
 
@@ -1474,7 +1482,6 @@ impl Approved {
     fn update_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let old_elders_info = self.section.elders_info().clone();
         let old_is_elder = self.is_elder();
         let old_last_key = *self.section.chain().last_key();
         let old_prefix = *self.section.prefix();
@@ -1492,7 +1499,7 @@ impl Approved {
         if new_prefix != old_prefix {
             info!("Split");
 
-            if new_is_elder {
+            if new_is_elder && self.section_keys_provider.has_key_share() {
                 // We can update the sibling knowledge already because we know they also reached
                 // consensus on our `OurKey` so they know our latest key. Need to vote for it first
                 // though, to accumulate the signatures.
@@ -1514,7 +1521,12 @@ impl Approved {
                     self.section.elders_info().peers().format(", ")
                 );
 
-                commands.extend(self.promote_and_demote_elders()?);
+                if self.section_keys_provider.has_key_share() {
+                    commands.extend(self.promote_and_demote_elders()?);
+                    // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
+                    commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
+                }
+
                 self.print_network_stats();
             }
 
@@ -1544,9 +1556,6 @@ impl Approved {
 
         if !new_is_elder {
             commands.extend(self.return_relocate_promise());
-        } else if &old_elders_info != self.section.elders_info() {
-            // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
-            commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
         }
 
         Ok(commands)
@@ -1743,6 +1752,7 @@ impl Approved {
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,
+            key_index: self.section.chain().last_key_index() + 1,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
         self.send_vote(recipients, vote)
@@ -1794,7 +1804,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: not part of the source location",
                 src, dst
             );
-            return Err(Error::BadLocation);
+            return Err(Error::InvalidSrcLocation);
         }
 
         if matches!(dst, DstLocation::Direct) {
@@ -1802,7 +1812,7 @@ impl Approved {
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
                 src, dst
             );
-            return Err(Error::BadLocation);
+            return Err(Error::InvalidDstLocation);
         }
 
         let variant = Variant::UserMessage(content);

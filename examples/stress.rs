@@ -21,7 +21,8 @@ use rand::{
 };
 use serde::{Deserialize, Serialize};
 use sn_routing::{
-    Config, DstLocation, Event as RoutingEvent, Routing, SrcLocation, TransportConfig,
+    Config, DstLocation, Error as RoutingError, Event as RoutingEvent, Routing, SrcLocation,
+    TransportConfig,
 };
 use std::{
     collections::BTreeMap,
@@ -450,10 +451,14 @@ impl Network {
         };
         let bytes = bincode::serialize(&message)?.into();
 
-        node.send_message(SrcLocation::Node(src), DstLocation::Section(dst), bytes)
-            .await?;
-
-        Ok(true)
+        match node
+            .send_message(SrcLocation::Node(src), DstLocation::Section(dst), bytes)
+            .await
+        {
+            Ok(()) => Ok(true),
+            Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn try_print_status(&mut self) {
@@ -531,9 +536,9 @@ impl Network {
         );
         println!(
             "{:18} {}",
-            self.theme.label.paint("sections:"),
+            self.theme.label.paint("section members:"),
             sections
-                .into_iter()
+                .iter()
                 .format_with(", ", |(prefix, count), f| f(&format_args!(
                     "({:b}): {}",
                     prefix,
@@ -546,6 +551,7 @@ impl Network {
             self.theme.label.paint("section health:"),
             self.probe_tracker
                 .status()
+                .filter(|(prefix, ..)| sections.contains_key(prefix))
                 .format_with(", ", |(prefix, delivered, sent), f| {
                     let percent = percent(delivered, sent);
 
@@ -554,7 +560,7 @@ impl Network {
                         prefix,
                         self.theme
                             .health(percent)
-                            .paint(format_args!("{:.1}%", percent)),
+                            .paint(format_args!("{:.0}%", percent)),
                     ))
                 })
         );
@@ -570,12 +576,12 @@ impl Network {
             self.theme.label.paint("churn:"),
             self.theme.value.paint(self.stats.join_attempts),
             self.theme.value.paint(format_args!(
-                "{} ({:.1}%)",
+                "{} ({:.0}%)",
                 self.stats.join_successes,
                 percent(self.stats.join_successes, self.stats.join_attempts)
             )),
             failure_style.paint(format_args!(
-                "{} ({:.1}%)",
+                "{} ({:.0}%)",
                 self.stats.join_failures,
                 percent(self.stats.join_failures, self.stats.join_attempts)
             )),
@@ -587,7 +593,7 @@ impl Network {
             self.theme.label.paint("relocations:"),
             self.theme.value.paint(self.stats.relocation_attempts),
             self.theme.value.paint(format_args!(
-                "{} ({:.1}%)",
+                "{} ({:.0}%)",
                 self.stats.relocation_successes,
                 percent(
                     self.stats.relocation_successes,

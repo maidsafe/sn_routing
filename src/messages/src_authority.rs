@@ -54,7 +54,7 @@ impl SrcAuthority {
         if self.is_section() {
             Ok(())
         } else {
-            Err(Error::BadLocation)
+            Err(Error::InvalidSrcLocation)
         }
     }
 
@@ -65,14 +65,14 @@ impl SrcAuthority {
     pub(crate) fn to_node_name(&self) -> Result<XorName> {
         match self {
             Self::Node { public_key, .. } => Ok(name(public_key)),
-            Self::Section { .. } => Err(Error::BadLocation),
+            Self::Section { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
     pub(crate) fn to_node_peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Section { .. } => Err(Error::BadLocation),
+            Self::Section { .. } => Err(Error::InvalidSrcLocation),
             Self::Node {
                 public_key, age, ..
             } => Ok(Peer::new(name(public_key), addr, *age)),
@@ -83,7 +83,7 @@ impl SrcAuthority {
     pub(crate) fn as_section_prefix(&self) -> Result<&Prefix> {
         match self {
             Self::Section { prefix, .. } => Ok(prefix),
-            Self::Node { .. } => Err(Error::BadLocation),
+            Self::Node { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 }

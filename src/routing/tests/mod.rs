@@ -236,7 +236,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         relocate_details,
         &relocated_node.name(),
         &relocated_node_old_keypair,
-    )?;
+    );
 
     let join_request = Message::single_src(
         &relocated_node,
@@ -1556,10 +1556,153 @@ async fn handle_elders_update() -> Result<()> {
     Ok(())
 }
 
+// Test that demoted node still sends `Sync` messages to both sub-sections on split.
+#[tokio::test]
+async fn handle_demote_during_split() -> Result<()> {
+    let node = create_node();
+
+    let prefix0 = Prefix::default().pushed(false);
+    let prefix1 = Prefix::default().pushed(true);
+
+    // These peers together with `node` are pre-split elders.
+    // These peers together with `peer_c` are prefix-0 post-split elders.
+    let peers_a: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix0))
+        .take(ELDER_SIZE - 1)
+        .collect();
+    // These peers are prefix-1 post-split elders.
+    let peers_b: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix1))
+        .take(ELDER_SIZE)
+        .collect();
+    // This peer is a prefix-0 post-split elder.
+    let peer_c = create_peer_in_prefix(&prefix0);
+
+    // Create the pre-split section
+    let sk_set_v0 = SecretKeySet::random();
+    let elders_info_v0 = EldersInfo::new(
+        iter::once(node.peer()).chain(peers_a.iter().copied()),
+        Prefix::default(),
+    );
+
+    let (mut section, section_key_share) = create_section(&sk_set_v0, &elders_info_v0)?;
+
+    for peer in peers_b.iter().chain(iter::once(&peer_c)) {
+        let member_info = MemberInfo::joined(*peer);
+        let member_info = proven(sk_set_v0.secret_key(), member_info)?;
+        assert!(section.update_member(member_info));
+    }
+
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let stage = Stage::new(state, create_comm()?);
+
+    let sk_set_v1_p0 = SecretKeySet::random();
+    let pk_v1_p0 = sk_set_v1_p0.secret_key().public_key();
+
+    let sk_set_v1_p1 = SecretKeySet::random();
+    let pk_v1_p1 = sk_set_v1_p1.secret_key().public_key();
+
+    // Create consensus on `OurElder` for both sub-sections
+    let create_our_elders_command = |sk, elders_info| -> Result<_> {
+        let proven_elders_info = proven(sk, elders_info)?;
+        let vote = Vote::OurElders(proven_elders_info);
+        let signature = sk_set_v0
+            .secret_key()
+            .sign(&bincode::serialize(&vote.as_signable())?);
+        let proof = Proof {
+            signature,
+            public_key: sk_set_v0.secret_key().public_key(),
+        };
+
+        Ok(Command::HandleConsensus { vote, proof })
+    };
+
+    // Handle consensus on `OurElders` for prefix-0.
+    let elders_info = EldersInfo::new(peers_a.iter().copied().chain(iter::once(peer_c)), prefix0);
+    let command = create_our_elders_command(sk_set_v1_p0.secret_key(), elders_info)?;
+    let commands = stage.handle_command(command).await?;
+    assert_matches!(&commands[..], &[]);
+
+    // Handle consensus on `OurElders` for prefix-1.
+    let elders_info = EldersInfo::new(peers_b.iter().copied(), prefix1);
+    let command = create_our_elders_command(sk_set_v1_p1.secret_key(), elders_info)?;
+    let commands = stage.handle_command(command).await?;
+    assert_matches!(&commands[..], &[]);
+
+    // Create consensus on `TheirKey` for both sub-sections
+    let create_their_key_command = |prefix, key| -> Result<_> {
+        let vote = Vote::TheirKey { prefix, key };
+        let signature = sk_set_v0
+            .secret_key()
+            .sign(&bincode::serialize(&vote.as_signable())?);
+        let proof = Proof {
+            signature,
+            public_key: sk_set_v0.secret_key().public_key(),
+        };
+        Ok(Command::HandleConsensus { vote, proof })
+    };
+
+    // Handle consensus on `TheirKey` for prefix-0
+    let command = create_their_key_command(prefix0, pk_v1_p0)?;
+    let commands = stage.handle_command(command).await?;
+    assert_matches!(&commands[..], &[]);
+
+    // Handle consensus on `TheirKey` for prefix-1
+    let command = create_their_key_command(prefix1, pk_v1_p1)?;
+    let commands = stage.handle_command(command).await?;
+
+    let mut sync_recipients_p0 = HashSet::new();
+    let mut sync_recipients_p1 = HashSet::new();
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message,
+                ..
+            } => (recipients, message),
+            _ => continue,
+        };
+
+        let message = Message::from_bytes(&message)?;
+        let section = match message.variant() {
+            Variant::Sync { section, .. } => section,
+            _ => continue,
+        };
+
+        match section.chain().last_key() {
+            key if key == &pk_v1_p0 => sync_recipients_p0.extend(recipients),
+            key if key == &pk_v1_p1 => sync_recipients_p1.extend(recipients),
+            key => {
+                panic!(
+                    "unexpected section key: {:?} (expecting {:?} or {:?})",
+                    key, pk_v1_p0, pk_v1_p1
+                );
+            }
+        }
+    }
+
+    let expected_recipients_p0 = peers_a
+        .iter()
+        .map(Peer::addr)
+        .chain(iter::once(peer_c.addr()))
+        .copied()
+        .collect();
+    let expected_recipients_p1 = peers_b.iter().map(Peer::addr).copied().collect();
+
+    assert_eq!(sync_recipients_p0, expected_recipients_p0);
+    assert_eq!(sync_recipients_p1, expected_recipients_p1);
+
+    Ok(())
+}
+
 // TODO: add more tests here
 
 fn create_peer() -> Peer {
     Peer::new(rand::random(), gen_addr(), MIN_AGE)
+}
+
+fn create_peer_in_prefix(prefix: &Prefix) -> Peer {
+    Peer::new(prefix.substituted_in(rand::random()), gen_addr(), MIN_AGE)
 }
 
 fn create_node() -> Node {

@@ -337,7 +337,7 @@ pub enum MessageStatus {
 
 #[derive(Debug, Error)]
 pub enum CreateError {
-    #[error("bincode error: {}", _0)]
+    #[error("bincode error: {}", .0)]
     Bincode(#[from] bincode::Error),
     #[error("signature check failed")]
     FailedSignature,
@@ -357,9 +357,9 @@ impl From<CreateError> for Error {
 pub enum ExtendProofChainError {
     #[error("message has no proof chain")]
     NoProofChain,
-    #[error("failed to extend proof chain: {}", _0)]
+    #[error("failed to extend proof chain: {}", .0)]
     Extend(#[from] ExtendError),
-    #[error("failed to re-create message: {}", _0)]
+    #[error("failed to re-create message: {}", .0)]
     Create(#[from] CreateError),
 }
 
