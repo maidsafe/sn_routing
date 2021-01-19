@@ -18,7 +18,6 @@ pub(crate) use self::{
 };
 use crate::{
     crypto::{self, name, Verifier},
-    error::{Error, Result},
     location::DstLocation,
     node::Node,
     section::{ExtendError, SectionProofChain, TrustStatus},
@@ -61,14 +60,15 @@ pub(crate) struct Message {
 
 impl Message {
     /// Deserialize the message. Only called on message receipt.
-    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self, CreateError> {
+    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self, ParseError> {
         let mut msg: Message = bincode::deserialize(&bytes[..])?;
 
         let signed_bytes = bincode::serialize(&SignableView {
             dst: &msg.dst,
             dst_key: msg.dst_key.as_ref(),
             variant: &msg.variant,
-        })?;
+        })
+        .map_err(|_| ParseError::FailedSignature)?;
 
         match &msg.src {
             SrcAuthority::Node {
@@ -78,7 +78,7 @@ impl Message {
             } => {
                 if public_key.verify(&signed_bytes, signature).is_err() {
                     error!("Failed signature: {:?}", msg);
-                    return Err(CreateError::FailedSignature);
+                    return Err(ParseError::FailedSignature);
                 }
             }
             SrcAuthority::Section { signature, .. } => {
@@ -86,7 +86,7 @@ impl Message {
                     // FIXME Assumes the nodes proof last key is the one signing this message
                     if !proof_chain.last_key().verify(signature, &signed_bytes) {
                         error!("Failed signature: {:?}", msg);
-                        return Err(CreateError::FailedSignature);
+                        return Err(ParseError::FailedSignature);
                     }
                 }
             }
@@ -170,7 +170,7 @@ impl Message {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub(crate) fn verify<'a, I>(&'a self, trusted_keys: I) -> Result<VerifyStatus>
+    pub(crate) fn verify<'a, I>(&'a self, trusted_keys: I) -> Result<(), IntegrityError>
     where
         I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
     {
@@ -178,7 +178,8 @@ impl Message {
             dst: &self.dst,
             dst_key: self.dst_key.as_ref(),
             variant: &self.variant,
-        })?;
+        })
+        .map_err(|_| IntegrityError::FailedSignature)?;
 
         match &self.src {
             SrcAuthority::Node {
@@ -187,7 +188,7 @@ impl Message {
                 ..
             } => {
                 if public_key.verify(&bytes, signature).is_err() {
-                    return Err(Error::FailedSignature);
+                    return Err(IntegrityError::FailedSignature);
                 }
 
                 // Variant-specific verification.
@@ -199,14 +200,12 @@ impl Message {
             }
             SrcAuthority::Section { prefix, signature } => {
                 // Proof chain is required for section-src messages.
-                let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
-                    proof_chain
-                } else {
-                    return Err(Error::InvalidMessage);
-                };
-
+                let proof_chain = self
+                    .proof_chain
+                    .as_ref()
+                    .ok_or(IntegrityError::ProofChainMissing)?;
                 if !proof_chain.last_key().verify(signature, &bytes) {
-                    return Err(Error::FailedSignature);
+                    return Err(IntegrityError::FailedSignature);
                 }
 
                 let trusted_keys = trusted_keys
@@ -244,12 +243,14 @@ impl Message {
     }
 
     /// Returns the attached proof chain, if any.
-    pub(crate) fn proof_chain(&self) -> Result<&SectionProofChain> {
-        self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
+    pub(crate) fn proof_chain(&self) -> Result<&SectionProofChain, IntegrityError> {
+        self.proof_chain
+            .as_ref()
+            .ok_or(IntegrityError::ProofChainMissing)
     }
 
     /// Returns the last key of the attached the proof chain, if any.
-    pub(crate) fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
+    pub(crate) fn proof_chain_last_key(&self) -> Result<&bls::PublicKey, IntegrityError> {
         self.proof_chain().map(|proof_chain| proof_chain.last_key())
     }
 
@@ -301,26 +302,6 @@ impl Debug for Message {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
-pub enum VerifyStatus {
-    // The message has been fully verified.
-    Full,
-    // The message trust and integrity cannot be verified because it's proof is not trusted by us,
-    // even though it is valid. The message should be relayed to other nodes who might be able to
-    // verify it.
-    Unknown,
-}
-
-impl Into<Result<VerifyStatus>> for TrustStatus {
-    fn into(self) -> Result<VerifyStatus> {
-        match self {
-            Self::Trusted => Ok(VerifyStatus::Full),
-            Self::Unknown => Ok(VerifyStatus::Unknown),
-            Self::Invalid => Err(Error::InvalidMessage),
-        }
-    }
-}
-
 /// Status of an incomming message.
 #[derive(Eq, PartialEq)]
 pub enum MessageStatus {
@@ -336,20 +317,19 @@ pub enum MessageStatus {
 }
 
 #[derive(Debug, Error)]
-pub enum CreateError {
-    #[error("bincode error: {}", .0)]
-    Bincode(#[from] bincode::Error),
+pub enum ParseError {
+    #[error("failed to deserialize message: {}", .0)]
+    Deserialize(#[from] bincode::Error),
     #[error("signature check failed")]
     FailedSignature,
 }
 
-impl From<CreateError> for Error {
-    fn from(src: CreateError) -> Self {
-        match src {
-            CreateError::Bincode(inner) => Self::Bincode(inner),
-            CreateError::FailedSignature => Self::FailedSignature,
-        }
-    }
+/// Error when creating a message.
+#[allow(missing_docs)]
+#[derive(Debug, Error)]
+pub enum CreateError {
+    #[error("failed to serialize message: {}", .0)]
+    Serialize(#[from] bincode::Error),
 }
 
 /// Error returned from `Message::extend_proof_chain`.
@@ -361,6 +341,32 @@ pub enum ExtendProofChainError {
     Extend(#[from] ExtendError),
     #[error("failed to re-create message: {}", .0)]
     Create(#[from] CreateError),
+}
+
+/// Error when checking message integrity.
+#[allow(missing_docs)]
+#[derive(Debug, Error)]
+pub enum IntegrityError {
+    #[error("proof chain is missing")]
+    ProofChainMissing,
+    #[error("proof chain is invalid")]
+    ProofChainInvalid,
+    #[error("signature check failed")]
+    FailedSignature,
+    #[error("message source authority is not trusted")]
+    Untrusted,
+    #[error("wrong message variant")]
+    WrongVariant,
+}
+
+impl Into<Result<(), IntegrityError>> for TrustStatus {
+    fn into(self) -> Result<(), IntegrityError> {
+        match self {
+            Self::Trusted => Ok(()),
+            Self::Unknown => Err(IntegrityError::Untrusted),
+            Self::Invalid => Err(IntegrityError::ProofChainInvalid),
+        }
+    }
 }
 
 // View of a message that can be serialized for the purpose of signing.
@@ -382,6 +388,7 @@ mod tests {
         MIN_AGE,
     };
     use anyhow::Result;
+    use assert_matches::assert_matches;
     use std::iter;
 
     #[test]
@@ -417,20 +424,20 @@ mod tests {
             Some(pk1),
         )?;
 
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk1)))?,
-            VerifyStatus::Full
+        assert_matches!(
+            message.verify(iter::once((&Prefix::default(), &pk1))),
+            Ok(())
         );
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk0)))?,
-            VerifyStatus::Unknown
+        assert_matches!(
+            message.verify(iter::once((&Prefix::default(), &pk0))),
+            Err(IntegrityError::Untrusted)
         );
 
         let message = message.extend_proof_chain(&pk0, &full_proof_chain)?;
 
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk0)))?,
-            VerifyStatus::Full
+        assert_matches!(
+            message.verify(iter::once((&Prefix::default(), &pk0))),
+            Ok(())
         );
 
         Ok(())

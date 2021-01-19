@@ -18,7 +18,6 @@ use crate::{
     majority,
     messages::{
         BootstrapResponse, JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant,
-        VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -681,7 +680,8 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .members()
         .get(remove_peer.name())
         .expect("member not found")
-        .leave()?;
+        .leave()
+        .expect("member not joined");
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -1292,7 +1292,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         })
         .await;
 
-    assert_matches!(result, Err(Error::InvalidMessage));
+    assert_matches!(result, Err(Error::InvalidMessage(_)));
 
     Ok(())
 }
@@ -1526,7 +1526,7 @@ async fn handle_elders_update() -> Result<()> {
         // The message is trusted even by peers who don't yet know the new section key.
         assert_matches!(
             message.verify(iter::once((&Prefix::default(), &pk0))),
-            Ok(VerifyStatus::Full)
+            Ok(())
         );
 
         // Merging the section contained in the message with the original section succeeds.

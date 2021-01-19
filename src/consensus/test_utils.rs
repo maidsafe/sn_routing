@@ -7,11 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Proof, Proven};
-use crate::error::Result;
 use serde::Serialize;
 
 // Create proof for the given payload using the given secret key.
-pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Proof> {
+pub fn prove<T: Serialize>(
+    secret_key: &bls::SecretKey,
+    payload: &T,
+) -> Result<Proof, bincode::Error> {
     let bytes = bincode::serialize(payload)?;
     Ok(Proof {
         public_key: secret_key.public_key(),
@@ -20,7 +22,10 @@ pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<P
 }
 
 // Wrap the given payload in `Proven`
-pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Result<Proven<T>> {
+pub fn proven<T: Serialize>(
+    secret_key: &bls::SecretKey,
+    payload: T,
+) -> Result<Proven<T>, bincode::Error> {
     let proof = prove(secret_key, &payload)?;
     Ok(Proven::new(payload, proof))
 }

@@ -22,16 +22,12 @@ pub use self::{
     section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
 
-use crate::{
-    consensus::Proven,
-    error::{Error, Result},
-    peer::Peer,
-    ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
-};
+use crate::{consensus::Proven, peer::Peer, ELDER_SIZE, RECOMMENDED_SECTION_SIZE};
 use bls_signature_aggregator::Proof;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
+use thiserror::Error;
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,10 +40,13 @@ pub(crate) struct Section {
 impl Section {
     /// Creates a minimal `Section` initially containing only info about our elders
     /// (`elders_info`).
-    pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
+    pub fn new(
+        chain: SectionProofChain,
+        elders_info: Proven<EldersInfo>,
+    ) -> Result<Self, CreateError> {
         if !chain.has_key(&elders_info.proof.public_key) {
             // TODO: consider more specific error here.
-            return Err(Error::InvalidMessage);
+            return Err(CreateError::UntrustedEldersInfoSigningKey);
         }
 
         Ok(Self {
@@ -58,7 +57,7 @@ impl Section {
     }
 
     /// Creates `Section` for the first node in the network
-    pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare)> {
+    pub fn first_node(peer: Peer) -> Result<(Self, SectionKeyShare), CreateError> {
         let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);
@@ -90,9 +89,13 @@ impl Section {
 
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
     /// its chain is not compatible with the chain of `self`.
-    pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.chain.self_verify() || !other.elders_info.verify(&other.chain) {
-            return Err(Error::InvalidMessage);
+    pub fn merge(&mut self, other: Self) -> Result<(), MergeError> {
+        if !other.chain.self_verify() {
+            return Err(MergeError::InvalidOtherChain);
+        }
+
+        if !other.elders_info.verify(&other.chain) {
+            return Err(MergeError::InvalidOtherEldersInfo);
         }
 
         // TODO: handle forks
@@ -106,7 +109,7 @@ impl Section {
                     self.chain.keys().format("->"),
                     self.prefix(),
                 );
-                return Err(Error::InvalidMessage);
+                return Err(MergeError::IncompatibleChains);
             }
         }
 
@@ -352,12 +355,37 @@ impl Section {
     }
 }
 
+/// Error when creating section.
+#[allow(missing_docs)]
+#[derive(Debug, Error)]
+pub enum CreateError {
+    #[error("elders info signing key is not in the chain")]
+    UntrustedEldersInfoSigningKey,
+    #[error("failed to serialize data for signing: {}", .0)]
+    Serialize(#[from] bincode::Error),
+    #[error("failed to combine signature shares: {}", .0)]
+    // TODO: add the `#[from]` attribute here once threshold_crypto publishes the version where
+    // their `Error` implements `std::error::Error`.
+    CombineSignatures(bls::error::Error),
+}
+
+/// Error when merging sections.
+#[derive(Debug, Error)]
+pub enum MergeError {
+    #[error("the chain of the other section is invalid")]
+    InvalidOtherChain,
+    #[error("the elders info of the other section is invalid")]
+    InvalidOtherEldersInfo,
+    #[error("the chains of this and the other section are incompatible")]
+    IncompatibleChains,
+}
+
 // Create `EldersInfo` for the first node.
 fn create_first_elders_info(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     peer: Peer,
-) -> Result<Proven<EldersInfo>> {
+) -> Result<Proven<EldersInfo>, CreateError> {
     let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
     let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
     Ok(Proven::new(elders_info, proof))
@@ -367,12 +395,12 @@ fn create_first_proof<T: Serialize>(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     payload: &T,
-) -> Result<Proof> {
+) -> Result<Proof, CreateError> {
     let bytes = bincode::serialize(payload)?;
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
-        .map_err(|_| Error::InvalidSignatureShare)?;
+        .map_err(CreateError::CombineSignatures)?;
 
     Ok(Proof {
         public_key: pk_set.public_key(),

@@ -74,7 +74,7 @@ impl Vote {
         public_key_set: bls::PublicKeySet,
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
-    ) -> Result<ProofShare> {
+    ) -> Result<ProofShare, bincode::Error> {
         Ok(ProofShare::new(
             public_key_set,
             index,

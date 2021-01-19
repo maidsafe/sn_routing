@@ -8,18 +8,16 @@
 
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
-    consensus::Proven,
     crypto::{self, Signature},
     error::{Error, Result},
     location::DstLocation,
     messages::{
-        BootstrapResponse, JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus,
+        BootstrapResponse, IntegrityError, JoinRequest, Message, ResourceProofResponse, Variant,
     },
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::{EldersInfo, Section},
-    SectionProofChain,
 };
 use bytes::Bytes;
 use futures::future;
@@ -113,7 +111,7 @@ impl<'a> State<'a> {
             .await?;
 
         let relocate_payload = if let Some(details) = relocate_details {
-            Some(self.process_relocation(&elders_info, details))
+            Some(self.process_relocation(&elders_info, details)?)
         } else {
             None
         };
@@ -162,7 +160,7 @@ impl<'a> State<'a> {
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<()> {
         let destination = match relocate_details {
-            Some(details) => *details.destination(),
+            Some(details) => details.relocate_details()?.destination,
             None => self.node.name(),
         };
 
@@ -209,9 +207,7 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("{} Message sender unexpectedly closed", self.node);
-        // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
-        Err(Error::InvalidState)
+        Err(Error::BootstrapInterrupted)
     }
 
     // Change our name to fit the destination section and apply the new age.
@@ -219,25 +215,27 @@ impl<'a> State<'a> {
         &mut self,
         elders_info: &EldersInfo,
         relocate_details: SignedRelocateDetails,
-    ) -> RelocatePayload {
+    ) -> Result<RelocatePayload> {
+        let unsigned_details = relocate_details.relocate_details()?;
+
         // We are relocating so we need to change our name.
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
         let name_prefix = Prefix::new(
             elders_info.prefix.bit_count() + extra_split_count,
-            *relocate_details.destination(),
+            unsigned_details.destination,
         );
 
         let new_keypair = crypto::gen_keypair_within_range(&name_prefix.range_inclusive());
         let new_name = crypto::name(&new_keypair.public);
-        let age = relocate_details.relocate_details().age;
+        let age = unsigned_details.age;
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 
         info!("{} Changing name to {}.", self.node, new_name);
         self.node = Node::new(new_keypair, self.node.addr).with_age(age);
 
-        relocate_payload
+        Ok(relocate_payload)
     }
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
@@ -263,14 +261,10 @@ impl<'a> State<'a> {
                 .await?;
 
             match response {
-                JoinResponse::Approval {
-                    elders_info,
-                    age,
-                    section_chain,
-                } => {
+                JoinResponse::Approval { age, section } => {
                     return Ok((
                         self.node.with_age(age),
-                        Section::new(section_chain, elders_info)?,
+                        section,
                         self.backlog.into_iter().collect(),
                     ));
                 }
@@ -405,7 +399,10 @@ impl<'a> State<'a> {
                     }
 
                     let trusted_key = if let Some(payload) = relocate_payload {
-                        Some(&payload.relocate_details().destination_key)
+                        payload
+                            .relocate_details()
+                            .ok()
+                            .map(|details| &details.destination_key)
                     } else {
                         None
                     };
@@ -422,6 +419,14 @@ impl<'a> State<'a> {
                         continue;
                     };
 
+                    let section = match Section::new(section_chain, elders_info.clone()) {
+                        Ok(section) => section,
+                        Err(error) => {
+                            trace!("Ignore NodeApproval - failed to create Section: {}", error);
+                            continue;
+                        }
+                    };
+
                     info!(
                         "{} This node has been approved to join the network at {:?}!",
                         self.node, elders_info.value.prefix,
@@ -429,9 +434,8 @@ impl<'a> State<'a> {
 
                     return Ok((
                         JoinResponse::Approval {
-                            elders_info: elders_info.clone(),
                             age: member_info.value.peer.age(),
-                            section_chain,
+                            section,
                         },
                         sender,
                     ));
@@ -441,9 +445,7 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("{} Message sender unexpectedly closed", self.node);
-        // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
-        Err(Error::InvalidState)
+        Err(Error::BootstrapInterrupted)
     }
 
     fn verify_message(&self, message: &Message, trusted_key: Option<&bls::PublicKey>) -> bool {
@@ -452,13 +454,8 @@ impl<'a> State<'a> {
         let prefix = Prefix::default();
 
         match message.verify(trusted_key.map(|key| (&prefix, key))) {
-            Ok(VerifyStatus::Full) => true,
-            Ok(VerifyStatus::Unknown) if trusted_key.is_none() => true,
-            Ok(VerifyStatus::Unknown) => {
-                // TODO: bounce
-                error!("Verification failed - untrusted message: {:?}", message);
-                false
-            }
+            Ok(()) => true,
+            Err(IntegrityError::Untrusted) if trusted_key.is_none() => true,
             Err(error) => {
                 error!("Verification failed - {}: {:?}", error, message);
                 false
@@ -477,9 +474,8 @@ impl<'a> State<'a> {
 
 enum JoinResponse {
     Approval {
-        elders_info: Proven<EldersInfo>,
         age: u8,
-        section_chain: SectionProofChain,
+        section: Section,
     },
     Rejoin {
         elders_info: EldersInfo,
@@ -538,7 +534,9 @@ async fn send_messages(mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>, comm: &
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::*, section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_AGE,
+        consensus::test_utils::*,
+        section::{test_utils::*, MemberInfo, SectionProofChain},
+        ELDER_SIZE, MIN_AGE,
     };
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;

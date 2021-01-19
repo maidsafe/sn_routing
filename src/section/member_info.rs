@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{error::Error, peer::Peer};
+use crate::peer::Peer;
 use serde::{Deserialize, Serialize};
 use xor_name::XorName;
 
@@ -35,15 +35,17 @@ impl MemberInfo {
         self.peer.age() > MIN_AGE
     }
 
-    pub fn leave(self) -> Result<Self, Error> {
-        // Do not vote Offline when already relocated, to avoid rejoining with the same name.
-        if let PeerState::Relocated(_) = self.state {
-            return Err(Error::InvalidState);
+    // Transition this members into `Left` if possible. Returns `None` if transition is not
+    // possible (only `Joined` can be transitioned to `Left`).
+    pub fn leave(self) -> Option<Self> {
+        if let PeerState::Joined = self.state {
+            Some(Self {
+                state: PeerState::Left,
+                ..self
+            })
+        } else {
+            None
         }
-        Ok(Self {
-            state: PeerState::Left,
-            ..self
-        })
     }
 
     // Convert this info into one with the state changed to `Relocated`.

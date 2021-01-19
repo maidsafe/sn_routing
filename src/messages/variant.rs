@@ -6,11 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Message, MessageHash, VerifyStatus};
+use super::{IntegrityError, Message, MessageHash};
 use crate::{
     consensus::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proven, Vote},
     crypto::Signature,
-    error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{EldersInfo, MemberInfo, Section, SectionProofChain},
@@ -126,7 +125,7 @@ impl Variant {
         &self,
         proof_chain: Option<&SectionProofChain>,
         trusted_keys: I,
-    ) -> Result<VerifyStatus>
+    ) -> Result<(), IntegrityError>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
@@ -135,29 +134,29 @@ impl Variant {
                 elders_info,
                 member_info,
             } => {
-                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(IntegrityError::ProofChainMissing)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(Error::InvalidMessage);
+                    return Err(IntegrityError::FailedSignature);
                 }
 
                 if !member_info.verify(proof_chain) {
-                    return Err(Error::InvalidMessage);
+                    return Err(IntegrityError::FailedSignature);
                 }
 
                 proof_chain.check_trust(trusted_keys).into()
             }
             Self::Sync { section, .. } => section.chain().check_trust(trusted_keys).into(),
             Self::NeighbourInfo { elders_info, .. } => {
-                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
+                let proof_chain = proof_chain.ok_or(IntegrityError::ProofChainMissing)?;
 
                 if !elders_info.verify(proof_chain) {
-                    return Err(Error::InvalidMessage);
+                    return Err(IntegrityError::FailedSignature);
                 }
 
                 proof_chain.check_trust(trusted_keys).into()
             }
-            _ => Ok(VerifyStatus::Full),
+            _ => Ok(()),
         }
     }
 }

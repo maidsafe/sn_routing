@@ -83,7 +83,7 @@ pub(crate) fn delivery_targets(
 
             candidates(target_name, our_name, section, network)?
         }
-        DstLocation::Direct => return Err(Error::CannotRoute),
+        DstLocation::Direct => return Err(Error::InvalidDstLocation),
     };
 
     Ok((best_section, dg_size))

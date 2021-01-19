@@ -18,8 +18,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
-        ResourceProofResponse, Variant, VerifyStatus, PING,
+        BootstrapResponse, IntegrityError, JoinRequest, Message, MessageHash, MessageStatus,
+        PlainMessage, ResourceProofResponse, Variant, PING,
     },
     network::Network,
     node::Node,
@@ -29,7 +29,7 @@ use crate::{
         SignedRelocateDetails,
     },
     section::{
-        EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare, SectionKeysProvider,
+        self, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare, SectionKeysProvider,
         SectionProofChain, MIN_AGE,
     },
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
@@ -66,7 +66,10 @@ pub(crate) struct Approved {
 
 impl Approved {
     // Creates the approved state for the first node in the network
-    pub fn first_node(node: Node, event_tx: mpsc::UnboundedSender<Event>) -> Result<Self> {
+    pub fn first_node(
+        node: Node,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Result<Self, section::CreateError> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
         Ok(Self::new(node, section, Some(section_key_share), event_tx))
     }
@@ -175,7 +178,7 @@ impl Approved {
             Err(AccumulationError::NotEnoughShares) => Ok(vec![]),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
-                Err(Error::InvalidSignatureShare)
+                Err(Error::InvalidVoteProofShare)
             }
         }
     }
@@ -245,8 +248,12 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        if let Some(info) = self.section.members().get(&name) {
-            let info = info.clone().leave()?;
+        if let Some(info) = self
+            .section
+            .members()
+            .get(&name)
+            .and_then(|info| info.leave())
+        {
             self.vote(Vote::Offline(info))
         } else {
             Ok(vec![])
@@ -312,11 +319,13 @@ impl Approved {
             recipients,
         );
 
-        let proof_share = vote.prove(
-            key_share.public_key_set.clone(),
-            key_share.index,
-            &key_share.secret_key_share,
-        )?;
+        let proof_share = vote
+            .prove(
+                key_share.public_key_set.clone(),
+                key_share.index,
+                &key_share.secret_key_share,
+            )
+            .map_err(Error::CreateVoteProofShare)?;
 
         // Broadcast the vote to the rest of the section elders.
         let variant = Variant::Vote {
@@ -636,11 +645,11 @@ impl Approved {
             .chain(self.network.keys());
 
         match msg.verify(known_keys) {
-            Ok(VerifyStatus::Full) => Ok(true),
-            Ok(VerifyStatus::Unknown) => Ok(false),
+            Ok(()) => Ok(true),
+            Err(IntegrityError::Untrusted) => Ok(false),
             Err(error) => {
                 warn!("Verification of {:?} failed: {}", msg, error);
-                Err(error)
+                Err(error.into())
             }
         }
     }
@@ -830,15 +839,24 @@ impl Approved {
     }
 
     fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Option<Command> {
-        if details.relocate_details().pub_id != self.node.name() {
-            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
+        let unsigned_details = match details.relocate_details() {
+            Ok(details) => details,
+            Err(error) => {
+                trace!("Ignore Relocate - invalid relocate details: {}", error);
+                return None;
+            }
+        };
+
+        if unsigned_details.pub_id != self.node.name() {
+            // This `Relocate` message is not for us - it might be a duplicate of a previous
             // message that we already handled.
+            trace!("Ignore Relocate - not for us");
             return None;
         }
 
         debug!(
             "Received Relocate message to join the section at {}",
-            details.relocate_details().destination
+            unsigned_details.destination
         );
 
         match self.relocate_state {
@@ -1003,8 +1021,7 @@ impl Approved {
                     return Ok(vec![]);
                 }
 
-                // FIXME: this might panic if the payload is malformed.
-                let details = payload.relocate_details();
+                let details = payload.relocate_details()?;
 
                 if !self.section.prefix().matches(&details.destination) {
                     debug!(
@@ -1090,7 +1107,8 @@ impl Approved {
 
     fn send_resource_proof_challenge(&self, peer: &Peer) -> Result<Command> {
         let nonce: [u8; 32] = rand::random();
-        let serialized = bincode::serialize(&(peer.name(), &nonce))?;
+        let serialized =
+            bincode::serialize(&(peer.name(), &nonce)).map_err(Error::CreateResourceChallenge)?;
         let response = Variant::ResourceChallenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
             difficulty: RESOURCE_PROOF_DIFFICULTY,
@@ -1424,7 +1442,8 @@ impl Approved {
             Ok(vec![])
         } else {
             // Ignore our key. Should be updated using `OurKey` instead.
-            Err(Error::InvalidVote)
+            trace!("Ignore consensus on TheirKey for our section");
+            Ok(vec![])
         }
     }
 

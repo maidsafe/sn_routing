@@ -93,10 +93,11 @@ impl Routing {
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
         let (state, comm, backlog) = if config.first {
-            info!("{} Starting a new network as the seed node.", node_name);
+            info!("{} Starting a new network as the genesis node.", node_name);
             let comm = Comm::new(config.transport_config, connection_event_tx)?;
             let node = Node::new(keypair, comm.our_connection_info().await?).with_age(MIN_AGE + 1);
-            let state = Approved::first_node(node, event_tx)?;
+            let state =
+                Approved::first_node(node, event_tx).map_err(Error::CreateGenesisSection)?;
 
             state.send_event(Event::PromotedToElder);
 
@@ -303,7 +304,7 @@ impl Routing {
     }
 
     /// Returns the current BLS public key set if this node has one, or
-    /// `Error::InvalidState` otherwise.
+    /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
         self.stage
             .state
@@ -311,11 +312,11 @@ impl Routing {
             .await
             .section_key_share()
             .map(|share| share.public_key_set.clone())
-            .ok_or(Error::InvalidState)
+            .ok_or(Error::MissingSecretKeyShare)
     }
 
-    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
-    /// elder.
+    /// Returns the current BLS secret key share if this node has one, or
+    /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
         self.stage
             .state

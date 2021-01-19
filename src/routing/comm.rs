@@ -232,7 +232,7 @@ pub struct SendError;
 
 impl From<SendError> for Error {
     fn from(_: SendError) -> Self {
-        Error::FailedSend
+        Error::SendMessage
     }
 }
 

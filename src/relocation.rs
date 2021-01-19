@@ -10,8 +10,7 @@
 
 use crate::{
     crypto::{self, Keypair, Signature, Verifier},
-    error::Error,
-    messages::{Message, Variant},
+    messages::{IntegrityError, Message, Variant},
     network::Network,
     peer::Peer,
     section::{MemberInfo, Section},
@@ -114,30 +113,24 @@ pub(crate) struct SignedRelocateDetails {
 }
 
 impl SignedRelocateDetails {
-    pub fn new(signed_msg: Message) -> Result<Self, Error> {
+    pub fn new(signed_msg: Message) -> Result<Self, IntegrityError> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
-            Err(Error::InvalidMessage)
+            Err(IntegrityError::WrongVariant)
         }
     }
 
-    // FIXME: need a non-panicking version of this, because when we receive it from another node,
-    // we can't be sure it's well formed.
-    pub fn relocate_details(&self) -> &RelocateDetails {
+    pub fn relocate_details(&self) -> Result<&RelocateDetails, IntegrityError> {
         if let Variant::Relocate(details) = &self.signed_msg.variant() {
-            details
+            Ok(details)
         } else {
-            panic!("SignedRelocateDetails always contain Variant::Relocate")
+            Err(IntegrityError::WrongVariant)
         }
     }
 
     pub fn signed_msg(&self) -> &Message {
         &self.signed_msg
-    }
-
-    pub fn destination(&self) -> &XorName {
-        &self.relocate_details().destination
     }
 }
 
@@ -178,8 +171,13 @@ impl RelocatePayload {
     }
 
     pub fn verify_identity(&self, new_name: &XorName) -> bool {
-        let pub_key = if let Ok(pub_key) = crypto::pub_key(&self.details.relocate_details().pub_id)
-        {
+        let name = if let Ok(details) = self.relocate_details() {
+            &details.pub_id
+        } else {
+            return false;
+        };
+
+        let pub_key = if let Ok(pub_key) = crypto::pub_key(name) {
             pub_key
         } else {
             return false;
@@ -190,7 +188,7 @@ impl RelocatePayload {
             .is_ok()
     }
 
-    pub fn relocate_details(&self) -> &RelocateDetails {
+    pub fn relocate_details(&self) -> Result<&RelocateDetails, IntegrityError> {
         self.details.relocate_details()
     }
 }
