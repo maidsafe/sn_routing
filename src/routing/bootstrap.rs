@@ -415,7 +415,12 @@ impl<'a> State<'a> {
                     }
 
                     // Transition from Joining to Approved
-                    let section_chain = message.proof_chain()?.clone();
+                    let section_chain = if let Ok(chain) = message.proof_chain() {
+                        chain.clone()
+                    } else {
+                        trace!("Ignore NodeApproval without proof chain");
+                        continue;
+                    };
 
                     info!(
                         "{} This node has been approved to join the network at {:?}!",
