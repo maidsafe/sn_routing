@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.41.0](https://github.com/maidsafe/sn_routing/compare/v0.40.0...v0.41.0) (2021-01-19)
+
+
+### ⚠ BREAKING CHANGES
+
+*     - remove `Error::BadLocation` (use the more specific `InvalidSrcLocation` / `InvalidDstLocation` instead)
+    - rename `Error::InvalidSource` to `Error::InvalidSrcLocation`
+    - rename `Error::InvalidDestination` to `Error::InvalidDstLocation`
+
+### Features
+
+* improve fork diagnostics ([dbf9807](https://github.com/maidsafe/sn_routing/commit/dbf98072a98bba734c6e0458936fa3aaa56ddeb6))
+* **stress test:** improve output ([33eac1b](https://github.com/maidsafe/sn_routing/commit/33eac1b61383f231d0c34657db98d00cc84cf7c3))
+* remove old DKG sessions ([c8db72f](https://github.com/maidsafe/sn_routing/commit/c8db72f8120c538ed41cbe1d036106ba3c0c04d9))
+* support multiple concurrent DKGs ([98fc101](https://github.com/maidsafe/sn_routing/commit/98fc10194ddd73387a5539ad1e29423a224583d5))
+
+
+### Bug Fixes
+
+* allow only one relocation at the time per node ([0e4d05f](https://github.com/maidsafe/sn_routing/commit/0e4d05f7f06349512a63a912a832cbab0631e429))
+* don't fail in update_state if secret key share is missing ([97d8266](https://github.com/maidsafe/sn_routing/commit/97d8266042d1c21c02b8015aa5be38ad009c8224))
+* ignore elders update with incorrect prefix ([dfc9c60](https://github.com/maidsafe/sn_routing/commit/dfc9c60278fe78fdd5fbb4de14b5cc2721dbf570))
+* ignore invalid bootstrap response ([3d8cfd5](https://github.com/maidsafe/sn_routing/commit/3d8cfd583c16cff7c25b82c142c80aa6348852e3))
+* **stress test:** ignore InvalidSource errors when sending probes ([adabf82](https://github.com/maidsafe/sn_routing/commit/adabf82f7da0f8b6669e8f28cc9fb7fca02f67b2))
+* send Sync messages on split even when demoted ([5f42b78](https://github.com/maidsafe/sn_routing/commit/5f42b78c4bcd68720399d9553512057d8b7d4d0d))
+
+
+* remove Error::BadLocation ([3391c7f](https://github.com/maidsafe/sn_routing/commit/3391c7f1d49e050ae2fe580816a10add68388d14))
+
 ## [0.40.0](https://github.com/maidsafe/sn_routing/compare/v0.39.16...v0.40.0) (2021-01-13)
 
 
