@@ -216,7 +216,7 @@ impl Section {
         &self,
         their_knowledge: Option<u64>,
     ) -> SectionProofChain {
-        let first_index = self.elders_info_signing_key_index();
+        let first_index = self.chain.last_key_index();
         let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
         self.chain.slice(first_index..)
     }
@@ -286,15 +286,6 @@ impl Section {
             .joined()
             .find(|info| info.peer.addr() == addr)
             .map(|info| &info.peer)
-    }
-
-    fn elders_info_signing_key_index(&self) -> u64 {
-        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
-        // present in our section proof chain. This is guaranteed, because we update both the
-        // elders info and the section chain together in a single operation.
-        self.chain
-            .index_of(&self.elders_info.proof.public_key)
-            .unwrap_or_else(|| unreachable!("EldersInfo signed with unknown key"))
     }
 
     // Tries to split our section.

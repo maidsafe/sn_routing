@@ -302,7 +302,11 @@ impl Approved {
 
     // Send `vote` to `recipients`.
     fn send_vote(&self, recipients: &[Peer], vote: Vote) -> Result<Vec<Command>> {
-        let key_share = self.section_keys_provider.key_share()?;
+        let key_share = self.section_keys_provider.key_share().map_err(|error| {
+            error!("Failed to vote for {:?} - missing secret key share", vote);
+            error
+        })?;
+
         self.send_vote_with(recipients, vote, key_share)
     }
 
@@ -1902,7 +1906,14 @@ impl Approved {
 
         let last_key = self
             .section_keys_provider
-            .key_share()?
+            .key_share()
+            .map_err(|error| {
+                error!(
+                    "Failed to create proof chain for {:?} - missing secret key share",
+                    dst
+                );
+                error
+            })?
             .public_key_set
             .public_key();
         let last_index = self
