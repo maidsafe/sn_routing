@@ -163,6 +163,9 @@
 <span id="162">162</span>
 <span id="163">163</span>
 <span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -264,6 +267,8 @@
         <span class="doccomment">/// Stream to receive more messages from the client on the same channel</span>
         <span class="ident">recv</span>: <span class="ident">RecvStream</span>,
     },
+    <span class="doccomment">/// Failed in sending a message to client, or connection to client is lost</span>
+    <span class="ident">ClientLost</span>(<span class="ident">SocketAddr</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Event</span> {
@@ -325,6 +330,7 @@
                 <span class="ident">HexFmt</span>(<span class="ident">content</span>),
                 <span class="ident">src</span>,
             ),
+            <span class="self">Self</span>::<span class="ident">ClientLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;ClientLost({:?})&quot;</span>, <span class="ident">addr</span>),
         }
     }
 }
