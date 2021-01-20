@@ -133,13 +133,16 @@ impl Stage {
                 .await
                 .handle_dkg_failure(elders_info, proofs)
                 .map(|command| vec![command]),
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 delivery_group_size,
                 message,
             } => Ok(self
-                .send_message(&recipients, delivery_group_size, message)
+                .send_message_to_nodes(&recipients, delivery_group_size, message)
                 .await),
+            Command::SendMessageToClient { recipient, message } => {
+                Ok(self.send_message_to_client(recipient, message).await)
+            }
             Command::SendUserMessage { src, dst, content } => {
                 self.state.lock().await.send_user_message(src, dst, content)
             }
@@ -168,7 +171,7 @@ impl Stage {
         let _ = tokio::spawn(self.handle_commands(command));
     }
 
-    async fn send_message(
+    async fn send_message_to_nodes(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
@@ -181,6 +184,18 @@ impl Stage {
             .into_iter()
             .map(Command::HandlePeerLost)
             .collect()
+    }
+
+    async fn send_message_to_client(&self, recipient: SocketAddr, message: Bytes) -> Vec<Command> {
+        if self
+            .comm
+            .send_message_to_client(&recipient, message)
+            .await
+            .is_err()
+        {
+            self.send_event(Event::ClientLost(recipient)).await;
+        }
+        vec![]
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {

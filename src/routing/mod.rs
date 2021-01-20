@@ -298,11 +298,7 @@ impl Routing {
         recipient: SocketAddr,
         message: Bytes,
     ) -> Result<()> {
-        let command = Command::SendMessage {
-            recipients: vec![recipient],
-            delivery_group_size: 1,
-            message,
-        };
+        let command = Command::SendMessageToClient { recipient, message };
         self.stage.clone().handle_commands(command).await
     }
 

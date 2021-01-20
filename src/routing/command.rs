@@ -55,9 +55,14 @@ pub(crate) enum Command {
         proofs: DkgFailureProofSet,
     },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
-    SendMessage {
+    SendMessageToNodes {
         recipients: Vec<SocketAddr>,
         delivery_group_size: usize,
+        message: Bytes,
+    },
+    /// Send a message to a client.
+    SendMessageToClient {
+        recipient: SocketAddr,
         message: Bytes,
     },
     /// Send `UserMessage` with the given source and destination.
@@ -83,18 +88,18 @@ pub(crate) enum Command {
 }
 
 impl Command {
-    /// Convenience method to create `Command::SendMessage` with a single recipient.
+    /// Convenience method to create `Command::SendMessageToNodes` with a single recipient.
     pub fn send_message_to_target(recipient: &SocketAddr, message: Bytes) -> Self {
         Self::send_message_to_targets(slice::from_ref(recipient), 1, message)
     }
 
-    /// Convenience method to create `Command::SendMessage` with multiple recipients.
+    /// Convenience method to create `Command::SendMessageToNodes` with multiple recipients.
     pub fn send_message_to_targets(
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         message: Bytes,
     ) -> Self {
-        Self::SendMessage {
+        Self::SendMessageToNodes {
             recipients: recipients.to_vec(),
             delivery_group_size,
             message,
@@ -141,14 +146,19 @@ impl Debug for Command {
                 .field("elders_info", elders_info)
                 .field("proofs", proofs)
                 .finish(),
-            Self::SendMessage {
+            Self::SendMessageToNodes {
                 recipients,
                 delivery_group_size,
                 message,
             } => f
-                .debug_struct("SendMessage")
+                .debug_struct("SendMessageToNodes")
                 .field("recipients", recipients)
                 .field("delivery_group_size", delivery_group_size)
+                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
+                .finish(),
+            Self::SendMessageToClient { recipient, message } => f
+                .debug_struct("SendMessageToClient")
+                .field("recipient", recipient)
                 .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
                 .finish(),
             Self::SendUserMessage { src, dst, content } => f

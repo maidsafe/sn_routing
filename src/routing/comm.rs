@@ -98,6 +98,20 @@ impl Comm {
         })
     }
 
+    /// Sends a message to client
+    pub async fn send_message_to_client(
+        &self,
+        client: &SocketAddr,
+        msg: Bytes,
+    ) -> Result<(), SendError> {
+        if let Some(conn) = self.endpoint.get_connection(client) {
+            if conn.send_uni(msg.clone()).await.is_ok() {
+                return Ok(());
+            }
+        }
+        Err(SendError)
+    }
+
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
     /// recipients out of the `recipients` list. If a send fails, attempts to send to the next peer
     /// until `delivery_goup_size` successful sends complete or there are no more recipients to
