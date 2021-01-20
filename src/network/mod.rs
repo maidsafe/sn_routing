@@ -306,7 +306,7 @@ where
         let child1 = other.pushed(true);
 
         check(our, &child0, known) && check(our, &child1, known)
-    };
+    }
 
     check(our, other, &known)
 }
