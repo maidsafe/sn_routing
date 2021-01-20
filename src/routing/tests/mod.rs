@@ -70,7 +70,7 @@ async fn receive_bootstrap_request() -> Result<()> {
 
     let (recipients, message) = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage {
+        Some(Command::SendMessageToNodes {
             recipients,
             message, ..
         }) => (recipients, message)
@@ -117,7 +117,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message, .. }) => message
+        Some(Command::SendMessageToNodes { message, .. }) => message
     );
     let response_message = Message::from_bytes(&response_message)?;
 
@@ -430,7 +430,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -503,7 +503,7 @@ async fn handle_online_command(
 
     for command in commands {
         let (message, recipients) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -703,7 +703,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -837,7 +837,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     // TODO: test also that the message got relayed to the elders.
 
     for command in commands {
-        let (recipients, message) = if let Command::SendMessage {
+        let (recipients, message) = if let Command::SendMessageToNodes {
             recipients,
             message,
             ..
@@ -948,7 +948,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let mut bounce_sent = false;
 
     for command in commands {
-        let (recipients, message) = if let Command::SendMessage {
+        let (recipients, message) = if let Command::SendMessageToNodes {
             recipients,
             message,
             ..
@@ -1039,7 +1039,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -1137,7 +1137,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -1345,7 +1345,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -1507,7 +1507,7 @@ async fn handle_elders_update() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..
@@ -1655,7 +1655,7 @@ async fn handle_demote_during_split() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessage {
+            Command::SendMessageToNodes {
                 recipients,
                 message,
                 ..

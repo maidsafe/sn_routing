@@ -98,6 +98,8 @@ pub enum Event {
         /// Stream to receive more messages from the client on the same channel
         recv: RecvStream,
     },
+    /// Failed in sending a message to client, or connection to client is lost
+    ClientLost(SocketAddr),
 }
 
 impl Debug for Event {
@@ -159,6 +161,7 @@ impl Debug for Event {
                 HexFmt(content),
                 src,
             ),
+            Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),
         }
     }
 }
