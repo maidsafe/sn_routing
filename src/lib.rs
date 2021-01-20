@@ -30,8 +30,7 @@
     arithmetic_overflow,
     mutable_transmutes,
     no_mangle_const_items,
-    unknown_crate_types,
-    warnings
+    unknown_crate_types
 )]
 #![deny(
     bad_style,
@@ -52,7 +51,8 @@
     while_true,
     clippy::unicode_not_nfc,
     clippy::wrong_pub_self_convention,
-    deprecated
+    deprecated,
+    warnings
 )]
 #![warn(
     trivial_casts,
