@@ -325,7 +325,6 @@ pub enum ParseError {
 }
 
 /// Error when creating a message.
-#[allow(missing_docs)]
 #[derive(Debug, Error)]
 pub enum CreateError {
     #[error("failed to serialize message: {}", .0)]
@@ -344,7 +343,6 @@ pub enum ExtendProofChainError {
 }
 
 /// Error when checking message integrity.
-#[allow(missing_docs)]
 #[derive(Debug, Error)]
 pub enum IntegrityError {
     #[error("proof chain is missing")]

@@ -45,7 +45,6 @@ impl Section {
         elders_info: Proven<EldersInfo>,
     ) -> Result<Self, CreateError> {
         if !chain.has_key(&elders_info.proof.public_key) {
-            // TODO: consider more specific error here.
             return Err(CreateError::UntrustedEldersInfoSigningKey);
         }
 
@@ -347,7 +346,6 @@ impl Section {
 }
 
 /// Error when creating section.
-#[allow(missing_docs)]
 #[derive(Debug, Error)]
 pub enum CreateError {
     #[error("elders info signing key is not in the chain")]
