@@ -33,10 +33,6 @@ jobs:
           toolchain: stable
           override: true
 
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-
       # Cache.
       - name: Cargo cache registry, index and build
         uses: actions/cache@v2
