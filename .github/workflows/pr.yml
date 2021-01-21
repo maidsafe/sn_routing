@@ -28,10 +28,6 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-
       # Cache.
       - name: Cargo cache registry, index and build
         uses: actions/cache@v2
@@ -61,10 +57,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
 
       # Cache.
       - name: Cargo cache registry, index and build
@@ -106,7 +98,7 @@ jobs:
           override: true
 
       # Install and run cargo udeps to find unused cargo dependencies
-      - name: cargo-udeps duplicate dependency check
+      - name: cargo-udeps unused dependency check
         run: |
           cargo install cargo-udeps --locked
           cargo +nightly udeps --all-targets
@@ -137,10 +129,6 @@ jobs:
           toolchain: stable
           override: true
 
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-
       # Cache.
       - name: Cargo cache registry, index and build
         uses: actions/cache@v2
@@ -150,8 +138,6 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-        # TODO: temporarily disable cache on macos due to weird issues. Needs further investigation.
-        if: matrix.os != 'macOS-latest'
 
       # Run tests.
       - shell: bash
