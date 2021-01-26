@@ -105,7 +105,12 @@ impl Comm {
         msg: Bytes,
     ) -> Result<(), SendError> {
         if let Some(conn) = self.endpoint.get_connection(client) {
-            if conn.send_uni(msg.clone()).await.is_ok() {
+            if let Err(err) = conn.send_uni(msg.clone()).await {
+                error!(
+                    "Sending message to client {:?} failed with error {:?}",
+                    client, err
+                );
+            } else {
                 return Ok(());
             }
         }

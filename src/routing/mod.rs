@@ -411,6 +411,7 @@ async fn handle_connection_events(
                 stage.send_event(event).await;
             }
             ConnectionEvent::Disconnected(addr) => {
+                trace!("Lost connection to {:?}", addr);
                 let _ = stage
                     .clone()
                     .handle_commands(Command::HandleConnectionLost(addr))
