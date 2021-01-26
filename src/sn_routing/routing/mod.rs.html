@@ -435,6 +435,7 @@
 <span id="434">434</span>
 <span id="435">435</span>
 <span id="436">436</span>
+<span id="437">437</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -849,6 +850,7 @@
                 <span class="ident">stage</span>.<span class="ident">send_event</span>(<span class="ident">event</span>).<span class="ident">await</span>;
             }
             <span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to {:?}&quot;</span>, <span class="ident">addr</span>);
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">stage</span>
                     .<span class="ident">clone</span>()
                     .<span class="ident">handle_commands</span>(<span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>))
