@@ -29,6 +29,7 @@ use crate::{
     crypto,
     error::{Error, Result},
     event::Event,
+    external_messages::ExternalMessage,
     location::{DstLocation, SrcLocation},
     messages::{Message, PING},
     node::Node,
@@ -39,6 +40,7 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
+use qp2p::{RecvStream, SendStream};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
@@ -384,7 +386,7 @@ async fn handle_connection_events(
                     continue;
                 }
 
-                let _ = task::spawn(handle_message(stage.clone(), bytes, src));
+                let _ = task::spawn(handle_internal_message(stage.clone(), bytes, src));
             }
             ConnectionEvent::Received(qp2p::Message::BiStream {
                 bytes,
@@ -398,17 +400,17 @@ async fn handle_connection_events(
                     src
                 );
 
-                // Since it's arriving on a bi-stream we treat it as a Client
-                // message which we report directly to the event stream consumer
-                // without doing any intermediate processing.
-                let event = Event::ClientMessageReceived {
-                    content: bytes,
+                // Since it's arriving on a bi-stream we treat it as either a client message which
+                // we report directly to the event stream consumer without doing any intermediate
+                // processing, or an infrastructure query which we process and respond back to the
+                // sender.
+                let _ = task::spawn(handle_external_message(
+                    stage.clone(),
+                    bytes,
                     src,
                     send,
                     recv,
-                };
-
-                stage.send_event(event).await;
+                ));
             }
             ConnectionEvent::Disconnected(addr) => {
                 trace!("Lost connection to {:?}", addr);
@@ -421,7 +423,7 @@ async fn handle_connection_events(
     }
 }
 
-async fn handle_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
+async fn handle_internal_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
     match Message::from_bytes(&msg_bytes) {
         Ok(message) => {
             let command = Command::HandleMessage {
@@ -433,5 +435,33 @@ async fn handle_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr)
         Err(error) => {
             debug!("Failed to deserialize message: {}", error);
         }
+    }
+}
+
+async fn handle_external_message(
+    stage: Arc<Stage>,
+    msg_bytes: Bytes,
+    src: SocketAddr,
+    send: SendStream,
+    recv: RecvStream,
+) {
+    let result = match bincode::deserialize::<ExternalMessage>(&msg_bytes) {
+        Ok(ExternalMessage::Client(content)) => {
+            let event = Event::ClientMessageReceived {
+                content,
+                src,
+                send,
+                recv,
+            };
+
+            stage.send_event(event).await;
+            Ok(())
+        }
+        Ok(ExternalMessage::GetSection(name)) => stage.handle_get_section(name, send).await,
+        Err(error) => Err(error.into()),
+    };
+
+    if let Err(error) = result {
+        debug!("Failed to handle external message: {}", error);
     }
 }

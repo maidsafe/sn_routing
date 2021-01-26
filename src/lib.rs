@@ -81,6 +81,10 @@ pub use qp2p::Config as TransportConfig;
 
 pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API update
 
+/// Types shared between this crate and the client libs.
+// TODO: extract into a separate crate
+pub mod external_messages;
+
 // ############################################################################
 // Private
 // ############################################################################

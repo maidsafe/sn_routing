@@ -15,6 +15,7 @@ use crate::{
     crypto, delivery_group,
     error::{Error, Result},
     event::Event,
+    external_messages::GetSectionResponse,
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
@@ -112,6 +113,28 @@ impl Approved {
         // Note: cloning the sender to avoid mutable access. Should have negligible cost.
         if self.event_tx.clone().send(event).is_err() {
             error!("Event receiver has been closed");
+        }
+    }
+
+    pub fn handle_get_section(&self, name: XorName) -> Result<GetSectionResponse> {
+        debug!("Received GetSection for {}", name);
+
+        if self.section.prefix().matches(&name) {
+            Ok(GetSectionResponse::Ok {
+                prefix: *self.section.prefix(),
+                key: *self.section.chain().last_key(),
+                elders: self
+                    .section
+                    .elders_info()
+                    .peers()
+                    .map(|peer| (*peer.name(), *peer.addr()))
+                    .collect(),
+            })
+        } else if let Some(section) = self.network.closest(&name) {
+            let addrs = section.peers().map(Peer::addr).copied().collect();
+            Ok(GetSectionResponse::Redirect(addrs))
+        } else {
+            Err(Error::InvalidDstLocation)
         }
     }
 

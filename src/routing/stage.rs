@@ -9,12 +9,14 @@
 use super::{bootstrap, Approved, Comm, Command};
 use crate::{error::Result, event::Event, messages::Message, relocation::SignedRelocateDetails};
 use bytes::Bytes;
+use qp2p::SendStream;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
     time,
 };
 use tracing::Instrument;
+use xor_name::XorName;
 
 // Node's current stage which is responsible
 // for accessing current info and trigger operations.
@@ -44,6 +46,19 @@ impl Stage {
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
         self.state.lock().await.send_event(event)
+    }
+
+    /// Handle the `GetSection` external message
+    pub async fn handle_get_section(
+        &self,
+        name: XorName,
+        mut response_stream: SendStream,
+    ) -> Result<()> {
+        let response = self.state.lock().await.handle_get_section(name)?;
+        let response = bincode::serialize(&response)?.into();
+        response_stream.send_user_msg(response).await?;
+
+        Ok(())
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
