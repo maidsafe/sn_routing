@@ -347,6 +347,8 @@ impl Section {
 
 /// Error when creating section.
 #[derive(Debug, Error)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum CreateError {
     #[error("elders info signing key is not in the chain")]
     UntrustedEldersInfoSigningKey,
@@ -360,6 +362,8 @@ pub enum CreateError {
 
 /// Error when merging sections.
 #[derive(Debug, Error)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum MergeError {
     #[error("the chain of the other section is invalid")]
     InvalidOtherChain,

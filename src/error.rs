@@ -16,6 +16,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 // TODO: consider removing those variants that cannot occur when calling the public API.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum Error {
     #[error("network layer error: {}", .0)]
     Network(#[from] qp2p::Error),

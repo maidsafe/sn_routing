@@ -74,8 +74,12 @@ pub use self::{
     error::{Error, Result},
     event::{Event, SendStream},
     location::{DstLocation, SrcLocation},
+    messages::{CreateError as MessageCreateError, IntegrityError as MessageIntegrityError},
     routing::{Config, EventStream, Routing},
-    section::{SectionProofChain, MIN_AGE},
+    section::{
+        CreateError as SectionCreateError, MergeError as SectionMergeError, SectionProofChain,
+        MIN_AGE,
+    },
 };
 pub use qp2p::Config as TransportConfig;
 

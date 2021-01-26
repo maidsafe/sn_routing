@@ -316,34 +316,19 @@ pub enum MessageStatus {
     Unknown,
 }
 
-#[derive(Debug, Error)]
-pub enum ParseError {
-    #[error("failed to deserialize message: {}", .0)]
-    Deserialize(#[from] bincode::Error),
-    #[error("signature check failed")]
-    FailedSignature,
-}
-
 /// Error when creating a message.
 #[derive(Debug, Error)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum CreateError {
     #[error("failed to serialize message: {}", .0)]
     Serialize(#[from] bincode::Error),
 }
 
-/// Error returned from `Message::extend_proof_chain`.
-#[derive(Debug, Error)]
-pub enum ExtendProofChainError {
-    #[error("message has no proof chain")]
-    NoProofChain,
-    #[error("failed to extend proof chain: {}", .0)]
-    Extend(#[from] ExtendError),
-    #[error("failed to re-create message: {}", .0)]
-    Create(#[from] CreateError),
-}
-
 /// Error when checking message integrity.
 #[derive(Debug, Error)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum IntegrityError {
     #[error("proof chain is missing")]
     ProofChainMissing,
@@ -355,6 +340,25 @@ pub enum IntegrityError {
     Untrusted,
     #[error("wrong message variant")]
     WrongVariant,
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum ParseError {
+    #[error("failed to deserialize message: {}", .0)]
+    Deserialize(#[from] bincode::Error),
+    #[error("signature check failed")]
+    FailedSignature,
+}
+
+/// Error returned from `Message::extend_proof_chain`.
+#[derive(Debug, Error)]
+pub(crate) enum ExtendProofChainError {
+    #[error("message has no proof chain")]
+    NoProofChain,
+    #[error("failed to extend proof chain: {}", .0)]
+    Extend(#[from] ExtendError),
+    #[error("failed to re-create message: {}", .0)]
+    Create(#[from] CreateError),
 }
 
 impl Into<Result<(), IntegrityError>> for TrustStatus {
