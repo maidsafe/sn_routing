@@ -98,6 +98,24 @@ impl Comm {
         })
     }
 
+    /// Opens a connection to the given peer.
+    /// Note: for simple uni-directional message sending it's preferable to use
+    /// `send_message_to_targets` or `send_message_to_client` instead.
+    pub async fn connect_to(&self, addr: &SocketAddr) -> Result<Connection, qp2p::Error> {
+        let (conn, incoming_messages) = self.endpoint.connect_to(addr).await?;
+        let event_tx = self.event_tx.read().ok().and_then(|tx| tx.clone());
+
+        if let (Some(incoming_messages), Some(event_tx)) = (incoming_messages, event_tx) {
+            trace!(
+                "New outgoing connection to {}",
+                incoming_messages.remote_addr()
+            );
+            let _ = task::spawn(handle_incoming_messages(incoming_messages, event_tx));
+        }
+
+        Ok(conn)
+    }
+
     /// Sends a message to client
     pub async fn send_message_to_client(
         &self,
@@ -207,21 +225,6 @@ impl Comm {
         }
 
         self.connect_to(recipient).await?.send_uni(msg).await
-    }
-
-    async fn connect_to(&self, addr: &SocketAddr) -> Result<Connection, qp2p::Error> {
-        let (conn, incoming_messages) = self.endpoint.connect_to(addr).await?;
-        let event_tx = self.event_tx.read().ok().and_then(|tx| tx.clone());
-
-        if let (Some(incoming_messages), Some(event_tx)) = (incoming_messages, event_tx) {
-            trace!(
-                "New outgoing connection to {}",
-                incoming_messages.remote_addr()
-            );
-            let _ = task::spawn(handle_incoming_messages(incoming_messages, event_tx));
-        }
-
-        Ok(conn)
     }
 }
 
