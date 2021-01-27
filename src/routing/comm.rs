@@ -200,12 +200,6 @@ impl Comm {
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
-        let conn = self.connect_to(recipient).await?;
-
-        if conn.send_uni(msg.clone()).await.is_ok() {
-            return Ok(());
-        }
-
         self.connect_to(recipient).await?.send_uni(msg).await
     }
 
