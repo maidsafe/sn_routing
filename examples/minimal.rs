@@ -226,14 +226,8 @@ fn run_node(index: usize, mut node: Routing, mut event_stream: EventStream) -> J
 // Handles the event emitted by the node.
 async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
     match event {
-        Event::PromotedToElder => {
-            info!("Node #{} promoted to Elder", index);
-        }
         Event::PromotedToAdult => {
             info!("Node #{} promoted to Adult", index);
-        }
-        Event::Demoted => {
-            info!("Node #{} demoted", index);
         }
         Event::MemberJoined {
             name,
@@ -253,10 +247,11 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             prefix,
             key,
             elders,
+            self_status_change,
         } => {
             info!(
-                "Node #{} elders changed - prefix: {:b}, key: {:?}, elders: {:?}",
-                index, prefix, key, elders
+                "Node #{} elders changed - prefix: {:b}, key: {:?}, elders: {:?}. Node elder status change: {:?}",
+                index, prefix, key, elders, self_status_change
             );
         }
         Event::MessageReceived { content, src, dst } => info!(

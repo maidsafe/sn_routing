@@ -20,6 +20,18 @@ use std::{
 };
 use xor_name::{Prefix, XorName};
 
+/// A flag in EldersChanged event, indicating
+/// whether the node got promoted, demoted or did not change.
+#[derive(Debug)]
+pub enum NodeElderChange {
+    /// The node was promoted to Elder.
+    Promoted,
+    /// The node was demoted to Adult.
+    Demoted,
+    /// There was no change to the node.
+    None,
+}
+
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
 /// These are sent by sn_routing to the library's user. It allows the user to handle requests and
@@ -39,12 +51,8 @@ pub enum Event {
         /// The destination location that receives the message.
         dst: DstLocation,
     },
-    /// The node has been promoted to elder
-    PromotedToElder,
     /// The node has been promoted to adult
     PromotedToAdult,
-    /// The node has been demoted from elder
-    Demoted,
     /// A new peer joined our section.
     MemberJoined {
         /// Name of the node
@@ -71,6 +79,8 @@ pub enum Event {
         key: bls::PublicKey,
         /// The set of elders of our section.
         elders: BTreeSet<XorName>,
+        /// Promoted, demoted or no change?
+        self_status_change: NodeElderChange,
     },
     /// This node has started relocating to other section. Will be followed by
     /// `Relocated` when the node finishes joining the destination section.
@@ -112,9 +122,7 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::PromotedToElder => write!(formatter, "PromotedToElder"),
             Self::PromotedToAdult => write!(formatter, "PromotedToAdult"),
-            Self::Demoted => write!(formatter, "Demoted"),
             Self::MemberJoined {
                 name,
                 previous_name,
@@ -136,11 +144,13 @@ impl Debug for Event {
                 prefix,
                 key,
                 elders,
+                self_status_change,
             } => formatter
                 .debug_struct("EldersChanged")
                 .field("prefix", prefix)
                 .field("key", key)
                 .field("elders", elders)
+                .field("self_status_change", self_status_change)
                 .finish(),
             Self::RelocationStarted { previous_name } => formatter
                 .debug_struct("RelocationStarted")

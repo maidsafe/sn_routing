@@ -14,7 +14,7 @@ use crate::{
     },
     crypto, delivery_group,
     error::{Error, Result},
-    event::Event,
+    event::{Event, NodeElderChange},
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
@@ -1534,24 +1534,25 @@ impl Approved {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
+            let self_status_change = if !old_is_elder && new_is_elder {
+                info!("Promoted to elder");
+                NodeElderChange::Promoted
+            } else if old_is_elder && !new_is_elder {
+                info!("Demoted");
+                self.section = self.section.trimmed(1);
+                self.network = Network::new();
+                self.section_keys_provider = SectionKeysProvider::new(None);
+                NodeElderChange::Demoted
+            } else {
+                NodeElderChange::None
+            };
+
             self.send_event(Event::EldersChanged {
                 prefix: *self.section.prefix(),
                 key: *self.section.chain().last_key(),
                 elders: self.section.elders_info().elders.keys().copied().collect(),
+                self_status_change,
             });
-        }
-
-        if !old_is_elder && new_is_elder {
-            info!("Promoted to elder");
-            self.send_event(Event::PromotedToElder);
-        }
-
-        if old_is_elder && !new_is_elder {
-            info!("Demoted");
-            self.section = self.section.trimmed(1);
-            self.network = Network::new();
-            self.section_keys_provider = SectionKeysProvider::new(None);
-            self.send_event(Event::Demoted);
         }
 
         if !new_is_elder {

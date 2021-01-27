@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
-use sn_routing::{Config, Event, ELDER_SIZE};
+use sn_routing::{Config, Event, NodeElderChange, ELDER_SIZE};
 use std::collections::HashSet;
 use tokio::time;
 use utils::*;
@@ -29,7 +29,7 @@ async fn test_genesis_node() -> Result<()> {
 
     assert_eq!(pub_key, node.public_key().await);
 
-    assert_next_event!(event_stream, Event::PromotedToElder);
+    assert_next_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
 
     assert!(node.is_elder().await);
 
@@ -46,10 +46,10 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        assert_next_event!(event_stream, Event::PromotedToElder);
+        assert_next_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
         assert_next_event!(event_stream, Event::MemberJoined { .. });
         // TODO: we should expect `EldersChanged` too.
-        // assert_next_event!(event_stream, Event::EldersChanged { .. });
+        // assert_next_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
     });
 
     // bootstrap a second node with genesis
@@ -81,7 +81,7 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
     let genesis_contact = genesis_node.our_connection_info().await?;
     let nodes_joining_tasks = (0..other_node_count).map(|_| async {
         let (node, mut event_stream) = create_node(config_with_contact(genesis_contact)).await?;
-        assert_event!(event_stream, Event::PromotedToElder);
+        assert_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
         Ok::<_, Error>(node)
     });
     let other_nodes = future::try_join_all(nodes_joining_tasks).await?;
@@ -121,7 +121,7 @@ async fn test_startup_elders() -> Result<()> {
             return;
         }
 
-        assert_event!(stream, Event::PromotedToElder)
+        assert_event!(stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. })
     }))
     .await;
 
