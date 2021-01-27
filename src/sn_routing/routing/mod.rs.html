@@ -436,6 +436,12 @@
 <span id="435">435</span>
 <span id="436">436</span>
 <span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -467,7 +473,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">event</span>::<span class="ident">Event</span>,
+    <span class="ident">event</span>::{<span class="ident">Event</span>, <span class="ident">NodeElderChange</span>},
     <span class="ident">location</span>::{<span class="ident">DstLocation</span>, <span class="ident">SrcLocation</span>},
     <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">PING</span>},
     <span class="ident">node</span>::<span class="ident">Node</span>,
@@ -536,8 +542,14 @@
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>).<span class="ident">with_age</span>(<span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>);
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">section</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">section</span>();
 
-            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">PromotedToElder</span>);
+            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">EldersChanged</span> {
+                <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">prefix</span>(),
+                <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+                <span class="ident">elders</span>: <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">copied</span>().<span class="ident">collect</span>(),
+                <span class="ident">self_status_change</span>: <span class="ident">NodeElderChange</span>::<span class="ident">Promoted</span>,
+            });
 
             (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="macro">vec</span><span class="macro">!</span>[])
         } <span class="kw">else</span> {
