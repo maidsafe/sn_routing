@@ -13,9 +13,7 @@ use crate::{
     error::{Error, Result},
     external_messages::{ExternalMessage, GetSectionResponse},
     location::DstLocation,
-    messages::{
-        BootstrapResponse, JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus,
-    },
+    messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -338,10 +336,10 @@ impl<'a> State<'a> {
     ) -> Result<(JoinResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message.variant() {
-                Variant::BootstrapResponse(BootstrapResponse {
+                Variant::Rejoin {
                     elders_info,
                     section_key,
-                }) => {
+                } => {
                     if !self.verify_message(&message, None) {
                         continue;
                     }
@@ -867,17 +865,17 @@ mod tests {
             let message = Message::from_bytes(&bytes)?;
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
-            // Send `BootstrapResponse::Join` with bad prefix
+            // Send `Rejoin` with bad prefix
             let (elders_info, _) = gen_elders_info(bad_prefix, ELDER_SIZE);
             let section_key = bls::SecretKey::random().public_key();
 
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse {
+                Variant::Rejoin {
                     elders_info,
                     section_key,
-                }),
+                },
                 None,
                 None,
             )?;
@@ -886,17 +884,17 @@ mod tests {
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            // Send `BootstrapResponse::Join` with good prefix
+            // Send `Rejoin` with good prefix
             let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
             let section_key = bls::SecretKey::random().public_key();
 
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse {
+                Variant::Rejoin {
                     elders_info,
                     section_key,
-                }),
+                },
                 None,
                 None,
             )?;
