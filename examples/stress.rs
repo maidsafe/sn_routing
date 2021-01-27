@@ -21,8 +21,8 @@ use rand::{
 };
 use serde::{Deserialize, Serialize};
 use sn_routing::{
-    Config, DstLocation, Error as RoutingError, Event as RoutingEvent, Routing, SrcLocation,
-    TransportConfig,
+    Config, DstLocation, Error as RoutingError, Event as RoutingEvent, NodeElderChange, Routing,
+    SrcLocation, TransportConfig,
 };
 use std::{
     collections::BTreeMap,
@@ -301,7 +301,7 @@ impl Network {
                     prefix: new_prefix,
                     key,
                     elders,
-                    ..
+                    self_status_change,
                 } => {
                     if let Some(Node::Joined {
                         name,
@@ -321,6 +321,11 @@ impl Network {
                             *elder = None;
                         }
                     }
+                    match self_status_change {
+                        NodeElderChange::Promoted => self.stats.promotions += 1,
+                        NodeElderChange::Demoted => self.stats.demotions += 1,
+                        NodeElderChange::None => (),
+                    };
                 }
                 RoutingEvent::RelocationStarted { .. } => {
                     if let Some(Node::Joined { is_relocating, .. }) = self.nodes.get_mut(&id) {
@@ -341,8 +346,6 @@ impl Network {
                         self.stats.relocation_successes += 1;
                     }
                 }
-                RoutingEvent::PromotedToElder => self.stats.promotions += 1,
-                RoutingEvent::Demoted => self.stats.demotions += 1,
                 RoutingEvent::MessageReceived { content, dst, .. } => {
                     let message: ProbeMessage = bincode::deserialize(&content)?;
                     let dst = match dst {

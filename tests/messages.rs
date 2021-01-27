@@ -11,7 +11,7 @@ mod utils;
 use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{Config, DstLocation, Error, Event, SrcLocation};
+use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
@@ -95,7 +95,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     // start a second node which sends a message to the first node
     let (node2, mut event_stream) = create_node(config_with_contact(node1_contact)).await?;
 
-    assert_event!(event_stream, Event::PromotedToElder);
+    assert_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
 
     let node2_name = node2.name().await;
 
