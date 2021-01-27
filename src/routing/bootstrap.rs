@@ -338,7 +338,7 @@ impl<'a> State<'a> {
     ) -> Result<(JoinResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message.variant() {
-                Variant::BootstrapResponse(BootstrapResponse::Join {
+                Variant::BootstrapResponse(BootstrapResponse {
                     elders_info,
                     section_key,
                 }) => {
@@ -874,7 +874,7 @@ mod tests {
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
+                Variant::BootstrapResponse(BootstrapResponse {
                     elders_info,
                     section_key,
                 }),
@@ -893,7 +893,7 @@ mod tests {
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
+                Variant::BootstrapResponse(BootstrapResponse {
                     elders_info,
                     section_key,
                 }),
