@@ -6,10 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::convert::TryFrom;
-
 use super::{InfrastructureQuery, Message};
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
+use std::convert::TryFrom;
 use thiserror::Error;
 
 /// Single byte that identifies the message type.
@@ -24,6 +23,15 @@ pub enum MessageKind {
     Client = 2,
     /// Message to query the network infrastructure or a response to such query.
     Infrastructure = 3,
+}
+
+impl MessageKind {
+    pub(crate) fn prepend_to(self, message: Bytes) -> Bytes {
+        let mut buffer = BytesMut::with_capacity(1 + message.len());
+        buffer.put_u8(self as u8);
+        buffer.put(message);
+        buffer.freeze()
+    }
 }
 
 impl TryFrom<u8> for MessageKind {

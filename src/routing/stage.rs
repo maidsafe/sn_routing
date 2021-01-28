@@ -13,7 +13,7 @@ use crate::{
     messages::{Envelope, MessageKind},
     relocation::SignedRelocateDetails,
 };
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -188,12 +188,7 @@ impl Stage {
         kind: MessageKind,
         message: Bytes,
     ) -> Vec<Command> {
-        let message = {
-            let mut buffer = BytesMut::with_capacity(1 + message.len());
-            buffer.put_u8(kind as u8);
-            buffer.put(message);
-            buffer.freeze()
-        };
+        let message = kind.prepend_to(message);
 
         match kind {
             MessageKind::Ping | MessageKind::Node => self

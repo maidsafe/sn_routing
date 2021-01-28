@@ -15,9 +15,16 @@ use xor_name::{Prefix, XorName};
 pub enum InfrastructureQuery {
     /// Message to request information about the section that matches the given name.
     GetSectionRequest(XorName),
+    /// Response to `GetSectionRequest`.
+    GetSectionResponse(GetSectionResponse),
+}
+
+/// Information about a section.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum GetSectionResponse {
     /// Successful response to `GetSectionRequest`. Contains information about the requested
     /// section.
-    GetSectionSuccess {
+    Success {
         /// Prefix of the section.
         prefix: Prefix,
         /// Public key of the section.
@@ -27,5 +34,5 @@ pub enum InfrastructureQuery {
     },
     /// Response to `GetSectionRequest` containing addresses of nodes that are closer to the
     /// requested name than the recipient. The request should be repeated to these addresses.
-    GetSectionRedirect(Vec<SocketAddr>),
+    Redirect(Vec<SocketAddr>),
 }
