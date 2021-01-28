@@ -98,18 +98,15 @@ impl Comm {
         })
     }
 
-    /// Sends a message to client
-    pub async fn send_message_to_client(
+    /// Sends a message on an existing connection. If no such connection exists, returns an error.
+    pub async fn send_on_existing_connection(
         &self,
-        client: &SocketAddr,
+        recipient: &SocketAddr,
         msg: Bytes,
     ) -> Result<(), SendError> {
-        if let Some(conn) = self.endpoint.get_connection(client) {
-            if let Err(err) = conn.send_uni(msg.clone()).await {
-                error!(
-                    "Sending message to client {:?} failed with error {:?}",
-                    client, err
-                );
+        if let Some(conn) = self.endpoint.get_connection(recipient) {
+            if let Err(err) = conn.send_uni(msg).await {
+                error!("Sending message to {} failed: {}", recipient, err);
             } else {
                 return Ok(());
             }
@@ -125,7 +122,7 @@ impl Comm {
     /// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that
     /// `delivery_group_size` succeeded. Also returns all the failed recipients which can be used
     /// by the caller to identify lost peers.
-    pub async fn send_message_to_targets(
+    pub async fn send(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
@@ -304,7 +301,7 @@ mod tests {
         let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send_message_to_targets(&[peer0.addr, peer1.addr], 2, message.clone())
+        comm.send(&[peer0.addr, peer1.addr], 2, message.clone())
             .await
             .0?;
 
@@ -323,7 +320,7 @@ mod tests {
         let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send_message_to_targets(&[peer0.addr, peer1.addr], 1, message.clone())
+        comm.send(&[peer0.addr, peer1.addr], 1, message.clone())
             .await
             .0?;
 
@@ -351,9 +348,7 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let (result, failed_recipients) = comm
-            .send_message_to_targets(&[invalid_addr], 1, message.clone())
-            .await;
+        let (result, failed_recipients) = comm.send(&[invalid_addr], 1, message.clone()).await;
         assert!(result.is_err());
         assert_eq!(failed_recipients, [invalid_addr]);
 
@@ -374,7 +369,7 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send_message_to_targets(&[invalid_addr, peer.addr], 1, message.clone())
+        comm.send(&[invalid_addr, peer.addr], 1, message.clone())
             .await
             .0?;
 
@@ -398,7 +393,7 @@ mod tests {
 
         let message = Bytes::from_static(b"hello world");
         let (result, failed_recipients) = comm
-            .send_message_to_targets(&[invalid_addr, peer.addr], 2, message.clone())
+            .send(&[invalid_addr, peer.addr], 2, message.clone())
             .await;
 
         assert!(result.is_err());
@@ -421,7 +416,7 @@ mod tests {
         // Send the first message.
         let msg0 = Bytes::from_static(b"zero");
         send_comm
-            .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg0.clone())
+            .send(slice::from_ref(&recv_addr), 1, msg0.clone())
             .await
             .0?;
 
@@ -444,7 +439,7 @@ mod tests {
         // Send the second message.
         let msg1 = Bytes::from_static(b"one");
         send_comm
-            .send_message_to_targets(slice::from_ref(&recv_addr), 1, msg1.clone())
+            .send(slice::from_ref(&recv_addr), 1, msg1.clone())
             .await
             .0?;
 
@@ -477,7 +472,7 @@ mod tests {
 
         // Send a message to establish the connection
         comm1
-            .send_message_to_targets(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
+            .send(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
             .await
             .0?;
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));

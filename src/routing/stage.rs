@@ -7,8 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Approved, Comm, Command};
-use crate::{error::Result, event::Event, messages::Message, relocation::SignedRelocateDetails};
-use bytes::Bytes;
+use crate::{
+    error::Result,
+    event::Event,
+    messages::{Envelope, MessageKind},
+    relocation::SignedRelocateDetails,
+};
+use bytes::{BufMut, Bytes, BytesMut};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -94,11 +99,18 @@ impl Stage {
 
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
-            Command::HandleMessage { message, sender } => {
+            Command::HandleMessage { sender, message } => {
                 self.state
                     .lock()
                     .await
                     .handle_message(sender, message)
+                    .await
+            }
+            Command::HandleInfrastructureQuery { sender, message } => {
+                self.state
+                    .lock()
+                    .await
+                    .handle_infrastructure_query(sender, message)
                     .await
             }
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
@@ -112,7 +124,7 @@ impl Stage {
                 .state
                 .lock()
                 .await
-                .handle_connection_lost(&addr)
+                .handle_connection_lost(addr)
                 .into_iter()
                 .collect()),
             Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
@@ -133,16 +145,14 @@ impl Stage {
                 .await
                 .handle_dkg_failure(elders_info, proofs)
                 .map(|command| vec![command]),
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
                 delivery_group_size,
+                kind,
                 message,
             } => Ok(self
-                .send_message_to_nodes(&recipients, delivery_group_size, message)
+                .send_message(&recipients, delivery_group_size, kind, message)
                 .await),
-            Command::SendMessageToClient { recipient, message } => {
-                Ok(self.send_message_to_client(recipient, message).await)
-            }
             Command::SendUserMessage { src, dst, content } => {
                 self.state.lock().await.send_user_message(src, dst, content)
             }
@@ -171,31 +181,52 @@ impl Stage {
         let _ = tokio::spawn(self.handle_commands(command));
     }
 
-    async fn send_message_to_nodes(
+    async fn send_message(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
+        kind: MessageKind,
         message: Bytes,
     ) -> Vec<Command> {
-        self.comm
-            .send_message_to_targets(recipients, delivery_group_size, message)
-            .await
-            .1
-            .into_iter()
-            .map(Command::HandlePeerLost)
-            .collect()
-    }
+        let message = {
+            let mut buffer = BytesMut::with_capacity(1 + message.len());
+            buffer.put_u8(kind as u8);
+            buffer.put(message);
+            buffer.freeze()
+        };
 
-    async fn send_message_to_client(&self, recipient: SocketAddr, message: Bytes) -> Vec<Command> {
-        if self
-            .comm
-            .send_message_to_client(&recipient, message)
-            .await
-            .is_err()
-        {
-            self.send_event(Event::ClientLost(recipient)).await;
+        match kind {
+            MessageKind::Ping | MessageKind::Node => self
+                .comm
+                .send(recipients, delivery_group_size, message)
+                .await
+                .1
+                .into_iter()
+                .map(Command::HandlePeerLost)
+                .collect(),
+            MessageKind::Client => {
+                for recipient in recipients {
+                    if self
+                        .comm
+                        .send_on_existing_connection(recipient, message.clone())
+                        .await
+                        .is_err()
+                    {
+                        self.send_event(Event::ClientLost(*recipient)).await;
+                    }
+                }
+                vec![]
+            }
+            MessageKind::Infrastructure => {
+                for recipient in recipients {
+                    let _ = self
+                        .comm
+                        .send_on_existing_connection(recipient, message.clone())
+                        .await;
+                }
+                vec![]
+            }
         }
-        vec![]
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {
@@ -216,7 +247,7 @@ impl Stage {
         &self,
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
-        message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+        message_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let node = self.state.lock().await.node().clone();
         let previous_name = node.name();

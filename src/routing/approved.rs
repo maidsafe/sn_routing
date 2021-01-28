@@ -18,8 +18,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        BootstrapResponse, JoinRequest, Message, MessageHash, MessageStatus, PlainMessage,
-        ResourceProofResponse, Variant, VerifyStatus, PING,
+        BootstrapResponse, Envelope, InfrastructureQuery, JoinRequest, Message, MessageHash,
+        MessageKind, MessageStatus, PlainMessage, ResourceProofResponse, Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -192,6 +192,54 @@ impl Approved {
         Ok(commands)
     }
 
+    pub async fn handle_infrastructure_query(
+        &mut self,
+        sender: SocketAddr,
+        message: InfrastructureQuery,
+    ) -> Result<Vec<Command>> {
+        match message {
+            InfrastructureQuery::GetSectionRequest(name) => {
+                debug!("Received GetSectionRequest({}) from {}", name, sender);
+
+                let response = if self.section.prefix().matches(&name) {
+                    InfrastructureQuery::GetSectionSuccess {
+                        prefix: self.section.elders_info().prefix,
+                        key: *self.section.chain().last_key(),
+                        elders: self
+                            .section
+                            .elders_info()
+                            .peers()
+                            .map(|peer| (*peer.name(), *peer.addr()))
+                            .collect(),
+                    }
+                } else if let Some(section) = self.network.closest(&name) {
+                    let addrs = section.peers().map(Peer::addr).copied().collect();
+                    InfrastructureQuery::GetSectionRedirect(addrs)
+                } else {
+                    return Err(Error::InvalidDstLocation);
+                };
+                let response = bincode::serialize(&response)?.into();
+
+                debug!("Sending {:?} to {}", response, sender);
+                Ok(vec![Command::SendMessage {
+                    recipients: vec![sender],
+                    delivery_group_size: 1,
+                    kind: MessageKind::Infrastructure,
+                    message: response,
+                }])
+            }
+            InfrastructureQuery::GetSectionSuccess { .. }
+            | InfrastructureQuery::GetSectionRedirect(_) => {
+                if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
+                    trace!("Forwarding {:?} to the bootstrap task", message);
+                    let _ = tx.send((Envelope::Infrastructure(message), sender)).await;
+                }
+
+                Ok(vec![])
+            }
+        }
+    }
+
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
         self.dkg_voter
             .handle_timeout(&self.node.keypair, token)
@@ -242,12 +290,12 @@ impl Approved {
         }
     }
 
-    pub fn handle_connection_lost(&self, addr: &SocketAddr) -> Option<Command> {
+    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Option<Command> {
         if !self.is_elder() {
             return None;
         }
 
-        if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
+        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
             trace!("Lost connection to {}", peer);
         } else {
             return None;
@@ -256,10 +304,12 @@ impl Approved {
         // Try to send a "ping" message to probe the peer connection. If it succeeds, the
         // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
         // it offline.
-        Some(Command::send_message_to_target(
-            addr,
-            Bytes::from_static(PING),
-        ))
+        Some(Command::SendMessage {
+            recipients: vec![addr],
+            delivery_group_size: 1,
+            kind: MessageKind::Ping,
+            message: Bytes::new(),
+        })
     }
 
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
@@ -313,7 +363,6 @@ impl Approved {
             proofs,
         };
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 
@@ -376,7 +425,7 @@ impl Approved {
         let mut commands = vec![];
 
         if !others.is_empty() {
-            commands.push(Command::send_message_to_targets(
+            commands.push(Command::send_message_to_nodes(
                 &others,
                 others.len(),
                 message.to_bytes(),
@@ -588,7 +637,7 @@ impl Approved {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let _ = message_tx.send((msg, sender)).await;
+                        let _ = message_tx.send((Envelope::Node(msg), sender)).await;
                     } else {
                         error!("Missig sender of {:?}", msg);
                     }
@@ -695,7 +744,7 @@ impl Approved {
         let bounce_msg = bounce_msg.to_bytes();
 
         if let Some(sender) = sender {
-            Ok(Command::send_message_to_target(&sender, bounce_msg))
+            Ok(Command::send_message_to_node(&sender, bounce_msg))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -731,7 +780,7 @@ impl Approved {
         });
 
         if let Some(sender) = our_elder_sender {
-            Ok(Command::send_message_to_target(&sender, bounce_msg))
+            Ok(Command::send_message_to_node(&sender, bounce_msg))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -759,7 +808,7 @@ impl Approved {
             };
 
             trace!("    ...resending with extended proof");
-            Some(Command::send_message_to_target(
+            Some(Command::send_message_to_node(
                 sender.addr(),
                 resend_msg.to_bytes(),
             ))
@@ -804,7 +853,7 @@ impl Approved {
                     network: self.network.clone(),
                 },
             )?,
-            Command::send_message_to_target(sender.addr(), bounced_msg_bytes),
+            Command::send_message_to_node(sender.addr(), bounced_msg_bytes),
         ])
     }
 
@@ -1647,7 +1696,7 @@ impl Approved {
             None,
         )?;
 
-        Ok(Command::send_message_to_target(&addr, message.to_bytes()))
+        Ok(Command::send_message_to_node(&addr, message.to_bytes()))
     }
 
     fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
@@ -1658,7 +1707,7 @@ impl Approved {
                 Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
             let recipients: Vec<_> = recipients.iter().map(Peer::addr).copied().collect();
 
-            Ok(Command::send_message_to_targets(
+            Ok(Command::send_message_to_nodes(
                 &recipients,
                 recipients.len(),
                 message.to_bytes(),
@@ -1800,7 +1849,7 @@ impl Approved {
         trace!("relay {:?} to {:?}", msg, targets);
 
         let targets: Vec<_> = targets.into_iter().map(|node| *node.addr()).collect();
-        let command = Command::send_message_to_targets(&targets, dg_size, msg.to_bytes());
+        let command = Command::send_message_to_nodes(&targets, dg_size, msg.to_bytes());
 
         Ok(Some(command))
     }
@@ -1918,15 +1967,12 @@ impl Approved {
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-        Ok(Command::send_message_to_target(
-            recipient,
-            message.to_bytes(),
-        ))
+        Ok(Command::send_message_to_node(recipient, message.to_bytes()))
     }
 
     // TODO: consider changing this so it sends only to a subset of the elders
     // (say 1/3 of the ones closest to our name or so)
-    fn send_message_to_our_elders(&self, msg_bytes: Bytes) -> Command {
+    fn send_message_to_our_elders(&self, msg: Bytes) -> Command {
         let targets: Vec<_> = self
             .section
             .elders_info()
@@ -1934,7 +1980,7 @@ impl Approved {
             .map(Peer::addr)
             .copied()
             .collect();
-        Command::send_message_to_targets(&targets, targets.len(), msg_bytes)
+        Command::send_message_to_nodes(&targets, targets.len(), msg)
     }
 
     ////////////////////////////////////////////////////////////////////////////

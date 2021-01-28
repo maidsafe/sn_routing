@@ -11,7 +11,7 @@
 use crate::{
     crypto::{self, Keypair, Signature, Verifier},
     error::Error,
-    messages::{Message, Variant},
+    messages::{Envelope, Message, Variant},
     network::Network,
     peer::Peer,
     section::{MemberInfo, Section},
@@ -208,7 +208,7 @@ pub(crate) enum RelocateState {
     // will exchange it for an actual `Relocate` message.
     Delayed(Bytes),
     // Relocation in progress. The sender is used to pass messages to the bootstrap task.
-    InProgress(mpsc::Sender<(Message, SocketAddr)>),
+    InProgress(mpsc::Sender<(Envelope, SocketAddr)>),
 }
 
 /// Action to relocate a node.

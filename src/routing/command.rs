@@ -9,7 +9,7 @@
 use crate::{
     consensus::{DkgFailureProofSet, ProofShare, Vote},
     location::{DstLocation, SrcLocation},
-    messages::Message,
+    messages::{Envelope, InfrastructureQuery, Message, MessageKind},
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
 };
@@ -33,6 +33,11 @@ pub(crate) enum Command {
         sender: Option<SocketAddr>,
         message: Message,
     },
+    /// Handle infrastructure query message.
+    HandleInfrastructureQuery {
+        sender: SocketAddr,
+        message: InfrastructureQuery,
+    },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
     /// Handle lost connection to a peer.
@@ -55,14 +60,10 @@ pub(crate) enum Command {
         proofs: DkgFailureProofSet,
     },
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
-    SendMessageToNodes {
+    SendMessage {
         recipients: Vec<SocketAddr>,
         delivery_group_size: usize,
-        message: Bytes,
-    },
-    /// Send a message to a client.
-    SendMessageToClient {
-        recipient: SocketAddr,
+        kind: MessageKind,
         message: Bytes,
     },
     /// Send `UserMessage` with the given source and destination.
@@ -81,27 +82,28 @@ pub(crate) enum Command {
         /// Details of the relocation
         details: SignedRelocateDetails,
         /// Message receiver to pass to the bootstrap task.
-        message_rx: mpsc::Receiver<(Message, SocketAddr)>,
+        message_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
     },
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),
 }
 
 impl Command {
-    /// Convenience method to create `Command::SendMessageToNodes` with a single recipient.
-    pub fn send_message_to_target(recipient: &SocketAddr, message: Bytes) -> Self {
-        Self::send_message_to_targets(slice::from_ref(recipient), 1, message)
+    /// Convenience method to create `Command::SendMessage` with a single recipient.
+    pub fn send_message_to_node(recipient: &SocketAddr, message: Bytes) -> Self {
+        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message)
     }
 
-    /// Convenience method to create `Command::SendMessageToNodes` with multiple recipients.
-    pub fn send_message_to_targets(
+    /// Convenience method to create `Command::SendMessage` with multiple recipients.
+    pub fn send_message_to_nodes(
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         message: Bytes,
     ) -> Self {
-        Self::SendMessageToNodes {
+        Self::SendMessage {
             recipients: recipients.to_vec(),
             delivery_group_size,
+            kind: MessageKind::Node,
             message,
         }
     }
@@ -112,6 +114,11 @@ impl Debug for Command {
         match self {
             Self::HandleMessage { sender, message } => f
                 .debug_struct("HandleMessage")
+                .field("sender", sender)
+                .field("message", message)
+                .finish(),
+            Self::HandleInfrastructureQuery { sender, message } => f
+                .debug_struct("HandleInfrastructureQuery")
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
@@ -146,20 +153,17 @@ impl Debug for Command {
                 .field("elders_info", elders_info)
                 .field("proofs", proofs)
                 .finish(),
-            Self::SendMessageToNodes {
+            Self::SendMessage {
                 recipients,
                 delivery_group_size,
+                kind,
                 message,
             } => f
                 .debug_struct("SendMessageToNodes")
                 .field("recipients", recipients)
                 .field("delivery_group_size", delivery_group_size)
-                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
-                .finish(),
-            Self::SendMessageToClient { recipient, message } => f
-                .debug_struct("SendMessageToClient")
-                .field("recipient", recipient)
-                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
+                .field("kind", kind)
+                .field("message", message)
                 .finish(),
             Self::SendUserMessage { src, dst, content } => f
                 .debug_struct("SendUserMessage")
