@@ -9,9 +9,9 @@
 mod utils;
 
 use anyhow::{format_err, Result};
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use qp2p::QuicP2p;
-use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
+use sn_routing::{Config, DstLocation, Error, Event, MessageKind, NodeElderChange, SrcLocation};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 
@@ -54,7 +54,15 @@ async fn test_messages_client_node() -> Result<()> {
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let client_endpoint = client.new_endpoint()?;
     let (conn, _) = client_endpoint.connect_to(&node_addr).await?;
-    let (_, mut recv) = conn.send_bi(Bytes::from_static(msg)).await?;
+
+    let buffer = {
+        let mut buffer = BytesMut::new();
+        buffer.put_u8(MessageKind::Client as u8);
+        buffer.put_slice(msg);
+        buffer.freeze()
+    };
+
+    let (_, mut recv) = conn.send_bi(buffer).await?;
 
     // just await for node to respond to client
     node_handler.await??;

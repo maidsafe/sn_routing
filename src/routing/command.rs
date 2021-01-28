@@ -159,11 +159,11 @@ impl Debug for Command {
                 kind,
                 message,
             } => f
-                .debug_struct("SendMessageToNodes")
+                .debug_struct("SendMessage")
                 .field("recipients", recipients)
                 .field("delivery_group_size", delivery_group_size)
                 .field("kind", kind)
-                .field("message", message)
+                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
                 .finish(),
             Self::SendUserMessage { src, dst, content } => f
                 .debug_struct("SendUserMessage")

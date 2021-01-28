@@ -219,14 +219,13 @@ impl Approved {
                     return Err(Error::InvalidDstLocation);
                 };
                 let response = InfrastructureQuery::GetSectionResponse(response);
-                let response = bincode::serialize(&response)?.into();
-
                 debug!("Sending {:?} to {}", response, sender);
+
                 Ok(vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
                     kind: MessageKind::Infrastructure,
-                    message: response,
+                    message: bincode::serialize(&response)?.into(),
                 }])
             }
             InfrastructureQuery::GetSectionResponse(_) => {

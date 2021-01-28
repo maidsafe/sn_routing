@@ -31,6 +31,7 @@ use std::{
     net::SocketAddr,
 };
 use tokio::sync::mpsc;
+use tracing::Instrument;
 use xor_name::{Prefix, XorName};
 
 const BACKLOG_CAPACITY: usize = 100;
@@ -49,12 +50,15 @@ pub(crate) async fn initial(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
+    let span = trace_span!("bootstrap::initial", name = %node.name());
+
     let state = State::new(node, send_tx, recv_rx)?;
 
     future::join(
         state.run(vec![bootstrap_addr], None),
         send_messages(send_rx, comm),
     )
+    .instrument(span)
     .await
     .0
 }
@@ -74,12 +78,15 @@ pub(crate) async fn relocate(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
+    let span = trace_span!("bootstrap::relocate", name = %node.name());
+
     let state = State::new(node, send_tx, recv_rx)?;
 
     future::join(
         state.run(bootstrap_addrs, Some(relocate_details)),
         send_messages(send_rx, comm),
     )
+    .instrument(span)
     .await
     .0
 }
@@ -153,8 +160,8 @@ impl<'a> State<'a> {
                 }
                 GetSectionResponse::Redirect(new_bootstrap_addrs) => {
                     info!(
-                        "{} Bootstrapping redirected to another set of peers: {:?}",
-                        self.node, new_bootstrap_addrs,
+                        "Bootstrapping redirected to another set of peers: {:?}",
+                        new_bootstrap_addrs,
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
@@ -167,6 +174,11 @@ impl<'a> State<'a> {
         recipients: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<()> {
+        debug!(
+            "{} Sending GetSectionRequest to {:?}",
+            self.node, recipients
+        );
+
         let destination = match relocate_details {
             Some(details) => *details.destination(),
             None => self.node.name(),
@@ -174,8 +186,6 @@ impl<'a> State<'a> {
 
         let message = InfrastructureQuery::GetSectionRequest(destination);
         let message = bincode::serialize(&message)?.into();
-
-        debug!("{} Sending BootstrapRequest to {:?}", self.node, recipients);
 
         let _ = self
             .send_tx
@@ -210,7 +220,7 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("{} Message sender unexpectedly closed", self.node);
+        error!("Message sender unexpectedly closed");
         // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
@@ -235,7 +245,7 @@ impl<'a> State<'a> {
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 
-        info!("{} Changing name to {}.", self.node, new_name);
+        info!("Changing name to {}", new_name);
         self.node = Node::new(new_keypair, self.node.addr).with_age(age);
 
         relocate_payload
@@ -285,8 +295,8 @@ impl<'a> State<'a> {
 
                     if elders_info.prefix.matches(&self.node.name()) {
                         info!(
-                            "{} Newer Join response for our prefix {:?} from {:?}",
-                            self.node, elders_info, sender
+                            "Newer Join response for our prefix {:?} from {:?}",
+                            elders_info, sender
                         );
                         section_key = new_section_key;
                         let join_request = JoinRequest {
@@ -336,15 +346,15 @@ impl<'a> State<'a> {
         join_request: JoinRequest,
         recipients: Vec<SocketAddr>,
     ) -> Result<()> {
-        info!(
-            "{} Sending {:?} to {:?}",
-            self.node, join_request, recipients
-        );
+        info!("Sending {:?} to {:?}", join_request, recipients);
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
-        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
+        let _ = self
+            .send_tx
+            .send((MessageKind::Node.prepend_to(message.to_bytes()), recipients))
+            .await;
 
         Ok(())
     }
@@ -424,8 +434,8 @@ impl<'a> State<'a> {
                     let section_chain = message.proof_chain()?.clone();
 
                     info!(
-                        "{} This node has been approved to join the network at {:?}!",
-                        self.node, elders_info.value.prefix,
+                        "This node has been approved to join the network at {:?}!",
+                        elders_info.value.prefix,
                     );
 
                     return Ok((
@@ -442,7 +452,7 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("{} Message sender unexpectedly closed", self.node);
+        error!("Message sender unexpectedly closed");
         // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
@@ -596,7 +606,8 @@ mod tests {
 
             // Receive JoinRequest
             let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
+            let message = assert_matches!(message, Envelope::Node(message) => message);
 
             itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
@@ -843,7 +854,8 @@ mod tests {
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
+            let message = assert_matches!(message, Envelope::Node(message) => message);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
@@ -878,7 +890,8 @@ mod tests {
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
+            let message = assert_matches!(message, Envelope::Node(message) => message);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())
