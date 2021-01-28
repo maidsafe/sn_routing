@@ -17,8 +17,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     majority,
     messages::{
-        BootstrapResponse, JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant,
-        VerifyStatus,
+        BootstrapResponse, JoinRequest, Message, MessageKind, PlainMessage, ResourceProofResponse,
+        Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -70,8 +70,9 @@ async fn receive_bootstrap_request() -> Result<()> {
 
     let (recipients, message) = assert_matches!(
         commands.next(),
-        Some(Command::SendMessageToNodes {
+        Some(Command::SendMessage {
             recipients,
+            kind: MessageKind::Node,
             message, ..
         }) => (recipients, message)
     );
@@ -117,7 +118,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessageToNodes { message, .. }) => message
+        Some(Command::SendMessage { message, kind: MessageKind::Node, .. }) => message
     );
     let response_message = Message::from_bytes(&response_message)?;
 
@@ -430,8 +431,9 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),
@@ -503,11 +505,12 @@ async fn handle_online_command(
 
     for command in commands {
         let (message, recipients) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
                 message,
+                kind: MessageKind::Node,
                 ..
-            } => (Message::from_bytes(&message).unwrap(), recipients),
+            } => (Message::from_bytes(&message)?, recipients),
             _ => continue,
         };
 
@@ -703,8 +706,9 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),
@@ -837,18 +841,18 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     // TODO: test also that the message got relayed to the elders.
 
     for command in commands {
-        let (recipients, message) = if let Command::SendMessageToNodes {
+        let (recipients, message) = if let Command::SendMessage {
             recipients,
+            kind: MessageKind::Node,
             message,
             ..
         } = command
         {
-            (recipients, message)
+            (recipients, Message::from_bytes(&message)?)
         } else {
             continue;
         };
 
-        let message = Message::from_bytes(&message)?;
         let (src_key, message) =
             if let Variant::BouncedUnknownMessage { src_key, message } = message.variant() {
                 (src_key, message)
@@ -948,18 +952,17 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let mut bounce_sent = false;
 
     for command in commands {
-        let (recipients, message) = if let Command::SendMessageToNodes {
+        let (recipients, message) = if let Command::SendMessage {
             recipients,
+            kind: MessageKind::Node,
             message,
             ..
         } = command
         {
-            (recipients, message)
+            (recipients, Message::from_bytes(&message)?)
         } else {
             continue;
         };
-
-        let message = Message::from_bytes(&message)?;
 
         if let Variant::BouncedUntrustedMessage(bounced_message) = message.variant() {
             assert_eq!(recipients, expected_recipients);
@@ -1039,8 +1042,9 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),
@@ -1137,8 +1141,9 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),
@@ -1345,11 +1350,12 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(&message)?),
             _ => continue,
         };
 
@@ -1357,7 +1363,6 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
             continue;
         }
 
-        let message = Message::from_bytes(&message)?;
         let message = match message.variant() {
             Variant::Vote {
                 content: Vote::SendMessage { message, .. },
@@ -1507,8 +1512,9 @@ async fn handle_elders_update() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),
@@ -1655,8 +1661,9 @@ async fn handle_demote_during_split() -> Result<()> {
 
     for command in commands {
         let (recipients, message) = match command {
-            Command::SendMessageToNodes {
+            Command::SendMessage {
                 recipients,
+                kind: MessageKind::Node,
                 message,
                 ..
             } => (recipients, message),

@@ -13,7 +13,8 @@ use crate::{
     error::{Error, Result},
     location::DstLocation,
     messages::{
-        BootstrapResponse, JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus,
+        BootstrapResponse, Envelope, JoinRequest, Message, ResourceProofResponse, Variant,
+        VerifyStatus,
     },
     node::Node,
     peer::Peer,
@@ -62,7 +63,7 @@ pub(crate) async fn initial(
 pub(crate) async fn relocate(
     node: Node,
     comm: &Comm,
-    recv_rx: mpsc::Receiver<(Message, SocketAddr)>,
+    recv_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
@@ -183,29 +184,33 @@ impl<'a> State<'a> {
 
     async fn receive_bootstrap_response(&mut self) -> Result<(BootstrapResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
-            match message.variant() {
-                Variant::BootstrapResponse(response) => {
-                    match response {
-                        BootstrapResponse::Rebootstrap(addrs) if addrs.is_empty() => {
-                            error!("Invalid Rebootstrap response: missing peers");
+            match message {
+                Envelope::Node(message) => match message.variant() {
+                    Variant::BootstrapResponse(response) => {
+                        match response {
+                            BootstrapResponse::Rebootstrap(addrs) if addrs.is_empty() => {
+                                error!("Invalid Rebootstrap response: missing peers");
+                                continue;
+                            }
+                            BootstrapResponse::Join { elders_info, .. }
+                                if !elders_info.prefix.matches(&self.node.name()) =>
+                            {
+                                error!("Invalid Join response: bad prefix");
+                                continue;
+                            }
+                            BootstrapResponse::Join { .. } | BootstrapResponse::Rebootstrap(_) => {}
+                        }
+
+                        if !self.verify_message(&message, None) {
                             continue;
                         }
-                        BootstrapResponse::Join { elders_info, .. }
-                            if !elders_info.prefix.matches(&self.node.name()) =>
-                        {
-                            error!("Invalid Join response: bad prefix");
-                            continue;
-                        }
-                        BootstrapResponse::Join { .. } | BootstrapResponse::Rebootstrap(_) => (),
-                    }
 
-                    if !self.verify_message(&message, None) {
-                        continue;
+                        return Ok((response.clone(), sender));
                     }
-
-                    return Ok((response.clone(), sender));
-                }
-                _ => self.backlog_message(message, sender),
+                    _ => self.backlog_message(message, sender),
+                },
+                Envelope::Infrastructure(_message) => todo!(),
+                Envelope::Ping | Envelope::Client(_) => {}
             }
         }
 
@@ -353,6 +358,11 @@ impl<'a> State<'a> {
         relocate_payload: Option<&RelocatePayload>,
     ) -> Result<(JoinResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
+            let message = match message {
+                Envelope::Node(message) => message,
+                Envelope::Ping | Envelope::Client(_) | Envelope::Infrastructure(_) => continue,
+            };
+
             match message.variant() {
                 Variant::BootstrapResponse(BootstrapResponse::Join {
                     elders_info,
@@ -492,18 +502,18 @@ enum JoinResponse {
 // or by receiver of deserialized `Message` and provides a unified interface on top of them.
 enum MessageReceiver<'a> {
     Raw(&'a mut mpsc::Receiver<ConnectionEvent>),
-    Deserialized(mpsc::Receiver<(Message, SocketAddr)>),
+    Deserialized(mpsc::Receiver<(Envelope, SocketAddr)>),
 }
 
 impl<'a> MessageReceiver<'a> {
-    async fn next(&mut self) -> Option<(Message, SocketAddr)> {
+    async fn next(&mut self) -> Option<(Envelope, SocketAddr)> {
         match self {
             Self::Raw(rx) => {
                 while let Some(event) = rx.recv().await {
                     match event {
                         ConnectionEvent::Received(qp2p::Message::UniStream {
                             bytes, src, ..
-                        }) => match Message::from_bytes(&bytes) {
+                        }) => match Envelope::from_bytes(&bytes) {
                             Ok(message) => return Some((message, src)),
                             Err(error) => debug!("Failed to deserialize message: {}", error),
                         },
@@ -523,9 +533,7 @@ impl<'a> MessageReceiver<'a> {
 // Keep reading messages from `rx` and send them using `comm`.
 async fn send_messages(mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>, comm: &Comm) {
     while let Some((message, recipients)) = rx.recv().await {
-        let _ = comm
-            .send_message_to_targets(&recipients, recipients.len(), message)
-            .await;
+        let _ = comm.send(&recipients, recipients.len(), message).await;
     }
 }
 
@@ -590,7 +598,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -618,7 +626,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_addr))?;
 
             Ok(())
         };
@@ -668,7 +676,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             // Receive new BootstrapRequests
@@ -717,7 +725,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
@@ -730,7 +738,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
@@ -795,7 +803,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
@@ -812,7 +820,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
 
             Ok(())
         };
@@ -870,7 +878,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
@@ -889,7 +897,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((message, bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;

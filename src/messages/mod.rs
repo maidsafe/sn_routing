@@ -6,15 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod envelope;
 mod hash;
+mod infrastructure_query;
 mod plain_message;
 mod src_authority;
 mod variant;
 
-pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
+    envelope::Envelope,
     plain_message::PlainMessage,
     variant::{BootstrapResponse, JoinRequest, ResourceProofResponse, Variant},
+};
+pub use self::{
+    envelope::MessageKind, hash::MessageHash, infrastructure_query::InfrastructureQuery,
+    src_authority::SrcAuthority,
 };
 use crate::{
     crypto::{self, name, Verifier},
@@ -29,10 +35,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
 use xor_name::Prefix;
-
-// Message used to probe a peer connection.
-// NOTE: ideally this would be empty, but that is currently treated as error by qp2p.
-pub(crate) const PING: &[u8] = &[0];
 
 /// Message sent over the network.
 #[derive(Clone, Eq, Serialize, Deserialize)]

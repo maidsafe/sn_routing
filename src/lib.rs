@@ -74,6 +74,7 @@ pub use self::{
     error::{Error, Result},
     event::{Event, NodeElderChange, SendStream},
     location::{DstLocation, SrcLocation},
+    messages::{InfrastructureQuery, MessageKind},
     routing::{Config, EventStream, Routing},
     section::{SectionProofChain, MIN_AGE},
 };

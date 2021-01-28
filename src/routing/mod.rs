@@ -30,7 +30,7 @@ use crate::{
     error::Result,
     event::{Event, NodeElderChange},
     location::{DstLocation, SrcLocation},
-    messages::{Message, PING},
+    messages::{Envelope, MessageKind},
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
@@ -318,7 +318,12 @@ impl Routing {
         recipient: SocketAddr,
         message: Bytes,
     ) -> Result<()> {
-        let command = Command::SendMessageToClient { recipient, message };
+        let command = Command::SendMessage {
+            recipients: vec![recipient],
+            delivery_group_size: 1,
+            kind: MessageKind::Client,
+            message,
+        };
         self.stage.clone().handle_commands(command).await
     }
 
@@ -355,16 +360,14 @@ async fn handle_connection_events(
         match event {
             ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
                 trace!(
-                    "New message ({} bytes) received on a uni-stream from: {}",
+                    "New message ({} bytes) received on a uni-stream from {}",
                     bytes.len(),
                     src
                 );
-                // Since it's arriving on a uni-stream we treat it as a Node
-                // message which needs to be processed by us, as well as
-                // potentially reported to the event stream consumer.
 
-                // Ignore pings.
-                if bytes == PING {
+                // Optimization: pings are not handled - avoid the overhead of spawning the message
+                // handler.
+                if bytes[0] == MessageKind::Ping as u8 {
                     continue;
                 }
 
@@ -377,22 +380,23 @@ async fn handle_connection_events(
                 recv,
             }) => {
                 trace!(
-                    "New message ({} bytes) received on a bi-stream from: {}",
+                    "New message ({} bytes) received on a bi-stream from {}",
                     bytes.len(),
                     src
                 );
 
-                // Since it's arriving on a bi-stream we treat it as a Client
-                // message which we report directly to the event stream consumer
-                // without doing any intermediate processing.
-                let event = Event::ClientMessageReceived {
-                    content: bytes,
-                    src,
-                    send,
-                    recv,
-                };
+                if bytes[0] == MessageKind::Client as u8 {
+                    let event = Event::ClientMessageReceived {
+                        content: bytes.slice(1..),
+                        src,
+                        send,
+                        recv,
+                    };
 
-                stage.send_event(event).await;
+                    stage.send_event(event).await;
+                } else {
+                    error!("Unexpected non-client message received from {}", src);
+                }
             }
             ConnectionEvent::Disconnected(addr) => {
                 trace!("Lost connection to {:?}", addr);
@@ -405,17 +409,25 @@ async fn handle_connection_events(
     }
 }
 
-async fn handle_message(stage: Arc<Stage>, msg_bytes: Bytes, sender: SocketAddr) {
-    match Message::from_bytes(&msg_bytes) {
-        Ok(message) => {
-            let command = Command::HandleMessage {
-                message,
-                sender: Some(sender),
-            };
-            let _ = stage.handle_commands(command).await;
+async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
+    let command = match Envelope::from_bytes(&bytes) {
+        Ok(Envelope::Ping) => return,
+        Ok(Envelope::Node(message)) => Command::HandleMessage {
+            message,
+            sender: Some(sender),
+        },
+        Ok(Envelope::Infrastructure(message)) => {
+            Command::HandleInfrastructureQuery { sender, message }
+        }
+        Ok(Envelope::Client(_)) => {
+            error!("Unexpected client message from {}", sender);
+            return;
         }
         Err(error) => {
-            debug!("Failed to deserialize message: {}", error);
+            error!("Failed to deserialize message from {}: {}", sender, error);
+            return;
         }
-    }
+    };
+
+    let _ = stage.handle_commands(command).await;
 }
