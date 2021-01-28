@@ -18,9 +18,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        BootstrapResponse, Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message,
-        MessageHash, MessageKind, MessageStatus, PlainMessage, ResourceProofResponse, Variant,
-        VerifyStatus,
+        Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageHash,
+        MessageKind, MessageStatus, PlainMessage, ResourceProofResponse, Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -496,7 +495,7 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::NodeApproval { .. } | Variant::BootstrapResponse(_) => {
+            Variant::NodeApproval { .. } | Variant::Rejoin { .. } => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
@@ -624,7 +623,7 @@ impl Approved {
                 Ok(commands)
             }
             Variant::NodeApproval { .. }
-            | Variant::BootstrapResponse(_)
+            | Variant::Rejoin { .. }
             | Variant::ResourceChallenge { .. } => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
@@ -1009,15 +1008,12 @@ impl Approved {
         }
 
         if join_request.section_key != *self.section.chain().last_key() {
-            let response = BootstrapResponse::Join {
+            let variant = Variant::Rejoin {
                 elders_info: self.section.elders_info().clone(),
                 section_key: *self.section.chain().last_key(),
             };
-            trace!("Resending BootstrapResponse {:?} to {}", response, peer);
-            return Ok(vec![self.send_direct_message(
-                peer.addr(),
-                Variant::BootstrapResponse(response),
-            )?]);
+            trace!("Sending {:?} to {}", variant, peer);
+            return Ok(vec![self.send_direct_message(peer.addr(), variant)?]);
         }
 
         if self.section.members().is_joined(peer.name()) {

@@ -16,7 +16,7 @@ mod variant;
 pub(crate) use self::{
     envelope::Envelope,
     plain_message::PlainMessage,
-    variant::{BootstrapResponse, JoinRequest, ResourceProofResponse, Variant},
+    variant::{JoinRequest, ResourceProofResponse, Variant},
 };
 pub use self::{
     envelope::MessageKind,

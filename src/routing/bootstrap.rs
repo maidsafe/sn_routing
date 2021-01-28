@@ -13,8 +13,8 @@ use crate::{
     error::{Error, Result},
     location::DstLocation,
     messages::{
-        BootstrapResponse, Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message,
-        MessageKind, ResourceProofResponse, Variant, VerifyStatus,
+        Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageKind,
+        ResourceProofResponse, Variant, VerifyStatus,
     },
     node::Node,
     peer::Peer,
@@ -360,10 +360,10 @@ impl<'a> State<'a> {
             };
 
             match message.variant() {
-                Variant::BootstrapResponse(BootstrapResponse::Join {
+                Variant::Rejoin {
                     elders_info,
                     section_key,
-                }) => {
+                } => {
                     if !self.verify_message(&message, None) {
                         continue;
                     }
@@ -846,29 +846,35 @@ mod tests {
             let message = Message::from_bytes(&bytes)?;
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
-            // Send `GetSectionResponse::Success` with bad prefix
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
-                prefix: bad_prefix,
-                key: bls::SecretKey::random().public_key(),
-                elders: (0..ELDER_SIZE)
-                    .map(|_| (bad_prefix.substituted_in(rand::random()), gen_addr()))
-                    .collect(),
-            });
+            // Send `Rejoin` with bad prefix
+            let message = Message::single_src(
+                &bootstrap_node,
+                DstLocation::Direct,
+                Variant::Rejoin {
+                    elders_info: gen_elders_info(bad_prefix, ELDER_SIZE).0,
+                    section_key: bls::SecretKey::random().public_key(),
+                },
+                None,
+                None,
+            )?;
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            // Send `GetSectionResponse::Success` with good prefix
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
-                prefix: good_prefix,
-                key: bls::SecretKey::random().public_key(),
-                elders: (0..ELDER_SIZE)
-                    .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
-                    .collect(),
-            });
+            // Send `Rejoin` with good prefix
+            let message = Message::single_src(
+                &bootstrap_node,
+                DstLocation::Direct,
+                Variant::Rejoin {
+                    elders_info: gen_elders_info(good_prefix, ELDER_SIZE).0,
+                    section_key: bls::SecretKey::random().public_key(),
+                },
+                None,
+                None,
+            )?;
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;

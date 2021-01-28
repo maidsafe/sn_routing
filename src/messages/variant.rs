@@ -58,11 +58,13 @@ pub(crate) enum Variant {
     /// - from a section to a current elder to be relocated after they are demoted.
     /// - from the node to be relocated back to its section after it was demoted.
     RelocatePromise(RelocatePromise),
-    /// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either
-    /// accept the peer into the section, or redirect it to another set of bootstrap peers
-    BootstrapResponse(BootstrapResponse),
+    /// Response to outdated JoinRequest
+    Rejoin {
+        elders_info: EldersInfo,
+        section_key: bls::PublicKey,
+    },
     /// Sent from a bootstrapping peer to the section that responded with a
-    /// `BootstrapResponse::Join` to its `BootstrapRequest`.
+    /// `GetSectionResponse::Succcess` to its `GetSectionRequest`.
     JoinRequest(Box<JoinRequest>),
     /// Sent from a node that can't establish the trust of the contained message to its original
     /// source in order for them to provide new proof that the node would trust.
@@ -181,7 +183,14 @@ impl Debug for Variant {
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
-            Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
+            Self::Rejoin {
+                elders_info,
+                section_key,
+            } => f
+                .debug_struct("Rejoin")
+                .field("elders_info", elders_info)
+                .field("section_key", section_key)
+                .finish(),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
             Self::BouncedUntrustedMessage(message) => f
                 .debug_tuple("BouncedUntrustedMessage")
@@ -239,17 +248,6 @@ impl Debug for Variant {
                 .finish(),
         }
     }
-}
-
-/// Response to a BootstrapRequest
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
-pub enum BootstrapResponse {
-    /// This response means that the new peer is clear to join the section. The connection infos of
-    /// the section elders and the section key are provided.
-    Join {
-        elders_info: EldersInfo,
-        section_key: bls::PublicKey,
-    },
 }
 
 /// Joining peer's proof of resolvement of given resource proofing challenge.
