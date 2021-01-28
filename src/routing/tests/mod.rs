@@ -17,8 +17,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     majority,
     messages::{
-        BootstrapResponse, JoinRequest, Message, MessageKind, PlainMessage, ResourceProofResponse,
-        Variant, VerifyStatus,
+        GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageKind, PlainMessage,
+        ResourceProofResponse, Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -45,25 +45,19 @@ use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 #[tokio::test]
-async fn receive_bootstrap_request() -> Result<()> {
+async fn receive_get_section_request() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
-    let message = Message::single_src(
-        &new_node,
-        DstLocation::Direct,
-        Variant::BootstrapRequest(new_node.name()),
-        None,
-        None,
-    )?;
+    let message = InfrastructureQuery::GetSectionRequest(new_node.name());
 
     let mut commands = stage
-        .handle_command(Command::HandleMessage {
+        .handle_command(Command::HandleInfrastructureQuery {
+            sender: new_node.addr,
             message,
-            sender: Some(new_node.addr),
         })
         .await?
         .into_iter();
@@ -72,17 +66,17 @@ async fn receive_bootstrap_request() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            kind: MessageKind::Node,
+            kind: MessageKind::Infrastructure,
             message, ..
         }) => (recipients, message)
     );
 
     assert_eq!(recipients, [new_node.addr]);
 
-    let message = Message::from_bytes(&message)?;
+    let message = bincode::deserialize(&message)?;
     assert_matches!(
-        message.variant(),
-        Variant::BootstrapResponse(BootstrapResponse::Join { .. })
+        message,
+        InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success { .. })
     );
 
     Ok(())

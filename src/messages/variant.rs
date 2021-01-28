@@ -22,9 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     fmt::{self, Debug, Formatter},
-    net::SocketAddr,
 };
-use xor_name::XorName;
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -60,9 +58,6 @@ pub(crate) enum Variant {
     /// - from a section to a current elder to be relocated after they are demoted.
     /// - from the node to be relocated back to its section after it was demoted.
     RelocatePromise(RelocatePromise),
-    /// Sent from a newly connected peer to the bootstrap node to request connection infos of
-    /// members of the section matching the given name.
-    BootstrapRequest(XorName),
     /// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either
     /// accept the peer into the section, or redirect it to another set of bootstrap peers
     BootstrapResponse(BootstrapResponse),
@@ -186,7 +181,6 @@ impl Debug for Variant {
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
-            Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
             Self::BouncedUntrustedMessage(message) => f
@@ -256,9 +250,6 @@ pub enum BootstrapResponse {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     },
-    /// The new peer should retry bootstrapping with another section. The set of connection infos
-    /// of the members of that section is provided.
-    Rebootstrap(Vec<SocketAddr>),
 }
 
 /// Joining peer's proof of resolvement of given resource proofing challenge.

@@ -19,7 +19,9 @@ pub(crate) use self::{
     variant::{BootstrapResponse, JoinRequest, ResourceProofResponse, Variant},
 };
 pub use self::{
-    envelope::MessageKind, hash::MessageHash, infrastructure_query::InfrastructureQuery,
+    envelope::MessageKind,
+    hash::MessageHash,
+    infrastructure_query::{GetSectionResponse, InfrastructureQuery},
     src_authority::SrcAuthority,
 };
 use crate::{

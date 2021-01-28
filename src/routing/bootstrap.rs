@@ -13,8 +13,8 @@ use crate::{
     error::{Error, Result},
     location::DstLocation,
     messages::{
-        BootstrapResponse, Envelope, JoinRequest, Message, ResourceProofResponse, Variant,
-        VerifyStatus,
+        BootstrapResponse, Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message,
+        MessageKind, ResourceProofResponse, Variant, VerifyStatus,
     },
     node::Node,
     peer::Peer,
@@ -25,9 +25,13 @@ use crate::{
 use bytes::Bytes;
 use futures::future;
 use resource_proof::ResourceProof;
-use std::{collections::VecDeque, mem, net::SocketAddr};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    mem,
+    net::SocketAddr,
+};
 use tokio::sync::mpsc;
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 const BACKLOG_CAPACITY: usize = 100;
 
@@ -109,44 +113,45 @@ impl<'a> State<'a> {
         bootstrap_addrs: Vec<SocketAddr>,
         relocate_details: Option<SignedRelocateDetails>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
-        let (elders_info, section_key) = self
+        let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
 
         let relocate_payload = if let Some(details) = relocate_details {
-            Some(self.process_relocation(&elders_info, details))
+            Some(self.process_relocation(&prefix, details))
         } else {
             None
         };
 
-        self.join(elders_info, section_key, relocate_payload).await
+        self.join(section_key, elders, relocate_payload).await
     }
 
-    // Send a `BootstrapRequest` and waits for the response. If the response is `Rebootstrap`,
-    // repeat with the new set of contacts. If it is `Join`, proceeed to the `join` phase.
+    // Send a `GetSectionRequest` and waits for the response. If the response is `Redirect`,
+    // repeat with the new set of contacts. If it is `Success`, proceeed to the `join` phase.
     async fn bootstrap(
         &mut self,
         mut bootstrap_addrs: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
-    ) -> Result<(EldersInfo, bls::PublicKey)> {
+    ) -> Result<(Prefix, bls::PublicKey, BTreeMap<XorName, SocketAddr>)> {
         loop {
-            self.send_bootstrap_request(mem::take(&mut bootstrap_addrs), relocate_details)
+            self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
-            let (response, sender) = self.receive_bootstrap_response().await?;
+            let (response, sender) = self.receive_get_section_response().await?;
 
             match response {
-                BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
+                GetSectionResponse::Success {
+                    prefix,
+                    key,
+                    elders,
                 } => {
                     info!(
-                        "{} Joining a section {:?} (given by {:?})",
-                        self.node, elders_info, sender
+                        "Joining a section ({:b}), key: {:?}, elders: {:?} (given by {:?})",
+                        prefix, key, elders, sender
                     );
-                    return Ok((elders_info, section_key));
+                    return Ok((prefix, key, elders));
                 }
-                BootstrapResponse::Rebootstrap(new_bootstrap_addrs) => {
+                GetSectionResponse::Redirect(new_bootstrap_addrs) => {
                     info!(
                         "{} Bootstrapping redirected to another set of peers: {:?}",
                         self.node, new_bootstrap_addrs,
@@ -157,7 +162,7 @@ impl<'a> State<'a> {
         }
     }
 
-    async fn send_bootstrap_request(
+    async fn send_get_section_request(
         &mut self,
         recipients: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
@@ -167,50 +172,41 @@ impl<'a> State<'a> {
             None => self.node.name(),
         };
 
-        let message = Message::single_src(
-            &self.node,
-            DstLocation::Direct,
-            Variant::BootstrapRequest(destination),
-            None,
-            None,
-        )?;
+        let message = InfrastructureQuery::GetSectionRequest(destination);
+        let message = bincode::serialize(&message)?.into();
 
         debug!("{} Sending BootstrapRequest to {:?}", self.node, recipients);
 
-        let _ = self.send_tx.send((message.to_bytes(), recipients)).await;
+        let _ = self
+            .send_tx
+            .send((MessageKind::Infrastructure.prepend_to(message), recipients))
+            .await;
 
         Ok(())
     }
 
-    async fn receive_bootstrap_response(&mut self) -> Result<(BootstrapResponse, SocketAddr)> {
+    async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
-                Envelope::Node(message) => match message.variant() {
-                    Variant::BootstrapResponse(response) => {
-                        match response {
-                            BootstrapResponse::Rebootstrap(addrs) if addrs.is_empty() => {
-                                error!("Invalid Rebootstrap response: missing peers");
-                                continue;
-                            }
-                            BootstrapResponse::Join { elders_info, .. }
-                                if !elders_info.prefix.matches(&self.node.name()) =>
-                            {
-                                error!("Invalid Join response: bad prefix");
-                                continue;
-                            }
-                            BootstrapResponse::Join { .. } | BootstrapResponse::Rebootstrap(_) => {}
-                        }
-
-                        if !self.verify_message(&message, None) {
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionResponse(response)) => {
+                    match response {
+                        GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
+                            error!("Invalid GetSectionResponse::Redirect: missing peers");
                             continue;
                         }
-
-                        return Ok((response.clone(), sender));
+                        GetSectionResponse::Success { prefix, .. }
+                            if !prefix.matches(&self.node.name()) =>
+                        {
+                            error!("Invalid GetSectionResponse::Success: bad prefix");
+                            continue;
+                        }
+                        GetSectionResponse::Redirect(_) | GetSectionResponse::Success { .. } => {
+                            return Ok((response, sender))
+                        }
                     }
-                    _ => self.backlog_message(message, sender),
-                },
-                Envelope::Infrastructure(_message) => todo!(),
-                Envelope::Ping | Envelope::Client(_) => {}
+                }
+                Envelope::Node(message) => self.backlog_message(message, sender),
+                Envelope::Infrastructure(_) | Envelope::Client(_) | Envelope::Ping => {}
             }
         }
 
@@ -222,14 +218,14 @@ impl<'a> State<'a> {
     // Change our name to fit the destination section and apply the new age.
     fn process_relocation(
         &mut self,
-        elders_info: &EldersInfo,
+        prefix: &Prefix,
         relocate_details: SignedRelocateDetails,
     ) -> RelocatePayload {
         // We are relocating so we need to change our name.
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
         let name_prefix = Prefix::new(
-            elders_info.prefix.bit_count() + extra_split_count,
+            prefix.bit_count() + extra_split_count,
             *relocate_details.destination(),
         );
 
@@ -250,8 +246,8 @@ impl<'a> State<'a> {
     // completing the bootstrap. If it is `Challenge`, carries out a resource proof calculation.
     async fn join(
         mut self,
-        elders_info: EldersInfo,
         mut section_key: bls::PublicKey,
+        elders: BTreeMap<XorName, SocketAddr>,
         relocate_payload: Option<RelocatePayload>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
         let join_request = JoinRequest {
@@ -259,7 +255,7 @@ impl<'a> State<'a> {
             relocate_payload: relocate_payload.clone(),
             resource_proof_response: None,
         };
-        let recipients = elders_info.peers().map(Peer::addr).copied().collect();
+        let recipients = elders.into_iter().map(|(_, addr)| addr).collect();
         self.send_join_requests(join_request, recipients).await?;
 
         loop {
@@ -577,28 +573,25 @@ mod tests {
         let others = async {
             task::yield_now().await;
 
-            // Receive BootstrapRequest
+            // Receive GetSectionRequest
             let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
 
             assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message.variant(), Variant::BootstrapRequest(name) => {
-                assert_eq!(name, peer.name());
+            assert_matches!(message, Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(name)) => {
+                assert_eq!(name, *peer.name());
             });
 
-            // Send BootstrapResponse
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info: elders_info.clone(),
-                    section_key: pk,
-                }),
-                None,
-                None,
-            )?;
-
-            recv_tx.try_send((Envelope::Node(message), bootstrap_addr))?;
+            // Send GetSectionResponse::Success
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+                prefix: elders_info.prefix,
+                key: pk,
+                elders: elders_info
+                    .peers()
+                    .map(|peer| (*peer.name(), *peer.addr()))
+                    .collect(),
+            });
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -642,7 +635,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receive_bootstrap_response_rebootstrap() -> Result<()> {
+    async fn receive_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
@@ -656,35 +649,34 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            // Receive BootstrapRequest
+            // Receive GetSectionRequest
             let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
 
             assert_eq!(recipients, vec![bootstrap_node.addr]);
-            assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+            assert_matches!(
+                message,
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+            );
 
-            // Send Rebootstrap BootstrapResponse
+            // Send GetSectionResponse::Redirect
             let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(
+                new_bootstrap_addrs.clone(),
+            ));
 
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(
-                    new_bootstrap_addrs.clone(),
-                )),
-                None,
-                None,
-            )?;
-
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
-            // Receive new BootstrapRequests
+            // Receive new GetSectionRequest
             let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
+            let message = Envelope::from_bytes(&bytes)?;
 
             assert_eq!(recipients, new_bootstrap_addrs);
-            assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+            assert_matches!(
+                message,
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+            );
 
             Ok(())
         };
@@ -699,7 +691,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_bootstrap_response_rebootstrap() -> Result<()> {
+    async fn invalid_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
@@ -714,36 +706,32 @@ mod tests {
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
-            assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+            let message = Envelope::from_bytes(&bytes)?;
+            assert_matches!(
+                message,
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+            );
 
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(vec![])),
-                None,
-                None,
-            )?;
+            let message =
+                InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(addrs)),
-                None,
-                None,
-            )?;
+            let message =
+                InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
-            assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+            let message = Envelope::from_bytes(&bytes)?;
+            assert_matches!(
+                message,
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+            );
 
             Ok(())
         };
@@ -758,7 +746,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_bootstrap_response_join() -> Result<()> {
+    async fn invalid_get_section_response_success() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
@@ -787,40 +775,33 @@ mod tests {
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
-            let message = Message::from_bytes(&bytes)?;
-            assert_matches!(message.variant(), Variant::BootstrapRequest(_));
+            let message = Envelope::from_bytes(&bytes)?;
+            assert_matches!(
+                message,
+                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+            );
 
-            let (elders_info, _) = gen_elders_info(bad_prefix, ELDER_SIZE);
-            let section_key = bls::SecretKey::random().public_key();
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
-                }),
-                None,
-                None,
-            )?;
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+                prefix: bad_prefix,
+                key: bls::SecretKey::random().public_key(),
+                elders: (0..ELDER_SIZE)
+                    .map(|_| (bad_prefix.substituted_in(rand::random()), gen_addr()))
+                    .collect(),
+            });
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
-            let section_key = bls::SecretKey::random().public_key();
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
-                }),
-                None,
-                None,
-            )?;
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+                prefix: good_prefix,
+                key: bls::SecretKey::random().public_key(),
+                elders: (0..ELDER_SIZE)
+                    .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
+                    .collect(),
+            });
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
 
             Ok(())
         };
@@ -852,9 +833,11 @@ mod tests {
 
         let state = State::new(node, send_tx, recv_rx)?;
 
-        let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
         let section_key = bls::SecretKey::random().public_key();
-        let join_task = state.join(elders_info, section_key, None);
+        let elders = (0..ELDER_SIZE)
+            .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
+            .collect();
+        let join_task = state.join(section_key, elders, None);
 
         let test_task = async {
             task::yield_now().await;
@@ -863,41 +846,29 @@ mod tests {
             let message = Message::from_bytes(&bytes)?;
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
-            // Send `BootstrapResponse::Join` with bad prefix
-            let (elders_info, _) = gen_elders_info(bad_prefix, ELDER_SIZE);
-            let section_key = bls::SecretKey::random().public_key();
+            // Send `GetSectionResponse::Success` with bad prefix
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+                prefix: bad_prefix,
+                key: bls::SecretKey::random().public_key(),
+                elders: (0..ELDER_SIZE)
+                    .map(|_| (bad_prefix.substituted_in(rand::random()), gen_addr()))
+                    .collect(),
+            });
 
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
-                }),
-                None,
-                None,
-            )?;
-
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            // Send `BootstrapResponse::Join` with good prefix
-            let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
-            let section_key = bls::SecretKey::random().public_key();
+            // Send `GetSectionResponse::Success` with good prefix
+            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+                prefix: good_prefix,
+                key: bls::SecretKey::random().public_key(),
+                elders: (0..ELDER_SIZE)
+                    .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
+                    .collect(),
+            });
 
-            let message = Message::single_src(
-                &bootstrap_node,
-                DstLocation::Direct,
-                Variant::BootstrapResponse(BootstrapResponse::Join {
-                    elders_info,
-                    section_key,
-                }),
-                None,
-                None,
-            )?;
-
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (bytes, _) = send_rx.try_recv()?;
