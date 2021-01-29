@@ -27,7 +27,7 @@ use self::{
 };
 use crate::{
     crypto,
-    error::{Error, Result},
+    error::Result,
     event::{Event, NodeElderChange},
     location::{DstLocation, SrcLocation},
     messages::{Message, PING},
@@ -157,9 +157,23 @@ impl Routing {
         self.stage.state.lock().await.node().keypair.public
     }
 
-    /// Signs any data with the ed25519 key of this node.
-    pub async fn sign(&self, data: &[u8]) -> Signature {
+    /// Signs `data` with the ed25519 key of this node.
+    pub async fn sign_as_node(&self, data: &[u8]) -> Signature {
         self.stage.state.lock().await.node().keypair.sign(data)
+    }
+
+    /// Signs `data` with the BLS secret key share of this node, if it has any. Returns
+    /// `Error::MissingSecretKeyShare` otherwise.
+    pub async fn sign_as_elder(
+        &self,
+        data: &[u8],
+        public_key: &bls::PublicKey,
+    ) -> Result<bls::SignatureShare> {
+        self.stage
+            .state
+            .lock()
+            .await
+            .sign_with_section_key_share(data, public_key)
     }
 
     /// Verifies `signature` on `data` with the ed25519 public key of this node.
@@ -311,37 +325,7 @@ impl Routing {
     /// Returns the current BLS public key set if this node has one, or
     /// `Error::InvalidState` otherwise.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.stage
-            .state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.public_key_set.clone())
-            .ok_or(Error::InvalidState)
-    }
-
-    /// Returns the current BLS secret key share or `Error::InvalidState` if we are not
-    /// elder.
-    pub async fn secret_key_share(&self) -> Result<bls::SecretKeyShare> {
-        self.stage
-            .state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.secret_key_share.clone())
-            .ok_or(Error::MissingSecretKeyShare)
-    }
-
-    /// Signs `data` with the BLS secret key share of this node, if it has any. Returns
-    /// `Error::MissingSecretKeyShare` otherwise.
-    pub async fn sign_with_secret_key_share(&self, data: &[u8]) -> Result<bls::SignatureShare> {
-        self.stage
-            .state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.secret_key_share.sign(data))
-            .ok_or(Error::MissingSecretKeyShare)
+        self.stage.state.lock().await.public_key_set()
     }
 
     /// Returns our section proof chain.
@@ -352,13 +336,7 @@ impl Routing {
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn our_index(&self) -> Result<usize> {
-        self.stage
-            .state
-            .lock()
-            .await
-            .section_key_share()
-            .map(|share| share.index)
-            .ok_or(Error::MissingSecretKeyShare)
+        self.stage.state.lock().await.our_index()
     }
 }
 
