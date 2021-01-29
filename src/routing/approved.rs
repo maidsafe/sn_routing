@@ -45,6 +45,7 @@ use xor_name::{Prefix, XorName};
 
 pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
 pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
+const KEY_CACHE_SIZE: u8 = 5;
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (adult or elder).
@@ -78,7 +79,7 @@ impl Approved {
         section_key_share: Option<SectionKeyShare>,
         event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
-        let section_keys_provider = SectionKeysProvider::new(section_key_share);
+        let section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, section_key_share);
 
         Self {
             node,
@@ -106,6 +107,35 @@ impl Approved {
 
     pub fn network(&self) -> &Network {
         &self.network
+    }
+
+    /// Is this node an elder?
+    pub fn is_elder(&self) -> bool {
+        self.section.is_elder(&self.node.name())
+    }
+
+    /// Tries to sign with the secret corresponding to the provided BLS public key
+    pub fn sign_with_section_key_share(
+        &self,
+        data: &[u8],
+        public_key: &bls::PublicKey,
+    ) -> Result<bls::SignatureShare> {
+        self.section_keys_provider.sign_with(data, public_key)
+    }
+
+    /// Returns the current BLS public key set
+    pub fn public_key_set(&self) -> Result<bls::PublicKeySet> {
+        Ok(self
+            .section_keys_provider
+            .key_share()?
+            .public_key_set
+            .clone())
+    }
+
+    /// Returns our index in the current BLS group if this node is a member of one, or
+    /// `Error::MissingSecretKeyShare` otherwise.
+    pub fn our_index(&self) -> Result<usize> {
+        Ok(self.section_keys_provider.key_share()?.index.clone())
     }
 
     pub fn send_event(&self, event: Event) {
@@ -383,16 +413,6 @@ impl Approved {
         } else {
             Ok(None)
         }
-    }
-
-    /// Is this node an elder?
-    pub fn is_elder(&self) -> bool {
-        self.section.is_elder(&self.node.name())
-    }
-
-    /// Returns the current BLS public key set
-    pub fn section_key_share(&self) -> Option<&SectionKeyShare> {
-        self.section_keys_provider.key_share().ok()
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1541,7 +1561,7 @@ impl Approved {
                 info!("Demoted");
                 self.section = self.section.trimmed(1);
                 self.network = Network::new();
-                self.section_keys_provider = SectionKeysProvider::new(None);
+                self.section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, None);
                 NodeElderChange::Demoted
             } else {
                 NodeElderChange::None

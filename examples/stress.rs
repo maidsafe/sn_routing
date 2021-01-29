@@ -441,7 +441,9 @@ impl Network {
 
         // The message dst is unique so we use it also as its indentifier.
         let bytes = bincode::serialize(&dst)?;
-        let signature_share = node.sign_with_secret_key_share(&bytes).await?;
+        let signature_share = node
+            .sign_as_elder(&bytes, &public_key_set.public_key())
+            .await?;
 
         let index = node.our_index().await?;
 
