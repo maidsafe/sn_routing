@@ -135,7 +135,7 @@ impl Approved {
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub fn our_index(&self) -> Result<usize> {
-        Ok(self.section_keys_provider.key_share()?.index.clone())
+        Ok(self.section_keys_provider.key_share()?.index)
     }
 
     pub fn send_event(&self, event: Event) {
