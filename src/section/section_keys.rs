@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct SectionKeyShare {
 #[derive(Debug)]
 pub struct SectionKeysProvider {
     /// A cache for current and previous section BLS keys.
-    cache: KeyCache,
+    cache: MiniKeyCache,
     /// The new keys to use when section update completes.
     pending: Option<SectionKeyShare>,
 }
@@ -33,7 +33,7 @@ impl SectionKeysProvider {
     pub fn new(cache_size: u8, current: Option<SectionKeyShare>) -> Self {
         let mut provider = Self {
             pending: None,
-            cache: KeyCache::with_capacity(cache_size as usize),
+            cache: MiniKeyCache::with_capacity(cache_size as usize),
         };
         if let Some(share) = current {
             let public_key = share.public_key_set.public_key();
@@ -78,37 +78,29 @@ impl SectionKeysProvider {
     }
 }
 
-/// Implementation of simple cache.
+/// Implementation of super simple cache, for no more than a handfull of items.
 #[derive(Debug)]
-pub struct KeyCache {
-    map: BTreeMap<Vec<u8>, SectionKeyShare>,
-    list: VecDeque<bls::PublicKey>,
-    capacity: usize,
+pub struct MiniKeyCache {
+    list: VecDeque<(bls::PublicKey, SectionKeyShare)>,
 }
 
-impl KeyCache {
+impl MiniKeyCache {
     /// Constructor for capacity based `KeyCache`.
-    pub fn with_capacity(capacity: usize) -> KeyCache {
-        KeyCache {
-            map: BTreeMap::new(),
+    pub fn with_capacity(capacity: usize) -> MiniKeyCache {
+        MiniKeyCache {
             list: VecDeque::with_capacity(capacity),
-            capacity,
         }
     }
 
-    ///
+    /// Returns true if a key share exists.
     pub fn has_key_share(&self) -> bool {
         !self.list.is_empty()
     }
 
-    ///
+    /// Returns the most recently added key.
     pub fn get_most_recent(&self) -> Result<&SectionKeyShare> {
-        if !self.list.is_empty() {
-            if let Some(public_key) = self.list.get(self.list.len() - 1) {
-                if let Some(share) = self.map.get(&bincode::serialize(public_key)?) {
-                    return Ok(share);
-                }
-            }
+        if let Some((_, share)) = self.list.back() {
+            return Ok(share);
         }
         Err(Error::MissingSecretKeyShare)
     }
@@ -120,12 +112,12 @@ impl KeyCache {
         data: &[u8],
         public_key: &bls::PublicKey,
     ) -> Result<bls::SignatureShare> {
-        let key = bincode::serialize(public_key)?;
-        if let Some(section_key) = self.map.get(&key) {
-            Ok(section_key.secret_key_share.sign(data))
-        } else {
-            Err(Error::MissingSecretKeyShare)
+        for (cached_public, section_key_share) in &self.list {
+            if public_key == cached_public {
+                return Ok(section_key_share.secret_key_share.sign(data));
+            }
         }
+        Err(Error::MissingSecretKeyShare)
     }
 
     /// Adds a new key to the cache, and removes + returns the oldest
@@ -135,21 +127,20 @@ impl KeyCache {
         public_key: &bls::PublicKey,
         section_key_share: SectionKeyShare,
     ) -> Option<bls::PublicKey> {
-        let key = bincode::serialize(public_key).ok()?;
-        if self.map.contains_key(&key) {
-            return None;
+        for (cached_public, _) in &self.list {
+            if public_key == cached_public {
+                return None;
+            }
         }
 
         let mut evicted = None;
         if self.list.capacity() == self.list.len() {
-            evicted = self.list.pop_front();
-            if let Some(public_key) = evicted {
-                let _ = self.map.remove(&bincode::serialize(&public_key).ok()?);
+            if let Some((cached_public, _)) = self.list.pop_front() {
+                evicted = Some(cached_public);
             }
         }
 
-        self.list.push_back(*public_key);
-        let _ = self.map.insert(key, section_key_share);
+        self.list.push_back((*public_key, section_key_share));
 
         evicted
     }
