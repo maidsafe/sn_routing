@@ -9,15 +9,20 @@
 mod utils;
 
 use anyhow::{format_err, Result};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use qp2p::QuicP2p;
-use sn_routing::{Config, DstLocation, Error, Event, MessageKind, NodeElderChange, SrcLocation};
+use sn_data_types::Keypair;
+use sn_messaging::{
+    client::{Message, MessageId, MsgEnvelope, MsgSender, Query, TransferQuery},
+    WireMsg,
+};
+use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
+use xor_name::XorName;
 
 #[tokio::test]
 async fn test_messages_client_node() -> Result<()> {
-    let msg = b"hello!";
     let response = b"good bye!";
 
     let (node, mut event_stream) = create_node(Config {
@@ -26,14 +31,36 @@ async fn test_messages_client_node() -> Result<()> {
     })
     .await?;
 
+    // create a client message
+    let mut rng = rand::thread_rng();
+    let keypair = Keypair::new_ed25519(&mut rng);
+    let pk = keypair.public_key();
+    let signature = keypair.sign(b"blabla");
+
+    let random_xor = XorName::random();
+    let id = MessageId(random_xor);
+    let message = Message::Query {
+        query: Query::Transfer(TransferQuery::GetBalance(pk)),
+        id,
+    };
+
+    let msg_envelope = MsgEnvelope {
+        message,
+        origin: MsgSender::client(pk, signature)?,
+        proxies: vec![],
+    };
+    let msg_envelope_clone = msg_envelope.clone();
+
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             match event {
                 Event::ClientMessageReceived {
-                    content, mut send, ..
+                    content,
+                    send: Some(mut send),
+                    ..
                 } => {
-                    assert_eq!(content, Bytes::from_static(msg));
+                    assert_eq!(*content, msg_envelope_clone);
                     send.send_user_msg(Bytes::from_static(response)).await?;
                     break;
                 }
@@ -55,14 +82,9 @@ async fn test_messages_client_node() -> Result<()> {
     let client_endpoint = client.new_endpoint()?;
     let (conn, _) = client_endpoint.connect_to(&node_addr).await?;
 
-    let buffer = {
-        let mut buffer = BytesMut::new();
-        buffer.put_u8(MessageKind::Client as u8);
-        buffer.put_slice(msg);
-        buffer.freeze()
-    };
+    let client_msg_bytes = WireMsg::serialize_client_msg(&msg_envelope)?;
 
-    let (_, mut recv) = conn.send_bi(buffer).await?;
+    let (_, mut recv) = conn.send_bi(client_msg_bytes).await?;
 
     // just await for node to respond to client
     node_handler.await??;

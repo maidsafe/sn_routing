@@ -22,6 +22,7 @@ lru_time_cache = "~0.11.0"
 qp2p = "~0.9.10"
 rand = "~0.7.3"
 rand_chacha = "~0.2.2"
+sn_messaging = { git = "https://github.com/bochaco/sn_messaging.git", branch = "support-node-ping-infrastructure-types" }
 thiserror = "1.0.23"
 xor_name = "1.1.0"
 resource_proof = "0.8.0"
@@ -59,6 +60,7 @@ structopt = "~0.3.17"
 tracing-appender = "~0.1.2"
 tracing-subscriber = "~0.2.15"
 yansi = "~0.5.0"
+sn_data_types = "0.14.1"
 
   [dev-dependencies.rand]
   version = "~0.7.3"

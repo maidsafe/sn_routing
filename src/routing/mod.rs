@@ -30,7 +30,7 @@ use crate::{
     error::Result,
     event::{Event, NodeElderChange},
     location::{DstLocation, SrcLocation},
-    messages::{Envelope, MessageKind},
+    messages::Message,
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
@@ -39,6 +39,8 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
+use qp2p::{Message as Qp2pMessage, RecvStream, SendStream};
+use sn_messaging::{client::MsgEnvelope, node::NodeMessage, MessageType, WireMsg};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
@@ -127,7 +129,7 @@ impl Routing {
             stage
                 .clone()
                 .handle_commands(Command::HandleMessage {
-                    message,
+                    message: Box::new(message),
                     sender: Some(sender),
                 })
                 .await?;
@@ -316,13 +318,12 @@ impl Routing {
     pub async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
-        message: Bytes,
+        message: MsgEnvelope,
     ) -> Result<()> {
         let command = Command::SendMessage {
             recipients: vec![recipient],
             delivery_group_size: 1,
-            kind: MessageKind::Client,
-            message,
+            message: MessageType::ClientMessage(message),
         };
         self.stage.clone().handle_commands(command).await
     }
@@ -358,22 +359,15 @@ async fn handle_connection_events(
 ) {
     while let Some(event) = incoming_conns.recv().await {
         match event {
-            ConnectionEvent::Received(qp2p::Message::UniStream { bytes, src, .. }) => {
+            ConnectionEvent::Received(Qp2pMessage::UniStream { bytes, src, recv }) => {
                 trace!(
                     "New message ({} bytes) received on a uni-stream from {}",
                     bytes.len(),
                     src
                 );
-
-                // Optimization: pings are not handled - avoid the overhead of spawning the message
-                // handler.
-                if bytes[0] == MessageKind::Ping as u8 {
-                    continue;
-                }
-
-                let _ = task::spawn(handle_message(stage.clone(), bytes, src));
+                handle_message(stage.clone(), bytes, src, recv, None).await;
             }
-            ConnectionEvent::Received(qp2p::Message::BiStream {
+            ConnectionEvent::Received(Qp2pMessage::BiStream {
                 bytes,
                 src,
                 send,
@@ -384,19 +378,7 @@ async fn handle_connection_events(
                     bytes.len(),
                     src
                 );
-
-                if bytes[0] == MessageKind::Client as u8 {
-                    let event = Event::ClientMessageReceived {
-                        content: bytes.slice(1..),
-                        src,
-                        send,
-                        recv,
-                    };
-
-                    stage.send_event(event).await;
-                } else {
-                    error!("Unexpected non-client message received from {}", src);
-                }
+                handle_message(stage.clone(), bytes, src, recv, Some(send)).await;
             }
             ConnectionEvent::Disconnected(addr) => {
                 trace!("Lost connection to {:?}", addr);
@@ -409,25 +391,56 @@ async fn handle_connection_events(
     }
 }
 
-async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
-    let command = match Envelope::from_bytes(&bytes) {
-        Ok(Envelope::Ping) => return,
-        Ok(Envelope::Node(message)) => Command::HandleMessage {
-            message,
-            sender: Some(sender),
-        },
-        Ok(Envelope::Infrastructure(message)) => {
-            Command::HandleInfrastructureQuery { sender, message }
-        }
-        Ok(Envelope::Client(_)) => {
-            error!("Unexpected client message from {}", sender);
-            return;
-        }
+async fn handle_message(
+    stage: Arc<Stage>,
+    bytes: Bytes,
+    sender: SocketAddr,
+    recv: RecvStream,
+    send: Option<SendStream>,
+) {
+    let message_type = match WireMsg::deserialize(bytes) {
+        Ok(message_type) => message_type,
         Err(error) => {
             error!("Failed to deserialize message from {}: {}", sender, error);
             return;
         }
     };
 
-    let _ = stage.handle_commands(command).await;
+    match message_type {
+        MessageType::Ping => {
+            // Pings are not handled
+        }
+        MessageType::InfrastructureQuery(message) => {
+            let command = Command::HandleInfrastructureQuery { sender, message };
+            let _ = task::spawn(stage.handle_commands(command));
+        }
+        MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
+            match Message::from_bytes(Bytes::from(msg_bytes)) {
+                Ok(message) => {
+                    let command = Command::HandleMessage {
+                        message: Box::new(message),
+                        sender: Some(sender),
+                    };
+                    let _ = task::spawn(stage.handle_commands(command));
+                }
+                Err(error) => {
+                    error!(
+                        "Error occurred when deserialising node message bytes from {}: {}",
+                        sender, error
+                    );
+                    return;
+                }
+            }
+        }
+        MessageType::ClientMessage(msg_envelope) => {
+            let event = Event::ClientMessageReceived {
+                content: Box::new(msg_envelope),
+                src: sender,
+                recv,
+                send,
+            };
+
+            stage.send_event(event).await;
+        }
+    }
 }

@@ -7,13 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Approved, Comm, Command};
-use crate::{
-    error::Result,
-    event::Event,
-    messages::{Envelope, MessageKind},
-    relocation::SignedRelocateDetails,
-};
-use bytes::Bytes;
+use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
+use sn_messaging::MessageType;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -148,11 +143,11 @@ impl Stage {
             Command::SendMessage {
                 recipients,
                 delivery_group_size,
-                kind,
                 message,
-            } => Ok(self
-                .send_message(&recipients, delivery_group_size, kind, message)
-                .await),
+            } => {
+                self.send_message(&recipients, delivery_group_size, message)
+                    .await
+            }
             Command::SendUserMessage { src, dst, content } => {
                 self.state.lock().await.send_user_message(src, dst, content)
             }
@@ -185,25 +180,24 @@ impl Stage {
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
-        kind: MessageKind,
-        message: Bytes,
-    ) -> Vec<Command> {
-        let message = kind.prepend_to(message);
+        message: MessageType,
+    ) -> Result<Vec<Command>> {
+        let msg_bytes = message.serialize()?;
 
-        match kind {
-            MessageKind::Ping | MessageKind::Node => self
+        let cmds = match message {
+            MessageType::Ping | MessageType::NodeMessage(_) => self
                 .comm
-                .send(recipients, delivery_group_size, message)
+                .send(recipients, delivery_group_size, msg_bytes)
                 .await
                 .1
                 .into_iter()
                 .map(Command::HandlePeerLost)
                 .collect(),
-            MessageKind::Client => {
+            MessageType::ClientMessage(_) => {
                 for recipient in recipients {
                     if self
                         .comm
-                        .send_on_existing_connection(recipient, message.clone())
+                        .send_on_existing_connection(recipient, msg_bytes.clone())
                         .await
                         .is_err()
                     {
@@ -212,16 +206,18 @@ impl Stage {
                 }
                 vec![]
             }
-            MessageKind::Infrastructure => {
+            MessageType::InfrastructureQuery(_) => {
                 for recipient in recipients {
                     let _ = self
                         .comm
-                        .send_on_existing_connection(recipient, message.clone())
+                        .send_on_existing_connection(recipient, msg_bytes.clone())
                         .await;
                 }
                 vec![]
             }
-        }
+        };
+
+        Ok(cmds)
     }
 
     async fn handle_schedule_timeout(&self, duration: Duration, token: u64) -> Option<Command> {
@@ -242,7 +238,7 @@ impl Stage {
         &self,
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
-        message_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
+        message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let node = self.state.lock().await.node().clone();
         let previous_name = node.name();
@@ -263,7 +259,7 @@ impl Stage {
         let commands = backlog
             .into_iter()
             .map(|(message, sender)| Command::HandleMessage {
-                message,
+                message: Box::new(message),
                 sender: Some(sender),
             })
             .collect();

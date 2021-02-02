@@ -12,6 +12,7 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
+use sn_messaging::client::MsgEnvelope;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -39,8 +40,6 @@ pub enum NodeElderChange {
 ///
 /// `Request` and `Response` events from section locations are only raised once the majority has
 /// been reached, i.e. enough members of the section have sent the same message.
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Received a message.
     MessageReceived {
@@ -100,13 +99,14 @@ pub enum Event {
     /// Received a message from a client node.
     ClientMessageReceived {
         /// The content of the message.
-        content: Bytes,
+        content: Box<MsgEnvelope>,
         /// The address of the client that sent the message.
         src: SocketAddr,
-        /// Stream to send messages back to the client that sent the message
-        send: SendStream,
         /// Stream to receive more messages from the client on the same channel
         recv: RecvStream,
+        /// Stream to send messages back to the client that sent
+        /// the message if it was received on a bi-directional stream
+        send: Option<SendStream>,
     },
     /// Failed in sending a message to client, or connection to client is lost
     ClientLost(SocketAddr),
@@ -167,9 +167,8 @@ impl Debug for Event {
             Self::RestartRequired => write!(formatter, "RestartRequired"),
             Self::ClientMessageReceived { content, src, .. } => write!(
                 formatter,
-                "ClientMessageReceived {{ content: \"{:<8}\", src: {:?} }}",
-                HexFmt(content),
-                src,
+                "ClientMessageReceived {{ content: {:?}, src: {:?} }}",
+                content, src,
             ),
             Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),
         }

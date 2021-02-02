@@ -19,11 +19,11 @@ pub enum Error {
     FailedSignature,
     #[error("Cannot route.")]
     CannotRoute,
-    #[error("Network layer error: {}", .0)]
+    #[error("Network layer error: {0}")]
     Network(#[from] qp2p::Error),
     #[error("The node is not in a state to handle the action.")]
     InvalidState,
-    #[error("Bincode error: {}", .0)]
+    #[error("Bincode error: {0}")]
     Bincode(#[from] bincode::Error),
     #[error("Invalid source location.")]
     InvalidSrcLocation,
@@ -39,4 +39,8 @@ pub enum Error {
     FailedSend,
     #[error("Invalid vote.")]
     InvalidVote,
+    #[error("Messaging protocol error: {0}")]
+    Messaging(#[from] sn_messaging::Error),
+    #[error("Node messaging error: {0}")]
+    NodeMessaging(#[from] sn_messaging::node::Error),
 }
