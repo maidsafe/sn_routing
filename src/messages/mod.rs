@@ -6,23 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod envelope;
 mod hash;
-mod infrastructure_query;
 mod plain_message;
 mod src_authority;
 mod variant;
 
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
-    envelope::Envelope,
     plain_message::PlainMessage,
     variant::{JoinRequest, ResourceProofResponse, Variant},
-};
-pub use self::{
-    envelope::MessageKind,
-    hash::MessageHash,
-    infrastructure_query::{GetSectionResponse, InfrastructureQuery},
-    src_authority::SrcAuthority,
 };
 use crate::{
     crypto::{self, name, Verifier},
@@ -31,7 +23,6 @@ use crate::{
     node::Node,
     section::{ExtendError, SectionProofChain, TrustStatus},
 };
-
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
@@ -65,8 +56,8 @@ pub(crate) struct Message {
 
 impl Message {
     /// Deserialize the message. Only called on message receipt.
-    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self, CreateError> {
-        let mut msg: Message = bincode::deserialize(&bytes[..])?;
+    pub(crate) fn from_bytes(msg_bytes: Bytes) -> Result<Self, CreateError> {
+        let mut msg: Message = bincode::deserialize(&msg_bytes)?;
 
         let signed_bytes = bincode::serialize(&SignableView {
             dst: &msg.dst,
@@ -96,8 +87,8 @@ impl Message {
             }
         }
 
-        msg.serialized = bytes.clone();
-        msg.hash = MessageHash::from_bytes(bytes);
+        msg.serialized = msg_bytes.clone();
+        msg.hash = MessageHash::from_bytes(&msg_bytes);
 
         Ok(msg)
     }

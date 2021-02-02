@@ -16,10 +16,7 @@ use crate::{
     event::Event,
     location::{DstLocation, SrcLocation},
     majority,
-    messages::{
-        GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageKind, PlainMessage,
-        ResourceProofResponse, Variant, VerifyStatus,
-    },
+    messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
     network::Network,
     node::Node,
     peer::Peer,
@@ -35,6 +32,11 @@ use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
+use sn_messaging::{
+    infrastructure::{GetSectionResponse, Query},
+    node::NodeMessage,
+    MessageType,
+};
 use std::{
     collections::{BTreeSet, HashSet},
     iter,
@@ -52,7 +54,7 @@ async fn receive_get_section_request() -> Result<()> {
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
-    let message = InfrastructureQuery::GetSectionRequest(new_node.name());
+    let message = Query::GetSectionRequest(new_node.name());
 
     let mut commands = stage
         .handle_command(Command::HandleInfrastructureQuery {
@@ -66,17 +68,15 @@ async fn receive_get_section_request() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            kind: MessageKind::Infrastructure,
-            message, ..
+            message: MessageType::InfrastructureQuery(message), ..
         }) => (recipients, message)
     );
 
     assert_eq!(recipients, [new_node.addr]);
 
-    let message = bincode::deserialize(&message)?;
     assert_matches!(
         message,
-        InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success { .. })
+        Query::GetSectionResponse(GetSectionResponse::Success { .. })
     );
 
     Ok(())
@@ -105,16 +105,16 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let mut commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
-            message,
+            message: Box::new(message),
         })
         .await?
         .into_iter();
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message, kind: MessageKind::Node, .. }) => message
+        Some(Command::SendMessage { message: MessageType::NodeMessage(NodeMessage(message)), .. }) => message
     );
-    let response_message = Message::from_bytes(&response_message)?;
+    let response_message = Message::from_bytes(Bytes::from(response_message))?;
 
     assert_matches!(
         response_message.variant(),
@@ -162,7 +162,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let mut commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
-            message,
+            message: Box::new(message),
         })
         .await?
         .into_iter();
@@ -225,7 +225,11 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
     let proof_chain = SectionProofChain::new(section_key);
-    let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
+    let relocate_message = Box::new(Message::section_src(
+        relocate_message,
+        signature,
+        proof_chain,
+    )?);
     let relocate_details = SignedRelocateDetails::new(relocate_message)?;
     let relocate_payload = RelocatePayload::new(
         relocate_details,
@@ -248,7 +252,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(relocated_node.addr),
-            message: join_request,
+            message: Box::new(join_request),
         })
         .await?;
 
@@ -427,14 +431,12 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
-        let message = Message::from_bytes(&message)?;
         let message = match message.variant() {
             Variant::Vote {
                 content: Vote::SendMessage { message, .. },
@@ -501,10 +503,9 @@ async fn handle_online_command(
         let (message, recipients) = match command {
             Command::SendMessage {
                 recipients,
-                message,
-                kind: MessageKind::Node,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (Message::from_bytes(&message)?, recipients),
+            } => (Message::from_bytes(Bytes::from(msg_bytes))?, recipients),
             _ => continue,
         };
 
@@ -702,14 +703,12 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
-        let message = Message::from_bytes(&message)?;
         let message = match message.variant() {
             Variant::Vote {
                 content: Vote::SendMessage { message, .. },
@@ -825,7 +824,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: original_message,
+            message: Box::new(original_message),
             sender: Some(sender_node.addr),
         })
         .await?;
@@ -837,12 +836,11 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     for command in commands {
         let (recipients, message) = if let Command::SendMessage {
             recipients,
-            kind: MessageKind::Node,
-            message,
+            message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
             ..
         } = command
         {
-            (recipients, Message::from_bytes(&message)?)
+            (recipients, Message::from_bytes(Bytes::from(msg_bytes))?)
         } else {
             continue;
         };
@@ -938,7 +936,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: original_message.clone(),
+            message: Box::new(original_message.clone()),
             sender,
         })
         .await?;
@@ -948,12 +946,11 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     for command in commands {
         let (recipients, message) = if let Command::SendMessage {
             recipients,
-            kind: MessageKind::Node,
-            message,
+            message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
             ..
         } = command
         {
-            (recipients, Message::from_bytes(&message)?)
+            (recipients, Message::from_bytes(Bytes::from(msg_bytes))?)
         } else {
             continue;
         };
@@ -1026,7 +1023,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: bounced_message,
+            message: Box::new(bounced_message),
             sender: Some(other_node.addr),
         })
         .await?;
@@ -1038,14 +1035,11 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
-
-        let message = Message::from_bytes(&message)?;
 
         match message.variant() {
             Variant::Sync { section, .. } => {
@@ -1126,7 +1120,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: bounced_message,
+            message: Box::new(bounced_message),
             sender: Some(other_node.addr),
         })
         .await?;
@@ -1137,14 +1131,11 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
-
-        let message = Message::from_bytes(&message)?;
 
         match message.variant() {
             Variant::UserMessage(content) => {
@@ -1224,7 +1215,7 @@ async fn handle_sync() -> Result<()> {
     // Handle the message.
     let _ = stage
         .handle_command(Command::HandleMessage {
-            message,
+            message: Box::new(message),
             sender: Some(old_node.addr),
         })
         .await?;
@@ -1286,7 +1277,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
     let result = stage
         .handle_command(Command::HandleMessage {
-            message,
+            message: Box::new(message),
             sender: Some(gen_addr()),
         })
         .await;
@@ -1346,10 +1337,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, Message::from_bytes(&message)?),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
@@ -1508,14 +1498,12 @@ async fn handle_elders_update() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
-        let message = Message::from_bytes(&message)?;
         let section = match message.variant() {
             Variant::Sync { section, .. } => section,
             _ => continue,
@@ -1657,14 +1645,12 @@ async fn handle_demote_during_split() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                kind: MessageKind::Node,
-                message,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
                 ..
-            } => (recipients, message),
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
-        let message = Message::from_bytes(&message)?;
         let section = match message.variant() {
             Variant::Sync { section, .. } => section,
             _ => continue,

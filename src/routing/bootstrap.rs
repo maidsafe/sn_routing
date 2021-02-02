@@ -12,10 +12,7 @@ use crate::{
     crypto::{self, Signature},
     error::{Error, Result},
     location::DstLocation,
-    messages::{
-        Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageKind,
-        ResourceProofResponse, Variant, VerifyStatus,
-    },
+    messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -25,6 +22,11 @@ use crate::{
 use bytes::Bytes;
 use futures::future;
 use resource_proof::ResourceProof;
+use sn_messaging::{
+    infrastructure::{GetSectionResponse, Query},
+    node::NodeMessage,
+    MessageType, WireMsg,
+};
 use std::{
     collections::{BTreeMap, VecDeque},
     mem,
@@ -71,7 +73,7 @@ pub(crate) async fn initial(
 pub(crate) async fn relocate(
     node: Node,
     comm: &Comm,
-    recv_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
+    recv_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
@@ -93,7 +95,7 @@ pub(crate) async fn relocate(
 
 struct State<'a> {
     // Sender for outgoing messages.
-    send_tx: mpsc::Sender<(Bytes, Vec<SocketAddr>)>,
+    send_tx: mpsc::Sender<(MessageType, Vec<SocketAddr>)>,
     // Receiver for incoming messages.
     recv_rx: MessageReceiver<'a>,
     node: Node,
@@ -104,7 +106,7 @@ struct State<'a> {
 impl<'a> State<'a> {
     fn new(
         node: Node,
-        send_tx: mpsc::Sender<(Bytes, Vec<SocketAddr>)>,
+        send_tx: mpsc::Sender<(MessageType, Vec<SocketAddr>)>,
         recv_rx: MessageReceiver<'a>,
     ) -> Result<Self> {
         Ok(Self {
@@ -184,12 +186,11 @@ impl<'a> State<'a> {
             None => self.node.name(),
         };
 
-        let message = InfrastructureQuery::GetSectionRequest(destination);
-        let message = bincode::serialize(&message)?.into();
+        let message = Query::GetSectionRequest(destination);
 
         let _ = self
             .send_tx
-            .send((MessageKind::Infrastructure.prepend_to(message), recipients))
+            .send((MessageType::InfrastructureQuery(message), recipients))
             .await;
 
         Ok(())
@@ -198,7 +199,7 @@ impl<'a> State<'a> {
     async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionResponse(response)) => {
+                MessageType::InfrastructureQuery(Query::GetSectionResponse(response)) => {
                     match response {
                         GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
                             error!("Invalid GetSectionResponse::Redirect: missing peers");
@@ -215,8 +216,13 @@ impl<'a> State<'a> {
                         }
                     }
                 }
-                Envelope::Node(message) => self.backlog_message(message, sender),
-                Envelope::Infrastructure(_) | Envelope::Client(_) | Envelope::Ping => {}
+                MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
+                    let message = Message::from_bytes(Bytes::from(msg_bytes))?;
+                    self.backlog_message(message, sender)
+                }
+                MessageType::InfrastructureQuery(_)
+                | MessageType::ClientMessage(_)
+                | MessageType::Ping => {}
             }
         }
 
@@ -350,10 +356,11 @@ impl<'a> State<'a> {
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let node_msg = NodeMessage::new(message.to_bytes());
 
         let _ = self
             .send_tx
-            .send((MessageKind::Node.prepend_to(message.to_bytes()), recipients))
+            .send((MessageType::NodeMessage(node_msg), recipients))
             .await;
 
         Ok(())
@@ -365,8 +372,12 @@ impl<'a> State<'a> {
     ) -> Result<(JoinResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             let message = match message {
-                Envelope::Node(message) => message,
-                Envelope::Ping | Envelope::Client(_) | Envelope::Infrastructure(_) => continue,
+                MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
+                    Message::from_bytes(Bytes::from(msg_bytes))?
+                }
+                MessageType::Ping
+                | MessageType::ClientMessage(_)
+                | MessageType::InfrastructureQuery(_) => continue,
             };
 
             match message.variant() {
@@ -508,18 +519,18 @@ enum JoinResponse {
 // or by receiver of deserialized `Message` and provides a unified interface on top of them.
 enum MessageReceiver<'a> {
     Raw(&'a mut mpsc::Receiver<ConnectionEvent>),
-    Deserialized(mpsc::Receiver<(Envelope, SocketAddr)>),
+    Deserialized(mpsc::Receiver<(MessageType, SocketAddr)>),
 }
 
 impl<'a> MessageReceiver<'a> {
-    async fn next(&mut self) -> Option<(Envelope, SocketAddr)> {
+    async fn next(&mut self) -> Option<(MessageType, SocketAddr)> {
         match self {
             Self::Raw(rx) => {
                 while let Some(event) = rx.recv().await {
                     match event {
                         ConnectionEvent::Received(qp2p::Message::UniStream {
                             bytes, src, ..
-                        }) => match Envelope::from_bytes(&bytes) {
+                        }) => match WireMsg::deserialize(bytes) {
                             Ok(message) => return Some((message, src)),
                             Err(error) => debug!("Failed to deserialize message: {}", error),
                         },
@@ -537,9 +548,17 @@ impl<'a> MessageReceiver<'a> {
 }
 
 // Keep reading messages from `rx` and send them using `comm`.
-async fn send_messages(mut rx: mpsc::Receiver<(Bytes, Vec<SocketAddr>)>, comm: &Comm) {
+async fn send_messages(mut rx: mpsc::Receiver<(MessageType, Vec<SocketAddr>)>, comm: &Comm) {
     while let Some((message, recipients)) = rx.recv().await {
-        let _ = comm.send(&recipients, recipients.len(), message).await;
+        match message.serialize() {
+            Ok(msg_bytes) => {
+                let _ = comm.send(&recipients, recipients.len(), msg_bytes).await;
+            }
+            Err(error) => error!(
+                "Failed to send message {:?} to {:?}: {}",
+                message, recipients, error
+            ),
+        }
     }
 }
 
@@ -584,16 +603,15 @@ mod tests {
             task::yield_now().await;
 
             // Receive GetSectionRequest
-            let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, recipients) = send_rx.try_recv()?;
 
             assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message, Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(name)) => {
+            assert_matches!(message, MessageType::InfrastructureQuery(Query::GetSectionRequest(name)) => {
                 assert_eq!(name, *peer.name());
             });
 
             // Send GetSectionResponse::Success
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+            let message = Query::GetSectionResponse(GetSectionResponse::Success {
                 prefix: elders_info.prefix,
                 key: pk,
                 elders: elders_info
@@ -601,13 +619,12 @@ mod tests {
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
             });
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_addr))?;
+            recv_tx.try_send((MessageType::InfrastructureQuery(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
-            let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
-            let message = assert_matches!(message, Envelope::Node(message) => message);
+            let (message, recipients) = send_rx.try_recv()?;
+            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
 
             itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
@@ -630,7 +647,10 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_addr))?;
+            recv_tx.try_send((
+                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                bootstrap_addr,
+            ))?;
 
             Ok(())
         };
@@ -661,32 +681,33 @@ mod tests {
             task::yield_now().await;
 
             // Receive GetSectionRequest
-            let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, recipients) = send_rx.try_recv()?;
 
             assert_eq!(recipients, vec![bootstrap_node.addr]);
             assert_matches!(
                 message,
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
             );
 
             // Send GetSectionResponse::Redirect
             let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(
+            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(
                 new_bootstrap_addrs.clone(),
             ));
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::InfrastructureQuery(message),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             // Receive new GetSectionRequest
-            let (bytes, recipients) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, recipients) = send_rx.try_recv()?;
 
             assert_eq!(recipients, new_bootstrap_addrs);
             assert_matches!(
                 message,
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
             );
 
             Ok(())
@@ -716,32 +737,34 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (bytes, _) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
             );
 
-            let message =
-                InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
+            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::InfrastructureQuery(message),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message =
-                InfrastructureQuery::GetSectionResponse(GetSectionResponse::Redirect(addrs));
+            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::InfrastructureQuery(message),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
-            let (bytes, _) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
             );
 
             Ok(())
@@ -785,14 +808,13 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (bytes, _) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
+            let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                Envelope::Infrastructure(InfrastructureQuery::GetSectionRequest(_))
+                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
             );
 
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+            let message = Query::GetSectionResponse(GetSectionResponse::Success {
                 prefix: bad_prefix,
                 key: bls::SecretKey::random().public_key(),
                 elders: (0..ELDER_SIZE)
@@ -800,11 +822,14 @@ mod tests {
                     .collect(),
             });
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::InfrastructureQuery(message),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            let message = InfrastructureQuery::GetSectionResponse(GetSectionResponse::Success {
+            let message = Query::GetSectionResponse(GetSectionResponse::Success {
                 prefix: good_prefix,
                 key: bls::SecretKey::random().public_key(),
                 elders: (0..ELDER_SIZE)
@@ -812,7 +837,10 @@ mod tests {
                     .collect(),
             });
 
-            recv_tx.try_send((Envelope::Infrastructure(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::InfrastructureQuery(message),
+                bootstrap_node.addr,
+            ))?;
 
             Ok(())
         };
@@ -853,9 +881,8 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (bytes, _) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
-            let message = assert_matches!(message, Envelope::Node(message) => message);
+            let (message, _) = send_rx.try_recv()?;
+            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
@@ -870,7 +897,10 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
@@ -886,12 +916,14 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((Envelope::Node(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
-            let (bytes, _) = send_rx.try_recv()?;
-            let message = Envelope::from_bytes(&bytes)?;
-            let message = assert_matches!(message, Envelope::Node(message) => message);
+            let (message, _) = send_rx.try_recv()?;
+            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())

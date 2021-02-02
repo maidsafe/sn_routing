@@ -18,8 +18,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        Envelope, GetSectionResponse, InfrastructureQuery, JoinRequest, Message, MessageHash,
-        MessageKind, MessageStatus, PlainMessage, ResourceProofResponse, Variant, VerifyStatus,
+        JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, ResourceProofResponse,
+        Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -39,6 +39,11 @@ use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use sn_messaging::{
+    infrastructure::{GetSectionResponse, Query},
+    node::NodeMessage,
+    MessageType,
+};
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -148,7 +153,7 @@ impl Approved {
     pub async fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Message,
+        msg: Box<Message>,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -195,10 +200,10 @@ impl Approved {
     pub async fn handle_infrastructure_query(
         &mut self,
         sender: SocketAddr,
-        message: InfrastructureQuery,
+        message: Query,
     ) -> Result<Vec<Command>> {
         match message {
-            InfrastructureQuery::GetSectionRequest(name) => {
+            Query::GetSectionRequest(name) => {
                 debug!("Received GetSectionRequest({}) from {}", name, sender);
 
                 let response = if self.section.prefix().matches(&name) {
@@ -218,20 +223,21 @@ impl Approved {
                 } else {
                     return Err(Error::InvalidDstLocation);
                 };
-                let response = InfrastructureQuery::GetSectionResponse(response);
+                let response = Query::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
                 Ok(vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    kind: MessageKind::Infrastructure,
-                    message: bincode::serialize(&response)?.into(),
+                    message: MessageType::InfrastructureQuery(response),
                 }])
             }
-            InfrastructureQuery::GetSectionResponse(_) => {
+            Query::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx.send((Envelope::Infrastructure(message), sender)).await;
+                    let _ = tx
+                        .send((MessageType::InfrastructureQuery(message), sender))
+                        .await;
                 }
 
                 Ok(vec![])
@@ -306,8 +312,7 @@ impl Approved {
         Some(Command::SendMessage {
             recipients: vec![addr],
             delivery_group_size: 1,
-            kind: MessageKind::Ping,
-            message: Bytes::new(),
+            message: MessageType::Ping,
         })
     }
 
@@ -542,7 +547,7 @@ impl Approved {
     async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Message,
+        msg: Box<Message>,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
         match msg.variant() {
@@ -627,7 +632,10 @@ impl Approved {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let _ = message_tx.send((Envelope::Node(msg), sender)).await;
+                        let node_msg = NodeMessage::new(msg.to_bytes());
+                        let _ = message_tx
+                            .send((MessageType::NodeMessage(node_msg), sender))
+                            .await;
                     } else {
                         error!("Missig sender of {:?}", msg);
                     }
@@ -709,7 +717,7 @@ impl Approved {
     fn handle_untrusted_message(
         &self,
         sender: Option<SocketAddr>,
-        msg: Message,
+        msg: Box<Message>,
     ) -> Result<Command> {
         let src = msg.src().src_location();
         let src_name = match src {
@@ -727,7 +735,7 @@ impl Approved {
         let bounce_msg = Message::single_src(
             &self.node,
             bounce_dst,
-            Variant::BouncedUntrustedMessage(Box::new(msg)),
+            Variant::BouncedUntrustedMessage(msg),
             None,
             Some(bounce_dst_key),
         )?;
@@ -1473,7 +1481,7 @@ impl Approved {
         let message = Message::section_src(message, proof.signature, proof_chain)?;
 
         Ok(Command::HandleMessage {
-            message,
+            message: Box::new(message),
             sender: None,
         })
     }
@@ -1858,7 +1866,7 @@ impl Approved {
                 if dst.contains(&self.node.name(), self.section.prefix()) {
                     commands.push(Command::HandleMessage {
                         sender: Some(self.node.addr),
-                        message: msg.clone(),
+                        message: Box::new(msg.clone()),
                     });
                 }
 

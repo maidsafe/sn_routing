@@ -9,12 +9,14 @@
 use crate::{
     consensus::{DkgFailureProofSet, ProofShare, Vote},
     location::{DstLocation, SrcLocation},
-    messages::{Envelope, InfrastructureQuery, Message, MessageKind},
+    messages::Message,
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
+use hex_fmt::HexFmt;
+use sn_messaging::{infrastructure::Query, node::NodeMessage, MessageType};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -25,19 +27,17 @@ use std::{
 use tokio::sync::mpsc;
 
 /// Command for node.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Command {
     /// Handle `message` from `sender`.
     /// Note: `sender` is `Some` if the message was received from someone else
     /// and `None` if it came from an accumulated `Vote::SendMessage`
     HandleMessage {
         sender: Option<SocketAddr>,
-        message: Message,
+        message: Box<Message>,
     },
     /// Handle infrastructure query message.
-    HandleInfrastructureQuery {
-        sender: SocketAddr,
-        message: InfrastructureQuery,
-    },
+    HandleInfrastructureQuery { sender: SocketAddr, message: Query },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
     /// Handle lost connection to a peer.
@@ -63,8 +63,7 @@ pub(crate) enum Command {
     SendMessage {
         recipients: Vec<SocketAddr>,
         delivery_group_size: usize,
-        kind: MessageKind,
-        message: Bytes,
+        message: MessageType,
     },
     /// Send `UserMessage` with the given source and destination.
     SendUserMessage {
@@ -82,7 +81,7 @@ pub(crate) enum Command {
         /// Details of the relocation
         details: SignedRelocateDetails,
         /// Message receiver to pass to the bootstrap task.
-        message_rx: mpsc::Receiver<(Envelope, SocketAddr)>,
+        message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     },
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),
@@ -90,21 +89,21 @@ pub(crate) enum Command {
 
 impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
-    pub fn send_message_to_node(recipient: &SocketAddr, message: Bytes) -> Self {
-        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message)
+    pub fn send_message_to_node(recipient: &SocketAddr, message_bytes: Bytes) -> Self {
+        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message_bytes)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
         recipients: &[SocketAddr],
         delivery_group_size: usize,
-        message: Bytes,
+        message_bytes: Bytes,
     ) -> Self {
+        let node_msg = NodeMessage::new(message_bytes);
         Self::SendMessage {
             recipients: recipients.to_vec(),
             delivery_group_size,
-            kind: MessageKind::Node,
-            message,
+            message: MessageType::NodeMessage(node_msg),
         }
     }
 }
@@ -156,20 +155,18 @@ impl Debug for Command {
             Self::SendMessage {
                 recipients,
                 delivery_group_size,
-                kind,
                 message,
             } => f
                 .debug_struct("SendMessage")
                 .field("recipients", recipients)
                 .field("delivery_group_size", delivery_group_size)
-                .field("kind", kind)
-                .field("message", &format_args!("{:10}", hex_fmt::HexFmt(message)))
+                .field("message", message)
                 .finish(),
             Self::SendUserMessage { src, dst, content } => f
                 .debug_struct("SendUserMessage")
                 .field("src", src)
                 .field("dst", dst)
-                .field("content", &format_args!("{:10}", hex_fmt::HexFmt(content)))
+                .field("content", &format_args!("{:10}", HexFmt(content)))
                 .finish(),
             Self::ScheduleTimeout { duration, token } => f
                 .debug_struct("ScheduleTimeout")

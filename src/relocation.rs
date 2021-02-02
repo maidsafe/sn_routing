@@ -11,13 +11,14 @@
 use crate::{
     crypto::{self, Keypair, Signature, Verifier},
     error::Error,
-    messages::{Envelope, Message, Variant},
+    messages::{Message, Variant},
     network::Network,
     peer::Peer,
     section::{MemberInfo, Section},
 };
 use bytes::Bytes;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
+use sn_messaging::MessageType;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::XorName;
@@ -110,11 +111,11 @@ impl RelocateDetails {
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
-    signed_msg: Message,
+    signed_msg: Box<Message>,
 }
 
 impl SignedRelocateDetails {
-    pub fn new(signed_msg: Message) -> Result<Self, Error> {
+    pub fn new(signed_msg: Box<Message>) -> Result<Self, Error> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
@@ -208,7 +209,7 @@ pub(crate) enum RelocateState {
     // will exchange it for an actual `Relocate` message.
     Delayed(Bytes),
     // Relocation in progress. The sender is used to pass messages to the bootstrap task.
-    InProgress(mpsc::Sender<(Envelope, SocketAddr)>),
+    InProgress(mpsc::Sender<(MessageType, SocketAddr)>),
 }
 
 /// Action to relocate a node.

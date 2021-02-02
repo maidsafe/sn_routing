@@ -277,10 +277,8 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             return false;
         }
         Event::ClientMessageReceived { content, src, .. } => info!(
-            "Node #{} received message from client: {:?}, content: {}",
-            index,
-            src,
-            HexFmt(&content)
+            "Node #{} received message from client: {:?}, content: {:?}",
+            index, src, content
         ),
         Event::ClientLost(addr) => info!("Node #{} received ClientLost({:?})", index, addr),
     }
