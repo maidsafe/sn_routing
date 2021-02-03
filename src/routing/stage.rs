@@ -259,7 +259,7 @@ impl Stage {
         let commands = backlog
             .into_iter()
             .map(|(message, sender)| Command::HandleMessage {
-                message: Box::new(message),
+                message,
                 sender: Some(sender),
             })
             .collect();

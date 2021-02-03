@@ -111,11 +111,11 @@ impl RelocateDetails {
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub(crate) struct SignedRelocateDetails {
     /// Signed message whose content is Variant::Relocate
-    signed_msg: Box<Message>,
+    signed_msg: Message,
 }
 
 impl SignedRelocateDetails {
-    pub fn new(signed_msg: Box<Message>) -> Result<Self, Error> {
+    pub fn new(signed_msg: Message) -> Result<Self, Error> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
