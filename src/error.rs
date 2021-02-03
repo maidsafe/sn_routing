@@ -41,6 +41,4 @@ pub enum Error {
     InvalidVote,
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
-    #[error("Node messaging error: {0}")]
-    NodeMessaging(#[from] sn_messaging::node::Error),
 }
