@@ -105,7 +105,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let mut commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
-            message: Box::new(message),
+            message,
         })
         .await?
         .into_iter();
@@ -162,7 +162,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let mut commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
-            message: Box::new(message),
+            message,
         })
         .await?
         .into_iter();
@@ -225,11 +225,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
     let proof_chain = SectionProofChain::new(section_key);
-    let relocate_message = Box::new(Message::section_src(
-        relocate_message,
-        signature,
-        proof_chain,
-    )?);
+    let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
     let relocate_details = SignedRelocateDetails::new(relocate_message)?;
     let relocate_payload = RelocatePayload::new(
         relocate_details,
@@ -252,7 +248,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let commands = stage
         .handle_command(Command::HandleMessage {
             sender: Some(relocated_node.addr),
-            message: Box::new(join_request),
+            message: join_request,
         })
         .await?;
 
@@ -824,7 +820,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(original_message),
+            message: original_message,
             sender: Some(sender_node.addr),
         })
         .await?;
@@ -936,7 +932,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(original_message.clone()),
+            message: original_message.clone(),
             sender,
         })
         .await?;
@@ -1023,7 +1019,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(bounced_message),
+            message: bounced_message,
             sender: Some(other_node.addr),
         })
         .await?;
@@ -1120,7 +1116,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     let commands = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(bounced_message),
+            message: bounced_message,
             sender: Some(other_node.addr),
         })
         .await?;
@@ -1215,7 +1211,7 @@ async fn handle_sync() -> Result<()> {
     // Handle the message.
     let _ = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(message),
+            message,
             sender: Some(old_node.addr),
         })
         .await?;
@@ -1277,7 +1273,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
 
     let result = stage
         .handle_command(Command::HandleMessage {
-            message: Box::new(message),
+            message,
             sender: Some(gen_addr()),
         })
         .await;

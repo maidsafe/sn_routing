@@ -153,7 +153,7 @@ impl Approved {
     pub async fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Box<Message>,
+        msg: Message,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -547,7 +547,7 @@ impl Approved {
     async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Box<Message>,
+        msg: Message,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
         match msg.variant() {
@@ -717,7 +717,7 @@ impl Approved {
     fn handle_untrusted_message(
         &self,
         sender: Option<SocketAddr>,
-        msg: Box<Message>,
+        msg: Message,
     ) -> Result<Command> {
         let src = msg.src().src_location();
         let src_name = match src {
@@ -735,7 +735,7 @@ impl Approved {
         let bounce_msg = Message::single_src(
             &self.node,
             bounce_dst,
-            Variant::BouncedUntrustedMessage(msg),
+            Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
             Some(bounce_dst_key),
         )?;
@@ -1481,7 +1481,7 @@ impl Approved {
         let message = Message::section_src(message, proof.signature, proof_chain)?;
 
         Ok(Command::HandleMessage {
-            message: Box::new(message),
+            message,
             sender: None,
         })
     }
@@ -1866,7 +1866,7 @@ impl Approved {
                 if dst.contains(&self.node.name(), self.section.prefix()) {
                     commands.push(Command::HandleMessage {
                         sender: Some(self.node.addr),
-                        message: Box::new(msg.clone()),
+                        message: msg.clone(),
                     });
                 }
 

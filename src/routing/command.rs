@@ -34,7 +34,7 @@ pub(crate) enum Command {
     /// and `None` if it came from an accumulated `Vote::SendMessage`
     HandleMessage {
         sender: Option<SocketAddr>,
-        message: Box<Message>,
+        message: Message,
     },
     /// Handle infrastructure query message.
     HandleInfrastructureQuery { sender: SocketAddr, message: Query },

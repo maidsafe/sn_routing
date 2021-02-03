@@ -129,7 +129,7 @@ impl Routing {
             stage
                 .clone()
                 .handle_commands(Command::HandleMessage {
-                    message: Box::new(message),
+                    message,
                     sender: Some(sender),
                 })
                 .await?;
@@ -418,7 +418,7 @@ async fn handle_message(
             match Message::from_bytes(Bytes::from(msg_bytes)) {
                 Ok(message) => {
                     let command = Command::HandleMessage {
-                        message: Box::new(message),
+                        message,
                         sender: Some(sender),
                     };
                     let _ = task::spawn(stage.handle_commands(command));
