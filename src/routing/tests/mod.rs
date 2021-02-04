@@ -94,7 +94,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
     let node = create_node();
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_node_name = bad_prefix.substituted_in(rand::random());
     let new_node_addr = gen_addr();
