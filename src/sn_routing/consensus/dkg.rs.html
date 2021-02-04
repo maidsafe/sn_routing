@@ -1374,7 +1374,7 @@
                 <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
-                <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_targets</span>(
+                <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="kw-2">&amp;</span><span class="ident">recipients</span>,
                     <span class="ident">recipients</span>.<span class="ident">len</span>(),
                     <span class="ident">message</span>.<span class="ident">to_bytes</span>(),
@@ -1398,7 +1398,7 @@
                 <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGFailureObservation</span> { <span class="ident">dkg_key</span>, <span class="ident">proof</span> };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
-                <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_targets</span>(
+                <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="kw-2">&amp;</span><span class="ident">recipients</span>,
                     <span class="ident">recipients</span>.<span class="ident">len</span>(),
                     <span class="ident">message</span>.<span class="ident">to_bytes</span>(),

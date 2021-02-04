@@ -540,11 +540,6 @@
 <span id="539">539</span>
 <span id="540">540</span>
 <span id="541">541</span>
-<span id="542">542</span>
-<span id="543">543</span>
-<span id="544">544</span>
-<span id="545">545</span>
-<span id="546">546</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -646,18 +641,15 @@
         })
     }
 
-    <span class="doccomment">/// Sends a message to client</span>
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_message_to_client</span>(
+    <span class="doccomment">/// Sends a message on an existing connection. If no such connection exists, returns an error.</span>
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_on_existing_connection</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">client</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>,
+        <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>,
         <span class="ident">msg</span>: <span class="ident">Bytes</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">SendError</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">conn</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">get_connection</span>(<span class="ident">client</span>) {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">conn</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>.<span class="ident">clone</span>()).<span class="ident">await</span> {
-                <span class="macro">error</span><span class="macro">!</span>(
-                    <span class="string">&quot;Sending message to client {:?} failed with error {:?}&quot;</span>,
-                    <span class="ident">client</span>, <span class="ident">err</span>
-                );
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">conn</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">get_connection</span>(<span class="ident">recipient</span>) {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">conn</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>).<span class="ident">await</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Sending message to {} failed: {}&quot;</span>, <span class="ident">recipient</span>, <span class="ident">err</span>);
             } <span class="kw">else</span> {
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
             }
@@ -673,7 +665,7 @@
     <span class="doccomment">/// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that</span>
     <span class="doccomment">/// `delivery_group_size` succeeded. Also returns all the failed recipients which can be used</span>
     <span class="doccomment">/// by the caller to identify lost peers.</span>
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_message_to_targets</span>(
+    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">SocketAddr</span>],
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
@@ -852,7 +844,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
-        <span class="ident">comm</span>.<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
+        <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
@@ -871,7 +863,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
-        <span class="ident">comm</span>.<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
+        <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
@@ -899,9 +891,7 @@
         <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
-        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>
-            .<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>;
+        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>()).<span class="ident">await</span>;
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">result</span>.<span class="ident">is_err</span>());
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">failed_recipients</span>, [<span class="ident">invalid_addr</span>]);
 
@@ -922,7 +912,7 @@
         <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
-        <span class="ident">comm</span>.<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
+        <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
@@ -946,7 +936,7 @@
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>
-            .<span class="ident">send_message_to_targets</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
+            .<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>;
 
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">result</span>.<span class="ident">is_err</span>());
@@ -969,7 +959,7 @@
         <span class="comment">// Send the first message.</span>
         <span class="kw">let</span> <span class="ident">msg0</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;zero&quot;</span>);
         <span class="ident">send_comm</span>
-            .<span class="ident">send_message_to_targets</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg0</span>.<span class="ident">clone</span>())
+            .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg0</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
@@ -992,7 +982,7 @@
         <span class="comment">// Send the second message.</span>
         <span class="kw">let</span> <span class="ident">msg1</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;one&quot;</span>);
         <span class="ident">send_comm</span>
-            .<span class="ident">send_message_to_targets</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg1</span>.<span class="ident">clone</span>())
+            .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg1</span>.<span class="ident">clone</span>())
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
@@ -1025,7 +1015,7 @@
 
         <span class="comment">// Send a message to establish the connection</span>
         <span class="ident">comm1</span>
-            .<span class="ident">send_message_to_targets</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">addr0</span>), <span class="number">1</span>, <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello&quot;</span>))
+            .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">addr0</span>), <span class="number">1</span>, <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello&quot;</span>))
             .<span class="ident">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
         <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">rx0</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="kw">_</span>)));

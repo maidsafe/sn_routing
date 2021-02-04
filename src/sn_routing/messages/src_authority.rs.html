@@ -87,7 +87,6 @@
 <span id="86">86</span>
 <span id="87">87</span>
 <span id="88">88</span>
-<span id="89">89</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -108,12 +107,11 @@
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="doccomment">/// Source authority of a message.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="doccomment">/// Src of message and authority to send it. Authority is validated by the signature.</span>
 <span class="doccomment">/// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates</span>
 <span class="doccomment">/// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we</span>
 <span class="doccomment">/// ask for a longer chain that can be recodnised). Therefor we don&#39;t need to sign this field.</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">SrcAuthority</span> {
     <span class="doccomment">/// Authority of a single peer.</span>
     <span class="ident">Node</span> {

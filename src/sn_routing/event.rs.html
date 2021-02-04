@@ -175,7 +175,6 @@
 <span id="174">174</span>
 <span id="175">175</span>
 <span id="176">176</span>
-<span id="177">177</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -191,6 +190,7 @@
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">RecvStream</span>, <span class="ident">SendStream</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">client</span>::<span class="ident">MsgEnvelope</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -218,8 +218,6 @@
 <span class="doccomment">///</span>
 <span class="doccomment">/// `Request` and `Response` events from section locations are only raised once the majority has</span>
 <span class="doccomment">/// been reached, i.e. enough members of the section have sent the same message.</span>
-<span class="comment">// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Event</span> {
     <span class="doccomment">/// Received a message.</span>
     <span class="ident">MessageReceived</span> {
@@ -279,13 +277,14 @@
     <span class="doccomment">/// Received a message from a client node.</span>
     <span class="ident">ClientMessageReceived</span> {
         <span class="doccomment">/// The content of the message.</span>
-        <span class="ident">content</span>: <span class="ident">Bytes</span>,
+        <span class="ident">content</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">MsgEnvelope</span><span class="op">&gt;</span>,
         <span class="doccomment">/// The address of the client that sent the message.</span>
         <span class="ident">src</span>: <span class="ident">SocketAddr</span>,
-        <span class="doccomment">/// Stream to send messages back to the client that sent the message</span>
-        <span class="ident">send</span>: <span class="ident">SendStream</span>,
         <span class="doccomment">/// Stream to receive more messages from the client on the same channel</span>
         <span class="ident">recv</span>: <span class="ident">RecvStream</span>,
+        <span class="doccomment">/// Stream to send messages back to the client that sent</span>
+        <span class="doccomment">/// the message if it was received on a bi-directional stream</span>
+        <span class="ident">send</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SendStream</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Failed in sending a message to client, or connection to client is lost</span>
     <span class="ident">ClientLost</span>(<span class="ident">SocketAddr</span>),
@@ -346,9 +345,8 @@
             <span class="self">Self</span>::<span class="ident">RestartRequired</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;RestartRequired&quot;</span>),
             <span class="self">Self</span>::<span class="ident">ClientMessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
                 <span class="ident">formatter</span>,
-                <span class="string">&quot;ClientMessageReceived {{ content: \&quot;{:&lt;8}\&quot;, src: {:?} }}&quot;</span>,
-                <span class="ident">HexFmt</span>(<span class="ident">content</span>),
-                <span class="ident">src</span>,
+                <span class="string">&quot;ClientMessageReceived {{ content: {:?}, src: {:?} }}&quot;</span>,
+                <span class="ident">content</span>, <span class="ident">src</span>,
             ),
             <span class="self">Self</span>::<span class="ident">ClientLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;ClientLost({:?})&quot;</span>, <span class="ident">addr</span>),
         }

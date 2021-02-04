@@ -293,17 +293,6 @@
 <span id="292">292</span>
 <span id="293">293</span>
 <span id="294">294</span>
-<span id="295">295</span>
-<span id="296">296</span>
-<span id="297">297</span>
-<span id="298">298</span>
-<span id="299">299</span>
-<span id="300">300</span>
-<span id="301">301</span>
-<span id="302">302</span>
-<span id="303">303</span>
-<span id="304">304</span>
-<span id="305">305</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -329,9 +318,7 @@
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">VecDeque</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
-    <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
 };
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
@@ -367,15 +354,14 @@
     <span class="doccomment">/// - from a section to a current elder to be relocated after they are demoted.</span>
     <span class="doccomment">/// - from the node to be relocated back to its section after it was demoted.</span>
     <span class="ident">RelocatePromise</span>(<span class="ident">RelocatePromise</span>),
-    <span class="doccomment">/// Sent from a newly connected peer to the bootstrap node to request connection infos of</span>
-    <span class="doccomment">/// members of the section matching the given name.</span>
-    <span class="ident">BootstrapRequest</span>(<span class="ident">XorName</span>),
-    <span class="doccomment">/// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either</span>
-    <span class="doccomment">/// accept the peer into the section, or redirect it to another set of bootstrap peers</span>
-    <span class="ident">BootstrapResponse</span>(<span class="ident">BootstrapResponse</span>),
     <span class="doccomment">/// Sent from a bootstrapping peer to the section that responded with a</span>
-    <span class="doccomment">/// `BootstrapResponse::Join` to its `BootstrapRequest`.</span>
+    <span class="doccomment">/// `GetSectionResponse::Succcess` to its `GetSectionRequest`.</span>
     <span class="ident">JoinRequest</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">JoinRequest</span><span class="op">&gt;</span>),
+    <span class="doccomment">/// Response to outdated JoinRequest</span>
+    <span class="ident">JoinRetry</span> {
+        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+    },
     <span class="doccomment">/// Sent from a node that can&#39;t establish the trust of the contained message to its original</span>
     <span class="doccomment">/// source in order for them to provide new proof that the node would trust.</span>
     <span class="ident">BouncedUntrustedMessage</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>),
@@ -493,9 +479,15 @@
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">Relocate</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Relocate({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">RelocatePromise</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;RelocatePromise({:?})&quot;</span>, <span class="ident">payload</span>),
-            <span class="self">Self</span>::<span class="ident">BootstrapRequest</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;BootstrapRequest({})&quot;</span>, <span class="ident">payload</span>),
-            <span class="self">Self</span>::<span class="ident">BootstrapResponse</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;BootstrapResponse({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">JoinRequest</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;JoinRequest({:?})&quot;</span>, <span class="ident">payload</span>),
+            <span class="self">Self</span>::<span class="ident">JoinRetry</span> {
+                <span class="ident">elders_info</span>,
+                <span class="ident">section_key</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;JoinRetry&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;section_key&quot;</span>, <span class="ident">section_key</span>)
+                .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_tuple</span>(<span class="string">&quot;BouncedUntrustedMessage&quot;</span>)
                 .<span class="ident">field</span>(<span class="ident">message</span>)
@@ -552,20 +544,6 @@
                 .<span class="ident">finish</span>(),
         }
     }
-}
-
-<span class="doccomment">/// Response to a BootstrapRequest</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>, <span class="ident">Hash</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">BootstrapResponse</span> {
-    <span class="doccomment">/// This response means that the new peer is clear to join the section. The connection infos of</span>
-    <span class="doccomment">/// the section elders and the section key are provided.</span>
-    <span class="ident">Join</span> {
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
-        <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    },
-    <span class="doccomment">/// The new peer should retry bootstrapping with another section. The set of connection infos</span>
-    <span class="doccomment">/// of the members of that section is provided.</span>
-    <span class="ident">Rebootstrap</span>(<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>),
 }
 
 <span class="doccomment">/// Joining peer&#39;s proof of resolvement of given resource proofing challenge.</span>

@@ -441,6 +441,7 @@
 <span id="440">440</span>
 <span id="441">441</span>
 <span id="442">442</span>
+<span id="443">443</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2019 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -462,6 +463,7 @@
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">de</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SerdeDeError</span>, <span class="ident">Deserialize</span>, <span class="ident">Deserializer</span>, <span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -652,7 +654,7 @@
     <span class="comment">// will exchange it for an actual `Relocate` message.</span>
     <span class="ident">Delayed</span>(<span class="ident">Bytes</span>),
     <span class="comment">// Relocation in progress. The sender is used to pass messages to the bootstrap task.</span>
-    <span class="ident">InProgress</span>(<span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>),
+    <span class="ident">InProgress</span>(<span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>),
 }
 
 <span class="doccomment">/// Action to relocate a node.</span>

@@ -41,6 +41,8 @@
 <span id="40">40</span>
 <span id="41">41</span>
 <span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -63,11 +65,11 @@
     <span class="ident">FailedSignature</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot route.&quot;</span>)]</span>
     <span class="ident">CannotRoute</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {}&quot;</span>, .<span class="number">0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {0}&quot;</span>)]</span>
     <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {}&quot;</span>, .<span class="number">0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {0}&quot;</span>)]</span>
     <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source location.&quot;</span>)]</span>
     <span class="ident">InvalidSrcLocation</span>,
@@ -83,6 +85,8 @@
     <span class="ident">FailedSend</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid vote.&quot;</span>)]</span>
     <span class="ident">InvalidVote</span>,
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Messaging protocol error: {0}&quot;</span>)]</span>
+    <span class="ident">Messaging</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">sn_messaging</span>::<span class="ident">Error</span>),
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "sn_routing";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
