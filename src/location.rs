@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use xor_name::{Prefix, XorName};
 
 /// Message source location.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum SrcLocation {
     /// A single node with the given name.
