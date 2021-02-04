@@ -499,7 +499,7 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::NodeApproval { .. } | Variant::Rejoin { .. } => {
+            Variant::NodeApproval { .. } | Variant::JoinRetry { .. } => {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
@@ -627,7 +627,7 @@ impl Approved {
                 Ok(commands)
             }
             Variant::NodeApproval { .. }
-            | Variant::Rejoin { .. }
+            | Variant::JoinRetry { .. }
             | Variant::ResourceChallenge { .. } => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
@@ -1015,7 +1015,7 @@ impl Approved {
         }
 
         if join_request.section_key != *self.section.chain().last_key() {
-            let variant = Variant::Rejoin {
+            let variant = Variant::JoinRetry {
                 elders_info: self.section.elders_info().clone(),
                 section_key: *self.section.chain().last_key(),
             };
