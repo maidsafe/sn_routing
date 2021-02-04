@@ -55,14 +55,17 @@ async fn test_messages_client_node() -> Result<()> {
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             match event {
-                Event::ClientMessageReceived {
-                    content,
-                    send: Some(mut send),
-                    ..
-                } => {
+                Event::ClientMessageReceived { content, send, .. } => {
                     assert_eq!(*content, msg_envelope_clone);
-                    send.send_user_msg(Bytes::from_static(response)).await?;
-                    break;
+
+                    // the second message received should be on a bi-stream
+                    // and in such case we respond and end the loop.
+                    if let Some(mut send_stream) = send {
+                        send_stream
+                            .send_user_msg(Bytes::from_static(response))
+                            .await?;
+                        break;
+                    }
                 }
                 _other => {}
             }
@@ -84,11 +87,14 @@ async fn test_messages_client_node() -> Result<()> {
 
     let client_msg_bytes = WireMsg::serialize_client_msg(&msg_envelope)?;
 
+    // we send it on a uni-stream but we don't await for a respnse here
+    let _ = conn.send_uni(client_msg_bytes.clone()).await?;
+
+    // and now we send it on a bi-stream where we'll await for a response
     let (_, mut recv) = conn.send_bi(client_msg_bytes).await?;
 
     // just await for node to respond to client
     node_handler.await??;
-
     let resp = recv.next().await?;
     assert_eq!(resp, Bytes::from_static(response));
 
