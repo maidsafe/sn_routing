@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.42.0](https://github.com/maidsafe/sn_routing/compare/v0.41.6...v0.42.0) (2021-02-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove unused Error::NodeMessaging variant
+
+### Features
+
+* add Envelope and InfrastructureQuery ([e0b999f](https://github.com/maidsafe/sn_routing/commit/e0b999f961b971b068cad65bfe8e8f938bf4ab41))
+* make use of sn_messaging crate for messaging serialisation/deserialisation ([cbc4802](https://github.com/maidsafe/sn_routing/commit/cbc48026e6d1e32cde8a3f1f7ab92ca7aed801ad))
+* modify bootstrap to use infrastructure queries ([9fb438f](https://github.com/maidsafe/sn_routing/commit/9fb438f6a3c209a50733fd6b894cf4e4ca2861bc))
+* remove unused Error::NodeMessaging variant ([0b70c28](https://github.com/maidsafe/sn_routing/commit/0b70c28792076599af88dd61f9f6482116c2f3e4))
+
+
+### Bug Fixes
+
+* send messages with correct MessageKind byte ([6756b43](https://github.com/maidsafe/sn_routing/commit/6756b43d969d26afe9305ee4ff2851c6e9193495))
+
 ### [0.41.6](https://github.com/maidsafe/sn_routing/compare/v0.41.5...v0.41.6) (2021-02-01)
 
 
