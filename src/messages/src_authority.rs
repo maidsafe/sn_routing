@@ -17,12 +17,11 @@ use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
 /// Source authority of a message.
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 /// Src of message and authority to send it. Authority is validated by the signature.
 /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
 /// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we
 /// ask for a longer chain that can be recodnised). Therefor we don't need to sign this field.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SrcAuthority {
     /// Authority of a single peer.
     Node {
