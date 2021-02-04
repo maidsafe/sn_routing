@@ -266,7 +266,6 @@
 <span id="265">265</span>
 <span id="266">266</span>
 <span id="267">267</span>
-<span id="268">268</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -371,13 +370,12 @@
                     .<span class="ident">handle_message</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
                     .<span class="ident">await</span>
             }
-            <span class="ident">Command</span>::<span class="ident">HandleInfrastructureQuery</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">state</span>
-                    .<span class="ident">lock</span>()
-                    .<span class="ident">await</span>
-                    .<span class="ident">handle_infrastructure_query</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
-                    .<span class="ident">await</span>
-            }
+            <span class="ident">Command</span>::<span class="ident">HandleInfrastructureQuery</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+                .<span class="ident">state</span>
+                .<span class="ident">lock</span>()
+                .<span class="ident">await</span>
+                .<span class="ident">handle_infrastructure_query</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
+                .<span class="ident">await</span>),
             <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
             <span class="ident">Command</span>::<span class="ident">HandleVote</span> { <span class="ident">vote</span>, <span class="ident">proof_share</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="ident">await</span>.<span class="ident">handle_vote</span>(<span class="ident">vote</span>, <span class="ident">proof_share</span>)
