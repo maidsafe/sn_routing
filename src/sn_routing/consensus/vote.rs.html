@@ -197,6 +197,15 @@
 <span id="196">196</span>
 <span id="197">197</span>
 <span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -206,13 +215,14 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">AccumulationError</span>, <span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">SignatureAggregator</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Proof</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">SignatureAggregator</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">PlainMessage</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">SectionProofChain</span>},
 };
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
+<span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
@@ -316,11 +326,19 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">vote</span>: <span class="ident">Vote</span>,
         <span class="ident">proof_share</span>: <span class="ident">ProofShare</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Vote</span>, <span class="ident">Proof</span>), <span class="ident">AccumulationError</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="number">0</span>
-            .<span class="ident">add</span>(<span class="ident">SignableWrapper</span>(<span class="ident">vote</span>), <span class="ident">proof_share</span>)
-            .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">vote</span>, <span class="ident">proof</span>)<span class="op">|</span> (<span class="ident">vote</span>.<span class="number">0</span>, <span class="ident">proof</span>))
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Vote</span>, <span class="ident">Proof</span>), <span class="ident">VoteAccumulationError</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">SignableView</span>(<span class="kw-2">&amp;</span><span class="ident">vote</span>))<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">proof</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">add</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>, <span class="ident">proof_share</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>((<span class="ident">vote</span>, <span class="ident">proof</span>))
     }
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">VoteAccumulationError</span> {
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;failed to aggregate signature shares: {0}&quot;</span>)]</span>
+    <span class="ident">Aggregation</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;failed to serialize vote: {0}&quot;</span>)]</span>
+    <span class="ident">Serialization</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
