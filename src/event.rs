@@ -102,11 +102,6 @@ pub enum Event {
         content: Box<MsgEnvelope>,
         /// The address of the client that sent the message.
         src: SocketAddr,
-        /// Stream to receive more messages from the client on the same channel
-        recv: RecvStream,
-        /// Stream to send messages back to the client that sent
-        /// the message if it was received on a bi-directional stream
-        send: Option<SendStream>,
     },
     /// Failed in sending a message to client, or connection to client is lost
     ClientLost(SocketAddr),

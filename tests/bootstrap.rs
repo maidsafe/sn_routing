@@ -53,7 +53,7 @@ async fn test_node_bootstrapping() -> Result<()> {
     });
 
     // bootstrap a second node with genesis
-    let genesis_contact = genesis_node.our_connection_info().await?;
+    let genesis_contact = genesis_node.our_connection_info();
     let (node1, _event_stream) = create_node(config_with_contact(genesis_contact)).await?;
 
     // just await for genesis node to finish receiving all events
@@ -78,7 +78,7 @@ async fn test_startup_section_bootstrapping() -> Result<()> {
 
     // Then add more nodes to form a section. Because there is only `ELDER_SIZE` nodes in total,
     // we expect every one to be promoted to elder.
-    let genesis_contact = genesis_node.our_connection_info().await?;
+    let genesis_contact = genesis_node.our_connection_info();
     let nodes_joining_tasks = (0..other_node_count).map(|_| async {
         let (node, mut event_stream) = create_node(config_with_contact(genesis_contact)).await?;
         assert_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });

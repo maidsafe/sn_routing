@@ -168,7 +168,7 @@ async fn start_node(
     base_port: Option<u16>,
 ) -> (SocketAddr, JoinHandle<()>) {
     let ip = ip.unwrap_or_else(|| Ipv4Addr::LOCALHOST.into());
-    let port = base_port.map(|base_port| {
+    let local_port = base_port.map(|base_port| {
         index
             .try_into()
             .ok()
@@ -179,8 +179,8 @@ async fn start_node(
     let contacts: HashSet<_> = contacts.into_iter().collect();
     let transport_config = TransportConfig {
         hard_coded_contacts: contacts,
-        ip: Some(ip),
-        port,
+        local_ip: Some(ip),
+        local_port,
         ..Default::default()
     };
 
@@ -195,10 +195,7 @@ async fn start_node(
         .await
         .expect("Failed to instantiate a Node");
 
-    let contact_info = node
-        .our_connection_info()
-        .await
-        .expect("Failed to obtain node's contact info.");
+    let contact_info = node.our_connection_info();
 
     info!(
         "Node #{} connected - name: {}, contact: {}",
