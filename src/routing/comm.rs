@@ -23,7 +23,6 @@ use tokio::{sync::mpsc, task};
 pub(crate) struct Comm {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
-    _incoming_connections: qp2p::IncomingConnections,
     // Sender for connection events. Kept here so we can clone it and pass it to the incoming
     // messages handler every time we establish new connection. It's kept in an `Option` so we can
     // take it out and drop it on `terminate` which together with all the incoming message handlers
@@ -40,8 +39,7 @@ impl Comm {
 
         // Don't bootstrap, just create an endpoint where to listen to
         // the incoming messages from other nodes.
-        let (endpoint, incoming_connections, incoming_messages, disconnections) =
-            quic_p2p.new_endpoint().await?;
+        let (endpoint, _, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -55,7 +53,6 @@ impl Comm {
 
         Ok(Self {
             _quic_p2p: quic_p2p,
-            _incoming_connections: incoming_connections,
             endpoint,
             event_tx: RwLock::new(Some(event_tx)),
         })
@@ -68,7 +65,7 @@ impl Comm {
         let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
-        let (endpoint, incoming_connections, incoming_messages, disconnections, bootstrap_addr) =
+        let (endpoint, _, incoming_messages, disconnections, bootstrap_addr) =
             quic_p2p.bootstrap().await?;
 
         let _ = task::spawn(handle_incoming_messages(
@@ -84,7 +81,6 @@ impl Comm {
         Ok((
             Self {
                 _quic_p2p: quic_p2p,
-                _incoming_connections: incoming_connections,
                 endpoint,
                 event_tx: RwLock::new(Some(event_tx)),
             },
@@ -112,25 +108,10 @@ impl Comm {
         recipient: &SocketAddr,
         msg: Bytes,
     ) -> Result<(), SendError> {
-        // This will attempt to used a cached connection
-        if self
-            .endpoint
-            .send_message(msg.clone(), recipient)
+        self.endpoint
+            .send_message(msg, recipient)
             .await
-            .is_err()
-        {
-            // If the sending of a message failed the connection would no longer
-            // exist in the pool. Calling send_message agail will use a new connection.
-            if let Err(err) = self.endpoint.send_message(msg, recipient).await {
-                error!(
-                    "Sending message to client {:?} failed with error {:?}",
-                    recipient, err
-                );
-            } else {
-                return Ok(());
-            }
-        }
-        Err(SendError)
+            .map_err(|_| SendError)
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
@@ -227,7 +208,8 @@ impl Comm {
         }
 
         // If the sending of a message failed the connection would no longer
-        // exist in the pool. Calling send_message again will use a new connection.
+        // exist in the pool. So we connect again and then send the message.
+        self.endpoint.connect_to(recipient).await?;
         self.endpoint.send_message(msg, recipient).await
     }
 }
@@ -416,9 +398,7 @@ mod tests {
         let send_comm = Comm::new(transport_config(), tx).await?;
 
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
-        #[allow(unused)]
-        let (recv_endpoint, incoming_connection, mut incoming_msgs, disconnections) =
-            recv_transport.new_endpoint().await?;
+        let (mut recv_endpoint, _, mut incoming_msgs, _) = recv_transport.new_endpoint().await?;
         let recv_addr = recv_endpoint.socket_addr();
 
         // Send the first message.
@@ -430,11 +410,12 @@ mod tests {
 
         let mut msg0_received = false;
 
-        // Receive one message and drop the incoming stream.
+        // Receive one message and disconnect from the peer
         {
-            if let Some((_src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
+            if let Some((src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
                 assert_eq!(msg, msg0);
                 msg0_received = true;
+                recv_endpoint.disconnect_from(&src)?;
             }
             assert!(msg0_received);
         }
