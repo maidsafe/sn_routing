@@ -9,8 +9,8 @@
 use super::{Command, SplitBarrier};
 use crate::{
     consensus::{
-        AccumulationError, DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter,
-        Proof, ProofShare, Proven, Vote, VoteAccumulator,
+        DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter, Proof, ProofShare,
+        Proven, Vote, VoteAccumulationError, VoteAccumulator,
     },
     crypto, delivery_group,
     error::{Error, Result},
@@ -255,7 +255,9 @@ impl Approved {
     pub fn handle_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
         match self.vote_accumulator.add(vote, proof_share) {
             Ok((vote, proof)) => Ok(vec![Command::HandleConsensus { vote, proof }]),
-            Err(AccumulationError::NotEnoughShares) => Ok(vec![]),
+            Err(VoteAccumulationError::Aggregation(
+                bls_signature_aggregator::Error::NotEnoughShares,
+            )) => Ok(vec![]),
             Err(error) => {
                 error!("Failed to add vote: {}", error);
                 Err(Error::InvalidSignatureShare)

@@ -6,13 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulationError, Proof, ProofShare, Proven, SignatureAggregator};
+use super::{Proof, ProofShare, Proven, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
     section::{EldersInfo, MemberInfo, SectionProofChain},
 };
 use serde::{Deserialize, Serialize, Serializer};
+use thiserror::Error;
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
@@ -116,11 +117,19 @@ impl VoteAccumulator {
         &mut self,
         vote: Vote,
         proof_share: ProofShare,
-    ) -> Result<(Vote, Proof), AccumulationError> {
-        self.0
-            .add(SignableWrapper(vote), proof_share)
-            .map(|(vote, proof)| (vote.0, proof))
+    ) -> Result<(Vote, Proof), VoteAccumulationError> {
+        let bytes = bincode::serialize(&SignableView(&vote))?;
+        let proof = self.0.add(&bytes, proof_share)?;
+        Ok((vote, proof))
     }
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum VoteAccumulationError {
+    #[error("failed to aggregate signature shares: {0}")]
+    Aggregation(#[from] bls_signature_aggregator::Error),
+    #[error("failed to serialize vote: {0}")]
+    Serialization(#[from] bincode::Error),
 }
 
 #[derive(Debug)]
