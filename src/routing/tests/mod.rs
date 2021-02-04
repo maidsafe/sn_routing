@@ -50,7 +50,7 @@ use xor_name::{Prefix, XorName};
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
@@ -136,7 +136,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
     let section_key = *stage.state.lock().await.section().chain().last_key();
@@ -178,7 +178,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
     let section_key = *stage.state.lock().await.section().chain().last_key();
@@ -252,7 +252,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let relocated_node_old_keypair = crypto::gen_keypair();
     let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
@@ -343,7 +343,7 @@ async fn accumulate_votes() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_peer = create_peer();
     let member_info = MemberInfo::joined(new_peer);
@@ -398,7 +398,7 @@ async fn handle_consensus_on_online() -> Result<()> {
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let new_peer = create_peer();
 
@@ -453,7 +453,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Handle the consensus on Online of a peer that is older than the youngest
     // current elder - that means this peer is going to be promoted.
@@ -624,7 +624,7 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Simulate peer with the same name is rejoin and verify resulted behaviours.
     let status = handle_online_command(&peer, &sk_set, &stage, &elders_info).await?;
@@ -681,7 +681,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let member_info = MemberInfo {
         peer: existing_peer,
@@ -732,7 +732,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let node = nodes.remove(0);
     let node_name = node.name();
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Handle the consensus on the Offline vote
     let vote = Vote::Offline(remove_member_info);
@@ -856,7 +856,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
 
     let node = create_node();
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // non-elders can't handle messages addressed to sections.
     let original_message = Message::single_src(
@@ -965,7 +965,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let node = create_node();
     let node_name = node.name();
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let sk1 = bls::SecretKey::random();
     let pk1 = sk1.public_key();
@@ -1054,7 +1054,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let bounced_message = Message::single_src(
         &other_node,
@@ -1153,7 +1153,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Create the bounced message, indicating the last key the peer knows is `pk0`
     let bounced_message = Message::single_src(
@@ -1221,7 +1221,7 @@ async fn handle_sync() -> Result<()> {
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = nodes.remove(0);
     let state = Approved::new(node, old_section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Create new `Section` as a successor to the previous one.
     let sk2 = bls::SecretKey::random();
@@ -1300,7 +1300,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     // Create a message with a valid signature but invalid proof chain (the last key in the chain
     // not signed with the previous key)
@@ -1365,7 +1365,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let relocated_peer = match relocated_peer_role {
         RelocatedPeerRole::Elder => elders_info.peers().nth(1).expect("too few elders"),
@@ -1448,7 +1448,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     let node = create_node();
     let peer = node.peer();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let src = SrcLocation::Node(*peer.name());
     let dst = match dst {
@@ -1532,7 +1532,7 @@ async fn handle_elders_update() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let state = Approved::new(node, section0.clone(), Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let commands = stage
         .handle_command(Command::HandleConsensus { vote, proof })
@@ -1627,7 +1627,7 @@ async fn handle_demote_during_split() -> Result<()> {
 
     let (event_tx, _) = mpsc::unbounded_channel();
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm()?);
+    let stage = Stage::new(state, create_comm().await?);
 
     let sk_set_v1_p0 = SecretKeySet::random();
     let pk_v1_p0 = sk_set_v1_p0.secret_key().public_key();
@@ -1742,15 +1742,16 @@ fn create_node() -> Node {
     Node::new(crypto::gen_keypair(), gen_addr())
 }
 
-fn create_comm() -> Result<Comm> {
+async fn create_comm() -> Result<Comm> {
     let (tx, _rx) = mpsc::channel(1);
     Ok(Comm::new(
         qp2p::Config {
-            ip: Some(Ipv4Addr::LOCALHOST.into()),
+            local_ip: Some(Ipv4Addr::LOCALHOST.into()),
             ..Default::default()
         },
         tx,
-    )?)
+    )
+    .await?)
 }
 
 // Generate random EldersInfo and the corresponding Nodes.

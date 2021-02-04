@@ -37,7 +37,7 @@ async fn test_node_drop() -> Result<()> {
     // Drop one node
     let dropped_node = nodes.remove(1).0;
     let dropped_name = dropped_node.name().await;
-    let dropped_addr = dropped_node.our_connection_info().await?;
+    let dropped_addr = dropped_node.our_connection_info();
     drop(dropped_node);
 
     tracing::info!("Dropped {} at {}", dropped_name, dropped_addr);

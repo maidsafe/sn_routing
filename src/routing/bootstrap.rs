@@ -528,14 +528,13 @@ impl<'a> MessageReceiver<'a> {
             Self::Raw(rx) => {
                 while let Some(event) = rx.recv().await {
                     match event {
-                        ConnectionEvent::Received(qp2p::Message::UniStream {
-                            bytes, src, ..
-                        }) => match WireMsg::deserialize(bytes) {
-                            Ok(message) => return Some((message, src)),
-                            Err(error) => debug!("Failed to deserialize message: {}", error),
-                        },
-                        ConnectionEvent::Received(qp2p::Message::BiStream { .. }) => {
-                            trace!("Ignore bi-stream messages during bootstrap");
+                        ConnectionEvent::Received((src, bytes)) => {
+                            match WireMsg::deserialize(bytes) {
+                                Ok(message) => {
+                                    return Some((message, src));
+                                }
+                                Err(error) => debug!("Failed to deserialize message: {}", error),
+                            }
                         }
                         ConnectionEvent::Disconnected(_) => {}
                     }

@@ -9,7 +9,8 @@
 use crate::error::{Error, Result};
 use bytes::Bytes;
 use futures::stream::{FuturesUnordered, StreamExt};
-use qp2p::{Connection, Endpoint, QuicP2p};
+use hex_fmt::HexFmt;
+use qp2p::{Endpoint, QuicP2p};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -22,6 +23,7 @@ use tokio::{sync::mpsc, task};
 pub(crate) struct Comm {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
+    _incoming_connections: qp2p::IncomingConnections,
     // Sender for connection events. Kept here so we can clone it and pass it to the incoming
     // messages handler every time we establish new connection. It's kept in an `Option` so we can
     // take it out and drop it on `terminate` which together with all the incoming message handlers
@@ -30,7 +32,7 @@ pub(crate) struct Comm {
 }
 
 impl Comm {
-    pub fn new(
+    pub async fn new(
         transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<Self> {
@@ -38,15 +40,22 @@ impl Comm {
 
         // Don't bootstrap, just create an endpoint where to listen to
         // the incoming messages from other nodes.
-        let endpoint = quic_p2p.new_endpoint()?;
+        let (endpoint, incoming_connections, incoming_messages, disconnections) =
+            quic_p2p.new_endpoint().await?;
 
-        let _ = task::spawn(handle_incoming_connections(
-            endpoint.listen(),
+        let _ = task::spawn(handle_incoming_messages(
+            incoming_messages,
+            event_tx.clone(),
+        ));
+
+        let _ = task::spawn(handle_disconnection_events(
+            disconnections,
             event_tx.clone(),
         ));
 
         Ok(Self {
             _quic_p2p: quic_p2p,
+            _incoming_connections: incoming_connections,
             endpoint,
             event_tx: RwLock::new(Some(event_tx)),
         })
@@ -59,25 +68,27 @@ impl Comm {
         let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
-        let (endpoint, conn, incoming_messages) = quic_p2p.bootstrap().await?;
-        let addr = conn.remote_address();
+        let (endpoint, incoming_connections, incoming_messages, disconnections, bootstrap_addr) =
+            quic_p2p.bootstrap().await?;
 
-        let _ = task::spawn(handle_incoming_connections(
-            endpoint.listen(),
-            event_tx.clone(),
-        ));
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
+            event_tx.clone(),
+        ));
+
+        let _ = task::spawn(handle_disconnection_events(
+            disconnections,
             event_tx.clone(),
         ));
 
         Ok((
             Self {
                 _quic_p2p: quic_p2p,
+                _incoming_connections: incoming_connections,
                 endpoint,
                 event_tx: RwLock::new(Some(event_tx)),
             },
-            addr,
+            bootstrap_addr,
         ))
     }
 
@@ -91,11 +102,8 @@ impl Comm {
             .take();
     }
 
-    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.endpoint.socket_addr().await.map_err(|err| {
-            error!("Failed to retrieve our connection info: {:?}", err);
-            err.into()
-        })
+    pub fn our_connection_info(&self) -> SocketAddr {
+        self.endpoint.socket_addr()
     }
 
     /// Sends a message on an existing connection. If no such connection exists, returns an error.
@@ -104,9 +112,20 @@ impl Comm {
         recipient: &SocketAddr,
         msg: Bytes,
     ) -> Result<(), SendError> {
-        if let Some(conn) = self.endpoint.get_connection(recipient) {
-            if let Err(err) = conn.send_uni(msg).await {
-                error!("Sending message to {} failed: {}", recipient, err);
+        // This will attempt to used a cached connection
+        if self
+            .endpoint
+            .send_message(msg.clone(), recipient)
+            .await
+            .is_err()
+        {
+            // If the sending of a message failed the connection would no longer
+            // exist in the pool. Calling send_message agail will use a new connection.
+            if let Err(err) = self.endpoint.send_message(msg, recipient).await {
+                error!(
+                    "Sending message to client {:?} failed with error {:?}",
+                    recipient, err
+                );
             } else {
                 return Ok(());
             }
@@ -197,28 +216,19 @@ impl Comm {
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
-        let conn = self.connect_to(recipient).await?;
-
-        if conn.send_uni(msg.clone()).await.is_ok() {
+        // This will attempt to used a cached connection
+        if self
+            .endpoint
+            .send_message(msg.clone(), recipient)
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
 
-        self.connect_to(recipient).await?.send_uni(msg).await
-    }
-
-    async fn connect_to(&self, addr: &SocketAddr) -> Result<Connection, qp2p::Error> {
-        let (conn, incoming_messages) = self.endpoint.connect_to(addr).await?;
-        let event_tx = self.event_tx.read().ok().and_then(|tx| tx.clone());
-
-        if let (Some(incoming_messages), Some(event_tx)) = (incoming_messages, event_tx) {
-            trace!(
-                "New outgoing connection to {}",
-                incoming_messages.remote_addr()
-            );
-            let _ = task::spawn(handle_incoming_messages(incoming_messages, event_tx));
-        }
-
-        Ok(conn)
+        // If the sending of a message failed the connection would no longer
+        // exist in the pool. Calling send_message again will use a new connection.
+        self.endpoint.send_message(msg, recipient).await
     }
 }
 
@@ -239,31 +249,29 @@ impl From<SendError> for Error {
 }
 
 pub(crate) enum ConnectionEvent {
-    Received(qp2p::Message),
+    Received((SocketAddr, Bytes)),
     Disconnected(SocketAddr),
 }
 
 impl Debug for ConnectionEvent {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Received(qp2p::Message::UniStream { src, .. }) => {
-                write!(f, "Received(UniStream {{ src: {}, .. }})", src)
-            }
-            Self::Received(qp2p::Message::BiStream { src, .. }) => {
-                write!(f, "Received(BiStream {{ src: {}, .. }})", src)
+            Self::Received((src, msg)) => {
+                write!(f, "Received(src: {}, msg: {})", src, HexFmt(msg))
             }
             Self::Disconnected(addr) => write!(f, "Disconnected({})", addr),
         }
     }
 }
 
-async fn handle_incoming_connections(
-    mut incoming_conns: qp2p::IncomingConnections,
-    event_tx: mpsc::Sender<ConnectionEvent>,
+async fn handle_disconnection_events(
+    mut disconnections: qp2p::DisconnectionEvents,
+    mut event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
-    while let Some(incoming_msgs) = incoming_conns.next().await {
-        trace!("New incoming connection to {}", incoming_msgs.remote_addr());
-        let _ = task::spawn(handle_incoming_messages(incoming_msgs, event_tx.clone()));
+    while let Some(peer_addr) = disconnections.next().await {
+        let _ = event_tx
+            .send(ConnectionEvent::Disconnected(peer_addr))
+            .await;
     }
 }
 
@@ -271,13 +279,9 @@ async fn handle_incoming_messages(
     mut incoming_msgs: qp2p::IncomingMessages,
     mut event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
-    while let Some(msg) = incoming_msgs.next().await {
-        let _ = event_tx.send(ConnectionEvent::Received(msg)).await;
+    while let Some((src, msg)) = incoming_msgs.next().await {
+        let _ = event_tx.send(ConnectionEvent::Received((src, msg))).await;
     }
-
-    let _ = event_tx
-        .send(ConnectionEvent::Disconnected(incoming_msgs.remote_addr()))
-        .await;
 }
 
 #[cfg(test)]
@@ -295,7 +299,7 @@ mod tests {
     #[tokio::test]
     async fn successful_send() -> Result<()> {
         let (tx, _rx) = mpsc::channel(1);
-        let comm = Comm::new(transport_config(), tx)?;
+        let comm = Comm::new(transport_config(), tx).await?;
 
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
@@ -314,7 +318,7 @@ mod tests {
     #[tokio::test]
     async fn successful_send_to_subset() -> Result<()> {
         let (tx, _rx) = mpsc::channel(1);
-        let comm = Comm::new(transport_config(), tx)?;
+        let comm = Comm::new(transport_config(), tx).await?;
 
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
@@ -344,7 +348,8 @@ mod tests {
                 ..transport_config()
             },
             tx,
-        )?;
+        )
+        .await?;
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
@@ -364,7 +369,8 @@ mod tests {
                 ..transport_config()
             },
             tx,
-        )?;
+        )
+        .await?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
@@ -387,7 +393,8 @@ mod tests {
                 ..transport_config()
             },
             tx,
-        )?;
+        )
+        .await?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
@@ -406,12 +413,13 @@ mod tests {
     #[tokio::test]
     async fn send_after_reconnect() -> Result<()> {
         let (tx, _rx) = mpsc::channel(1);
-        let send_comm = Comm::new(transport_config(), tx)?;
+        let send_comm = Comm::new(transport_config(), tx).await?;
 
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
-        let recv_endpoint = recv_transport.new_endpoint()?;
-        let recv_addr = recv_endpoint.socket_addr().await?;
-        let mut recv_incoming_connections = recv_endpoint.listen();
+        #[allow(unused)]
+        let (recv_endpoint, incoming_connection, mut incoming_msgs, disconnections) =
+            recv_transport.new_endpoint().await?;
+        let recv_addr = recv_endpoint.socket_addr();
 
         // Send the first message.
         let msg0 = Bytes::from_static(b"zero");
@@ -424,15 +432,10 @@ mod tests {
 
         // Receive one message and drop the incoming stream.
         {
-            if let Some(mut incoming_msgs) =
-                time::timeout(TIMEOUT, recv_incoming_connections.next()).await?
-            {
-                if let Some(msg) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-                    assert_eq!(msg.get_message_data(), msg0);
-                    msg0_received = true;
-                }
+            if let Some((_src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
+                assert_eq!(msg, msg0);
+                msg0_received = true;
             }
-
             assert!(msg0_received);
         }
 
@@ -445,14 +448,9 @@ mod tests {
 
         let mut msg1_received = false;
 
-        // Expect to receive the second message on a re-established connection.
-        if let Some(mut incoming_msgs) =
-            time::timeout(TIMEOUT, recv_incoming_connections.next()).await?
-        {
-            if let Some(msg) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-                assert_eq!(msg.get_message_data(), msg1);
-                msg1_received = true;
-            }
+        if let Some((_src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
+            assert_eq!(msg, msg1);
+            msg1_received = true;
         }
 
         assert!(msg1_received);
@@ -463,12 +461,12 @@ mod tests {
     #[tokio::test]
     async fn incoming_connection_lost() -> Result<()> {
         let (tx, mut rx0) = mpsc::channel(1);
-        let comm0 = Comm::new(transport_config(), tx)?;
-        let addr0 = comm0.our_connection_info().await?;
+        let comm0 = Comm::new(transport_config(), tx).await?;
+        let addr0 = comm0.our_connection_info();
 
         let (tx, _rx) = mpsc::channel(1);
-        let comm1 = Comm::new(transport_config(), tx)?;
-        let addr1 = comm1.our_connection_info().await?;
+        let comm1 = Comm::new(transport_config(), tx).await?;
+        let addr1 = comm1.our_connection_info();
 
         // Send a message to establish the connection
         comm1
@@ -476,7 +474,6 @@ mod tests {
             .await
             .0?;
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));
-
         // Drop `comm1` to cause connection lost.
         drop(comm1);
 
@@ -490,13 +487,15 @@ mod tests {
 
     fn transport_config() -> Config {
         Config {
-            ip: Some(Ipv4Addr::LOCALHOST.into()),
+            local_ip: Some(Ipv4Addr::LOCALHOST.into()),
             ..Default::default()
         }
     }
 
     struct Peer {
         addr: SocketAddr,
+        _incoming_connections: qp2p::IncomingConnections,
+        _disconnections: qp2p::DisconnectionEvents,
         rx: mpsc::Receiver<Bytes>,
     }
 
@@ -504,24 +503,24 @@ mod tests {
         async fn new() -> Result<Self> {
             let transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
 
-            let endpoint = transport.new_endpoint()?;
-            let addr = endpoint.socket_addr().await?;
-            let mut incoming_connections = endpoint.listen();
+            let (endpoint, incoming_connections, mut incoming_messages, disconnections) =
+                transport.new_endpoint().await?;
+            let addr = endpoint.socket_addr();
 
-            let (tx, rx) = mpsc::channel(1);
+            let (mut tx, rx) = mpsc::channel(1);
 
             let _ = tokio::spawn(async move {
-                while let Some(mut connection) = incoming_connections.next().await {
-                    let mut tx = tx.clone();
-                    let _ = tokio::spawn(async move {
-                        while let Some(message) = connection.next().await {
-                            let _ = tx.send(message.get_message_data()).await;
-                        }
-                    });
+                while let Some((_src, msg)) = incoming_messages.next().await {
+                    let _ = tx.send(msg).await;
                 }
             });
 
-            Ok(Self { addr, rx })
+            Ok(Self {
+                addr,
+                rx,
+                _incoming_connections: incoming_connections,
+                _disconnections: disconnections,
+            })
         }
     }
 

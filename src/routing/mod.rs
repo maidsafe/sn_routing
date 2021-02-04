@@ -39,7 +39,6 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
-use qp2p::{Message as Qp2pMessage, RecvStream, SendStream};
 use sn_messaging::{client::MsgEnvelope, node::NodeMessage, MessageType, WireMsg};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -96,8 +95,8 @@ impl Routing {
 
         let (state, comm, backlog) = if config.first {
             info!("{} Starting a new network as the seed node.", node_name);
-            let comm = Comm::new(config.transport_config, connection_event_tx)?;
-            let node = Node::new(keypair, comm.our_connection_info().await?).with_age(MIN_AGE + 1);
+            let comm = Comm::new(config.transport_config, connection_event_tx).await?;
+            let node = Node::new(keypair, comm.our_connection_info()).with_age(MIN_AGE + 1);
             let state = Approved::first_node(node, event_tx)?;
             let section = state.section();
 
@@ -113,7 +112,7 @@ impl Routing {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) =
                 Comm::bootstrap(config.transport_config, connection_event_tx).await?;
-            let node = Node::new(keypair, comm.our_connection_info().await?).with_age(MIN_AGE + 1);
+            let node = Node::new(keypair, comm.our_connection_info()).with_age(MIN_AGE + 1);
             let (node, section, backlog) =
                 bootstrap::initial(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
             let state = Approved::new(node, section, None, event_tx);
@@ -196,8 +195,8 @@ impl Routing {
     }
 
     /// Returns connection info of this node.
-    pub async fn our_connection_info(&self) -> Result<SocketAddr> {
-        self.stage.comm.our_connection_info().await
+    pub fn our_connection_info(&self) -> SocketAddr {
+        self.stage.comm.our_connection_info()
     }
 
     /// Prefix of our section
@@ -359,26 +358,9 @@ async fn handle_connection_events(
 ) {
     while let Some(event) = incoming_conns.recv().await {
         match event {
-            ConnectionEvent::Received(Qp2pMessage::UniStream { bytes, src, recv }) => {
-                trace!(
-                    "New message ({} bytes) received on a uni-stream from {}",
-                    bytes.len(),
-                    src
-                );
-                handle_message(stage.clone(), bytes, src, recv, None).await;
-            }
-            ConnectionEvent::Received(Qp2pMessage::BiStream {
-                bytes,
-                src,
-                send,
-                recv,
-            }) => {
-                trace!(
-                    "New message ({} bytes) received on a bi-stream from {}",
-                    bytes.len(),
-                    src
-                );
-                handle_message(stage.clone(), bytes, src, recv, Some(send)).await;
+            ConnectionEvent::Received((src, bytes)) => {
+                trace!("New message ({} bytes) received from: {}", bytes.len(), src);
+                handle_message(stage.clone(), bytes, src).await;
             }
             ConnectionEvent::Disconnected(addr) => {
                 trace!("Lost connection to {:?}", addr);
@@ -391,13 +373,7 @@ async fn handle_connection_events(
     }
 }
 
-async fn handle_message(
-    stage: Arc<Stage>,
-    bytes: Bytes,
-    sender: SocketAddr,
-    recv: RecvStream,
-    send: Option<SendStream>,
-) {
+async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
     let message_type = match WireMsg::deserialize(bytes) {
         Ok(message_type) => message_type,
         Err(error) => {
@@ -436,8 +412,6 @@ async fn handle_message(
             let event = Event::ClientMessageReceived {
                 content: Box::new(msg_envelope),
                 src: sender,
-                recv,
-                send,
             };
 
             stage.send_event(event).await;

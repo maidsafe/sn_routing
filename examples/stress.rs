@@ -208,7 +208,7 @@ impl Network {
 
     // Create new node and let it join the network.
     async fn create_node(&mut self, event_tx: UnboundedSender<Event>) -> Result<()> {
-        let bootstrap_addrs = self.get_bootstrap_addrs().await?;
+        let bootstrap_addrs = self.get_bootstrap_addrs();
 
         let id = self.new_node_id();
         let _ = self.nodes.insert(id, Node::Joining);
@@ -218,7 +218,7 @@ impl Network {
             first: bootstrap_addrs.is_empty(),
             transport_config: TransportConfig {
                 hard_coded_contacts: bootstrap_addrs.into_iter().collect(),
-                ip: Some(Ipv4Addr::LOCALHOST.into()),
+                local_ip: Some(Ipv4Addr::LOCALHOST.into()),
                 ..Default::default()
             },
             ..Default::default()
@@ -377,7 +377,7 @@ impl Network {
     }
 
     // Returns the socket addresses to bootstrap against.
-    async fn get_bootstrap_addrs(&self) -> Result<Vec<SocketAddr>> {
+    fn get_bootstrap_addrs(&self) -> Vec<SocketAddr> {
         // Number of bootstrap contacts to use. Use more than one to increase the chance of
         // successful bootstrap in case some of the bootstrap nodes get dropped.
         //
@@ -386,19 +386,16 @@ impl Network {
         const COUNT: usize = 1;
 
         // Use the oldest nodes in the network as the bootstrap contacts.
-        future::try_join_all(
-            self.nodes
-                .values()
-                .filter_map(|node| match node {
-                    Node::Joined { node, age, .. } => Some((node, age)),
-                    Node::Joining => None,
-                })
-                .sorted_by(|(_, lhs_age), (_, rhs_age)| lhs_age.cmp(rhs_age).reverse())
-                .take(COUNT)
-                .map(|(node, _)| node.our_connection_info()),
-        )
-        .await
-        .map_err(Into::into)
+        self.nodes
+            .values()
+            .filter_map(|node| match node {
+                Node::Joined { node, age, .. } => Some((node, age)),
+                Node::Joining => None,
+            })
+            .sorted_by(|(_, lhs_age), (_, rhs_age)| lhs_age.cmp(rhs_age).reverse())
+            .take(COUNT)
+            .map(|(node, _)| node.our_connection_info())
+            .collect::<Vec<_>>()
     }
 
     // Send messages to probe network health.

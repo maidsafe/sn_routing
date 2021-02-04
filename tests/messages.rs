@@ -14,7 +14,7 @@ use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::{
     client::{Message, MessageId, MsgEnvelope, MsgSender, Query, TransferQuery},
-    WireMsg,
+    MessageType, WireMsg,
 };
 use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
 use std::net::{IpAddr, Ipv4Addr};
@@ -23,8 +23,6 @@ use xor_name::XorName;
 
 #[tokio::test]
 async fn test_messages_client_node() -> Result<()> {
-    let response = b"good bye!";
-
     let (node, mut event_stream) = create_node(Config {
         first: true,
         ..Default::default()
@@ -51,21 +49,15 @@ async fn test_messages_client_node() -> Result<()> {
     };
     let msg_envelope_clone = msg_envelope.clone();
 
+    let node_addr = node.our_connection_info();
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             match event {
-                Event::ClientMessageReceived { content, send, .. } => {
-                    assert_eq!(*content, msg_envelope_clone);
-
-                    // the second message received should be on a bi-stream
-                    // and in such case we respond and end the loop.
-                    if let Some(mut send_stream) = send {
-                        send_stream
-                            .send_user_msg(Bytes::from_static(response))
-                            .await?;
-                        break;
-                    }
+                Event::ClientMessageReceived { content, src } => {
+                    assert_eq!(*content, msg_envelope_clone.clone());
+                    node.send_message_to_client(src, msg_envelope_clone).await?;
+                    break;
                 }
                 _other => {}
             }
@@ -74,29 +66,29 @@ async fn test_messages_client_node() -> Result<()> {
     });
 
     // create a client which sends a message to the node
-    let node_addr = node.our_connection_info().await?;
     let mut config = sn_routing::TransportConfig {
-        ip: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+        local_ip: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
         ..Default::default()
     };
-    config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    config.local_ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
-    let client_endpoint = client.new_endpoint()?;
-    let (conn, _) = client_endpoint.connect_to(&node_addr).await?;
+    let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
+    client_endpoint.connect_to(&node_addr).await?;
 
     let client_msg_bytes = WireMsg::serialize_client_msg(&msg_envelope)?;
 
-    // we send it on a uni-stream but we don't await for a respnse here
-    let _ = conn.send_uni(client_msg_bytes.clone()).await?;
-
-    // and now we send it on a bi-stream where we'll await for a response
-    let (_, mut recv) = conn.send_bi(client_msg_bytes).await?;
+    client_endpoint
+        .send_message(client_msg_bytes, &node_addr)
+        .await?;
 
     // just await for node to respond to client
     node_handler.await??;
-    let resp = recv.next().await?;
-    assert_eq!(resp, Bytes::from_static(response));
+
+    if let Some((_, resp)) = incoming_messages.next().await {
+        let expected_bytes = MessageType::ClientMessage(msg_envelope).serialize()?;
+        assert_eq!(resp, expected_bytes);
+    }
 
     Ok(())
 }
@@ -111,7 +103,7 @@ async fn test_messages_between_nodes() -> Result<()> {
         ..Default::default()
     })
     .await?;
-    let node1_contact = node1.our_connection_info().await?;
+    let node1_contact = node1.our_connection_info();
     let node1_name = node1.name().await;
 
     // spawn node events listener

@@ -41,8 +41,8 @@ pub async fn create_node(mut config: Config) -> Result<(Routing, EventStream)> {
     });
 
     // make sure we set 127.0.0.1 as the IP if was not set
-    if config.transport_config.ip.is_none() {
-        config.transport_config.ip = Some(Ipv4Addr::LOCALHOST.into());
+    if config.transport_config.local_ip.is_none() {
+        config.transport_config.local_ip = Some(Ipv4Addr::LOCALHOST.into());
     }
 
     Ok(Routing::new(config).await?)
@@ -98,7 +98,7 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
     .await?;
     assert_next_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
 
-    let bootstrap_contact = node.our_connection_info().await?;
+    let bootstrap_contact = node.our_connection_info();
 
     nodes.push((node, event_stream));
 
