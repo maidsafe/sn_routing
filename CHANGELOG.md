@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.42.2](https://github.com/maidsafe/sn_routing/compare/v0.42.1...v0.42.2) (2021-02-04)
+
+
+### Bug Fixes
+
+* redirect to our elders on mismatching GetSectionRequest as adult ([22c4745](https://github.com/maidsafe/sn_routing/commit/22c47453a50d79b47771c9afb682d3cac88aeb12))
+
 ### [0.42.1](https://github.com/maidsafe/sn_routing/compare/v0.42.0...v0.42.1) (2021-02-04)
 
 ## [0.42.0](https://github.com/maidsafe/sn_routing/compare/v0.41.6...v0.42.0) (2021-02-04)
