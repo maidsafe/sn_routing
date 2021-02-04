@@ -47,7 +47,7 @@ use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 #[tokio::test]
-async fn receive_get_section_request() -> Result<()> {
+async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm()?);
@@ -81,6 +81,56 @@ async fn receive_get_section_request() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
+    let good_prefix = Prefix::default().pushed(false);
+    let bad_prefix = Prefix::default().pushed(true);
+
+    let sk_set = SecretKeySet::random();
+    let (elders_info, _) = gen_elders_info(good_prefix, ELDER_SIZE);
+    let elders_addrs: Vec<_> = elders_info.peers().map(Peer::addr).copied().collect();
+    let (section, _) = create_section(&sk_set, &elders_info)?;
+
+    let node = create_node();
+    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let stage = Stage::new(state, create_comm()?);
+
+    let new_node_name = bad_prefix.substituted_in(rand::random());
+    let new_node_addr = gen_addr();
+
+    let message = Query::GetSectionRequest(new_node_name);
+
+    let mut commands = stage
+        .handle_command(Command::HandleInfrastructureQuery {
+            sender: new_node_addr,
+            message,
+        })
+        .await?
+        .into_iter();
+
+    let (recipients, message) = assert_matches!(
+        commands.next(),
+        Some(Command::SendMessage {
+            recipients,
+            message: MessageType::InfrastructureQuery(message), ..
+        }) => (recipients, message)
+    );
+
+    assert_eq!(recipients, [new_node_addr]);
+    assert_matches!(
+        message,
+        Query::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
+            assert_eq!(addrs, elders_addrs)
+        }
+    );
+
+    Ok(())
+}
+
+// TODO: add test `receive_mismatching_get_section_request_as_elder` - should respond with
+// `Redirect` response containing addresses of nodes in a section that is closer to the joining
+// name.
 
 #[tokio::test]
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {

@@ -101,13 +101,12 @@ impl Stage {
                     .handle_message(sender, message)
                     .await
             }
-            Command::HandleInfrastructureQuery { sender, message } => {
-                self.state
-                    .lock()
-                    .await
-                    .handle_infrastructure_query(sender, message)
-                    .await
-            }
+            Command::HandleInfrastructureQuery { sender, message } => Ok(self
+                .state
+                .lock()
+                .await
+                .handle_infrastructure_query(sender, message)
+                .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleVote { vote, proof_share } => {
                 self.state.lock().await.handle_vote(vote, proof_share)

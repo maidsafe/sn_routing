@@ -201,7 +201,7 @@ impl Approved {
         &mut self,
         sender: SocketAddr,
         message: Query,
-    ) -> Result<Vec<Command>> {
+    ) -> Vec<Command> {
         match message {
             Query::GetSectionRequest(name) => {
                 debug!("Received GetSectionRequest({}) from {}", name, sender);
@@ -217,20 +217,24 @@ impl Approved {
                             .map(|peer| (*peer.name(), *peer.addr()))
                             .collect(),
                     }
-                } else if let Some(section) = self.network.closest(&name) {
+                } else {
+                    // If we are elder, we should know a section that is closer to `name` that us.
+                    // Otherwise redirect to our elders.
+                    let section = self
+                        .network
+                        .closest(&name)
+                        .unwrap_or_else(|| self.section.elders_info());
                     let addrs = section.peers().map(Peer::addr).copied().collect();
                     GetSectionResponse::Redirect(addrs)
-                } else {
-                    return Err(Error::InvalidDstLocation);
                 };
                 let response = Query::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
-                Ok(vec![Command::SendMessage {
+                vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
                     message: MessageType::InfrastructureQuery(response),
-                }])
+                }]
             }
             Query::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
@@ -240,7 +244,7 @@ impl Approved {
                         .await;
                 }
 
-                Ok(vec![])
+                vec![]
             }
         }
     }
