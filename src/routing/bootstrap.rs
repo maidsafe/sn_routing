@@ -291,7 +291,7 @@ impl<'a> State<'a> {
                         self.backlog.into_iter().collect(),
                     ));
                 }
-                JoinResponse::Rejoin {
+                JoinResponse::Retry {
                     elders_info,
                     section_key: new_section_key,
                 } => {
@@ -381,7 +381,7 @@ impl<'a> State<'a> {
             };
 
             match message.variant() {
-                Variant::Rejoin {
+                Variant::JoinRetry {
                     elders_info,
                     section_key,
                 } => {
@@ -390,7 +390,7 @@ impl<'a> State<'a> {
                     }
 
                     return Ok((
-                        JoinResponse::Rejoin {
+                        JoinResponse::Retry {
                             elders_info: elders_info.clone(),
                             section_key: *section_key,
                         },
@@ -503,7 +503,7 @@ enum JoinResponse {
         age: u8,
         section_chain: SectionProofChain,
     },
-    Rejoin {
+    Retry {
         elders_info: EldersInfo,
         section_key: bls::PublicKey,
     },
@@ -889,7 +889,7 @@ mod tests {
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::Rejoin {
+                Variant::JoinRetry {
                     elders_info: gen_elders_info(bad_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
@@ -908,7 +908,7 @@ mod tests {
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
-                Variant::Rejoin {
+                Variant::JoinRetry {
                     elders_info: gen_elders_info(good_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
