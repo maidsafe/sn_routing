@@ -13,7 +13,7 @@ use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::{
-    client::{Message, MessageId, MsgEnvelope, MsgSender, Query, TransferQuery},
+    client::{Message, MessageId, Query, TransferQuery},
     MessageType, WireMsg,
 };
 use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
@@ -33,7 +33,6 @@ async fn test_messages_client_node() -> Result<()> {
     let mut rng = rand::thread_rng();
     let keypair = Keypair::new_ed25519(&mut rng);
     let pk = keypair.public_key();
-    let signature = keypair.sign(b"blabla");
 
     let random_xor = XorName::random();
     let id = MessageId(random_xor);
@@ -43,12 +42,7 @@ async fn test_messages_client_node() -> Result<()> {
         target_section_pk: None,
     };
 
-    let msg_envelope = MsgEnvelope {
-        message,
-        origin: MsgSender::client(pk, signature)?,
-        proxies: vec![],
-    };
-    let msg_envelope_clone = msg_envelope.clone();
+    let message_clone = message.clone();
 
     let node_addr = node.our_connection_info();
     // spawn node events listener
@@ -77,7 +71,7 @@ async fn test_messages_client_node() -> Result<()> {
     let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
     client_endpoint.connect_to(&node_addr).await?;
 
-    let client_msg_bytes = WireMsg::serialize_client_msg(&msg_envelope)?;
+    let client_msg_bytes = WireMsg::serialize_client_msg(&message)?;
 
     client_endpoint
         .send_message(client_msg_bytes, &node_addr)

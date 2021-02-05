@@ -48,6 +48,8 @@ impl SrcLocation {
 /// Message destination location.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum DstLocation {
+    /// Destination is a client with the given name.
+    Client(XorName),
     /// Destination is a single node with the given name.
     Node(XorName),
     /// Destination are the nodes of the section whose prefix matches the given name.
@@ -61,7 +63,7 @@ impl DstLocation {
     pub fn is_section(&self) -> bool {
         match self {
             Self::Section(_) => true,
-            Self::Node(_) | Self::Direct => false,
+            Self::Client(_) | Self::Node(_) | Self::Direct => false,
         }
     }
 
@@ -69,7 +71,7 @@ impl DstLocation {
     pub(crate) fn as_node(&self) -> Result<&XorName> {
         match self {
             Self::Node(name) => Ok(name),
-            Self::Section(_) | Self::Direct => Err(Error::InvalidDstLocation),
+            Self::Client(_) | Self::Section(_) | Self::Direct => Err(Error::InvalidDstLocation),
         }
     }
 
@@ -77,7 +79,7 @@ impl DstLocation {
     pub(crate) fn check_is_section(&self) -> Result<()> {
         match self {
             Self::Section(_) => Ok(()),
-            Self::Node(_) | Self::Direct => Err(Error::InvalidDstLocation),
+            Self::Client(_) | Self::Node(_) | Self::Direct => Err(Error::InvalidDstLocation),
         }
     }
 
@@ -90,6 +92,7 @@ impl DstLocation {
         assert!(prefix.matches(name));
 
         match self {
+            Self::Client(self_name) => name == self_name,
             Self::Node(self_name) => name == self_name,
             Self::Section(self_name) => prefix.matches(self_name),
             Self::Direct => true,
@@ -97,8 +100,9 @@ impl DstLocation {
     }
 
     /// Returns the name of this location, or `None` if it is `Direct`.
-    pub(crate) fn name(&self) -> Option<&XorName> {
+    pub fn name(&self) -> Option<&XorName> {
         match self {
+            Self::Client(name) => Some(name),
             Self::Node(name) => Some(name),
             Self::Section(name) => Some(name),
             Self::Direct => None,
