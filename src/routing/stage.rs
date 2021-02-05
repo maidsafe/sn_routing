@@ -8,7 +8,7 @@
 
 use super::{bootstrap, Approved, Comm, Command};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
-use sn_messaging::{infrastructure::Error as InfrastructureError, MessageType};
+use sn_messaging::{network_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -178,7 +178,7 @@ impl Stage {
     pub async fn check_key_status(
         &self,
         bls_pk: &bls::PublicKey,
-    ) -> Result<(), InfrastructureError> {
+    ) -> Result<(), TargetSectionError> {
         self.state.lock().await.check_key_status(bls_pk)
     }
 
@@ -212,7 +212,7 @@ impl Stage {
                 }
                 vec![]
             }
-            MessageType::InfrastructureMessage(_) => {
+            MessageType::NetworkInfo(_) => {
                 for recipient in recipients {
                     let _ = self
                         .comm

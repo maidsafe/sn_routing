@@ -39,12 +39,7 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
-use sn_messaging::{
-    client::MsgEnvelope,
-    infrastructure::{ErrorResponse, Message as InfrastructureMessage},
-    node::NodeMessage,
-    MessageType, WireMsg,
-};
+use sn_messaging::{network_info::{ErrorResponse, Message as NetworkInfoMsg}, client::Message as ClientMessage, node::NodeMessage, MessageType, WireMsg};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
@@ -322,7 +317,7 @@ impl Routing {
     pub async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
-        message: MsgEnvelope,
+        message: ClientMessage,
     ) -> Result<()> {
         let command = Command::SendMessage {
             recipients: vec![recipient],
@@ -391,7 +386,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
         MessageType::Ping => {
             // Pings are not handled
         }
-        MessageType::InfrastructureMessage(message) => {
+        MessageType::NetworkInfo(message) => {
             let command = Command::HandleInfrastructureMessage { sender, message };
             let _ = task::spawn(stage.handle_commands(command));
         }
@@ -412,18 +407,16 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                 }
             }
         }
-        MessageType::ClientMessage(msg_envelope) => {
-            if let Some(client_pk) = msg_envelope.message.target_section_pk() {
+        MessageType::ClientMessage(message) => {
+            if let Some(client_pk) = message.target_section_pk() {
                 if let Some(bls_pk) = client_pk.bls() {
                     if let Err(error) = stage.check_key_status(&bls_pk).await {
-                        let incoming_msg = msg_envelope.message;
-                        let correlation_id = incoming_msg.id();
-
+                        let correlation_id = message.id();
                         let command = Command::SendMessage {
                             recipients: vec![sender],
                             delivery_group_size: 1,
-                            message: MessageType::InfrastructureMessage(
-                                InfrastructureMessage::InfrastructureUpdate(ErrorResponse {
+                            message: MessageType::NetworkInfo(
+                                NetworkInfoMsg::NetworkInfoUpdate(ErrorResponse {
                                     correlation_id,
                                     error,
                                 }),
@@ -436,7 +429,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
 
             let event = Event::ClientMessageReceived {
-                content: Box::new(msg_envelope),
+                content: Box::new(message),
                 src: sender,
             };
 

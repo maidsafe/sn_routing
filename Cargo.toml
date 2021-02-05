@@ -22,7 +22,9 @@ lru_time_cache = "~0.11.0"
 qp2p = "~0.9.16"
 rand = "~0.7.3"
 rand_chacha = "~0.2.2"
-sn_messaging = "~4.0.0"
+# sn_messaging = "~4.0.0"
+sn_messaging = { git = "https://github.com/oetyng/sn_messaging", branch = "all-acc-in-routing" }
+# sn_messaging = { path = "../sn_messaging" }
 thiserror = "1.0.23"
 xor_name = "1.1.0"
 resource_proof = "0.8.0"

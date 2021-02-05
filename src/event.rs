@@ -12,7 +12,7 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use sn_messaging::client::MsgEnvelope;
+use sn_messaging::client::Message;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -99,7 +99,7 @@ pub enum Event {
     /// Received a message from a client node.
     ClientMessageReceived {
         /// The content of the message.
-        content: Box<MsgEnvelope>,
+        content: Box<Message>,
         /// The address of the client that sent the message.
         src: SocketAddr,
     },
