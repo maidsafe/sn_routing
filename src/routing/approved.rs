@@ -15,7 +15,6 @@ use crate::{
     crypto, delivery_group,
     error::{Error, Result},
     event::{Event, NodeElderChange},
-    location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
         JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, ResourceProofResponse,
@@ -45,7 +44,7 @@ use sn_messaging::{
         Message as InfrastructureMessage,
     },
     node::NodeMessage,
-    MessageType,
+    DstLocation, MessageType, SrcLocation,
 };
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
@@ -575,16 +574,25 @@ impl Approved {
         self.msg_filter.insert_incoming(&msg);
         match msg.variant() {
             Variant::NeighbourInfo { elders_info, .. } => {
-                msg.dst().check_is_section()?;
-                self.handle_neighbour_info(elders_info.value.clone(), *msg.proof_chain_last_key()?)
+                if msg.dst().is_section() {
+                    self.handle_neighbour_info(
+                        elders_info.value.clone(),
+                        *msg.proof_chain_last_key()?,
+                    )
+                } else {
+                    Err(Error::InvalidDstLocation)
+                }
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
             }
             Variant::Relocate(_) => {
-                msg.src().check_is_section()?;
-                let signed_relocate = SignedRelocateDetails::new(msg)?;
-                Ok(self.handle_relocate(signed_relocate).into_iter().collect())
+                if msg.src().is_section() {
+                    let signed_relocate = SignedRelocateDetails::new(msg)?;
+                    Ok(self.handle_relocate(signed_relocate).into_iter().collect())
+                } else {
+                    Err(Error::InvalidSrcLocation)
+                }
             }
             Variant::RelocatePromise(promise) => {
                 self.handle_relocate_promise(*promise, msg.to_bytes())
@@ -678,7 +686,13 @@ impl Approved {
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
     fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
-        self.is_elder() || dst.as_node().ok() == Some(&self.node.name())
+        let is_elder = self.is_elder();
+        let are_we_dst = if let DstLocation::Node(name) = dst {
+            name == &self.node.name()
+        } else {
+            false
+        };
+        is_elder || are_we_dst
     }
 
     // Decide how to handle a `Vote` message.
@@ -746,6 +760,7 @@ impl Approved {
         let src_name = match src {
             SrcLocation::Node(name) => name,
             SrcLocation::Section(prefix) => prefix.name(),
+            _ => unimplemented!(),
         };
 
         let bounce_dst_key = *self.section_key_by_name(&src_name);
@@ -1938,6 +1953,7 @@ impl Approved {
                 );
                 self.send_vote(&recipients, vote)
             }
+            _ => unimplemented!(),
         }
     }
 
@@ -1949,7 +1965,7 @@ impl Approved {
     ) -> Result<Vote> {
         let proof_chain = self.create_proof_chain(&dst, proof_chain_first_index)?;
         let dst_key = if let Some(name) = dst.name() {
-            *self.section_key_by_name(name)
+            *self.section_key_by_name(&name)
         } else {
             // NOTE: `dst` is `Direct`. We use this when we want the message to accumulate at the
             // destination and also be handled only there. We only do this if the recipient is in

@@ -12,12 +12,12 @@ mod stats;
 use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
     consensus::Proven,
-    location::DstLocation,
     peer::Peer,
     section::{EldersInfo, SectionProofChain},
 };
 
 use serde::{Deserialize, Serialize};
+use sn_messaging::DstLocation;
 use std::{collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 
@@ -199,7 +199,7 @@ impl Network {
             return 0;
         };
 
-        let (prefix, index) = if let Some(entry) = self.knowledge.get_matching(name) {
+        let (prefix, index) = if let Some(entry) = self.knowledge.get_matching(&name) {
             (&entry.value.0, entry.value.1)
         } else {
             return 0;
@@ -314,7 +314,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, location::DstLocation, section};
+    use crate::{consensus, section};
     use rand::Rng;
 
     #[test]

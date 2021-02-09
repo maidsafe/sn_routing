@@ -6,13 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::location::{DstLocation, SrcLocation};
-
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use sn_messaging::client::Message;
+use sn_messaging::{client::Message, DstLocation, SrcLocation};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},

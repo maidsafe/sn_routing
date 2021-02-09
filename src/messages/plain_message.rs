@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DstLocation, SignableView, Variant};
+use super::{SignableView, Variant};
 use serde::{Deserialize, Serialize};
+use sn_messaging::DstLocation;
 use xor_name::Prefix;
 
 /// Section-source message without signature and proof.
