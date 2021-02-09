@@ -8,7 +8,6 @@
 
 use crate::{
     consensus::{DkgFailureProofSet, ProofShare, Vote},
-    location::{DstLocation, SrcLocation},
     messages::Message,
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
@@ -17,7 +16,8 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    infrastructure::Message as InfrastructureMessage, node::NodeMessage, MessageType,
+    network_info::Message as NetworkInfoMsg, node::NodeMessage, DstLocation, MessageType,
+    SrcLocation,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -41,7 +41,7 @@ pub(crate) enum Command {
     /// Handle infrastructure query message.
     HandleInfrastructureMessage {
         sender: SocketAddr,
-        message: InfrastructureMessage,
+        message: NetworkInfoMsg,
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),

@@ -9,10 +9,10 @@
 use crate::{
     crypto::{name, PublicKey, Signature as SimpleSignature},
     error::{Error, Result},
-    location::SrcLocation,
     peer::Peer,
 };
 use serde::{Deserialize, Serialize};
+use sn_messaging::SrcLocation;
 use std::net::SocketAddr;
 use xor_name::{Prefix, XorName};
 
@@ -46,14 +46,6 @@ impl SrcAuthority {
         match self {
             Self::Node { public_key, .. } => SrcLocation::Node(name(public_key)),
             Self::Section { prefix, .. } => SrcLocation::Section(*prefix),
-        }
-    }
-
-    pub(crate) fn check_is_section(&self) -> Result<()> {
-        if self.is_section() {
-            Ok(())
-        } else {
-            Err(Error::InvalidSrcLocation)
         }
     }
 

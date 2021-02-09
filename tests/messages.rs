@@ -14,9 +14,9 @@ use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::{
     client::{Message, MessageId, Query, TransferQuery},
-    MessageType, WireMsg,
+    DstLocation, MessageType, SrcLocation, WireMsg,
 };
-use sn_routing::{Config, DstLocation, Error, Event, NodeElderChange, SrcLocation};
+use sn_routing::{Config, Error, Event, NodeElderChange};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
 use xor_name::XorName;

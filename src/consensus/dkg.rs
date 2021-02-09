@@ -15,12 +15,12 @@ use crate::{
     peer::Peer,
     routing::command::{self, Command},
     section::{EldersInfo, SectionKeyShare},
-    DstLocation,
 };
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use sn_messaging::DstLocation;
 use std::{
     collections::{HashMap, VecDeque},
     fmt::{self, Debug, Formatter},

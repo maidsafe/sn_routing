@@ -73,7 +73,6 @@ extern crate tracing;
 pub use self::{
     error::{Error, Result},
     event::{Event, NodeElderChange, SendStream},
-    location::{DstLocation, SrcLocation},
     routing::{Config, EventStream, Routing},
     section::{SectionProofChain, MIN_AGE},
 };
@@ -90,7 +89,6 @@ mod crypto;
 mod delivery_group;
 mod error;
 mod event;
-mod location;
 mod message_filter;
 mod messages;
 mod network;

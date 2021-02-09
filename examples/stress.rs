@@ -20,9 +20,9 @@ use rand::{
     Rng,
 };
 use serde::{Deserialize, Serialize};
+use sn_messaging::{DstLocation, SrcLocation};
 use sn_routing::{
-    Config, DstLocation, Error as RoutingError, Event as RoutingEvent, NodeElderChange, Routing,
-    SrcLocation, TransportConfig,
+    Config, Error as RoutingError, Event as RoutingEvent, NodeElderChange, Routing, TransportConfig,
 };
 use std::{
     collections::BTreeMap,
@@ -354,6 +354,7 @@ impl Network {
                         DstLocation::Direct => {
                             return Err(format_err!("unexpected probe message dst: {:?}", dst))
                         }
+                        _ => unimplemented!(),
                     };
 
                     self.probe_tracker.receive(&dst, message.proof_share);
