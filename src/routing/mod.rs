@@ -29,7 +29,6 @@ use crate::{
     crypto,
     error::Result,
     event::{Event, NodeElderChange},
-    location::{DstLocation, SrcLocation},
     messages::Message,
     node::Node,
     peer::Peer,
@@ -39,7 +38,12 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
-use sn_messaging::{network_info::{ErrorResponse, Message as NetworkInfoMsg}, client::Message as ClientMessage, node::NodeMessage, MessageType, WireMsg};
+use sn_messaging::{
+    client::Message as ClientMessage,
+    network_info::{ErrorResponse, Message as NetworkInfoMsg},
+    node::NodeMessage,
+    DstLocation, MessageType, SrcLocation, WireMsg,
+};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
@@ -415,12 +419,12 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                         let command = Command::SendMessage {
                             recipients: vec![sender],
                             delivery_group_size: 1,
-                            message: MessageType::NetworkInfo(
-                                NetworkInfoMsg::NetworkInfoUpdate(ErrorResponse {
+                            message: MessageType::NetworkInfo(NetworkInfoMsg::NetworkInfoUpdate(
+                                ErrorResponse {
                                     correlation_id,
                                     error,
-                                }),
-                            ),
+                                },
+                            )),
                         };
                         let _ = task::spawn(stage.handle_commands(command));
                         return;

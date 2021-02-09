@@ -6,11 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    location::DstLocation,
-    messages::{Message, MessageHash},
-};
+use crate::messages::{Message, MessageHash};
 use lru_time_cache::LruCache;
+use sn_messaging::DstLocation;
 use std::time::Duration;
 use xor_name::XorName;
 

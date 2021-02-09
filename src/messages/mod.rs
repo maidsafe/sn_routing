@@ -19,12 +19,12 @@ pub(crate) use self::{
 use crate::{
     crypto::{self, name, Verifier},
     error::{Error, Result},
-    location::DstLocation,
     node::Node,
     section::{ExtendError, SectionProofChain, TrustStatus},
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use sn_messaging::DstLocation;
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
 use xor_name::Prefix;

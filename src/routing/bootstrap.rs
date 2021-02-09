@@ -11,7 +11,6 @@ use crate::{
     consensus::Proven,
     crypto::{self, Signature},
     error::{Error, Result},
-    location::DstLocation,
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
     peer::Peer,
@@ -27,7 +26,7 @@ use sn_messaging::{
         GetSectionResponse, InfrastructureInformation, Message as InfrastructureMessage,
     },
     node::NodeMessage,
-    MessageType, WireMsg,
+    DstLocation, MessageType, WireMsg,
 };
 use std::{
     collections::{BTreeMap, VecDeque},

@@ -10,7 +10,6 @@
 
 use crate::{
     error::{Error, Result},
-    location::DstLocation,
     majority,
     network::Network,
     peer::Peer,
@@ -18,6 +17,7 @@ use crate::{
     ELDER_SIZE,
 };
 use itertools::Itertools;
+use sn_messaging::DstLocation;
 use std::{cmp, iter};
 use xor_name::XorName;
 
@@ -83,7 +83,9 @@ pub(crate) fn delivery_targets(
 
             candidates(target_name, our_name, section, network)?
         }
-        DstLocation::Client(_) | DstLocation::Direct => return Err(Error::CannotRoute),
+        DstLocation::EndUser(_) | DstLocation::Client { .. } | DstLocation::Direct => {
+            return Err(Error::CannotRoute)
+        }
     };
 
     Ok((best_section, dg_size))
@@ -155,7 +157,7 @@ where
     let dst_name = match dst {
         DstLocation::Node(name) => *name,
         DstLocation::Section(name) => *name,
-        DstLocation::Client(_) | DstLocation::Direct => {
+        DstLocation::EndUser(_) | DstLocation::Client { .. } | DstLocation::Direct => {
             error!("Invalid destination for signature targets: {:?}", dst);
             return vec![];
         }

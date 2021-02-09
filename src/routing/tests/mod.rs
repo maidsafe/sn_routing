@@ -14,7 +14,6 @@ use crate::{
     consensus::{test_utils::*, Proven, Vote},
     crypto,
     event::Event,
-    location::{DstLocation, SrcLocation},
     majority,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
     network::Network,
@@ -35,7 +34,7 @@ use resource_proof::ResourceProof;
 use sn_messaging::{
     infrastructure::{GetSectionResponse, Message as InfrastructureMessage},
     node::NodeMessage,
-    MessageType,
+    DstLocation, MessageType, SrcLocation,
 };
 use std::{
     collections::{BTreeSet, HashSet},
