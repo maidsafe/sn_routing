@@ -83,9 +83,7 @@ pub(crate) fn delivery_targets(
 
             candidates(target_name, our_name, section, network)?
         }
-        DstLocation::EndUser(_) | DstLocation::Client { .. } | DstLocation::Direct => {
-            return Err(Error::CannotRoute)
-        }
+        DstLocation::User(_) | DstLocation::Direct => return Err(Error::CannotRoute),
     };
 
     Ok((best_section, dg_size))
@@ -157,7 +155,7 @@ where
     let dst_name = match dst {
         DstLocation::Node(name) => *name,
         DstLocation::Section(name) => *name,
-        DstLocation::EndUser(_) | DstLocation::Client { .. } | DstLocation::Direct => {
+        DstLocation::User(_) | DstLocation::Direct => {
             error!("Invalid destination for signature targets: {:?}", dst);
             return vec![];
         }

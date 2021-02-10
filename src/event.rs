@@ -10,7 +10,7 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use sn_messaging::{client::Message, DstLocation, SrcLocation};
+use sn_messaging::{client::Message, DstLocation, SrcLocation, User};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -99,7 +99,7 @@ pub enum Event {
         /// The content of the message.
         content: Box<Message>,
         /// The address of the client that sent the message.
-        src: SocketAddr,
+        user: User,
     },
     /// Failed in sending a message to client, or connection to client is lost
     ClientLost(SocketAddr),
@@ -158,10 +158,10 @@ impl Debug for Event {
                 .field("new_keypair", new_keypair)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
-            Self::ClientMessageReceived { content, src, .. } => write!(
+            Self::ClientMessageReceived { content, user, .. } => write!(
                 formatter,
                 "ClientMessageReceived {{ content: {:?}, src: {:?} }}",
-                content, src,
+                content, user,
             ),
             Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),
         }
