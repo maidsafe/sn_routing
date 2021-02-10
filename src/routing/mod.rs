@@ -42,7 +42,7 @@ use sn_messaging::{
     client::Message as ClientMessage,
     network_info::{ErrorResponse, Message as NetworkInfoMsg},
     node::NodeMessage,
-    DstLocation, MessageType, SrcLocation, WireMsg,
+    DstLocation, MessageType, SrcLocation, User, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -434,7 +434,10 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
 
             let event = Event::ClientMessageReceived {
                 content: Box::new(message),
-                src: sender,
+                user: User::Client {
+                    public_key: sn_data_types::PublicKey::from(crypto::gen_keypair().public),
+                    socket_id: sender,
+                },
             };
 
             stage.send_event(event).await;
