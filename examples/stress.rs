@@ -152,6 +152,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Event {
     // Node successfully joined the network.
     JoinSuccess { id: u64, node: Routing },

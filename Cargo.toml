@@ -28,6 +28,12 @@ sn_messaging = { git = "https://github.com/oetyng/sn_messaging", branch = "all-a
 thiserror = "1.0.23"
 xor_name = "1.1.0"
 resource_proof = "0.8.0"
+# sn_messaging = "3.0.0"
+# sn_messaging = { git = "https://github.com/oetyng/sn_messaging", branch = "remove-msgenvelope" }
+sn_messaging = { path = "../sn_messaging" }
+# sn_data_types = "~0.14.3"
+# sn_data_types = { git = "https://github.com/oetyng/sn_data_types", branch = "remove-msgenvelope" }
+sn_data_types = { path = "../sn_data_types" }
 
   [dependencies.bls]
   package = "threshold_crypto"
@@ -62,9 +68,6 @@ structopt = "~0.3.17"
 tracing-appender = "~0.1.2"
 tracing-subscriber = "~0.2.15"
 yansi = "~0.5.0"
-# sn_data_types = "~0.14.3"
-sn_data_types = { git = "https://github.com/oetyng/sn_data_types", branch = "remove-msgenvelope" }
-# sn_data_types = { path = "../sn_data_types" }
 
   [dev-dependencies.rand]
   version = "~0.7.3"
