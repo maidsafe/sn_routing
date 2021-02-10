@@ -10,6 +10,8 @@ mod elders_info;
 mod member_info;
 mod section_keys;
 mod section_peers;
+// TODO: remove this and replace with `section_chain`.
+mod section_chain;
 mod section_proof_chain;
 
 #[cfg(test)]
