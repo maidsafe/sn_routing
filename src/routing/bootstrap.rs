@@ -15,8 +15,7 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    section::{EldersInfo, Section},
-    SectionProofChain,
+    section::{EldersInfo, Section, SectionChain},
 };
 use bytes::Bytes;
 use futures::future;
@@ -502,7 +501,7 @@ enum JoinResponse {
     Approval {
         elders_info: Proven<EldersInfo>,
         age: u8,
-        section_chain: SectionProofChain,
+        section_chain: SectionChain,
     },
     Retry {
         elders_info: EldersInfo,
@@ -643,7 +642,7 @@ mod tests {
             // Send NodeApproval
             let elders_info = proven(sk, elders_info.clone())?;
             let member_info = proven(sk, MemberInfo::joined(peer.with_age(MIN_AGE + 1)))?;
-            let proof_chain = SectionProofChain::new(pk);
+            let proof_chain = SectionChain::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,

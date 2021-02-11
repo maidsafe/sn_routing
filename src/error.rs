@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::section::SectionChainError;
 use thiserror::Error;
 
 /// The type returned by the sn_routing message handling methods.
@@ -39,6 +40,8 @@ pub enum Error {
     FailedSend,
     #[error("Invalid vote.")]
     InvalidVote,
+    #[error("Invalid section chain: {0}")]
+    InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
 }

@@ -21,8 +21,8 @@ use crate::{
     peer::Peer,
     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
-        test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare,
-        SectionProofChain, MIN_AGE,
+        test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
+        MIN_AGE,
     },
     Error, ELDER_SIZE,
 };
@@ -274,7 +274,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let signature = sk_set
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
-    let proof_chain = SectionProofChain::new(section_key);
+    let proof_chain = SectionChain::new(section_key);
     let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
     let relocate_details = SignedRelocateDetails::new(relocate_message)?;
     let relocate_payload = RelocatePayload::new(
@@ -416,7 +416,7 @@ async fn handle_consensus_on_online() -> Result<()> {
 #[tokio::test]
 async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
-    let chain = SectionProofChain::new(sk_set.secret_key().public_key());
+    let chain = SectionChain::new(sk_set.secret_key().public_key());
 
     // Creates nodes where everybody has age 6 except the last one who has 5.
     let mut nodes: Vec<_> = gen_sorted_nodes(ELDER_SIZE)
@@ -849,7 +849,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     };
 
     let sk = bls::SecretKey::random();
-    let chain = SectionProofChain::new(sk.public_key());
+    let chain = SectionChain::new(sk.public_key());
 
     let proven_elders_info = proven(&sk, elders_info)?;
     let section = Section::new(chain, proven_elders_info)?;
@@ -928,7 +928,7 @@ enum UntrustedMessageSource {
 async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> {
     let sk0 = bls::SecretKey::random();
     let pk0 = sk0.public_key();
-    let chain = SectionProofChain::new(pk0);
+    let chain = SectionChain::new(pk0);
 
     let (elders_info, _) = create_elders_info();
 
@@ -978,7 +978,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         variant: Variant::UserMessage(Bytes::from_static(b"hello")),
     };
     let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
-    let original_message = Message::section_src(message, signature, SectionProofChain::new(pk1))?;
+    let original_message = Message::section_src(message, signature, SectionChain::new(pk1))?;
 
     let commands = stage
         .handle_command(Command::HandleMessage {
@@ -1027,8 +1027,8 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let pk1 = sk1_set.secret_key().public_key();
     let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
 
-    let mut section_chain = SectionProofChain::new(pk0);
-    let _ = section_chain.push(pk1, pk1_signature);
+    let mut section_chain = SectionChain::new(pk0);
+    let _ = section_chain.insert(&pk0, pk1, pk1_signature);
 
     let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(section_chain, proven_elders_info)?;
@@ -1120,8 +1120,8 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let pk1 = sk1_set.secret_key().public_key();
     let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
 
-    let mut chain = SectionProofChain::new(pk0);
-    let _ = chain.push(pk1, pk1_signature);
+    let mut chain = SectionChain::new(pk0);
+    let _ = chain.insert(&pk0, pk1, pk1_signature);
 
     let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(chain.clone(), proven_elders_info)?;
@@ -1143,7 +1143,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let signature = sk1_set
         .secret_key()
         .sign(&bincode::serialize(&original_message.as_signable())?);
-    let proof_chain = chain.slice(1..);
+    let proof_chain = chain.truncate(1);
     let original_message = Message::section_src(original_message, signature, proof_chain)?;
 
     // Create our node.
@@ -1209,8 +1209,8 @@ async fn handle_sync() -> Result<()> {
     let pk1 = sk1_set.secret_key().public_key();
     let pk1_signature = sk0_set.secret_key().sign(bincode::serialize(&pk1)?);
 
-    let mut chain = SectionProofChain::new(pk0);
-    assert!(chain.push(pk1, pk1_signature));
+    let mut chain = SectionChain::new(pk0);
+    assert_eq!(chain.insert(&pk0, pk1, pk1_signature), Ok(()));
 
     let (old_elders_info, mut nodes) = create_elders_info();
     let proven_old_elders_info = proven(sk0_set.secret_key(), old_elders_info.clone())?;
@@ -1227,7 +1227,7 @@ async fn handle_sync() -> Result<()> {
     let sk2 = bls::SecretKey::random();
     let pk2 = sk2.public_key();
     let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
-    assert!(chain.push(pk2, pk2_signature));
+    assert_eq!(chain.insert(&pk1, pk2, pk2_signature), Ok(()));
 
     let old_node = nodes.remove(0);
 
@@ -1288,7 +1288,7 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let node = create_node();
     let peer = node.peer();
 
-    let chain = SectionProofChain::new(pk0_good);
+    let chain = SectionChain::new(pk0_good);
     let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
     let proven_elders_info = proven(sk0_good_set.secret_key(), elders_info)?;
     let section = Section::new(chain, proven_elders_info)?;
@@ -1309,8 +1309,8 @@ async fn receive_message_with_invalid_proof_chain() -> Result<()> {
     let pk1_bad = sk1_bad.public_key();
     let pk1_bad_signature = sk0_bad.sign(&bincode::serialize(&pk1_bad)?);
 
-    let mut bad_chain = SectionProofChain::new(pk0_good);
-    bad_chain.push_without_validation(pk1_bad, pk1_bad_signature);
+    let mut bad_chain = SectionChain::new(pk0_good);
+    bad_chain.insert_without_validation(&pk0_good, pk1_bad, pk1_bad_signature)?;
 
     let message = PlainMessage {
         src: Prefix::default(),
@@ -1774,7 +1774,7 @@ fn create_section(
     sk_set: &SecretKeySet,
     elders_info: &EldersInfo,
 ) -> Result<(Section, SectionKeyShare)> {
-    let section_chain = SectionProofChain::new(sk_set.secret_key().public_key());
+    let section_chain = SectionChain::new(sk_set.secret_key().public_key());
     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
 
     let mut section = Section::new(section_chain, proven_elders_info)?;

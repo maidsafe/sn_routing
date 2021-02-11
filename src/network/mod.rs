@@ -13,7 +13,7 @@ use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
     consensus::Proven,
     peer::Peer,
-    section::{EldersInfo, SectionProofChain},
+    section::{EldersInfo, SectionChain},
 };
 
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ pub struct Network {
     // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
     // Indices of our section keys that are trusted by other sections.
-    knowledge: PrefixMap<Proven<(Prefix, u64)>>,
+    knowledge: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
 }
 
 impl Network {
@@ -76,7 +76,7 @@ impl Network {
     /// Merge two `Network`s into one.
     /// TODO: make this operation commutative, associative and idempotent (CRDT)
     /// TODO: return bool indicating whether anything changed.
-    pub fn merge(&mut self, other: Self, section_chain: &SectionProofChain) {
+    pub fn merge(&mut self, other: Self, section_chain: &SectionChain) {
         // FIXME: these operations are not commutative:
 
         for entry in other.neighbours {
@@ -189,53 +189,32 @@ impl Network {
         )
     }
 
-    /// Returns the index of the public key in our_history that will be trusted by the given
-    /// section.
-    pub fn knowledge_by_section(&self, prefix: &Prefix) -> u64 {
+    /// Returns the public key in our chain that will be trusted by the given section.
+    /// If `None` is returned, the only key guaranteed to be trusted is the root key.
+    pub fn knowledge_by_section(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
         self.knowledge
             .get_equal_or_ancestor(prefix)
-            .map(|entry| entry.value.1)
-            .unwrap_or(0)
+            .map(|entry| &entry.value.1)
     }
 
-    /// Returns the index of the public key in our chain that will be trusted by the given
-    /// location
-    pub fn knowledge_by_location(&self, dst: &DstLocation) -> u64 {
-        let name = if let Some(name) = dst.name() {
-            name
-        } else {
-            return 0;
-        };
-
-        let (prefix, index) = if let Some(entry) = self.knowledge.get_matching(&name) {
-            (&entry.value.0, entry.value.1)
-        } else {
-            return 0;
-        };
-
-        // TODO: we might not need to do this anymore because we have the bounce untrusted messages
-        // mechanism now.
-        if let Some(sibling_entry) = self.knowledge.get_equal_or_ancestor(&prefix.sibling()) {
-            // The sibling section might not have processed the split yet, so it might still be in
-            // `dst`'s location. Because of that, we need to return index that would be trusted
-            // by them too.
-            index.min(sibling_entry.value.1)
-        } else {
-            index
-        }
+    /// Returns the public key in our chain that will be trusted by the given location.
+    pub fn knowledge_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
+        self.knowledge
+            .get_matching(&dst.name()?)
+            .map(|entry| &entry.value.1)
     }
 
     /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
     /// occurred in the meantime, the index for sections covering the rest of the address space
     /// are initialised to the old index that was stored for their common ancestor
-    pub fn update_knowledge(&mut self, new_index: Proven<(Prefix, u64)>) {
+    pub fn update_knowledge(&mut self, knowledge: Proven<(Prefix, bls::PublicKey)>) {
         trace!(
-            "update knowledge of section ({:b}) about our section to {}",
-            new_index.value.0,
-            new_index.value.1,
+            "update knowledge of section ({:b}) about our section to {:?}",
+            knowledge.value.0,
+            knowledge.value.1,
         );
 
-        let _ = self.knowledge.insert(new_index);
+        let _ = self.knowledge.insert(knowledge);
     }
 
     /// Returns network statistics.
@@ -417,17 +396,23 @@ mod tests {
 
     #[test]
     fn update_their_knowledge_after_split_from_one_sibling() {
+        let pk1 = gen_key();
+        let pk2 = gen_key();
+
         update_their_knowledge_and_check_proving_index(
-            vec![("1", 1), ("10", 2)],
-            vec![("10", 1), ("11", 1)],
+            vec![("1", pk1), ("10", pk2)],
+            vec![("10", pk1), ("11", pk1)],
         )
     }
 
     #[test]
     fn update_their_knowledge_after_split_from_both_siblings() {
+        let pk1 = gen_key();
+        let pk2 = gen_key();
+
         update_their_knowledge_and_check_proving_index(
-            vec![("1", 1), ("10", 2), ("11", 2)],
-            vec![("10", 2), ("11", 2)],
+            vec![("1", pk1), ("10", pk2), ("11", pk2)],
+            vec![("10", pk2), ("11", pk2)],
         )
     }
 
@@ -512,29 +497,29 @@ mod tests {
     // Perform a series of updates to `knowledge`, then verify that the proving indices for
     // the given dst locations are as expected.
     //
-    // - `updates` - pairs of (prefix, version) to pass to `update_knowledge`
-    // - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is
-    //   generated such that it matches `prefix` and `version` is the expected trusted key version.
+    // - `updates` - pairs of (prefix, key) to pass to `update_knowledge`
+    // - `expected_trusted_keys` - pairs of (prefix, key) where the dst location name is
+    //   generated such that it matches `prefix` and `key` is the expected trusted key.
     fn update_their_knowledge_and_check_proving_index(
-        updates: Vec<(&str, u64)>,
-        expected_trusted_key_indices: Vec<(&str, u64)>,
+        updates: Vec<(&str, bls::PublicKey)>,
+        expected_trusted_keys: Vec<(&str, bls::PublicKey)>,
     ) {
         let sk = bls::SecretKey::random();
 
         let mut map = Network::new();
 
-        for (prefix_str, version) in updates {
+        for (prefix_str, key) in updates {
             let prefix = prefix_str.parse().unwrap();
-            let payload = consensus::test_utils::proven(&sk, (prefix, version)).unwrap();
+            let payload = consensus::test_utils::proven(&sk, (prefix, key)).unwrap();
             map.update_knowledge(payload);
         }
 
-        for (dst_name_prefix_str, expected_index) in expected_trusted_key_indices {
+        for (dst_name_prefix_str, expected_key) in expected_trusted_keys {
             let dst_name_prefix: Prefix = dst_name_prefix_str.parse().unwrap();
             let dst_name = dst_name_prefix.substituted_in(rand::random());
             let dst = DstLocation::Section(dst_name);
 
-            assert_eq!(map.knowledge_by_location(&dst), expected_index);
+            assert_eq!(map.knowledge_by_location(&dst), Some(&expected_key));
         }
     }
 

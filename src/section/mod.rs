@@ -8,11 +8,9 @@
 
 mod elders_info;
 mod member_info;
+mod section_chain;
 mod section_keys;
 mod section_peers;
-// TODO: remove this and replace with `section_chain`.
-mod section_chain;
-mod section_proof_chain;
 
 #[cfg(test)]
 pub(crate) use self::elders_info::test_utils;
@@ -20,8 +18,8 @@ pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
     elders_info::EldersInfo,
     member_info::{MemberInfo, PeerState, MIN_AGE},
+    section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
-    section_proof_chain::{ExtendError, SectionProofChain, TrustStatus},
 };
 
 use crate::{
@@ -31,7 +29,6 @@ use crate::{
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_signature_aggregator::Proof;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
@@ -40,13 +37,13 @@ use xor_name::{Prefix, XorName};
 pub(crate) struct Section {
     members: SectionPeers,
     elders_info: Proven<EldersInfo>,
-    chain: SectionProofChain,
+    chain: SectionChain,
 }
 
 impl Section {
     /// Creates a minimal `Section` initially containing only info about our elders
     /// (`elders_info`).
-    pub fn new(chain: SectionProofChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
+    pub fn new(chain: SectionChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
         if !chain.has_key(&elders_info.proof.public_key) {
             // TODO: consider more specific error here.
             return Err(Error::InvalidMessage);
@@ -67,10 +64,7 @@ impl Section {
 
         let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
 
-        let mut section = Self::new(
-            SectionProofChain::new(elders_info.proof.public_key),
-            elders_info,
-        )?;
+        let mut section = Self::new(SectionChain::new(elders_info.proof.public_key), elders_info)?;
 
         for peer in section.elders_info.value.peers() {
             let member_info = MemberInfo::joined(*peer);
@@ -93,34 +87,21 @@ impl Section {
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
     /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.chain.self_verify() || !other.elders_info.verify(&other.chain) {
+        if !other.elders_info.self_verify()
+            || &other.elders_info.proof.public_key != other.chain.last_key()
+        {
+            // TODO: use more specific error variant.
             return Err(Error::InvalidMessage);
         }
 
-        // TODO: handle forks
-        match self.chain.merge(other.chain.clone()) {
-            Ok(()) => (),
-            Err(_) => {
-                error!(
-                    "fork attempt detected: new chain: {:?}, new prefix: ({:b}), current chain: {:?}, current prefix: ({:b})",
-                    other.chain.keys().format("->"),
-                    other.prefix(),
-                    self.chain.keys().format("->"),
-                    self.prefix(),
-                );
-                return Err(Error::InvalidMessage);
-            }
-        }
+        self.chain.merge(other.chain.clone())?;
 
-        match cmp_section_chain_position(
-            &self.elders_info.proof,
-            &other.elders_info.proof,
-            &self.chain,
-        ) {
-            Ordering::Less => {
-                self.elders_info = other.elders_info;
-            }
-            Ordering::Greater | Ordering::Equal => (),
+        if self.chain.cmp_by_position(
+            &other.elders_info.proof.public_key,
+            &self.elders_info.proof.public_key,
+        ) == Ordering::Greater
+        {
+            self.elders_info = other.elders_info;
         }
 
         for info in other.members {
@@ -149,17 +130,14 @@ impl Section {
             return false;
         }
 
-        if !self
-            .chain
-            .push(new_elders_info.proof.public_key, new_key_proof.signature)
-        {
+        if let Err(error) = self.chain.insert(
+            &new_key_proof.public_key,
+            new_elders_info.proof.public_key,
+            new_key_proof.signature,
+        ) {
             error!(
-                "fork attempt detected: new key: {:?}, new prefix: ({:b}), expected current key: {:?}, current chain: {:?}, current prefix: ({:b})",
-                new_elders_info.proof.public_key,
-                new_elders_info.value.prefix,
-                new_key_proof.public_key,
-                self.chain.keys().format("->"),
-                self.prefix(),
+                "failed to insert key {:?} (signed with {:?}) into the section chain: {}",
+                new_elders_info.proof.public_key, new_key_proof.public_key, error,
             );
             return false;
         }
@@ -184,19 +162,14 @@ impl Section {
     // section chain truncated to the given length (the chain is truncated from the end, so it
     // always contains the latest key). If `chain_len` is zero, it is silently replaced with one.
     pub fn trimmed(&self, chain_len: usize) -> Self {
-        let first_key_index = self
-            .chain
-            .last_key_index()
-            .saturating_sub(chain_len.saturating_sub(1) as u64);
-
         Self {
             elders_info: self.elders_info.clone(),
-            chain: self.chain.slice(first_key_index..),
+            chain: self.chain.truncate(chain_len),
             members: SectionPeers::default(),
         }
     }
 
-    pub fn chain(&self) -> &SectionProofChain {
+    pub fn chain(&self) -> &SectionChain {
         &self.chain
     }
 
@@ -204,20 +177,10 @@ impl Section {
     pub(crate) fn extend_chain(
         &mut self,
         new_first_key: &bls::PublicKey,
-        full_chain: &SectionProofChain,
-    ) -> Result<(), ExtendError> {
-        self.chain.extend(new_first_key, full_chain)
-    }
-
-    // Creates the shortest proof chain that includes both the key at `their_knowledge`
-    // (if provided) and the key our current `elders_info` was signed with.
-    pub fn create_proof_chain_for_our_info(
-        &self,
-        their_knowledge: Option<u64>,
-    ) -> SectionProofChain {
-        let first_index = self.elders_info_signing_key_index();
-        let first_index = their_knowledge.unwrap_or(first_index).min(first_index);
-        self.chain.slice(first_index..)
+        full_chain: &SectionChain,
+    ) -> Result<(), SectionChainError> {
+        self.chain = self.chain.extend(new_first_key, full_chain)?;
+        Ok(())
     }
 
     pub fn elders_info(&self) -> &EldersInfo {
@@ -285,15 +248,6 @@ impl Section {
             .joined()
             .find(|info| info.peer.addr() == addr)
             .map(|info| &info.peer)
-    }
-
-    fn elders_info_signing_key_index(&self) -> u64 {
-        // NOTE: we assume that the key the current `EldersInfo` is signed with is always
-        // present in our section proof chain. This is guaranteed, because we update both the
-        // elders info and the section chain together in a single operation.
-        self.chain
-            .index_of(&self.elders_info.proof.public_key)
-            .unwrap_or_else(|| unreachable!("EldersInfo signed with unknown key"))
     }
 
     // Tries to split our section.
@@ -380,20 +334,4 @@ fn create_first_proof<T: Serialize>(
         public_key: pk_set.public_key(),
         signature,
     })
-}
-
-fn cmp_section_chain_position(
-    lhs: &Proof,
-    rhs: &Proof,
-    section_chain: &SectionProofChain,
-) -> Ordering {
-    let lhs_index = section_chain.index_of(&lhs.public_key);
-    let rhs_index = section_chain.index_of(&rhs.public_key);
-
-    match (lhs_index, rhs_index) {
-        (Some(lhs_index), Some(rhs_index)) => lhs_index.cmp(&rhs_index),
-        (Some(_), None) => Ordering::Greater,
-        (None, Some(_)) => Ordering::Less,
-        (None, None) => Ordering::Equal,
-    }
 }

@@ -10,7 +10,7 @@ use super::{Proof, ProofShare, Proven, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
-    section::{EldersInfo, MemberInfo, SectionProofChain},
+    section::{EldersInfo, MemberInfo, SectionChain},
 };
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
@@ -55,13 +55,13 @@ pub(crate) enum Vote {
     // Voted to update their knowledge of our section.
     TheirKnowledge {
         prefix: Prefix,
-        key_index: u64,
+        key: bls::PublicKey,
     },
 
     // Voted to send an user message whose source is our section.
     SendMessage {
         message: Box<PlainMessage>,
-        proof_chain: SectionProofChain,
+        proof_chain: SectionChain,
     },
 
     // Voted to concensus whether new node shall be allowed to join
@@ -101,7 +101,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::SectionInfo(info) => info.serialize(serializer),
             Vote::OurElders(info) => info.proof.public_key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
-            Vote::TheirKnowledge { prefix, key_index } => (prefix, key_index).serialize(serializer),
+            Vote::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
             Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
             Vote::JoinsAllowed(joins_allowed) => joins_allowed.serialize(serializer),
         }
@@ -171,9 +171,9 @@ mod tests {
 
         // Vote::TheirKnowledge
         let prefix = gen_prefix();
-        let key_index = rand::random();
-        let vote = Vote::TheirKnowledge { prefix, key_index };
-        verify_serialize_for_signing(&vote, &(prefix, key_index));
+        let key = bls::SecretKey::random().public_key();
+        let vote = Vote::TheirKnowledge { prefix, key };
+        verify_serialize_for_signing(&vote, &(prefix, key));
 
         Ok(())
     }

@@ -33,7 +33,7 @@ use crate::{
     messages::Message,
     node::Node,
     peer::Peer,
-    section::{EldersInfo, SectionProofChain},
+    section::{EldersInfo, SectionChain},
     TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
@@ -365,7 +365,7 @@ impl Routing {
     }
 
     /// Returns our section proof chain.
-    pub async fn our_history(&self) -> SectionProofChain {
+    pub async fn our_history(&self) -> SectionChain {
         self.stage.state.lock().await.section().chain().clone()
     }
 

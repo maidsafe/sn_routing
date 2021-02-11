@@ -31,8 +31,8 @@ use crate::{
         SignedRelocateDetails,
     },
     section::{
-        EldersInfo, MemberInfo, PeerState, Section, SectionKeyShare, SectionKeysProvider,
-        SectionProofChain, MIN_AGE,
+        EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
+        SectionKeysProvider, MIN_AGE,
     },
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
@@ -51,7 +51,12 @@ use sn_messaging::{
     },
     Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
-use std::{cmp, net::SocketAddr, slice};
+use std::{
+    cmp::{self, Ordering},
+    iter,
+    net::SocketAddr,
+    slice,
+};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -171,7 +176,7 @@ impl Approved {
             self.network.key_by_prefix(prefix).or_else(|| {
                 if self.is_elder() {
                     // We are elder - the first key is the genesis key
-                    Some(self.section.chain().first_key())
+                    Some(self.section.chain().root_key())
                 } else {
                     // We are not elder - the chain might be truncated so the first key is not
                     // necessarily the genesis key.
@@ -360,8 +365,8 @@ impl Approved {
             Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
             Vote::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
             Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
-            Vote::TheirKnowledge { prefix, key_index } => {
-                self.handle_their_knowledge_event(prefix, key_index, proof);
+            Vote::TheirKnowledge { prefix, key } => {
+                self.handle_their_knowledge_event(prefix, key, proof);
                 Ok(vec![])
             }
             Vote::SendMessage {
@@ -494,7 +499,7 @@ impl Approved {
             content: vote.clone(),
             proof_share: proof_share.clone(),
         };
-        let proof_chain = self.section.create_proof_chain_for_our_info(None);
+        let proof_chain = self.section.chain().truncate(1);
         let message = Message::single_src(
             &self.node,
             DstLocation::Direct,
@@ -690,8 +695,8 @@ impl Approved {
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
-                key_index,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone(), *key_index),
+                generation,
+            } => self.handle_dkg_start(*dkg_key, elders_info.clone(), *generation),
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
@@ -1302,11 +1307,11 @@ impl Approved {
         &mut self,
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
-        key_index: u64,
+        generation: u64,
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_elders_info, key_index)
+            .start(&self.node.keypair, dkg_key, new_elders_info, generation)
             .into_commands(&self.node)
     }
 
@@ -1625,7 +1630,12 @@ impl Approved {
         }
     }
 
-    fn handle_their_knowledge_event(&mut self, prefix: Prefix, knowledge: u64, proof: Proof) {
+    fn handle_their_knowledge_event(
+        &mut self,
+        prefix: Prefix,
+        knowledge: bls::PublicKey,
+        proof: Proof,
+    ) {
         let knowledge = Proven::new((prefix, knowledge), proof);
         self.network.update_knowledge(knowledge)
     }
@@ -1633,7 +1643,7 @@ impl Approved {
     fn handle_send_message_event(
         &self,
         message: PlainMessage,
-        proof_chain: SectionProofChain,
+        proof_chain: SectionChain,
         proof: Proof,
     ) -> Result<Command> {
         let message = Message::section_src(message, proof.signature, proof_chain)?;
@@ -1660,13 +1670,14 @@ impl Approved {
                 sibling.section.elders_info()
             );
 
+            // FIXME: this is duplicated in `update_state`. Do we need it here as well?
             if self.section_keys_provider.has_key_share() {
                 // We can update the sibling knowledge already because we know they also reached
                 // consensus on our `OurKey` so they know our latest key. Need to vote for it first
                 // though, to accumulate the signatures.
                 commands.extend(self.vote(Vote::TheirKnowledge {
                     prefix: *sibling.section.prefix(),
-                    key_index: self.section.chain().last_key_index(),
+                    key: *self.section.chain().last_key(),
                 })?);
             }
 
@@ -1702,7 +1713,7 @@ impl Approved {
                 // though, to accumulate the signatures.
                 commands.extend(self.vote(Vote::TheirKnowledge {
                     prefix: new_prefix.sibling(),
-                    key_index: self.section.chain().last_key_index(),
+                    key: *self.section.chain().last_key(),
                 })?);
             }
         }
@@ -1806,17 +1817,11 @@ impl Approved {
 
         // Attach proof chain that includes the key the approved node knows (if any), the key its
         // `MemberInfo` is signed with and the last key of our section chain.
-        let last_index = self.section.chain().last_key_index();
-        let their_knowledge_index = their_knowledge
-            .and_then(|key| self.section.chain().index_of(&key))
-            .unwrap_or(last_index);
-        let member_info_key_index = self
-            .section
-            .chain()
-            .index_of(&member_info.proof.public_key)
-            .unwrap_or(last_index);
-        let start_index = their_knowledge_index.min(member_info_key_index);
-        let proof_chain = self.section.chain().slice(start_index..);
+        let proof_chain = self.section.chain().minimize(
+            iter::once(self.section.chain().last_key())
+                .chain(their_knowledge.as_ref())
+                .chain(iter::once(&member_info.proof.public_key)),
+        )?;
 
         let variant = Variant::NodeApproval {
             elders_info: self.section.proven_elders_info().clone(),
@@ -1876,9 +1881,10 @@ impl Approved {
 
     fn send_relocate(&self, recipient: &Peer, details: RelocateDetails) -> Result<Vec<Command>> {
         // We need to construct a proof that would be trusted by the destination section.
-        let knowledge_index = self
+        let known_key = self
             .network
-            .knowledge_by_location(&DstLocation::Section(details.destination));
+            .knowledge_by_location(&DstLocation::Section(details.destination))
+            .unwrap_or_else(|| self.section.chain().root_key());
 
         let dst = DstLocation::Node(details.pub_id);
         let variant = Variant::Relocate(details);
@@ -1886,7 +1892,7 @@ impl Approved {
         trace!("Send {:?} -> {:?}", variant, dst);
 
         // Vote accumulated at destination.
-        let vote = self.create_send_message_vote(dst, variant, Some(knowledge_index))?;
+        let vote = self.create_send_message_vote(dst, variant, Some(known_key))?;
         self.send_vote(slice::from_ref(recipient), vote)
     }
 
@@ -1921,9 +1927,15 @@ impl Approved {
         nonce: MessageHash,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Option<Command>> {
+        let dst_knowledge = self
+            .network
+            .knowledge_by_section(&dst)
+            .unwrap_or_else(|| self.section.chain().root_key());
         let proof_chain = self
             .section
-            .create_proof_chain_for_our_info(Some(self.network.knowledge_by_section(&dst)));
+            .chain()
+            .minimize(vec![self.section.chain().last_key(), dst_knowledge])?;
+
         let variant = Variant::NeighbourInfo {
             elders_info: self.section.proven_elders_info().clone(),
             nonce,
@@ -1957,7 +1969,7 @@ impl Approved {
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,
-            key_index: self.section.chain().last_key_index() + 1,
+            generation: self.section.chain().len() as u64,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
         self.send_vote(recipients, vote)
@@ -2061,7 +2073,7 @@ impl Approved {
                 self.section_keys_provider.key_share()?,
                 itinerary.dst,
                 content,
-                self.section().create_proof_chain_for_our_info(None),
+                self.create_proof_chain(&itinerary.dst, None)?,
                 None,
                 self.section().prefix().name(),
             )?
@@ -2098,9 +2110,9 @@ impl Approved {
         &self,
         dst: DstLocation,
         variant: Variant,
-        proof_chain_first_index: Option<u64>,
+        proof_chain_first_key: Option<&bls::PublicKey>,
     ) -> Result<Vote> {
-        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_index)?;
+        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2126,22 +2138,19 @@ impl Approved {
     fn create_proof_chain(
         &self,
         dst: &DstLocation,
-        first_index: Option<u64>,
-    ) -> Result<SectionProofChain> {
-        let first_index = first_index.unwrap_or_else(|| self.network.knowledge_by_location(dst));
+        first_key: Option<&bls::PublicKey>,
+    ) -> Result<SectionChain> {
+        let first_key = first_key
+            .or_else(|| self.network.knowledge_by_location(dst))
+            .unwrap_or_else(|| self.section.chain().root_key());
 
         let last_key = self
             .section_keys_provider
             .key_share()?
             .public_key_set
             .public_key();
-        let last_index = self
-            .section
-            .chain()
-            .index_of(&last_key)
-            .unwrap_or_else(|| self.section.chain().last_key_index());
 
-        Ok(self.section.chain().slice(first_index..=last_index))
+        Ok(self.section.chain().minimize(vec![first_key, &last_key])?)
     }
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
@@ -2202,18 +2211,20 @@ impl Approved {
             }
         }
 
-        if let Some(dst_key) = msg.dst_key() {
-            let old = self.network.knowledge_by_section(src_prefix);
-            let new = self.section.chain().index_of(dst_key).unwrap_or(0);
+        if let Some(new) = msg.dst_key() {
+            let old = self
+                .network
+                .knowledge_by_section(src_prefix)
+                .unwrap_or_else(|| self.section.chain().root_key());
 
-            if new > old {
+            if self.section.chain().cmp_by_position(new, old) == Ordering::Greater {
                 commands.extend(self.vote(Vote::TheirKnowledge {
                     prefix: *src_prefix,
-                    key_index: new,
+                    key: *new,
                 })?);
             }
 
-            if is_neighbour && new < self.section.chain().last_key_index() {
+            if is_neighbour && new != self.section.chain().last_key() {
                 vote_send_neighbour_info = true;
             }
         }
@@ -2235,7 +2246,7 @@ impl Approved {
         } else {
             self.network
                 .key_by_name(name)
-                .unwrap_or_else(|| self.section.chain().first_key())
+                .unwrap_or_else(|| self.section.chain().root_key())
         }
     }
 
