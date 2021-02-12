@@ -40,6 +40,7 @@ use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_messaging::{
+    client::Error as ClientError,
     infrastructure::{GetSectionResponse, Query},
     node::NodeMessage,
     MessageType,
@@ -244,6 +245,10 @@ impl Approved {
                         .await;
                 }
 
+                vec![]
+            }
+            Query::SectionKeyResponse(_) => {
+                error!("Shall not receive an error response to client");
                 vec![]
             }
         }
@@ -1832,6 +1837,23 @@ impl Approved {
         let command = Command::send_message_to_nodes(&targets, dg_size, msg.to_bytes());
 
         Ok(Some(command))
+    }
+
+    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), ClientError> {
+        if self.dkg_voter.has_ongoing_dkg() {
+            return Err(ClientError::DkgInProgress);
+        }
+        if !self.section.chain().has_key(bls_pk) {
+            return Err(ClientError::UnrecognizedSectionKey);
+        }
+        if bls_pk != self.section.chain().last_key() {
+            if let Ok(public_key_set) = self.public_key_set() {
+                return Err(ClientError::TargetSectionKeyIsNotCurrent(public_key_set));
+            } else {
+                return Err(ClientError::DkgInProgress);
+            }
+        }
+        Ok(())
     }
 
     // Setting the JoinsAllowed triggers a round Vote::SetJoinsAllowed to update the flag.

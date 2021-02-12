@@ -8,7 +8,7 @@
 
 use super::{bootstrap, Approved, Comm, Command};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
-use sn_messaging::MessageType;
+use sn_messaging::{client::Error as ClientError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -173,6 +173,10 @@ impl Stage {
     // inside `handle_commands` causes compile error about type check cycle.
     fn spawn_handle_commands(self: Arc<Self>, command: Command) {
         let _ = tokio::spawn(self.handle_commands(command));
+    }
+
+    pub async fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), ClientError> {
+        self.state.lock().await.check_key_status(bls_pk)
     }
 
     async fn send_message(

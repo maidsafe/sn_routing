@@ -39,7 +39,9 @@ use crate::{
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
-use sn_messaging::{client::MsgEnvelope, node::NodeMessage, MessageType, WireMsg};
+use sn_messaging::{
+    client::MsgEnvelope, infrastructure::Query, node::NodeMessage, MessageType, WireMsg,
+};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
@@ -408,6 +410,22 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
         }
         MessageType::ClientMessage(msg_envelope) => {
+            if let Some(client_pk) = msg_envelope.message.target_section_pk() {
+                if let Some(bls_pk) = client_pk.bls() {
+                    if let Err(error) = stage.check_key_status(&bls_pk).await {
+                        let command = Command::SendMessage {
+                            recipients: vec![sender],
+                            delivery_group_size: 1,
+                            message: MessageType::InfrastructureQuery(Query::SectionKeyResponse(
+                                error,
+                            )),
+                        };
+                        let _ = task::spawn(stage.handle_commands(command));
+                        return;
+                    }
+                }
+            }
+
             let event = Event::ClientMessageReceived {
                 content: Box::new(msg_envelope),
                 src: sender,

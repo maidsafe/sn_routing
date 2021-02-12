@@ -197,6 +197,13 @@ impl DkgVoter {
         }
     }
 
+    // Checks whether there is any on-going DKG session.
+    pub fn has_ongoing_dkg(&self) -> bool {
+        self.sessions
+            .values()
+            .any(|session| !session.is_finalized())
+    }
+
     // Handle a received DkgMessage.
     pub fn process_message(
         &mut self,
@@ -368,6 +375,10 @@ impl Session {
 
             self.report_failure(dkg_key, keypair)
         }
+    }
+
+    fn is_finalized(&self) -> bool {
+        self.key_gen.is_finalized()
     }
 
     fn report_failure(&mut self, dkg_key: &DkgKey, keypair: &Keypair) -> Vec<DkgCommand> {
