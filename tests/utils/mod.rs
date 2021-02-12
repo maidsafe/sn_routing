@@ -96,7 +96,13 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
         ..Default::default()
     })
     .await?;
-    assert_next_event!(event_stream, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
+    assert_next_event!(
+        event_stream,
+        Event::EldersChanged {
+            self_status_change: NodeElderChange::Promoted,
+            ..
+        }
+    );
 
     let bootstrap_contact = node.our_connection_info();
 

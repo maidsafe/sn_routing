@@ -37,9 +37,12 @@ impl Comm {
     ) -> Result<Self> {
         let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
-        // Don't bootstrap, just create an endpoint where to listen to
+        // Don't bootstrap, just create an endpoint to listen to
         // the incoming messages from other nodes.
-        let (endpoint, _, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
+        // This also returns the a channel where we can listen for
+        // disconnection events.
+        let (endpoint, _incoming_connections, incoming_messages, disconnections) =
+            quic_p2p.new_endpoint().await?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -65,7 +68,8 @@ impl Comm {
         let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
 
         // Bootstrap to the network returning the connection to a node.
-        let (endpoint, _, incoming_messages, disconnections, bootstrap_addr) =
+        // We can use the returned channels to listen for incoming messages and disconnection events
+        let (endpoint, _incoming_connections, incoming_messages, disconnections, bootstrap_addr) =
             quic_p2p.bootstrap().await?;
 
         let _ = task::spawn(handle_incoming_messages(
@@ -111,7 +115,10 @@ impl Comm {
         self.endpoint
             .send_message(msg, recipient)
             .await
-            .map_err(|_| SendError)
+            .map_err(|err| {
+                error!("{}", err);
+                SendError
+            })
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
@@ -197,7 +204,7 @@ impl Comm {
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
-        // This will attempt to used a cached connection
+        // This will attempt to use a cached connection
         if self
             .endpoint
             .send_message(msg.clone(), recipient)
