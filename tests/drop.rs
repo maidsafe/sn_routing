@@ -19,7 +19,13 @@ async fn test_node_drop() -> Result<()> {
     let mut nodes = create_connected_nodes(3).await?;
 
     for (_, events) in &mut nodes[1..] {
-        assert_event!(events, Event::EldersChanged { self_status_change: NodeElderChange::Promoted, .. });
+        assert_event!(
+            events,
+            Event::EldersChanged {
+                self_status_change: NodeElderChange::Promoted,
+                ..
+            }
+        );
     }
 
     // Wait for the DKG(s) to complete, to make sure there are no more messages being exchanged
