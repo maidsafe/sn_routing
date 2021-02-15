@@ -40,8 +40,10 @@ use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    client::Error as ClientError,
-    infrastructure::{GetSectionResponse, Query},
+    infrastructure::{
+        Error as InfrastructureError, GetSectionResponse, InfrastructureInformation,
+        Message as InfrastructureMessage,
+    },
     node::NodeMessage,
     MessageType,
 };
@@ -198,25 +200,29 @@ impl Approved {
         Ok(commands)
     }
 
-    pub async fn handle_infrastructure_query(
+    pub async fn handle_infrastructure_message(
         &mut self,
         sender: SocketAddr,
-        message: Query,
+        message: InfrastructureMessage,
     ) -> Vec<Command> {
         match message {
-            Query::GetSectionRequest(name) => {
+            InfrastructureMessage::GetSectionRequest(name) => {
                 debug!("Received GetSectionRequest({}) from {}", name, sender);
 
                 let response = if self.section.prefix().matches(&name) {
-                    GetSectionResponse::Success {
-                        prefix: self.section.elders_info().prefix,
-                        key: *self.section.chain().last_key(),
-                        elders: self
-                            .section
-                            .elders_info()
-                            .peers()
-                            .map(|peer| (*peer.name(), *peer.addr()))
-                            .collect(),
+                    if let Ok(pk_set) = self.public_key_set() {
+                        GetSectionResponse::Success(InfrastructureInformation {
+                            prefix: self.section.elders_info().prefix,
+                            pk_set,
+                            elders: self
+                                .section
+                                .elders_info()
+                                .peers()
+                                .map(|peer| (*peer.name(), *peer.addr()))
+                                .collect(),
+                        })
+                    } else {
+                        GetSectionResponse::SectionInfrastructureError(InfrastructureError::NoSectionPkSet)
                     }
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
@@ -228,28 +234,28 @@ impl Approved {
                     let addrs = section.peers().map(Peer::addr).copied().collect();
                     GetSectionResponse::Redirect(addrs)
                 };
-                let response = Query::GetSectionResponse(response);
+                let response = InfrastructureMessage::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::InfrastructureQuery(response),
+                    message: MessageType::InfrastructureMessage(response),
                 }]
             }
-            Query::GetSectionResponse(_) => {
+            InfrastructureMessage::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
                     let _ = tx
-                        .send((MessageType::InfrastructureQuery(message), sender))
+                        .send((MessageType::InfrastructureMessage(message), sender))
                         .await;
                 }
 
                 vec![]
             }
-            Query::SectionKeyResponse(_) => {
-                error!("Shall not receive an error response to client");
-                vec![]
+            InfrastructureMessage::InfrastructureError(_) => {
+                // TODO handle this...
+                unimplemented!()
             }
         }
     }
@@ -1839,18 +1845,35 @@ impl Approved {
         Ok(Some(command))
     }
 
-    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), ClientError> {
+    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), InfrastructureError> {
         if self.dkg_voter.has_ongoing_dkg() {
-            return Err(ClientError::DkgInProgress);
+            return Err(
+                InfrastructureError::DkgInProgress,
+            );
         }
         if !self.section.chain().has_key(bls_pk) {
-            return Err(ClientError::UnrecognizedSectionKey);
+            return Err(
+                InfrastructureError::UnrecognizedSectionKey,
+            );
         }
         if bls_pk != self.section.chain().last_key() {
             if let Ok(public_key_set) = self.public_key_set() {
-                return Err(ClientError::TargetSectionKeyIsNotCurrent(public_key_set));
+                return Err(
+                    InfrastructureError::TargetSectionInfoOutdated(InfrastructureInformation {
+                        prefix: *self.section.prefix(),
+                        pk_set: public_key_set,
+                        elders: self
+                            .section
+                            .elders_info()
+                            .peers()
+                            .map(|peer| (*peer.name(), *peer.addr()))
+                            .collect(),
+                    }),
+                );
             } else {
-                return Err(ClientError::DkgInProgress);
+                return Err(
+                    InfrastructureError::DkgInProgress,
+                );
             }
         }
         Ok(())

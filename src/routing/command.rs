@@ -16,7 +16,9 @@ use crate::{
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
-use sn_messaging::{infrastructure::Query, node::NodeMessage, MessageType};
+use sn_messaging::{
+    infrastructure::Message as InfrastructureMessage, node::NodeMessage, MessageType,
+};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -37,7 +39,10 @@ pub(crate) enum Command {
         message: Message,
     },
     /// Handle infrastructure query message.
-    HandleInfrastructureQuery { sender: SocketAddr, message: Query },
+    HandleInfrastructureMessage {
+        sender: SocketAddr,
+        message: InfrastructureMessage,
+    },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
     /// Handle lost connection to a peer.
@@ -116,8 +121,8 @@ impl Debug for Command {
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
-            Self::HandleInfrastructureQuery { sender, message } => f
-                .debug_struct("HandleInfrastructureQuery")
+            Self::HandleInfrastructureMessage { sender, message } => f
+                .debug_struct("HandleInfrastructureMessage")
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),

@@ -57,7 +57,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let message = Query::GetSectionRequest(new_node.name());
 
     let mut commands = stage
-        .handle_command(Command::HandleInfrastructureQuery {
+        .handle_command(Command::HandleInfrastructureMessage {
             sender: new_node.addr,
             message,
         })
@@ -68,7 +68,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::InfrastructureQuery(message), ..
+            message: MessageType::InfrastructureMessage(message), ..
         }) => (recipients, message)
     );
 
@@ -102,7 +102,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let message = Query::GetSectionRequest(new_node_name);
 
     let mut commands = stage
-        .handle_command(Command::HandleInfrastructureQuery {
+        .handle_command(Command::HandleInfrastructureMessage {
             sender: new_node_addr,
             message,
         })
@@ -113,7 +113,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::InfrastructureQuery(message), ..
+            message: MessageType::InfrastructureMessage(message), ..
         }) => (recipients, message)
     );
 

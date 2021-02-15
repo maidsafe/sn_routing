@@ -40,7 +40,8 @@ use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use sn_messaging::{
-    client::MsgEnvelope, infrastructure::Query, node::NodeMessage, MessageType, WireMsg,
+    client::MsgEnvelope, infrastructure::{ErrorResponse, Message as InfrastructureMessage},
+    node::NodeMessage, MessageType, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -388,8 +389,8 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
         MessageType::Ping => {
             // Pings are not handled
         }
-        MessageType::InfrastructureQuery(message) => {
-            let command = Command::HandleInfrastructureQuery { sender, message };
+        MessageType::InfrastructureMessage(message) => {
+            let command = Command::HandleInfrastructureMessage { sender, message };
             let _ = task::spawn(stage.handle_commands(command));
         }
         MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
@@ -413,12 +414,18 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             if let Some(client_pk) = msg_envelope.message.target_section_pk() {
                 if let Some(bls_pk) = client_pk.bls() {
                     if let Err(error) = stage.check_key_status(&bls_pk).await {
+                        let incoming_msg = msg_envelope.message;
+                        let correlation_id = incoming_msg.id();
+
                         let command = Command::SendMessage {
                             recipients: vec![sender],
                             delivery_group_size: 1,
-                            message: MessageType::InfrastructureQuery(Query::SectionKeyResponse(
-                                error,
-                            )),
+                            message: MessageType::InfrastructureMessage(
+                                InfrastructureMessage::InfrastructureError(ErrorResponse {
+                                    correlation_id,
+                                    error,
+                                }),
+                            ),
                         };
                         let _ = task::spawn(stage.handle_commands(command));
                         return;

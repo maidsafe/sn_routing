@@ -23,7 +23,9 @@ use bytes::Bytes;
 use futures::future;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    infrastructure::{GetSectionResponse, Query},
+    infrastructure::{
+        GetSectionResponse, InfrastructureInformation, Message as InfrastructureMessage,
+    },
     node::NodeMessage,
     MessageType, WireMsg,
 };
@@ -149,11 +151,12 @@ impl<'a> State<'a> {
             let (response, sender) = self.receive_get_section_response().await?;
 
             match response {
-                GetSectionResponse::Success {
+                GetSectionResponse::Success(InfrastructureInformation {
                     prefix,
-                    key,
+                    pk_set,
                     elders,
-                } => {
+                }) => {
+                    let key = pk_set.public_key();
                     info!(
                         "Joining a section ({:b}), key: {:?}, elders: {:?} (given by {:?})",
                         prefix, key, elders, sender
@@ -166,6 +169,10 @@ impl<'a> State<'a> {
                         new_bootstrap_addrs,
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
+                }
+                GetSectionResponse::SectionInfrastructureError(error) => {
+                    error!("Handle infrastructure error: {:?}", error);
+                    // TODO: handle
                 }
             }
         }
@@ -186,11 +193,11 @@ impl<'a> State<'a> {
             None => self.node.name(),
         };
 
-        let message = Query::GetSectionRequest(destination);
+        let message = InfrastructureMessage::GetSectionRequest(destination);
 
         let _ = self
             .send_tx
-            .send((MessageType::InfrastructureQuery(message), recipients))
+            .send((MessageType::InfrastructureMessage(message), recipients))
             .await;
 
         Ok(())
@@ -199,28 +206,30 @@ impl<'a> State<'a> {
     async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
-                MessageType::InfrastructureQuery(Query::GetSectionResponse(response)) => {
-                    match response {
-                        GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
-                            error!("Invalid GetSectionResponse::Redirect: missing peers");
-                            continue;
-                        }
-                        GetSectionResponse::Success { prefix, .. }
-                            if !prefix.matches(&self.node.name()) =>
-                        {
-                            error!("Invalid GetSectionResponse::Success: bad prefix");
-                            continue;
-                        }
-                        GetSectionResponse::Redirect(_) | GetSectionResponse::Success { .. } => {
-                            return Ok((response, sender))
-                        }
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionResponse(
+                    response,
+                )) => match response {
+                    GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
+                        error!("Invalid GetSectionResponse::Redirect: missing peers");
+                        continue;
                     }
-                }
+                    GetSectionResponse::Success(InfrastructureInformation { prefix, .. })
+                        if !prefix.matches(&self.node.name()) =>
+                    {
+                        error!("Invalid GetSectionResponse::Success: bad prefix");
+                        continue;
+                    }
+                    GetSectionResponse::Redirect(_)
+                    | GetSectionResponse::Success { .. }
+                    | GetSectionResponse::SectionInfrastructureError(_) => {
+                        return Ok((response, sender))
+                    }
+                },
                 MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
                     self.backlog_message(message, sender)
                 }
-                MessageType::InfrastructureQuery(_)
+                MessageType::InfrastructureMessage(_)
                 | MessageType::ClientMessage(_)
                 | MessageType::Ping => {}
             }
@@ -377,7 +386,7 @@ impl<'a> State<'a> {
                 }
                 MessageType::Ping
                 | MessageType::ClientMessage(_)
-                | MessageType::InfrastructureQuery(_) => continue,
+                | MessageType::InfrastructureMessage(_) => continue,
             };
 
             match message.variant() {
@@ -605,12 +614,12 @@ mod tests {
             let (message, recipients) = send_rx.try_recv()?;
 
             assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message, MessageType::InfrastructureQuery(Query::GetSectionRequest(name)) => {
+            assert_matches!(message, MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(name)) => {
                 assert_eq!(name, *peer.name());
             });
 
             // Send GetSectionResponse::Success
-            let message = Query::GetSectionResponse(GetSectionResponse::Success {
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
                 prefix: elders_info.prefix,
                 key: pk,
                 elders: elders_info
@@ -618,7 +627,7 @@ mod tests {
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
             });
-            recv_tx.try_send((MessageType::InfrastructureQuery(message), bootstrap_addr))?;
+            recv_tx.try_send((MessageType::InfrastructureMessage(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -685,17 +694,17 @@ mod tests {
             assert_eq!(recipients, vec![bootstrap_node.addr]);
             assert_matches!(
                 message,
-                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
             // Send GetSectionResponse::Redirect
             let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(
                 new_bootstrap_addrs.clone(),
             ));
 
             recv_tx.try_send((
-                MessageType::InfrastructureQuery(message),
+                MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
@@ -706,7 +715,7 @@ mod tests {
             assert_eq!(recipients, new_bootstrap_addrs);
             assert_matches!(
                 message,
-                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
             Ok(())
@@ -739,23 +748,25 @@ mod tests {
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
-            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
+            let message =
+                InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
             recv_tx.try_send((
-                MessageType::InfrastructureQuery(message),
+                MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = Query::GetSectionResponse(GetSectionResponse::Redirect(addrs));
+            let message =
+                InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
             recv_tx.try_send((
-                MessageType::InfrastructureQuery(message),
+                MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
@@ -763,7 +774,7 @@ mod tests {
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
             Ok(())
@@ -810,10 +821,10 @@ mod tests {
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::InfrastructureQuery(Query::GetSectionRequest(_))
+                MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
-            let message = Query::GetSectionResponse(GetSectionResponse::Success {
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
                 prefix: bad_prefix,
                 key: bls::SecretKey::random().public_key(),
                 elders: (0..ELDER_SIZE)
@@ -822,13 +833,13 @@ mod tests {
             });
 
             recv_tx.try_send((
-                MessageType::InfrastructureQuery(message),
+                MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            let message = Query::GetSectionResponse(GetSectionResponse::Success {
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
                 prefix: good_prefix,
                 key: bls::SecretKey::random().public_key(),
                 elders: (0..ELDER_SIZE)
@@ -837,7 +848,7 @@ mod tests {
             });
 
             recv_tx.try_send((
-                MessageType::InfrastructureQuery(message),
+                MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
 
