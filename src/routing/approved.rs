@@ -222,7 +222,9 @@ impl Approved {
                                 .collect(),
                         })
                     } else {
-                        GetSectionResponse::SectionInfrastructureError(InfrastructureError::NoSectionPkSet)
+                        GetSectionResponse::SectionInfrastructureError(
+                            InfrastructureError::NoSectionPkSet,
+                        )
                     }
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
@@ -253,9 +255,9 @@ impl Approved {
 
                 vec![]
             }
-            InfrastructureMessage::InfrastructureError(_) => {
-                // TODO handle this...
-                unimplemented!()
+            InfrastructureMessage::InfrastructureError(error) => {
+                error!("InfrastructureError received: {:?}", error);
+                vec![]
             }
         }
     }
@@ -1847,19 +1849,15 @@ impl Approved {
 
     pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), InfrastructureError> {
         if self.dkg_voter.has_ongoing_dkg() {
-            return Err(
-                InfrastructureError::DkgInProgress,
-            );
+            return Err(InfrastructureError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
-            return Err(
-                InfrastructureError::UnrecognizedSectionKey,
-            );
+            return Err(InfrastructureError::UnrecognizedSectionKey);
         }
         if bls_pk != self.section.chain().last_key() {
             if let Ok(public_key_set) = self.public_key_set() {
-                return Err(
-                    InfrastructureError::TargetSectionInfoOutdated(InfrastructureInformation {
+                return Err(InfrastructureError::TargetSectionInfoOutdated(
+                    InfrastructureInformation {
                         prefix: *self.section.prefix(),
                         pk_set: public_key_set,
                         elders: self
@@ -1868,12 +1866,10 @@ impl Approved {
                             .peers()
                             .map(|peer| (*peer.name(), *peer.addr()))
                             .collect(),
-                    }),
-                );
+                    },
+                ));
             } else {
-                return Err(
-                    InfrastructureError::DkgInProgress,
-                );
+                return Err(InfrastructureError::DkgInProgress);
             }
         }
         Ok(())

@@ -245,9 +245,7 @@ pub(crate) enum ConnectionEvent {
 impl Debug for ConnectionEvent {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::Received((src, msg)) => {
-                write!(f, "Received(src: {}, msg: {})", src, HexFmt(msg))
-            }
+            Self::Received((src, msg)) => write!(f, "Received(src: {}, msg: {})", src, HexFmt(msg)),
             Self::Disconnected(addr) => write!(f, "Disconnected({})", addr),
         }
     }

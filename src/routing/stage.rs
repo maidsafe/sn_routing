@@ -8,7 +8,7 @@
 
 use super::{bootstrap, Approved, Comm, Command};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
-use sn_messaging::{MessageType, infrastructure::Error as InfrastructureError};
+use sn_messaging::{infrastructure::Error as InfrastructureError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -175,7 +175,10 @@ impl Stage {
         let _ = tokio::spawn(self.handle_commands(command));
     }
 
-    pub async fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), InfrastructureError> {
+    pub async fn check_key_status(
+        &self,
+        bls_pk: &bls::PublicKey,
+    ) -> Result<(), InfrastructureError> {
         self.state.lock().await.check_key_status(bls_pk)
     }
 
