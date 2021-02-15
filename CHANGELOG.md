@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.43.0](https://github.com/maidsafe/sn_routing/compare/v0.42.4...v0.43.0) (2021-02-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* this changes the return type of State::new
+
+### Bug Fixes
+
+* **comm:** dont hold on to messages sent on a channel that is unused ([92856cd](https://github.com/maidsafe/sn_routing/commit/92856cd8daf51af109405d1b9b58b7fa0a5f2d9c))
+
+
+* fix clippy errors with version 1.50.0 of rust ([b6b385a](https://github.com/maidsafe/sn_routing/commit/b6b385aa1d05a8ac908f568d4537bb64589cd470))
+
 ### [0.42.4](https://github.com/maidsafe/sn_routing/compare/v0.42.3...v0.42.4) (2021-02-09)
 
 ### [0.42.3](https://github.com/maidsafe/sn_routing/compare/v0.42.2...v0.42.3) (2021-02-08)
