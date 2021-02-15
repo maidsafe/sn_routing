@@ -1,4 +1,4 @@
-// Copyright 2020 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -26,7 +26,7 @@ use xor_name::XorName;
 /// If the total number of targets returned is larger than this number, the spare targets can
 /// be used if the message can't be delivered to some of the initial ones.
 ///
-/// * If the destination is an `DstLocation::Section`:
+/// * If the destination is a `DstLocation::Section` OR `DstLocation::EndUser`:
 ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
 ///       the destination), returns all other members of our section; otherwise
 ///     - returns the `N/3` closest members to the target
@@ -50,6 +50,13 @@ pub(crate) fn delivery_targets(
     }
 
     let (best_section, dg_size) = match dst {
+        DstLocation::Section(target_name) => {
+            section_candidates(target_name, our_name, section, network)?
+        }
+        DstLocation::EndUser(user) => {
+            let target_name = user.name();
+            section_candidates(&target_name, our_name, section, network)?
+        }
         DstLocation::Node(target_name) => {
             if target_name == our_name {
                 return Ok((Vec::new(), 0));
@@ -60,33 +67,39 @@ pub(crate) fn delivery_targets(
 
             candidates(target_name, our_name, section, network)?
         }
-        DstLocation::Section(target_name) => {
-            // Find closest section to `target_name` out of the ones we know (including our own)
-            let info = iter::once(section.elders_info())
-                .chain(network.all())
-                .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
-                .unwrap_or_else(|| section.elders_info());
-
-            if info.prefix == *section.prefix() || info.prefix.is_neighbour(section.prefix()) {
-                // Exclude our name since we don't need to send to ourself
-
-                // FIXME: only doing this for now to match RT.
-                // should confirm if needed esp after msg_relay changes.
-                let section: Vec<_> = info
-                    .peers()
-                    .filter(|node| node.name() != our_name)
-                    .copied()
-                    .collect();
-                let dg_size = section.len();
-                return Ok((section, dg_size));
-            }
-
-            candidates(target_name, our_name, section, network)?
-        }
-        DstLocation::User(_) | DstLocation::Direct => return Err(Error::CannotRoute),
+        DstLocation::Direct => return Err(Error::CannotRoute),
     };
 
     Ok((best_section, dg_size))
+}
+
+fn section_candidates(
+    target_name: &XorName,
+    our_name: &XorName,
+    section: &Section,
+    network: &Network,
+) -> Result<(Vec<Peer>, usize)> {
+    // Find closest section to `target_name` out of the ones we know (including our own)
+    let info = iter::once(section.elders_info())
+        .chain(network.all())
+        .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
+        .unwrap_or_else(|| section.elders_info());
+
+    if info.prefix == *section.prefix() || info.prefix.is_neighbour(section.prefix()) {
+        // Exclude our name since we don't need to send to ourself
+
+        // FIXME: only doing this for now to match RT.
+        // should confirm if needed esp after msg_relay changes.
+        let section: Vec<_> = info
+            .peers()
+            .filter(|node| node.name() != our_name)
+            .copied()
+            .collect();
+        let dg_size = section.len();
+        return Ok((section, dg_size));
+    }
+
+    candidates(target_name, our_name, section, network)
 }
 
 // Obtain the delivery group candidates for this target
@@ -155,7 +168,7 @@ where
     let dst_name = match dst {
         DstLocation::Node(name) => *name,
         DstLocation::Section(name) => *name,
-        DstLocation::User(_) | DstLocation::Direct => {
+        DstLocation::EndUser(_) | DstLocation::Direct => {
             error!("Invalid destination for signature targets: {:?}", dst);
             return vec![];
         }
