@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/comm.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>comm.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/comm.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>comm.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
                 <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
@@ -527,19 +527,6 @@
 <span id="526">526</span>
 <span id="527">527</span>
 <span id="528">528</span>
-<span id="529">529</span>
-<span id="530">530</span>
-<span id="531">531</span>
-<span id="532">532</span>
-<span id="533">533</span>
-<span id="534">534</span>
-<span id="535">535</span>
-<span id="536">536</span>
-<span id="537">537</span>
-<span id="538">538</span>
-<span id="539">539</span>
-<span id="540">540</span>
-<span id="541">541</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -552,7 +539,8 @@
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">stream</span>::{<span class="ident">FuturesUnordered</span>, <span class="ident">StreamExt</span>};
-<span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">Connection</span>, <span class="ident">Endpoint</span>, <span class="ident">QuicP2p</span>};
+<span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
+<span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">Endpoint</span>, <span class="ident">QuicP2p</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
@@ -573,18 +561,26 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Comm</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(
         <span class="ident">transport_config</span>: <span class="ident">qp2p</span>::<span class="ident">Config</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="ident">Default</span>::<span class="ident">default</span>(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
 
-        <span class="comment">// Don&#39;t bootstrap, just create an endpoint where to listen to</span>
+        <span class="comment">// Don&#39;t bootstrap, just create an endpoint to listen to</span>
         <span class="comment">// the incoming messages from other nodes.</span>
-        <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">quic_p2p</span>.<span class="ident">new_endpoint</span>()<span class="question-mark">?</span>;
+        <span class="comment">// This also returns the a channel where we can listen for</span>
+        <span class="comment">// disconnection events.</span>
+        <span class="kw">let</span> (<span class="ident">endpoint</span>, <span class="ident">_incoming_connections</span>, <span class="ident">incoming_messages</span>, <span class="ident">disconnections</span>) <span class="op">=</span>
+            <span class="ident">quic_p2p</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_connections</span>(
-            <span class="ident">endpoint</span>.<span class="ident">listen</span>(),
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(
+            <span class="ident">incoming_messages</span>,
+            <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
+        ));
+
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_disconnection_events</span>(
+            <span class="ident">disconnections</span>,
             <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
         ));
 
@@ -595,22 +591,24 @@
         })
     }
 
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">bootstrap</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">bootstrap</span>(
         <span class="ident">transport_config</span>: <span class="ident">qp2p</span>::<span class="ident">Config</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="ident">Default</span>::<span class="ident">default</span>(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Bootstrap to the network returning the connection to a node.</span>
-        <span class="kw">let</span> (<span class="ident">endpoint</span>, <span class="ident">conn</span>, <span class="ident">incoming_messages</span>) <span class="op">=</span> <span class="ident">quic_p2p</span>.<span class="ident">bootstrap</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">conn</span>.<span class="ident">remote_address</span>();
+        <span class="comment">// We can use the returned channels to listen for incoming messages and disconnection events</span>
+        <span class="kw">let</span> (<span class="ident">endpoint</span>, <span class="ident">_incoming_connections</span>, <span class="ident">incoming_messages</span>, <span class="ident">disconnections</span>, <span class="ident">bootstrap_addr</span>) <span class="op">=</span>
+            <span class="ident">quic_p2p</span>.<span class="ident">bootstrap</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_connections</span>(
-            <span class="ident">endpoint</span>.<span class="ident">listen</span>(),
-            <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
-        ));
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(
             <span class="ident">incoming_messages</span>,
+            <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
+        ));
+
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_disconnection_events</span>(
+            <span class="ident">disconnections</span>,
             <span class="ident">event_tx</span>.<span class="ident">clone</span>(),
         ));
 
@@ -620,7 +618,7 @@
                 <span class="ident">endpoint</span>,
                 <span class="ident">event_tx</span>: <span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="prelude-val">Some</span>(<span class="ident">event_tx</span>)),
             },
-            <span class="ident">addr</span>,
+            <span class="ident">bootstrap_addr</span>,
         ))
     }
 
@@ -634,27 +632,23 @@
             .<span class="ident">take</span>();
     }
 
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">socket_addr</span>().<span class="ident">await</span>.<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to retrieve our connection info: {:?}&quot;</span>, <span class="ident">err</span>);
-            <span class="ident">err</span>.<span class="ident">into</span>()
-        })
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SocketAddr</span> {
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">socket_addr</span>()
     }
 
     <span class="doccomment">/// Sends a message on an existing connection. If no such connection exists, returns an error.</span>
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_on_existing_connection</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_on_existing_connection</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>,
         <span class="ident">msg</span>: <span class="ident">Bytes</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">SendError</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">conn</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">get_connection</span>(<span class="ident">recipient</span>) {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">conn</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>).<span class="ident">await</span> {
-                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Sending message to {} failed: {}&quot;</span>, <span class="ident">recipient</span>, <span class="ident">err</span>);
-            } <span class="kw">else</span> {
-                <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
-            }
-        }
-        <span class="prelude-val">Err</span>(<span class="ident">SendError</span>)
+        <span class="self">self</span>.<span class="ident">endpoint</span>
+            .<span class="ident">send_message</span>(<span class="ident">msg</span>, <span class="ident">recipient</span>)
+            .<span class="kw">await</span>
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;{}&quot;</span>, <span class="ident">err</span>);
+                <span class="ident">SendError</span>
+            })
     }
 
     <span class="doccomment">/// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`</span>
@@ -665,7 +659,7 @@
     <span class="doccomment">/// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that</span>
     <span class="doccomment">/// `delivery_group_size` succeeded. Also returns all the failed recipients which can be used</span>
     <span class="doccomment">/// by the caller to identify lost peers.</span>
-    <span class="kw">pub</span> <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">SocketAddr</span>],
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
@@ -691,7 +685,7 @@
         <span class="comment">// Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick</span>
         <span class="comment">// the next recipient and try to send to them. Proceed until the needed number of sends</span>
         <span class="comment">// succeeds or if there are no more recipients to pick.</span>
-        <span class="kw">let</span> <span class="ident">send</span> <span class="op">=</span> <span class="op">|</span><span class="ident">recipient</span>, <span class="ident">msg</span><span class="op">|</span> <span class="ident">async</span> <span class="kw">move</span> { (<span class="self">self</span>.<span class="ident">send_to</span>(<span class="ident">recipient</span>, <span class="ident">msg</span>).<span class="ident">await</span>, <span class="ident">recipient</span>) };
+        <span class="kw">let</span> <span class="ident">send</span> <span class="op">=</span> <span class="op">|</span><span class="ident">recipient</span>, <span class="ident">msg</span><span class="op">|</span> <span class="kw">async</span> <span class="kw">move</span> { (<span class="self">self</span>.<span class="ident">send_to</span>(<span class="ident">recipient</span>, <span class="ident">msg</span>).<span class="kw">await</span>, <span class="ident">recipient</span>) };
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tasks</span>: <span class="ident">FuturesUnordered</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">recipients</span>[<span class="number">0</span>..<span class="ident">delivery_group_size</span>]
             .<span class="ident">iter</span>()
@@ -702,7 +696,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">successes</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">failed_recipients</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">result</span>, <span class="ident">addr</span>)) <span class="op">=</span> <span class="ident">tasks</span>.<span class="ident">next</span>().<span class="ident">await</span> {
+        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">result</span>, <span class="ident">addr</span>)) <span class="op">=</span> <span class="ident">tasks</span>.<span class="ident">next</span>().<span class="kw">await</span> {
             <span class="kw">match</span> <span class="ident">result</span> {
                 <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">successes</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>,
                 <span class="prelude-val">Err</span>(<span class="ident">qp2p</span>::<span class="ident">Error</span>::<span class="ident">Connection</span>(<span class="ident">qp2p</span>::<span class="ident">ConnectionError</span>::<span class="ident">LocallyClosed</span>)) <span class="op">=</span><span class="op">&gt;</span> {
@@ -739,29 +733,21 @@
     }
 
     <span class="comment">// Low-level send</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_to</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">msg</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">qp2p</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">conn</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">connect_to</span>(<span class="ident">recipient</span>).<span class="ident">await</span><span class="question-mark">?</span>;
-
-        <span class="kw">if</span> <span class="ident">conn</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>.<span class="ident">clone</span>()).<span class="ident">await</span>.<span class="ident">is_ok</span>() {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_to</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">recipient</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>, <span class="ident">msg</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">qp2p</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="comment">// This will attempt to use a cached connection</span>
+        <span class="kw">if</span> <span class="self">self</span>
+            .<span class="ident">endpoint</span>
+            .<span class="ident">send_message</span>(<span class="ident">msg</span>.<span class="ident">clone</span>(), <span class="ident">recipient</span>)
+            .<span class="kw">await</span>
+            .<span class="ident">is_ok</span>()
+        {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
 
-        <span class="self">self</span>.<span class="ident">connect_to</span>(<span class="ident">recipient</span>).<span class="ident">await</span><span class="question-mark">?</span>.<span class="ident">send_uni</span>(<span class="ident">msg</span>).<span class="ident">await</span>
-    }
-
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">connect_to</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Connection</span>, <span class="ident">qp2p</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> (<span class="ident">conn</span>, <span class="ident">incoming_messages</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">connect_to</span>(<span class="ident">addr</span>).<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">event_tx</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">event_tx</span>.<span class="ident">read</span>().<span class="ident">ok</span>().<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">tx</span><span class="op">|</span> <span class="ident">tx</span>.<span class="ident">clone</span>());
-
-        <span class="kw">if</span> <span class="kw">let</span> (<span class="prelude-val">Some</span>(<span class="ident">incoming_messages</span>), <span class="prelude-val">Some</span>(<span class="ident">event_tx</span>)) <span class="op">=</span> (<span class="ident">incoming_messages</span>, <span class="ident">event_tx</span>) {
-            <span class="macro">trace</span><span class="macro">!</span>(
-                <span class="string">&quot;New outgoing connection to {}&quot;</span>,
-                <span class="ident">incoming_messages</span>.<span class="ident">remote_addr</span>()
-            );
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(<span class="ident">incoming_messages</span>, <span class="ident">event_tx</span>));
-        }
-
-        <span class="prelude-val">Ok</span>(<span class="ident">conn</span>)
+        <span class="comment">// If the sending of a message failed the connection would no longer</span>
+        <span class="comment">// exist in the pool. So we connect again and then send the message.</span>
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">connect_to</span>(<span class="ident">recipient</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">send_message</span>(<span class="ident">msg</span>, <span class="ident">recipient</span>).<span class="kw">await</span>
     }
 }
 
@@ -782,45 +768,39 @@
 }
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">ConnectionEvent</span> {
-    <span class="ident">Received</span>(<span class="ident">qp2p</span>::<span class="ident">Message</span>),
+    <span class="ident">Received</span>((<span class="ident">SocketAddr</span>, <span class="ident">Bytes</span>)),
     <span class="ident">Disconnected</span>(<span class="ident">SocketAddr</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">ConnectionEvent</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">Received</span>(<span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">UniStream</span> { <span class="ident">src</span>, .. }) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Received(UniStream {{ src: {}, .. }})&quot;</span>, <span class="ident">src</span>)
-            }
-            <span class="self">Self</span>::<span class="ident">Received</span>(<span class="ident">qp2p</span>::<span class="ident">Message</span>::<span class="ident">BiStream</span> { <span class="ident">src</span>, .. }) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Received(BiStream {{ src: {}, .. }})&quot;</span>, <span class="ident">src</span>)
+            <span class="self">Self</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Received(src: {}, msg: {})&quot;</span>, <span class="ident">src</span>, <span class="ident">HexFmt</span>(<span class="ident">msg</span>))
             }
             <span class="self">Self</span>::<span class="ident">Disconnected</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Disconnected({})&quot;</span>, <span class="ident">addr</span>),
         }
     }
 }
 
-<span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_incoming_connections</span>(
-    <span class="kw-2">mut</span> <span class="ident">incoming_conns</span>: <span class="ident">qp2p</span>::<span class="ident">IncomingConnections</span>,
-    <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_disconnection_events</span>(
+    <span class="kw-2">mut</span> <span class="ident">disconnections</span>: <span class="ident">qp2p</span>::<span class="ident">DisconnectionEvents</span>,
+    <span class="kw-2">mut</span> <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
 ) {
-    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">incoming_msgs</span>) <span class="op">=</span> <span class="ident">incoming_conns</span>.<span class="ident">next</span>().<span class="ident">await</span> {
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;New incoming connection to {}&quot;</span>, <span class="ident">incoming_msgs</span>.<span class="ident">remote_addr</span>());
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(<span class="ident">incoming_msgs</span>, <span class="ident">event_tx</span>.<span class="ident">clone</span>()));
+    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer_addr</span>) <span class="op">=</span> <span class="ident">disconnections</span>.<span class="ident">next</span>().<span class="kw">await</span> {
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>
+            .<span class="ident">send</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="ident">peer_addr</span>))
+            .<span class="kw">await</span>;
     }
 }
 
-<span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_incoming_messages</span>(
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_incoming_messages</span>(
     <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>: <span class="ident">qp2p</span>::<span class="ident">IncomingMessages</span>,
     <span class="kw-2">mut</span> <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
 ) {
-    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="ident">incoming_msgs</span>.<span class="ident">next</span>().<span class="ident">await</span> {
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="ident">msg</span>)).<span class="ident">await</span>;
+    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">incoming_msgs</span>.<span class="ident">next</span>().<span class="kw">await</span> {
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">msg</span>))).<span class="kw">await</span>;
     }
-
-    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>
-        .<span class="ident">send</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="ident">incoming_msgs</span>.<span class="ident">remote_addr</span>()))
-        .<span class="ident">await</span>;
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -836,41 +816,41 @@
     <span class="kw">const</span> <span class="ident">TIMEOUT</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">1</span>);
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">successful_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer0</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>.<span class="ident">clone</span>()));
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer1</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer0</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>.<span class="ident">clone</span>()));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer1</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
 
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">successful_send_to_subset</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send_to_subset</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer0</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer1</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">peer0</span>.<span class="ident">addr</span>, <span class="ident">peer1</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer0</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer0</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
 
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">peer1</span>.<span class="ident">rx</span>.<span class="ident">recv</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="ident">unwrap_or_default</span>()
             .<span class="ident">is_none</span>());
 
@@ -878,7 +858,7 @@
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">failed_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">failed_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(
             <span class="ident">Config</span> {
@@ -887,11 +867,12 @@
                 ..<span class="ident">transport_config</span>()
             },
             <span class="ident">tx</span>,
-        )<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        )
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
-        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>()).<span class="ident">await</span>;
+        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>()).<span class="kw">await</span>;
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">result</span>.<span class="ident">is_err</span>());
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">failed_recipients</span>, [<span class="ident">invalid_addr</span>]);
 
@@ -899,7 +880,7 @@
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">successful_send_after_failed_attempts</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">successful_send_after_failed_attempts</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(
             <span class="ident">Config</span> {
@@ -907,22 +888,23 @@
                 ..<span class="ident">transport_config</span>()
             },
             <span class="ident">tx</span>,
-        )<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        )
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="ident">comm</span>.<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">1</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
 
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">partially_successful_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">partially_successful_send</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(
             <span class="ident">Config</span> {
@@ -930,52 +912,48 @@
                 ..<span class="ident">transport_config</span>()
             },
             <span class="ident">tx</span>,
-        )<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        )
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">Peer</span>::<span class="ident">new</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">invalid_addr</span> <span class="op">=</span> <span class="ident">get_invalid_addr</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello world&quot;</span>);
         <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">failed_recipients</span>) <span class="op">=</span> <span class="ident">comm</span>
             .<span class="ident">send</span>(<span class="kw-2">&amp;</span>[<span class="ident">invalid_addr</span>, <span class="ident">peer</span>.<span class="ident">addr</span>], <span class="number">2</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>;
+            .<span class="kw">await</span>;
 
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">result</span>.<span class="ident">is_err</span>());
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">failed_recipients</span>, [<span class="ident">invalid_addr</span>]);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">peer</span>.<span class="ident">rx</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>));
 
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">send_after_reconnect</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_after_reconnect</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> <span class="ident">send_comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">send_comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">recv_transport</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>()), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">recv_endpoint</span> <span class="op">=</span> <span class="ident">recv_transport</span>.<span class="ident">new_endpoint</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">recv_addr</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">socket_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">recv_incoming_connections</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">listen</span>();
+        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_endpoint</span>, <span class="kw">_</span>, <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">recv_transport</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">recv_addr</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">socket_addr</span>();
 
         <span class="comment">// Send the first message.</span>
         <span class="kw">let</span> <span class="ident">msg0</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;zero&quot;</span>);
         <span class="ident">send_comm</span>
             .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg0</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msg0_received</span> <span class="op">=</span> <span class="bool-val">false</span>;
 
-        <span class="comment">// Receive one message and drop the incoming stream.</span>
+        <span class="comment">// Receive one message and disconnect from the peer</span>
         {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>) <span class="op">=</span>
-                <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">recv_incoming_connections</span>.<span class="ident">next</span>()).<span class="ident">await</span><span class="question-mark">?</span>
-            {
-                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">incoming_msgs</span>.<span class="ident">next</span>()).<span class="ident">await</span><span class="question-mark">?</span> {
-                    <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">msg</span>.<span class="ident">get_message_data</span>(), <span class="ident">msg0</span>);
-                    <span class="ident">msg0_received</span> <span class="op">=</span> <span class="bool-val">true</span>;
-                }
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">incoming_msgs</span>.<span class="ident">next</span>()).<span class="kw">await</span><span class="question-mark">?</span> {
+                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">msg</span>, <span class="ident">msg0</span>);
+                <span class="ident">msg0_received</span> <span class="op">=</span> <span class="bool-val">true</span>;
+                <span class="ident">recv_endpoint</span>.<span class="ident">disconnect_from</span>(<span class="kw-2">&amp;</span><span class="ident">src</span>)<span class="question-mark">?</span>;
             }
-
             <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">msg0_received</span>);
         }
 
@@ -983,19 +961,14 @@
         <span class="kw">let</span> <span class="ident">msg1</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;one&quot;</span>);
         <span class="ident">send_comm</span>
             .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">recv_addr</span>), <span class="number">1</span>, <span class="ident">msg1</span>.<span class="ident">clone</span>())
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msg1_received</span> <span class="op">=</span> <span class="bool-val">false</span>;
 
-        <span class="comment">// Expect to receive the second message on a re-established connection.</span>
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>) <span class="op">=</span>
-            <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">recv_incoming_connections</span>.<span class="ident">next</span>()).<span class="ident">await</span><span class="question-mark">?</span>
-        {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">incoming_msgs</span>.<span class="ident">next</span>()).<span class="ident">await</span><span class="question-mark">?</span> {
-                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">msg</span>.<span class="ident">get_message_data</span>(), <span class="ident">msg1</span>);
-                <span class="ident">msg1_received</span> <span class="op">=</span> <span class="bool-val">true</span>;
-            }
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">_src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">incoming_msgs</span>.<span class="ident">next</span>()).<span class="kw">await</span><span class="question-mark">?</span> {
+            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">msg</span>, <span class="ident">msg1</span>);
+            <span class="ident">msg1_received</span> <span class="op">=</span> <span class="bool-val">true</span>;
         }
 
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">msg1_received</span>);
@@ -1004,27 +977,26 @@
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">incoming_connection_lost</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">incoming_connection_lost</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="kw-2">mut</span> <span class="ident">rx0</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> <span class="ident">comm0</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">addr0</span> <span class="op">=</span> <span class="ident">comm0</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">comm0</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">addr0</span> <span class="op">=</span> <span class="ident">comm0</span>.<span class="ident">our_connection_info</span>();
 
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> <span class="ident">comm1</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">addr1</span> <span class="op">=</span> <span class="ident">comm1</span>.<span class="ident">our_connection_info</span>().<span class="ident">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">comm1</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">addr1</span> <span class="op">=</span> <span class="ident">comm1</span>.<span class="ident">our_connection_info</span>();
 
         <span class="comment">// Send a message to establish the connection</span>
         <span class="ident">comm1</span>
             .<span class="ident">send</span>(<span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="kw-2">&amp;</span><span class="ident">addr0</span>), <span class="number">1</span>, <span class="ident">Bytes</span>::<span class="ident">from_static</span>(<span class="string">b&quot;hello&quot;</span>))
-            .<span class="ident">await</span>
+            .<span class="kw">await</span>
             .<span class="number">0</span><span class="question-mark">?</span>;
-        <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">rx0</span>.<span class="ident">recv</span>().<span class="ident">await</span>, <span class="prelude-val">Some</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="kw">_</span>)));
-
+        <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">rx0</span>.<span class="ident">recv</span>().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>(<span class="kw">_</span>)));
         <span class="comment">// Drop `comm1` to cause connection lost.</span>
         <span class="ident">drop</span>(<span class="ident">comm1</span>);
 
         <span class="macro">assert_matches</span><span class="macro">!</span>(
-            <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">rx0</span>.<span class="ident">recv</span>()).<span class="ident">await</span><span class="question-mark">?</span>,
+            <span class="ident">time</span>::<span class="ident">timeout</span>(<span class="ident">TIMEOUT</span>, <span class="ident">rx0</span>.<span class="ident">recv</span>()).<span class="kw">await</span><span class="question-mark">?</span>,
             <span class="prelude-val">Some</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="ident">addr</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">addr</span>, <span class="ident">addr1</span>)
         );
 
@@ -1033,49 +1005,51 @@
 
     <span class="kw">fn</span> <span class="ident">transport_config</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Config</span> {
         <span class="ident">Config</span> {
-            <span class="ident">ip</span>: <span class="prelude-val">Some</span>(<span class="ident">Ipv4Addr</span>::<span class="ident">LOCALHOST</span>.<span class="ident">into</span>()),
+            <span class="ident">local_ip</span>: <span class="prelude-val">Some</span>(<span class="ident">Ipv4Addr</span>::<span class="ident">LOCALHOST</span>.<span class="ident">into</span>()),
             ..<span class="ident">Default</span>::<span class="ident">default</span>()
         }
     }
 
     <span class="kw">struct</span> <span class="ident">Peer</span> {
         <span class="ident">addr</span>: <span class="ident">SocketAddr</span>,
+        <span class="ident">_incoming_connections</span>: <span class="ident">qp2p</span>::<span class="ident">IncomingConnections</span>,
+        <span class="ident">_disconnections</span>: <span class="ident">qp2p</span>::<span class="ident">DisconnectionEvents</span>,
         <span class="ident">rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">Bytes</span><span class="op">&gt;</span>,
     }
 
     <span class="kw">impl</span> <span class="ident">Peer</span> {
-        <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
             <span class="kw">let</span> <span class="ident">transport</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>()), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">transport</span>.<span class="ident">new_endpoint</span>()<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">socket_addr</span>().<span class="ident">await</span><span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">incoming_connections</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">listen</span>();
+            <span class="kw">let</span> (<span class="ident">endpoint</span>, <span class="ident">incoming_connections</span>, <span class="kw-2">mut</span> <span class="ident">incoming_messages</span>, <span class="ident">disconnections</span>) <span class="op">=</span>
+                <span class="ident">transport</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">socket_addr</span>();
 
-            <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+            <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="ident">async</span> <span class="kw">move</span> {
-                <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">mut</span> <span class="ident">connection</span>) <span class="op">=</span> <span class="ident">incoming_connections</span>.<span class="ident">next</span>().<span class="ident">await</span> {
-                    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tx</span> <span class="op">=</span> <span class="ident">tx</span>.<span class="ident">clone</span>();
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="ident">async</span> <span class="kw">move</span> {
-                        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span> <span class="ident">connection</span>.<span class="ident">next</span>().<span class="ident">await</span> {
-                            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tx</span>.<span class="ident">send</span>(<span class="ident">message</span>.<span class="ident">get_message_data</span>()).<span class="ident">await</span>;
-                        }
-                    });
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
+                <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">_src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">incoming_messages</span>.<span class="ident">next</span>().<span class="kw">await</span> {
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tx</span>.<span class="ident">send</span>(<span class="ident">msg</span>).<span class="kw">await</span>;
                 }
             });
 
-            <span class="prelude-val">Ok</span>(<span class="self">Self</span> { <span class="ident">addr</span>, <span class="ident">rx</span> })
+            <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
+                <span class="ident">addr</span>,
+                <span class="ident">rx</span>,
+                <span class="ident">_incoming_connections</span>: <span class="ident">incoming_connections</span>,
+                <span class="ident">_disconnections</span>: <span class="ident">disconnections</span>,
+            })
         }
     }
 
-    <span class="ident">async</span> <span class="kw">fn</span> <span class="ident">get_invalid_addr</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">UdpSocket</span>::<span class="ident">bind</span>((<span class="ident">Ipv4Addr</span>::<span class="ident">LOCALHOST</span>, <span class="number">0</span>)).<span class="ident">await</span><span class="question-mark">?</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">get_invalid_addr</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">UdpSocket</span>::<span class="ident">bind</span>((<span class="ident">Ipv4Addr</span>::<span class="ident">LOCALHOST</span>, <span class="number">0</span>)).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">socket</span>.<span class="ident">local_addr</span>()<span class="question-mark">?</span>;
 
         <span class="comment">// Keep the socket alive to keep the address bound, but don&#39;t read/write to it so any</span>
         <span class="comment">// attempt to connect to it will fail.</span>
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="ident">async</span> <span class="kw">move</span> {
-            <span class="ident">future</span>::<span class="ident">pending</span>::<span class="op">&lt;</span>()<span class="op">&gt;</span>().<span class="ident">await</span>;
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">future</span>::<span class="ident">pending</span>::<span class="op">&lt;</span>()<span class="op">&gt;</span>().<span class="kw">await</span>;
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">socket</span>;
         });
 
