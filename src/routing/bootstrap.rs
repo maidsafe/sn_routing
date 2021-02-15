@@ -171,8 +171,7 @@ impl<'a> State<'a> {
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
                 GetSectionResponse::SectionInfrastructureError(error) => {
-                    error!("Handle infrastructure error: {:?}", error);
-                    // TODO: handle
+                    error!("Infrastructure error: {:?}", error);
                 }
             }
         }
