@@ -311,6 +311,10 @@ impl Routing {
         dst: DstLocation,
         content: Bytes,
     ) -> Result<()> {
+        if let DstLocation::EndUser(EndUser::Client { socket_id, .. }) = dst {
+            let msg = ClientMessage::from(content)?;
+            return self.send_message_to_client(socket_id, msg).await;
+        }
         let command = Command::SendUserMessage { src, dst, content };
         self.stage.clone().handle_commands(command).await
     }
@@ -318,7 +322,7 @@ impl Routing {
     /// Send a message to a client peer.
     /// Messages sent to a client are not signed or validated as part of the
     /// routing library.
-    pub async fn send_message_to_client(
+    async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
         message: ClientMessage,
