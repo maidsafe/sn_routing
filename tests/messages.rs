@@ -13,8 +13,8 @@ use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::{
-    client::{Message, MessageId, Query, TransferQuery},
-    DstLocation, MessageType, SrcLocation, WireMsg,
+    client::{Message, Query, TransferQuery},
+    DstLocation, MessageId, SrcLocation, WireMsg,
 };
 use sn_routing::{Config, Error, Event, NodeElderChange};
 use std::net::{IpAddr, Ipv4Addr};
@@ -49,9 +49,14 @@ async fn test_messages_client_node() -> Result<()> {
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             match event {
-                Event::ClientMessageReceived { content, src } => {
-                    assert_eq!(*content, msg_envelope_clone.clone());
-                    node.send_message_to_client(src, msg_envelope_clone).await?;
+                Event::ClientMessageReceived { msg, user } => {
+                    assert_eq!(*msg, message_clone.clone());
+                    node.send_message(
+                        SrcLocation::Node(node.name().await),
+                        DstLocation::EndUser(user),
+                        message_clone.clone().serialize()?,
+                    )
+                    .await?;
                     break;
                 }
                 _other => {}
@@ -81,7 +86,7 @@ async fn test_messages_client_node() -> Result<()> {
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let expected_bytes = MessageType::ClientMessage(msg_envelope).serialize()?;
+        let expected_bytes = message.serialize()?;
         assert_eq!(resp, expected_bytes);
     }
 
