@@ -1953,7 +1953,7 @@ impl Approved {
                 );
                 self.send_vote(&recipients, vote)
             }
-            _ => unimplemented!(),
+            SrcLocation::EndUser(_) => Err(Error::InvalidSrcLocation),
         }
     }
 
