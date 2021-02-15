@@ -404,7 +404,6 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                         "Error occurred when deserialising node message bytes from {}: {}",
                         sender, error
                     );
-                    return;
                 }
             }
         }

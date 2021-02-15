@@ -378,7 +378,11 @@ impl Approved {
 
     // Send vote to all our elders.
     fn vote(&self, vote: Vote) -> Result<Vec<Command>> {
-        let elders: Vec<_> = self.section.elders_info().peers().copied().collect();
+        let mut elders: Vec<_> = self.section.elders_info().peers().copied().collect();
+        // Exclude the offline elder from the recipients.
+        if let Vote::Offline(ref info) = vote {
+            elders.retain(|elder| elder.name() != info.peer.name());
+        }
         self.send_vote(&elders, vote)
     }
 
