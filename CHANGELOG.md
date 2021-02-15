@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.43.1](https://github.com/maidsafe/sn_routing/compare/v0.43.0...v0.43.1) (2021-02-15)
+
+
+### Bug Fixes
+
+* remove offline elder from vote recipients ([3bcea21](https://github.com/maidsafe/sn_routing/commit/3bcea21ceb00feacc52843cc435fe875d3ed3f84))
+
 ## [0.43.0](https://github.com/maidsafe/sn_routing/compare/v0.42.4...v0.43.0) (2021-02-15)
 
 
