@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.43.2](https://github.com/maidsafe/sn_routing/compare/v0.43.1...v0.43.2) (2021-02-16)
+
+
+### Features
+
+* having EldersInfo change candidate considered as DKG in progress ([6137123](https://github.com/maidsafe/sn_routing/commit/61371230e2eab7ceff4fd80073843d6b46ff4adf))
+* notify client of incorrect section_key ([c54f034](https://github.com/maidsafe/sn_routing/commit/c54f034fdc304106d1a3e56e00012773b1e85a9d))
+* updates for section key response changes ([71f89d8](https://github.com/maidsafe/sn_routing/commit/71f89d8c54008ff9974f740eff5be9ac2b893f26))
+
 ### [0.43.1](https://github.com/maidsafe/sn_routing/compare/v0.43.0...v0.43.1) (2021-02-15)
 
 
