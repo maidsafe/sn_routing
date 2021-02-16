@@ -170,7 +170,7 @@ impl<'a> State<'a> {
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
-                GetSectionResponse::SectionInfrastructureError(error) => {
+                GetSectionResponse::SectionInfrastructureUpdate(error) => {
                     error!("Infrastructure error: {:?}", error);
                 }
             }
@@ -220,7 +220,7 @@ impl<'a> State<'a> {
                     }
                     GetSectionResponse::Redirect(_)
                     | GetSectionResponse::Success { .. }
-                    | GetSectionResponse::SectionInfrastructureError(_) => {
+                    | GetSectionResponse::SectionInfrastructureUpdate(_) => {
                         return Ok((response, sender))
                     }
                 },
@@ -573,11 +573,13 @@ async fn send_messages(mut rx: mpsc::Receiver<(MessageType, Vec<SocketAddr>)>, c
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::*, section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_AGE,
+        consensus::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
+        section::MemberInfo, ELDER_SIZE, MIN_AGE,
     };
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use futures::future::{self, Either};
+    use sn_messaging::infrastructure::InfrastructureInformation;
     use tokio::{sync::mpsc::error::TryRecvError, task};
 
     #[tokio::test]
@@ -590,7 +592,9 @@ mod tests {
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
-        let sk = bls::SecretKey::random();
+        let sk_set = SecretKeySet::random();
+        let pk_set = sk_set.public_keys();
+        let sk = sk_set.secret_key();
         let pk = sk.public_key();
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -617,21 +621,25 @@ mod tests {
                 assert_eq!(name, *peer.name());
             });
 
-            // Send GetSectionResponse::Success
-            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
+            let infrastructure_info = InfrastructureInformation {
                 prefix: elders_info.prefix,
-                key: pk,
+                pk_set,
                 elders: elders_info
                     .peers()
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
-            });
+            };
+            // Send GetSectionResponse::Success
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success(
+                infrastructure_info,
+            ));
             recv_tx.try_send((MessageType::InfrastructureMessage(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
             let (message, recipients) = send_rx.try_recv()?;
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
+                Message::from_bytes(Bytes::from(bytes))?);
 
             itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
@@ -640,8 +648,8 @@ mod tests {
             });
 
             // Send NodeApproval
-            let elders_info = proven(&sk, elders_info.clone())?;
-            let member_info = proven(&sk, MemberInfo::joined(peer.with_age(MIN_AGE + 1)))?;
+            let elders_info = proven(sk, elders_info.clone())?;
+            let member_info = proven(sk, MemberInfo::joined(peer.with_age(MIN_AGE + 1)))?;
             let proof_chain = SectionProofChain::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
@@ -823,13 +831,17 @@ mod tests {
                 MessageType::InfrastructureMessage(InfrastructureMessage::GetSectionRequest(_))
             );
 
-            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
+            let infrastructure_info = InfrastructureInformation {
                 prefix: bad_prefix,
-                key: bls::SecretKey::random().public_key(),
+                pk_set: bls::SecretKeySet::random(0, &mut rand::thread_rng()).public_keys(),
                 elders: (0..ELDER_SIZE)
                     .map(|_| (bad_prefix.substituted_in(rand::random()), gen_addr()))
                     .collect(),
-            });
+            };
+
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success(
+                infrastructure_info,
+            ));
 
             recv_tx.try_send((
                 MessageType::InfrastructureMessage(message),
@@ -838,13 +850,17 @@ mod tests {
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success {
+            let infrastructure_info = InfrastructureInformation {
                 prefix: good_prefix,
-                key: bls::SecretKey::random().public_key(),
+                pk_set: bls::SecretKeySet::random(0, &mut rand::thread_rng()).public_keys(),
                 elders: (0..ELDER_SIZE)
                     .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
                     .collect(),
-            });
+            };
+
+            let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success(
+                infrastructure_info,
+            ));
 
             recv_tx.try_send((
                 MessageType::InfrastructureMessage(message),

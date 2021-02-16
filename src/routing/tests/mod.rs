@@ -33,7 +33,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    infrastructure::{GetSectionResponse, Query},
+    infrastructure::{GetSectionResponse, Message as InfrastructureMessage},
     node::NodeMessage,
     MessageType,
 };
@@ -54,7 +54,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
-    let message = Query::GetSectionRequest(new_node.name());
+    let message = InfrastructureMessage::GetSectionRequest(new_node.name());
 
     let mut commands = stage
         .handle_command(Command::HandleInfrastructureMessage {
@@ -76,7 +76,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     assert_matches!(
         message,
-        Query::GetSectionResponse(GetSectionResponse::Success { .. })
+        InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success { .. })
     );
 
     Ok(())
@@ -99,7 +99,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let new_node_name = bad_prefix.substituted_in(rand::random());
     let new_node_addr = gen_addr();
 
-    let message = Query::GetSectionRequest(new_node_name);
+    let message = InfrastructureMessage::GetSectionRequest(new_node_name);
 
     let mut commands = stage
         .handle_command(Command::HandleInfrastructureMessage {
@@ -120,7 +120,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     assert_eq!(recipients, [new_node_addr]);
     assert_matches!(
         message,
-        Query::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
+        InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
             assert_eq!(addrs, elders_addrs)
         }
     );
@@ -1815,13 +1815,13 @@ fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proo
 // Wrapper for `bls::SecretKeySet` that also allows to retrieve the corresponding `bls::SecretKey`.
 // Note: `bls::SecretKeySet` does have a `secret_key` method, but it's test-only and not available
 // for the consumers of the crate.
-struct SecretKeySet {
+pub(crate) struct SecretKeySet {
     set: bls::SecretKeySet,
     key: bls::SecretKey,
 }
 
 impl SecretKeySet {
-    fn random() -> Self {
+    pub fn random() -> Self {
         let poly = bls::poly::Poly::random(THRESHOLD, &mut rand::thread_rng());
         let key = bls::SecretKey::from_mut(&mut poly.evaluate(0));
         let set = bls::SecretKeySet::from(poly);
@@ -1829,7 +1829,7 @@ impl SecretKeySet {
         Self { set, key }
     }
 
-    fn secret_key(&self) -> &bls::SecretKey {
+    pub fn secret_key(&self) -> &bls::SecretKey {
         &self.key
     }
 }
