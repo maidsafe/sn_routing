@@ -196,6 +196,11 @@
 <span id="195">195</span>
 <span id="196">196</span>
 <span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -215,7 +220,9 @@
 <span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">infrastructure</span>::<span class="ident">Query</span>, <span class="ident">node</span>::<span class="ident">NodeMessage</span>, <span class="ident">MessageType</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">infrastructure</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">InfrastructureMessage</span>, <span class="ident">node</span>::<span class="ident">NodeMessage</span>, <span class="ident">MessageType</span>,
+};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
@@ -236,7 +243,10 @@
         <span class="ident">message</span>: <span class="ident">Message</span>,
     },
     <span class="doccomment">/// Handle infrastructure query message.</span>
-    <span class="ident">HandleInfrastructureQuery</span> { <span class="ident">sender</span>: <span class="ident">SocketAddr</span>, <span class="ident">message</span>: <span class="ident">Query</span> },
+    <span class="ident">HandleInfrastructureMessage</span> {
+        <span class="ident">sender</span>: <span class="ident">SocketAddr</span>,
+        <span class="ident">message</span>: <span class="ident">InfrastructureMessage</span>,
+    },
     <span class="doccomment">/// Handle a timeout previously scheduled with `ScheduleTimeout`.</span>
     <span class="ident">HandleTimeout</span>(<span class="ident">u64</span>),
     <span class="doccomment">/// Handle lost connection to a peer.</span>
@@ -315,8 +325,8 @@
                 .<span class="ident">field</span>(<span class="string">&quot;sender&quot;</span>, <span class="ident">sender</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">HandleInfrastructureQuery</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleInfrastructureQuery&quot;</span>)
+            <span class="self">Self</span>::<span class="ident">HandleInfrastructureMessage</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleInfrastructureMessage&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;sender&quot;</span>, <span class="ident">sender</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),

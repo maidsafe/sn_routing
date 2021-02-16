@@ -525,8 +525,6 @@
 <span id="524">524</span>
 <span id="525">525</span>
 <span id="526">526</span>
-<span id="527">527</span>
-<span id="528">528</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -775,9 +773,7 @@
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">ConnectionEvent</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Received(src: {}, msg: {})&quot;</span>, <span class="ident">src</span>, <span class="ident">HexFmt</span>(<span class="ident">msg</span>))
-            }
+            <span class="self">Self</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Received(src: {}, msg: {})&quot;</span>, <span class="ident">src</span>, <span class="ident">HexFmt</span>(<span class="ident">msg</span>)),
             <span class="self">Self</span>::<span class="ident">Disconnected</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Disconnected({})&quot;</span>, <span class="ident">addr</span>),
         }
     }

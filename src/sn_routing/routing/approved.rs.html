@@ -2047,6 +2047,52 @@
 <span id="2046">2046</span>
 <span id="2047">2047</span>
 <span id="2048">2048</span>
+<span id="2049">2049</span>
+<span id="2050">2050</span>
+<span id="2051">2051</span>
+<span id="2052">2052</span>
+<span id="2053">2053</span>
+<span id="2054">2054</span>
+<span id="2055">2055</span>
+<span id="2056">2056</span>
+<span id="2057">2057</span>
+<span id="2058">2058</span>
+<span id="2059">2059</span>
+<span id="2060">2060</span>
+<span id="2061">2061</span>
+<span id="2062">2062</span>
+<span id="2063">2063</span>
+<span id="2064">2064</span>
+<span id="2065">2065</span>
+<span id="2066">2066</span>
+<span id="2067">2067</span>
+<span id="2068">2068</span>
+<span id="2069">2069</span>
+<span id="2070">2070</span>
+<span id="2071">2071</span>
+<span id="2072">2072</span>
+<span id="2073">2073</span>
+<span id="2074">2074</span>
+<span id="2075">2075</span>
+<span id="2076">2076</span>
+<span id="2077">2077</span>
+<span id="2078">2078</span>
+<span id="2079">2079</span>
+<span id="2080">2080</span>
+<span id="2081">2081</span>
+<span id="2082">2082</span>
+<span id="2083">2083</span>
+<span id="2084">2084</span>
+<span id="2085">2085</span>
+<span id="2086">2086</span>
+<span id="2087">2087</span>
+<span id="2088">2088</span>
+<span id="2089">2089</span>
+<span id="2090">2090</span>
+<span id="2091">2091</span>
+<span id="2092">2092</span>
+<span id="2093">2093</span>
+<span id="2094">2094</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2090,7 +2136,10 @@
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">resource_proof</span>::<span class="ident">ResourceProof</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">infrastructure</span>::{<span class="ident">GetSectionResponse</span>, <span class="ident">Query</span>},
+    <span class="ident">infrastructure</span>::{
+        <span class="ident">Error</span> <span class="kw">as</span> <span class="ident">InfrastructureError</span>, <span class="ident">GetSectionResponse</span>, <span class="ident">InfrastructureInformation</span>,
+        <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">InfrastructureMessage</span>,
+    },
     <span class="ident">node</span>::<span class="ident">NodeMessage</span>,
     <span class="ident">MessageType</span>,
 };
@@ -2247,25 +2296,31 @@
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_infrastructure_query</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_infrastructure_message</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">sender</span>: <span class="ident">SocketAddr</span>,
-        <span class="ident">message</span>: <span class="ident">Query</span>,
+        <span class="ident">message</span>: <span class="ident">InfrastructureMessage</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">message</span> {
-            <span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Received GetSectionRequest({}) from {}&quot;</span>, <span class="ident">name</span>, <span class="ident">sender</span>);
 
                 <span class="kw">let</span> <span class="ident">response</span> <span class="op">=</span> <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>) {
-                    <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> {
-                        <span class="ident">prefix</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">prefix</span>,
-                        <span class="ident">key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
-                        <span class="ident">elders</span>: <span class="self">self</span>
-                            .<span class="ident">section</span>
-                            .<span class="ident">elders_info</span>()
-                            .<span class="ident">peers</span>()
-                            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
-                            .<span class="ident">collect</span>(),
+                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">pk_set</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">public_key_set</span>() {
+                        <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(<span class="ident">InfrastructureInformation</span> {
+                            <span class="ident">prefix</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">prefix</span>,
+                            <span class="ident">pk_set</span>,
+                            <span class="ident">elders</span>: <span class="self">self</span>
+                                .<span class="ident">section</span>
+                                .<span class="ident">elders_info</span>()
+                                .<span class="ident">peers</span>()
+                                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
+                                .<span class="ident">collect</span>(),
+                        })
+                    } <span class="kw">else</span> {
+                        <span class="ident">GetSectionResponse</span>::<span class="ident">SectionInfrastructureUpdate</span>(
+                            <span class="ident">InfrastructureError</span>::<span class="ident">NoSectionPkSet</span>,
+                        )
                     }
                 } <span class="kw">else</span> {
                     <span class="comment">// If we are elder, we should know a section that is closer to `name` that us.</span>
@@ -2277,23 +2332,27 @@
                     <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> <span class="ident">section</span>.<span class="ident">peers</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>).<span class="ident">copied</span>().<span class="ident">collect</span>();
                     <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>)
                 };
-                <span class="kw">let</span> <span class="ident">response</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">response</span>);
+                <span class="kw">let</span> <span class="ident">response</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">response</span>);
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">response</span>, <span class="ident">sender</span>);
 
                 <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                     <span class="ident">recipients</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">sender</span>],
                     <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
-                    <span class="ident">message</span>: <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">response</span>),
+                    <span class="ident">message</span>: <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">response</span>),
                 }]
             }
-            <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="ident">tx</span>)) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">relocate_state</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Forwarding {:?} to the bootstrap task&quot;</span>, <span class="ident">message</span>);
                     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tx</span>
-                        .<span class="ident">send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>), <span class="ident">sender</span>))
+                        .<span class="ident">send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>), <span class="ident">sender</span>))
                         .<span class="kw">await</span>;
                 }
 
+                <span class="macro">vec</span><span class="macro">!</span>[]
+            }
+            <span class="ident">InfrastructureMessage</span>::<span class="ident">InfrastructureUpdate</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;InfrastructureError received: {:?}&quot;</span>, <span class="ident">error</span>);
                 <span class="macro">vec</span><span class="macro">!</span>[]
             }
         }
@@ -3882,6 +3941,39 @@
         <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(<span class="kw-2">&amp;</span><span class="ident">targets</span>, <span class="ident">dg_size</span>, <span class="ident">msg</span>.<span class="ident">to_bytes</span>());
 
         <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">command</span>))
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bls_pk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">InfrastructureError</span><span class="op">&gt;</span> {
+        <span class="comment">// Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.</span>
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
+            .<span class="ident">section</span>
+            .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
+            .<span class="ident">is_empty</span>()
+        {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">InfrastructureError</span>::<span class="ident">DkgInProgress</span>);
+        }
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="ident">bls_pk</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">InfrastructureError</span>::<span class="ident">UnrecognizedSectionKey</span>);
+        }
+        <span class="kw">if</span> <span class="ident">bls_pk</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>() {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">public_key_set</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">public_key_set</span>() {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">InfrastructureError</span>::<span class="ident">TargetSectionInfoOutdated</span>(
+                    <span class="ident">InfrastructureInformation</span> {
+                        <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(),
+                        <span class="ident">pk_set</span>: <span class="ident">public_key_set</span>,
+                        <span class="ident">elders</span>: <span class="self">self</span>
+                            .<span class="ident">section</span>
+                            .<span class="ident">elders_info</span>()
+                            .<span class="ident">peers</span>()
+                            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
+                            .<span class="ident">collect</span>(),
+                    },
+                ));
+            } <span class="kw">else</span> {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">InfrastructureError</span>::<span class="ident">DkgInProgress</span>);
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="comment">// Setting the JoinsAllowed triggers a round Vote::SetJoinsAllowed to update the flag.</span>

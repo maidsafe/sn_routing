@@ -938,6 +938,32 @@
 <span id="937">937</span>
 <span id="938">938</span>
 <span id="939">939</span>
+<span id="940">940</span>
+<span id="941">941</span>
+<span id="942">942</span>
+<span id="943">943</span>
+<span id="944">944</span>
+<span id="945">945</span>
+<span id="946">946</span>
+<span id="947">947</span>
+<span id="948">948</span>
+<span id="949">949</span>
+<span id="950">950</span>
+<span id="951">951</span>
+<span id="952">952</span>
+<span id="953">953</span>
+<span id="954">954</span>
+<span id="955">955</span>
+<span id="956">956</span>
+<span id="957">957</span>
+<span id="958">958</span>
+<span id="959">959</span>
+<span id="960">960</span>
+<span id="961">961</span>
+<span id="962">962</span>
+<span id="963">963</span>
+<span id="964">964</span>
+<span id="965">965</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -964,7 +990,9 @@
 <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
 <span class="kw">use</span> <span class="ident">resource_proof</span>::<span class="ident">ResourceProof</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">infrastructure</span>::{<span class="ident">GetSectionResponse</span>, <span class="ident">Query</span>},
+    <span class="ident">infrastructure</span>::{
+        <span class="ident">GetSectionResponse</span>, <span class="ident">InfrastructureInformation</span>, <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">InfrastructureMessage</span>,
+    },
     <span class="ident">node</span>::<span class="ident">NodeMessage</span>,
     <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
 };
@@ -1090,11 +1118,12 @@
             <span class="kw">let</span> (<span class="ident">response</span>, <span class="ident">sender</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">receive_get_section_response</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
             <span class="kw">match</span> <span class="ident">response</span> {
-                <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> {
+                <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(<span class="ident">InfrastructureInformation</span> {
                     <span class="ident">prefix</span>,
-                    <span class="ident">key</span>,
+                    <span class="ident">pk_set</span>,
                     <span class="ident">elders</span>,
-                } <span class="op">=</span><span class="op">&gt;</span> {
+                }) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">pk_set</span>.<span class="ident">public_key</span>();
                     <span class="macro">info</span><span class="macro">!</span>(
                         <span class="string">&quot;Joining a section ({:b}), key: {:?}, elders: {:?} (given by {:?})&quot;</span>,
                         <span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">elders</span>, <span class="ident">sender</span>
@@ -1107,6 +1136,9 @@
                         <span class="ident">new_bootstrap_addrs</span>,
                     );
                     <span class="ident">bootstrap_addrs</span> <span class="op">=</span> <span class="ident">new_bootstrap_addrs</span>.<span class="ident">to_vec</span>();
+                }
+                <span class="ident">GetSectionResponse</span>::<span class="ident">SectionInfrastructureUpdate</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Infrastructure error: {:?}&quot;</span>, <span class="ident">error</span>);
                 }
             }
         }
@@ -1127,11 +1159,11 @@
             <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(),
         };
 
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">destination</span>);
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">destination</span>);
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">send_tx</span>
-            .<span class="ident">send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>), <span class="ident">recipients</span>))
+            .<span class="ident">send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>), <span class="ident">recipients</span>))
             .<span class="kw">await</span>;
 
         <span class="prelude-val">Ok</span>(())
@@ -1140,28 +1172,30 @@
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">receive_get_section_response</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">GetSectionResponse</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">message</span>, <span class="ident">sender</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">recv_rx</span>.<span class="ident">next</span>().<span class="kw">await</span> {
             <span class="kw">match</span> <span class="ident">message</span> {
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">response</span>)) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="kw">match</span> <span class="ident">response</span> {
-                        <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>) <span class="kw">if</span> <span class="ident">addrs</span>.<span class="ident">is_empty</span>() <span class="op">=</span><span class="op">&gt;</span> {
-                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid GetSectionResponse::Redirect: missing peers&quot;</span>);
-                            <span class="kw">continue</span>;
-                        }
-                        <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> { <span class="ident">prefix</span>, .. }
-                            <span class="kw">if</span> <span class="op">!</span><span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) <span class="op">=</span><span class="op">&gt;</span>
-                        {
-                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid GetSectionResponse::Success: bad prefix&quot;</span>);
-                            <span class="kw">continue</span>;
-                        }
-                        <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
-                            <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">response</span>, <span class="ident">sender</span>))
-                        }
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(
+                    <span class="ident">response</span>,
+                )) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="ident">response</span> {
+                    <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>) <span class="kw">if</span> <span class="ident">addrs</span>.<span class="ident">is_empty</span>() <span class="op">=</span><span class="op">&gt;</span> {
+                        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid GetSectionResponse::Redirect: missing peers&quot;</span>);
+                        <span class="kw">continue</span>;
                     }
-                }
+                    <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(<span class="ident">InfrastructureInformation</span> { <span class="ident">prefix</span>, .. })
+                        <span class="kw">if</span> <span class="op">!</span><span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) <span class="op">=</span><span class="op">&gt;</span>
+                    {
+                        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid GetSectionResponse::Success: bad prefix&quot;</span>);
+                        <span class="kw">continue</span>;
+                    }
+                    <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="kw">_</span>)
+                    <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> { .. }
+                    <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">SectionInfrastructureUpdate</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                        <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">response</span>, <span class="ident">sender</span>))
+                    }
+                },
                 <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">msg_bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>))<span class="question-mark">?</span>;
                     <span class="self">self</span>.<span class="ident">backlog_message</span>(<span class="ident">message</span>, <span class="ident">sender</span>)
                 }
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="kw">_</span>)
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="kw">_</span>)
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">ClientMessage</span>(<span class="kw">_</span>)
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Ping</span> <span class="op">=</span><span class="op">&gt;</span> {}
             }
@@ -1318,7 +1352,7 @@
                 }
                 <span class="ident">MessageType</span>::<span class="ident">Ping</span>
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">ClientMessage</span>(<span class="kw">_</span>)
-                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">continue</span>,
+                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">continue</span>,
             };
 
             <span class="kw">match</span> <span class="ident">message</span>.<span class="ident">variant</span>() {
@@ -1506,11 +1540,13 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
+        <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>,
+        <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
     };
     <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
     <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>};
+    <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">infrastructure</span>::<span class="ident">InfrastructureInformation</span>;
     <span class="kw">use</span> <span class="ident">tokio</span>::{<span class="ident">sync</span>::<span class="ident">mpsc</span>::<span class="ident">error</span>::<span class="ident">TryRecvError</span>, <span class="ident">task</span>};
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
@@ -1523,7 +1559,9 @@
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
         <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>;
 
-        <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
+        <span class="kw">let</span> <span class="ident">sk_set</span> <span class="op">=</span> <span class="ident">SecretKeySet</span>::<span class="ident">random</span>();
+        <span class="kw">let</span> <span class="ident">pk_set</span> <span class="op">=</span> <span class="ident">sk_set</span>.<span class="ident">public_keys</span>();
+        <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">sk_set</span>.<span class="ident">secret_key</span>();
         <span class="kw">let</span> <span class="ident">pk</span> <span class="op">=</span> <span class="ident">sk</span>.<span class="ident">public_key</span>();
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
@@ -1546,25 +1584,29 @@
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, [<span class="ident">bootstrap_addr</span>]);
-            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">name</span>)) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="ident">name</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">name</span>, <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>());
             });
 
-            <span class="comment">// Send GetSectionResponse::Success</span>
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> {
+            <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">InfrastructureInformation</span> {
                 <span class="ident">prefix</span>: <span class="ident">elders_info</span>.<span class="ident">prefix</span>,
-                <span class="ident">key</span>: <span class="ident">pk</span>,
+                <span class="ident">pk_set</span>,
                 <span class="ident">elders</span>: <span class="ident">elders_info</span>
                     .<span class="ident">peers</span>()
                     .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                     .<span class="ident">collect</span>(),
-            });
-            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>), <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
+            };
+            <span class="comment">// Send GetSectionResponse::Success</span>
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
+                <span class="ident">infrastructure_info</span>,
+            ));
+            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>), <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
             <span class="comment">// Receive JoinRequest</span>
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span>
+                <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
 
             <span class="ident">itertools</span>::<span class="ident">assert_equal</span>(<span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">elders_info</span>.<span class="ident">peers</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>));
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">request</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -1573,8 +1615,8 @@
             });
 
             <span class="comment">// Send NodeApproval</span>
-            <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">member_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>.<span class="ident">with_age</span>(<span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>)))<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">member_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>.<span class="ident">with_age</span>(<span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>)))<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">SectionProofChain</span>::<span class="ident">new</span>(<span class="ident">pk</span>);
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
                 <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
@@ -1626,17 +1668,17 @@
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>]);
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
             );
 
             <span class="comment">// Send GetSectionResponse::Redirect</span>
             <span class="kw">let</span> <span class="ident">new_bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">gen_addr</span>()).<span class="ident">collect</span>();
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(
                 <span class="ident">new_bootstrap_addrs</span>.<span class="ident">clone</span>(),
             ));
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>),
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
@@ -1647,7 +1689,7 @@
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="ident">new_bootstrap_addrs</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
             );
 
             <span class="prelude-val">Ok</span>(())
@@ -1680,23 +1722,25 @@
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
             );
 
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="macro">vec</span><span class="macro">!</span>[]));
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
+                <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="macro">vec</span><span class="macro">!</span>[]));
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>),
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">send_rx</span>.<span class="ident">try_recv</span>(), <span class="prelude-val">Err</span>(<span class="ident">TryRecvError</span>::<span class="ident">Empty</span>));
 
             <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">gen_addr</span>()).<span class="ident">collect</span>();
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>));
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
+                <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>));
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>),
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
@@ -1704,7 +1748,7 @@
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
             );
 
             <span class="prelude-val">Ok</span>(())
@@ -1751,34 +1795,42 @@
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">Query</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionRequest</span>(<span class="kw">_</span>))
             );
 
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> {
+            <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">InfrastructureInformation</span> {
                 <span class="ident">prefix</span>: <span class="ident">bad_prefix</span>,
-                <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>(),
+                <span class="ident">pk_set</span>: <span class="ident">bls</span>::<span class="ident">SecretKeySet</span>::<span class="ident">random</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>()).<span class="ident">public_keys</span>(),
                 <span class="ident">elders</span>: (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>)
                     .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> (<span class="ident">bad_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>()), <span class="ident">gen_addr</span>()))
                     .<span class="ident">collect</span>(),
-            });
+            };
+
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
+                <span class="ident">infrastructure_info</span>,
+            ));
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>),
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">send_rx</span>.<span class="ident">try_recv</span>(), <span class="prelude-val">Err</span>(<span class="ident">TryRecvError</span>::<span class="ident">Empty</span>));
 
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Query</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> {
+            <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">InfrastructureInformation</span> {
                 <span class="ident">prefix</span>: <span class="ident">good_prefix</span>,
-                <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>(),
+                <span class="ident">pk_set</span>: <span class="ident">bls</span>::<span class="ident">SecretKeySet</span>::<span class="ident">random</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>()).<span class="ident">public_keys</span>(),
                 <span class="ident">elders</span>: (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>)
                     .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> (<span class="ident">good_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>()), <span class="ident">gen_addr</span>()))
                     .<span class="ident">collect</span>(),
-            });
+            };
+
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">InfrastructureMessage</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
+                <span class="ident">infrastructure_info</span>,
+            ));
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
-                <span class="ident">MessageType</span>::<span class="ident">InfrastructureQuery</span>(<span class="ident">message</span>),
+                <span class="ident">MessageType</span>::<span class="ident">InfrastructureMessage</span>(<span class="ident">message</span>),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
 
