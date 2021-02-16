@@ -1848,7 +1848,12 @@ impl Approved {
     }
 
     pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), InfrastructureError> {
-        if self.dkg_voter.has_ongoing_dkg() {
+        // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
+        if !self
+            .section
+            .promote_and_demote_elders(&self.node.name())
+            .is_empty()
+        {
             return Err(InfrastructureError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
