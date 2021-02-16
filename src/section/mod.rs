@@ -30,7 +30,7 @@ use crate::{
 };
 use bls_signature_aggregator::Proof;
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
+use std::{collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,20 +87,19 @@ impl Section {
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
     /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.elders_info.self_verify()
-            || &other.elders_info.proof.public_key != other.chain.last_key()
-        {
+        if !other.elders_info.self_verify() {
+            error!("can't merge sections: other elders_info failed verification");
+            return Err(Error::InvalidMessage);
+        }
+        if &other.elders_info.proof.public_key != other.chain.last_key() {
             // TODO: use more specific error variant.
+            error!("can't merge sections: other elders_info signed with incorrect key");
             return Err(Error::InvalidMessage);
         }
 
         self.chain.merge(other.chain.clone())?;
 
-        if self.chain.cmp_by_position(
-            &other.elders_info.proof.public_key,
-            &self.elders_info.proof.public_key,
-        ) == Ordering::Greater
-        {
+        if &other.elders_info.proof.public_key == self.chain.last_key() {
             self.elders_info = other.elders_info;
         }
 
@@ -142,7 +141,10 @@ impl Section {
             return false;
         }
 
-        self.elders_info = new_elders_info;
+        if &new_elders_info.proof.public_key == self.chain.last_key() {
+            self.elders_info = new_elders_info;
+        }
+
         self.members
             .prune_not_matching(&self.elders_info.value.prefix);
 

@@ -233,8 +233,13 @@ impl SectionChain {
     /// last key) is considered `Greater`. If exactly one of the keys is not in the chain, the other
     /// one is implicitly considered `Greater`. If none are in the chain, they are considered
     /// `Equal`.
-    pub fn cmp_by_position(&self, _lhs: &bls::PublicKey, _rhs: &bls::PublicKey) -> Ordering {
-        todo!()
+    pub fn cmp_by_position(&self, lhs: &bls::PublicKey, rhs: &bls::PublicKey) -> Ordering {
+        match (self.index_of(lhs), self.index_of(rhs)) {
+            (Some(lhs), Some(rhs)) => lhs.cmp(&rhs),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => Ordering::Equal,
+        }
     }
 
     /// Returns the number of blocks in the chain. This is always >= 1.
@@ -853,6 +858,19 @@ mod tests {
         // out:      2
         let chain = make_chain(pk2, vec![]);
         assert_eq!(chain.extend(&pk2, &main_chain), Ok(make_chain(pk2, vec![])));
+    }
+
+    // TODO extend_unreachable_new_root_key()
+
+    #[test]
+    fn cmp_by_position() {
+        let (sk0, pk0) = gen_keypair();
+        let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
+        let (_, pk2, sig2) = gen_signed_keypair(&sk1);
+
+        let main_chain = make_chain(pk0, vec![(&pk0, pk1, sig1), (&pk1, pk2, sig2)]);
+
+        assert_eq!(main_chain.cmp_by_position(&pk0, &pk1), Ordering::Less);
     }
 
     fn gen_keypair() -> (bls::SecretKey, bls::PublicKey) {

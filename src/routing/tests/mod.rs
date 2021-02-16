@@ -1227,7 +1227,7 @@ async fn handle_sync() -> Result<()> {
     let sk2 = bls::SecretKey::random();
     let pk2 = sk2.public_key();
     let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
-    assert_eq!(chain.insert(&pk1, pk2, pk2_signature), Ok(()));
+    chain.insert(&pk1, pk2, pk2_signature)?;
 
     let old_node = nodes.remove(0);
 
@@ -1243,7 +1243,7 @@ async fn handle_sync() -> Result<()> {
         old_elders_info.prefix,
     );
     let new_elders: BTreeSet<_> = new_elders_info.elders.keys().copied().collect();
-    let proven_new_elders_info = proven(sk1_set.secret_key(), new_elders_info)?;
+    let proven_new_elders_info = proven(&sk2, new_elders_info)?;
     let new_section = Section::new(chain, proven_new_elders_info)?;
 
     // Create the `Sync` message containing the new `Section`.
@@ -1679,6 +1679,15 @@ async fn handle_demote_during_split() -> Result<()> {
 }
 
 // TODO: add more tests here
+
+#[allow(unused)]
+fn init_log() {
+    tracing_subscriber::fmt()
+        .pretty()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(false)
+        .init()
+}
 
 fn create_peer() -> Peer {
     Peer::new(rand::random(), gen_addr(), MIN_AGE)

@@ -401,7 +401,7 @@ mod tests {
 
         update_their_knowledge_and_check_proving_index(
             vec![("1", pk1), ("10", pk2)],
-            vec![("10", pk1), ("11", pk1)],
+            vec![("10", pk2), ("11", pk1)],
         )
     }
 
