@@ -423,7 +423,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                             recipients: vec![sender],
                             delivery_group_size: 1,
                             message: MessageType::InfrastructureMessage(
-                                InfrastructureMessage::InfrastructureError(ErrorResponse {
+                                InfrastructureMessage::InfrastructureUpdate(ErrorResponse {
                                     correlation_id,
                                     error,
                                 }),

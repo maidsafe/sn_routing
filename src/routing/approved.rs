@@ -222,7 +222,7 @@ impl Approved {
                                 .collect(),
                         })
                     } else {
-                        GetSectionResponse::SectionInfrastructureError(
+                        GetSectionResponse::SectionInfrastructureUpdate(
                             InfrastructureError::NoSectionPkSet,
                         )
                     }
@@ -255,7 +255,7 @@ impl Approved {
 
                 vec![]
             }
-            InfrastructureMessage::InfrastructureError(error) => {
+            InfrastructureMessage::InfrastructureUpdate(error) => {
                 error!("InfrastructureError received: {:?}", error);
                 vec![]
             }
