@@ -7,12 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::HashSet, iter, mem};
+use std::{cmp::Ordering, collections::HashSet, convert::TryFrom, iter, mem};
 use thiserror::Error;
 
 /// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
 /// first one.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "Deserialized")]
 pub struct SectionChain {
     root: bls::PublicKey,
     tree: Vec<Block>,
@@ -51,25 +52,11 @@ impl SectionChain {
         }
     }
 
-    // TODO: remove this when we make SectionChain correct by deserialization too.
-    #[cfg(test)]
-    pub fn insert_without_validation(
-        &mut self,
-        _parent_key: &bls::PublicKey,
-        _key: bls::PublicKey,
-        _signature: bls::Signature,
-    ) -> Result<(), Error> {
-        todo!()
-    }
-
     /// Merges two chains into one.
-    //
-    /// This succeeds only if both chains are self-verified and the root key of one of them is
-    /// present in the other one.
+    ///
+    /// This succeeds only if the root key of one of the chain is present in the other one.
+    /// Otherwise it returns `Error::Incompatible`
     pub fn merge(&mut self, mut other: Self) -> Result<(), Error> {
-        self.self_verify()?;
-        other.self_verify()?;
-
         let root_index = if let Some(index) = self.index_of(other.root_key()) {
             index
         } else if let Some(index) = other.index_of(self.root_key()) {
@@ -255,69 +242,14 @@ impl SectionChain {
         1 + self.tree.len()
     }
 
-    /// Verifies that every block in the chain is correctly signed with its parent block (except for
-    /// the root block). Also verifies that the block are in the correct order.
-    ///
-    /// Note: the first block cannot be verified and requires matching against already trusted keys.
-    /// Thus this function alone cannot be used to determine whether this chain is trusted. Use
-    /// [`Self::verify`] for that.
-    pub fn self_verify(&self) -> Result<(), Error> {
-        let mut prev_block: Option<&Block> = None;
-
-        for (tree_index, block) in self.tree.iter().enumerate() {
-            let parent_key = if block.parent_index == 0 {
-                &self.root
-            } else if block.parent_index > tree_index {
-                return Err(Error::WrongBlockOrder);
-            } else if let Some(key) = self
-                .tree
-                .get(block.parent_index - 1)
-                .map(|block| &block.key)
-            {
-                key
-            } else {
-                return Err(Error::KeyNotFound);
-            };
-
-            if !block.verify(parent_key) {
-                // Invalid signature
-                return Err(Error::FailedSignature);
-            }
-
-            if let Some(prev_block) = prev_block {
-                if block.parent_index < prev_block.parent_index {
-                    // Wrong order of block that have neither parent-child, not sibling relation.
-                    return Err(Error::WrongBlockOrder);
-                }
-
-                if block.parent_index == prev_block.parent_index && block <= prev_block {
-                    // Wrong sibling order
-                    return Err(Error::WrongBlockOrder);
-                }
-            }
-
-            prev_block = Some(block);
-        }
-
-        Ok(())
-    }
-
-    /// Verifies this chain against the given trusted keys.
-    ///
-    /// Checks that the chain contains at least one key from `trusted_keys` and self-verifies the
-    /// chain.
-    pub fn verify<'a, I>(&self, trusted_keys: I) -> Result<(), Error>
+    /// Checks that the chain contains at least one key from `trusted_keys`.
+    // TODO: on the main branch
+    pub fn check_trust<'a, I>(&self, trusted_keys: I) -> bool
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        // First check whether at least one key from `trusted_keys` is contained in this chain.
         let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
-
-        if !self.keys().any(|key| trusted_keys.contains(key)) {
-            return Err(Error::Untrusted);
-        }
-
-        self.self_verify()
+        self.keys().any(|key| trusted_keys.contains(key))
     }
 
     fn insert_block(&mut self, new_block: Block) -> usize {
@@ -357,14 +289,6 @@ impl SectionChain {
             .map(|rev_position| self.len() - rev_position - 1)
     }
 
-    // fn key_at(&self, index: usize) -> Option<&bls::PublicKey> {
-    //     if index == 0 {
-    //         Some(&self.root)
-    //     } else {
-    //         self.tree.get(index - 1).map(|block| &block.key)
-    //     }
-    // }
-
     fn parent_index_at(&self, index: usize) -> Option<usize> {
         if index == 0 {
             None
@@ -382,8 +306,6 @@ pub enum Error {
     FailedSignature,
     #[error("key not found in the chain")]
     KeyNotFound,
-    #[error("chain blocks are in a wrong order")]
-    WrongBlockOrder,
     #[error("chain doesn't contain any trusted keys")]
     Untrusted,
     #[error("chains are incompatible")]
@@ -418,6 +340,71 @@ impl PartialOrd for Block {
     }
 }
 
+// `SectionChain` is deserialized by first deserializing it into this intermediate structure and
+// then converting it into `SectionChain` using `try_from` which fails when the chain is invalid.
+// This makes it impossible to obtain invalid `SectionChain` from malformed serialized data, thus
+// making `SectionChain` "correct by deserialization".
+#[derive(Deserialize)]
+#[serde(rename = "SectionChain")]
+struct Deserialized {
+    root: bls::PublicKey,
+    tree: Vec<Block>,
+}
+
+impl TryFrom<Deserialized> for SectionChain {
+    type Error = IntegrityError;
+
+    fn try_from(src: Deserialized) -> Result<Self, Self::Error> {
+        let mut prev_block: Option<&Block> = None;
+
+        for (tree_index, block) in src.tree.iter().enumerate() {
+            let parent_key = if block.parent_index == 0 {
+                &src.root
+            } else if block.parent_index > tree_index {
+                return Err(IntegrityError::WrongBlockOrder);
+            } else if let Some(key) = src.tree.get(block.parent_index - 1).map(|block| &block.key) {
+                key
+            } else {
+                return Err(IntegrityError::ParentNotFound);
+            };
+
+            if !block.verify(parent_key) {
+                // Invalid signature
+                return Err(IntegrityError::FailedSignature);
+            }
+
+            if let Some(prev_block) = prev_block {
+                if block.parent_index < prev_block.parent_index {
+                    // Wrong order of block that have neither parent-child, not sibling relation.
+                    return Err(IntegrityError::WrongBlockOrder);
+                }
+
+                if block.parent_index == prev_block.parent_index && block <= prev_block {
+                    // Wrong sibling order
+                    return Err(IntegrityError::WrongBlockOrder);
+                }
+            }
+
+            prev_block = Some(block);
+        }
+
+        Ok(Self {
+            root: src.root,
+            tree: src.tree,
+        })
+    }
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+enum IntegrityError {
+    #[error("signature check failed")]
+    FailedSignature,
+    #[error("parent key not found in the chain")]
+    ParentNotFound,
+    #[error("chain blocks are in a wrong order")]
+    WrongBlockOrder,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,7 +427,6 @@ mod tests {
             last_sk = sk;
         }
 
-        assert_eq!(chain.self_verify(), Ok(()));
         assert_eq!(chain.keys().copied().collect::<Vec<_>>(), expected_keys);
     }
 
@@ -455,8 +441,6 @@ mod tests {
         assert_eq!(chain.insert(&pk0, pk1_a, sig1_a), Ok(()));
         assert_eq!(chain.insert(&pk1_a, pk2_a, sig2_a), Ok(()));
         assert_eq!(chain.insert(&pk0, pk1_b, sig1_b), Ok(()));
-
-        assert_eq!(chain.self_verify(), Ok(()));
 
         let expected_keys = if pk1_a > pk1_b {
             vec![&pk0, &pk1_b, &pk1_a, &pk2_a]
@@ -481,14 +465,14 @@ mod tests {
     }
 
     #[test]
-    fn invalid_chain_invalid_signature() {
+    fn invalid_deserialized_chain_invalid_signature() {
         let (_, pk0) = gen_keypair();
         let (_, pk1) = gen_keypair();
 
         let bad_sk = bls::SecretKey::random();
         let bad_sig = sign(&bad_sk, &pk1);
 
-        let chain = SectionChain {
+        let src = Deserialized {
             root: pk0,
             tree: vec![Block {
                 key: pk1,
@@ -497,11 +481,14 @@ mod tests {
             }],
         };
 
-        assert_eq!(chain.self_verify(), Err(Error::FailedSignature));
+        assert_eq!(
+            SectionChain::try_from(src),
+            Err(IntegrityError::FailedSignature)
+        );
     }
 
     #[test]
-    fn invalid_chain_wrong_parent_child_order() {
+    fn invalid_deserialized_chain_wrong_parent_child_order() {
         // 0  2<-1<-+
         // |        |
         // +--------+
@@ -510,7 +497,7 @@ mod tests {
         let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
         let (_, pk2, sig2) = gen_signed_keypair(&sk1);
 
-        let chain = SectionChain {
+        let src = Deserialized {
             root: pk0,
             tree: vec![
                 Block {
@@ -526,11 +513,14 @@ mod tests {
             ],
         };
 
-        assert_eq!(chain.self_verify(), Err(Error::WrongBlockOrder));
+        assert_eq!(
+            SectionChain::try_from(src),
+            Err(IntegrityError::WrongBlockOrder)
+        );
     }
 
     #[test]
-    fn invalid_chain_wrong_sibling_order() {
+    fn invalid_deserialized_chain_wrong_sibling_order() {
         // 0->2 +->1
         // |    |
         // +----+
@@ -561,16 +551,19 @@ mod tests {
             (block2, block1)
         };
 
-        let chain = SectionChain {
+        let src = Deserialized {
             root: pk0,
             tree: vec![large, small],
         };
 
-        assert_eq!(chain.self_verify(), Err(Error::WrongBlockOrder));
+        assert_eq!(
+            SectionChain::try_from(src),
+            Err(IntegrityError::WrongBlockOrder)
+        );
     }
 
     #[test]
-    fn invalid_chain_wrong_unrelated_block_order() {
+    fn invalid_deserialized_chain_wrong_unrelated_block_order() {
         // "unrelated" here means the blocks have neither parent-child relation, nor are they
         // siblings.
 
@@ -583,7 +576,7 @@ mod tests {
         let (_, pk2, sig2) = gen_signed_keypair(&sk1);
         let (_, pk3, sig3) = gen_signed_keypair(&sk0);
 
-        let chain = SectionChain {
+        let src = Deserialized {
             root: pk0,
             tree: vec![
                 Block {
@@ -604,7 +597,10 @@ mod tests {
             ],
         };
 
-        assert_eq!(chain.self_verify(), Err(Error::WrongBlockOrder));
+        assert_eq!(
+            SectionChain::try_from(src),
+            Err(IntegrityError::WrongBlockOrder)
+        );
     }
 
     #[test]
@@ -891,7 +887,6 @@ mod tests {
         rhs: SectionChain,
     ) -> Result<Vec<bls::PublicKey>, Error> {
         lhs.merge(rhs)?;
-        lhs.self_verify()?;
         Ok(lhs.keys().copied().collect())
     }
 

@@ -281,7 +281,11 @@ impl Message {
                     .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
                     .map(|(_, key)| key);
 
-                VerifyStatus::from_section_chain_result(proof_chain.verify(trusted_keys))
+                if proof_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
         }
     }
@@ -386,16 +390,6 @@ pub enum VerifyStatus {
     // even though it is valid. The message should be relayed to other nodes who might be able to
     // verify it.
     Unknown,
-}
-
-impl VerifyStatus {
-    pub(crate) fn from_section_chain_result(result: Result<(), SectionChainError>) -> Result<Self> {
-        match result {
-            Ok(()) => Ok(VerifyStatus::Full),
-            Err(SectionChainError::Untrusted) => Ok(VerifyStatus::Unknown),
-            Err(_) => Err(Error::InvalidMessage),
-        }
-    }
 }
 
 /// Status of an incomming message.

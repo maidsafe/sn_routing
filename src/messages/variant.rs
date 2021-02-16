@@ -129,7 +129,7 @@ impl Variant {
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        match self {
+        let proof_chain = match self {
             Self::NodeApproval {
                 elders_info,
                 member_info,
@@ -144,11 +144,9 @@ impl Variant {
                     return Err(Error::InvalidMessage);
                 }
 
-                VerifyStatus::from_section_chain_result(proof_chain.verify(trusted_keys))
+                proof_chain
             }
-            Self::Sync { section, .. } => {
-                VerifyStatus::from_section_chain_result(section.chain().verify(trusted_keys))
-            }
+            Self::Sync { section, .. } => section.chain(),
             Self::NeighbourInfo { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
@@ -156,9 +154,15 @@ impl Variant {
                     return Err(Error::InvalidMessage);
                 }
 
-                VerifyStatus::from_section_chain_result(proof_chain.verify(trusted_keys))
+                proof_chain
             }
-            _ => Ok(VerifyStatus::Full),
+            _ => return Ok(VerifyStatus::Full),
+        };
+
+        if proof_chain.check_trust(trusted_keys) {
+            Ok(VerifyStatus::Full)
+        } else {
+            Ok(VerifyStatus::Unknown)
         }
     }
 }

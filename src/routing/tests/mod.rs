@@ -24,7 +24,7 @@ use crate::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
         MIN_AGE,
     },
-    Error, ELDER_SIZE,
+    ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -1279,59 +1279,6 @@ async fn handle_sync() -> Result<()> {
 }
 
 // TODO: add test that untrusted `Sync` is not applied
-
-#[tokio::test]
-async fn receive_message_with_invalid_proof_chain() -> Result<()> {
-    let sk0_good_set = SecretKeySet::random();
-    let pk0_good = sk0_good_set.secret_key().public_key();
-
-    let node = create_node();
-    let peer = node.peer();
-
-    let chain = SectionChain::new(pk0_good);
-    let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
-    let proven_elders_info = proven(sk0_good_set.secret_key(), elders_info)?;
-    let section = Section::new(chain, proven_elders_info)?;
-    let section_key_share = create_section_key_share(&sk0_good_set, 0);
-
-    let state = Approved::new(
-        node,
-        section,
-        Some(section_key_share),
-        mpsc::unbounded_channel().0,
-    );
-    let stage = Stage::new(state, create_comm().await?);
-
-    // Create a message with a valid signature but invalid proof chain (the last key in the chain
-    // not signed with the previous key)
-    let sk0_bad = bls::SecretKey::random();
-    let sk1_bad = bls::SecretKey::random();
-    let pk1_bad = sk1_bad.public_key();
-    let pk1_bad_signature = sk0_bad.sign(&bincode::serialize(&pk1_bad)?);
-
-    let mut bad_chain = SectionChain::new(pk0_good);
-    bad_chain.insert_without_validation(&pk0_good, pk1_bad, pk1_bad_signature)?;
-
-    let message = PlainMessage {
-        src: Prefix::default(),
-        dst: DstLocation::Node(*peer.name()),
-        dst_key: pk0_good,
-        variant: Variant::UserMessage(Bytes::from_static(b"hello")),
-    };
-    let signature = sk1_bad.sign(&bincode::serialize(&message.as_signable())?);
-    let message = Message::section_src(message, signature, bad_chain)?;
-
-    let result = stage
-        .handle_command(Command::HandleMessage {
-            message,
-            sender: Some(gen_addr()),
-        })
-        .await;
-
-    assert_matches!(result, Err(Error::InvalidMessage));
-
-    Ok(())
-}
 
 #[tokio::test]
 async fn relocation_of_non_elder() -> Result<()> {
