@@ -238,11 +238,11 @@ impl Approved {
                 let response = NetworkInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
-                Ok(vec![Command::SendMessage {
+                vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
                     message: MessageType::NetworkInfo(response),
-                }])
+                }]
             }
             NetworkInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
@@ -250,7 +250,7 @@ impl Approved {
                     let _ = tx.send((MessageType::NetworkInfo(message), sender)).await;
                 }
 
-                Ok(vec![])
+                vec![]
             }
             NetworkInfoMsg::NetworkInfoUpdate(error) => {
                 error!("TargetSectionError received: {:?}", error);
@@ -1860,21 +1860,21 @@ impl Approved {
         Ok(Some(command))
     }
 
-    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TagetSectionError> {
+    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TargetSectionError> {
         // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
         if !self
             .section
             .promote_and_demote_elders(&self.node.name())
             .is_empty()
         {
-            return Err(TagetSectionError::DkgInProgress);
+            return Err(TargetSectionError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
-            return Err(TagetSectionError::UnrecognizedSectionKey);
+            return Err(TargetSectionError::UnrecognizedSectionKey);
         }
         if bls_pk != self.section.chain().last_key() {
             if let Ok(public_key_set) = self.public_key_set() {
-                return Err(TagetSectionError::TargetSectionInfoOutdated(NetworkInfo {
+                return Err(TargetSectionError::TargetSectionInfoOutdated(NetworkInfo {
                     prefix: *self.section.prefix(),
                     pk_set: public_key_set,
                     elders: self
@@ -1885,7 +1885,7 @@ impl Approved {
                         .collect(),
                 }));
             } else {
-                return Err(TagetSectionError::DkgInProgress);
+                return Err(TargetSectionError::DkgInProgress);
             }
         }
         Ok(())
