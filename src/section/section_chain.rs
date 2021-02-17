@@ -6,13 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::HashSet, convert::TryFrom, iter, mem};
+use std::{
+    cmp::Ordering,
+    collections::HashSet,
+    convert::TryFrom,
+    fmt::{self, Debug, Formatter},
+    iter, mem,
+};
 use thiserror::Error;
 
 /// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
 /// first one.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "Deserialized")]
 pub struct SectionChain {
     root: bls::PublicKey,
@@ -120,12 +127,10 @@ impl SectionChain {
             max_index = max_index.max(index);
         }
 
-        if let Some(min_parent_index) = ((min_index + 1)..(max_index + 1))
-            .filter_map(|index| self.parent_index_at(index))
-            .min()
-        {
-            min_index = min_index.min(min_parent_index);
-        }
+        // To account for forks, we also need to include the closest common ancestors of all the
+        // required keys. This is to maintain the invariant that for every key in the chain that is
+        // not the root its parent key is also in the chain.
+        min_index = self.closest_common_ancestor(min_index, max_index);
 
         let mut chain = Self::new(if min_index == 0 {
             self.root
@@ -194,15 +199,28 @@ impl SectionChain {
 
     /// Returns the smallest super-chain of `self` that would be trusted by a peer that trust
     /// `trusted_key`.
-    /// Both `trusted_key` and the current root key of `self` must be present in `super_chain`,
-    /// otherwise an error is returned.
     ///
-    /// NOTE: if `trusted_key` is not reachable from the `last_key` of `self` then this extends the
-    /// chain all the way to the root key of `super_chain` instead. This is because the root key
-    /// of `super_chain` is assumed to be the "genesis key" which is implicitly trusted by
-    /// everyone.
+    /// Returns `Error::KeyNotFound` if either `trusted_key` or `self.last_key()` is not present in
+    /// `super_chain`.
+    ///
+    /// If `trusted_key` is not reachable from `self.last_key()` then the only way to make the
+    /// resulting chain trusted is to extend it to some trusted common ancestor of both
+    /// `trusted_key` and `self.last_key()`. The only such trusted ancestor, based on the
+    /// information available to this function, is the genesis key which we assume is the root key
+    /// of `super_chain`. Thus a copy of `super_chain` is returned in this case.
     pub fn extend(&self, trusted_key: &bls::PublicKey, super_chain: &Self) -> Result<Self, Error> {
-        super_chain.minimize(vec![trusted_key, self.last_key()])
+        let trusted_key_index = super_chain
+            .index_of(trusted_key)
+            .ok_or(Error::KeyNotFound)?;
+        let last_key_index = super_chain
+            .index_of(self.last_key())
+            .ok_or(Error::KeyNotFound)?;
+
+        if super_chain.is_ancestor(trusted_key_index, last_key_index) {
+            super_chain.minimize(vec![trusted_key, self.last_key()])
+        } else {
+            Ok(super_chain.clone())
+        }
     }
 
     /// Iterator over all the keys in the chain in order.
@@ -248,7 +266,6 @@ impl SectionChain {
     }
 
     /// Checks that the chain contains at least one key from `trusted_keys`.
-    // TODO: on the main branch
     pub fn check_trust<'a, I>(&self, trusted_keys: I) -> bool
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
@@ -300,6 +317,54 @@ impl SectionChain {
         } else {
             self.tree.get(index - 1).map(|block| block.parent_index)
         }
+    }
+
+    // Is the key at `lhs` an ancestor of the key at `rhs`?
+    fn is_ancestor(&self, lhs: usize, rhs: usize) -> bool {
+        let mut index = rhs;
+        loop {
+            if index == lhs {
+                return true;
+            }
+
+            if index < lhs {
+                return false;
+            }
+
+            if let Some(parent_index) = self.parent_index_at(index) {
+                index = parent_index;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    // Returns the index of the closest common ancestor of the keys in the *closed* interval
+    // [min_index, max_index].
+    fn closest_common_ancestor(&self, mut min_index: usize, mut max_index: usize) -> usize {
+        loop {
+            if max_index == 0 || min_index == 0 {
+                return 0;
+            }
+
+            if max_index <= min_index {
+                return min_index;
+            }
+
+            if let Some(parent_index) = self.parent_index_at(max_index) {
+                min_index = min_index.min(parent_index);
+            } else {
+                return 0;
+            }
+
+            max_index -= 1;
+        }
+    }
+}
+
+impl Debug for SectionChain {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.keys().format("->"))
     }
 }
 
@@ -710,30 +775,44 @@ mod tests {
 
     #[test]
     fn minimize_fork() {
-        // 0->1->2
+        // 0->1->2->3
         //    |
-        //    +->3
+        //    +->4
         let (sk0, pk0) = gen_keypair();
         let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
-        let (_, pk2, sig2) = gen_signed_keypair(&sk1);
-        let (_, pk3, sig3) = gen_signed_keypair(&sk1);
+        let (sk2, pk2, sig2) = gen_signed_keypair(&sk1);
+        let (_, pk3, sig3) = gen_signed_keypair(&sk2);
 
-        let chain = make_chain(
-            pk0,
-            vec![
-                (&pk0, pk1, sig1),
-                (&pk1, pk2, sig2.clone()),
-                (&pk1, pk3, sig3.clone()),
-            ],
-        );
+        // Test both cases (4 < 2 and 4 > 2):
+        let k4_small = gen_signed_keypair_filter(&sk1, |pk| pk < &pk2);
+        let k4_large = gen_signed_keypair_filter(&sk1, |pk| pk > &pk2);
 
-        // 1->2
-        // |
-        // +->3
-        assert_eq!(
-            chain.minimize(vec![&pk2, &pk3]),
-            Ok(make_chain(pk1, vec![(&pk1, pk2, sig2), (&pk1, pk3, sig3)]))
-        );
+        for (_, pk4, sig4) in vec![k4_small, k4_large] {
+            let chain = make_chain(
+                pk0,
+                vec![
+                    (&pk0, pk1, sig1.clone()),
+                    (&pk1, pk2, sig2.clone()),
+                    (&pk2, pk3, sig3.clone()),
+                    (&pk1, pk4, sig4.clone()),
+                ],
+            );
+
+            // 1->2->3
+            // |
+            // +->4
+            assert_eq!(
+                chain.minimize(vec![&pk3, &pk4]),
+                Ok(make_chain(
+                    pk1,
+                    vec![
+                        (&pk1, pk2, sig2.clone()),
+                        (&pk2, pk3, sig3.clone()),
+                        (&pk1, pk4, sig4)
+                    ]
+                ))
+            );
+        }
     }
 
     // TODO:
@@ -816,18 +895,18 @@ mod tests {
             vec![(&pk0, pk1, sig1.clone()), (&pk1, pk2, sig2.clone())],
         );
 
-        // in:       2
-        // new root: 1
-        // out:      1->2
+        // in:      2
+        // trusted: 1
+        // out:     1->2
         let chain = make_chain(pk2, vec![]);
         assert_eq!(
             chain.extend(&pk1, &main_chain),
             Ok(make_chain(pk1, vec![(&pk1, pk2, sig2.clone())]))
         );
 
-        // in:       2
-        // new root: 0
-        // out:      0->1->2
+        // in:      2
+        // trusted: 0
+        // out:     0->1->2
         let chain = make_chain(pk2, vec![]);
         assert_eq!(
             chain.extend(&pk0, &main_chain),
@@ -837,18 +916,18 @@ mod tests {
             ))
         );
 
-        // in:       1->2
-        // new root: 0
-        // out:      0->1->2
+        // in:      1->2
+        // trusted: 0
+        // out:     0->1->2
         let chain = make_chain(pk1, vec![(&pk1, pk2, sig2.clone())]);
         assert_eq!(
             chain.extend(&pk0, &main_chain),
             Ok(make_chain(pk0, vec![(&pk0, pk1, sig1), (&pk1, pk2, sig2)]))
         );
 
-        // in:       2->3
-        // new root: 1
-        // out:      Error
+        // in:      2->3
+        // trusted: 1
+        // out:     Error
         let (_, pk3, sig3) = gen_signed_keypair(&sk2);
         let chain = make_chain(pk2, vec![(&pk2, pk3, sig3)]);
         assert_eq!(chain.extend(&pk1, &main_chain), Err(Error::KeyNotFound));
@@ -860,7 +939,34 @@ mod tests {
         assert_eq!(chain.extend(&pk2, &main_chain), Ok(make_chain(pk2, vec![])));
     }
 
-    // TODO extend_unreachable_new_root_key()
+    #[test]
+    fn extend_unreachable_trusted_key() {
+        // main:    0->1->2->3
+        //             |
+        //             +->4
+        //
+        // in:      1->2->3
+        // trusted: 4
+        // out:     Error::Unreachable
+        let (sk0, pk0) = gen_keypair();
+        let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
+        let (sk2, pk2, sig2) = gen_signed_keypair(&sk1);
+        let (_, pk3, sig3) = gen_signed_keypair(&sk2);
+        let (_, pk4, sig4) = gen_signed_keypair(&sk1);
+
+        let main_chain = make_chain(
+            pk0,
+            vec![
+                (&pk0, pk1, sig1),
+                (&pk1, pk2, sig2.clone()),
+                (&pk2, pk3, sig3.clone()),
+                (&pk1, pk4, sig4),
+            ],
+        );
+
+        let chain = make_chain(pk1, vec![(&pk1, pk2, sig2), (&pk2, pk3, sig3)]);
+        assert_eq!(chain.extend(&pk4, &main_chain), Ok(main_chain));
+    }
 
     #[test]
     fn cmp_by_position() {
@@ -886,6 +992,24 @@ mod tests {
         let (sk, pk) = gen_keypair();
         let signature = sign(signing_sk, &pk);
         (sk, pk, signature)
+    }
+
+    // Generate a `(secret_key, public_key, signature)` tuple where `public_key` matches
+    // `predicate`.
+    fn gen_signed_keypair_filter<F>(
+        signing_sk: &bls::SecretKey,
+        predicate: F,
+    ) -> (bls::SecretKey, bls::PublicKey, bls::Signature)
+    where
+        F: Fn(&bls::PublicKey) -> bool,
+    {
+        loop {
+            let (sk, pk) = gen_keypair();
+            if predicate(&pk) {
+                let signature = sign(signing_sk, &pk);
+                return (sk, pk, signature);
+            }
+        }
     }
 
     fn make_chain(
