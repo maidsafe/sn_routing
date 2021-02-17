@@ -39,14 +39,13 @@ use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    infrastructure::{
-        Error as InfrastructureError, GetSectionResponse, InfrastructureInformation,
-        Message as InfrastructureMessage,
+    network_info::{
+        Error as TargetSectionError, GetSectionResponse, Message as NetworkInfoMsg, NetworkInfo,
     },
     node::NodeMessage,
     DstLocation, MessageType, SrcLocation,
 };
-use std::{cmp, net::SocketAddr, slice};
+use std::{cmp, net::SocketAddr, slice, unimplemented};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -199,18 +198,18 @@ impl Approved {
         Ok(commands)
     }
 
-    pub async fn handle_infrastructure_message(
+    pub async fn handle_networkinfo_msg(
         &mut self,
         sender: SocketAddr,
-        message: InfrastructureMessage,
+        message: NetworkInfoMsg,
     ) -> Vec<Command> {
         match message {
-            InfrastructureMessage::GetSectionRequest(name) => {
-                debug!("Received GetSectionRequest({}) from {}", name, sender);
+            NetworkInfoMsg::GetSectionQuery(name) => {
+                debug!("Received GetSectionQuery({}) from {}", name, sender);
 
                 let response = if self.section.prefix().matches(&name) {
                     if let Ok(pk_set) = self.public_key_set() {
-                        GetSectionResponse::Success(InfrastructureInformation {
+                        GetSectionResponse::Success(NetworkInfo {
                             prefix: self.section.elders_info().prefix,
                             pk_set,
                             elders: self
@@ -221,8 +220,8 @@ impl Approved {
                                 .collect(),
                         })
                     } else {
-                        GetSectionResponse::SectionInfrastructureUpdate(
-                            InfrastructureError::NoSectionPkSet,
+                        GetSectionResponse::SectionNetworkInfoUpdate(
+                            TargetSectionError::NoSectionPkSet,
                         )
                     }
                 } else {
@@ -235,27 +234,26 @@ impl Approved {
                     let addrs = section.peers().map(Peer::addr).copied().collect();
                     GetSectionResponse::Redirect(addrs)
                 };
-                let response = InfrastructureMessage::GetSectionResponse(response);
+
+                let response = NetworkInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
-                vec![Command::SendMessage {
+                Ok(vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::InfrastructureMessage(response),
-                }]
+                    message: MessageType::NetworkInfo(response),
+                }])
             }
-            InfrastructureMessage::GetSectionResponse(_) => {
+            NetworkInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx
-                        .send((MessageType::InfrastructureMessage(message), sender))
-                        .await;
+                    let _ = tx.send((MessageType::NetworkInfo(message), sender)).await;
                 }
 
-                vec![]
+                Ok(vec![])
             }
-            InfrastructureMessage::InfrastructureUpdate(error) => {
-                error!("InfrastructureError received: {:?}", error);
+            NetworkInfoMsg::NetworkInfoUpdate(error) => {
+                error!("TargetSectionError received: {:?}", error);
                 vec![]
             }
         }
@@ -1862,34 +1860,32 @@ impl Approved {
         Ok(Some(command))
     }
 
-    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), InfrastructureError> {
+    pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TagetSectionError> {
         // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
         if !self
             .section
             .promote_and_demote_elders(&self.node.name())
             .is_empty()
         {
-            return Err(InfrastructureError::DkgInProgress);
+            return Err(TagetSectionError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
-            return Err(InfrastructureError::UnrecognizedSectionKey);
+            return Err(TagetSectionError::UnrecognizedSectionKey);
         }
         if bls_pk != self.section.chain().last_key() {
             if let Ok(public_key_set) = self.public_key_set() {
-                return Err(InfrastructureError::TargetSectionInfoOutdated(
-                    InfrastructureInformation {
-                        prefix: *self.section.prefix(),
-                        pk_set: public_key_set,
-                        elders: self
-                            .section
-                            .elders_info()
-                            .peers()
-                            .map(|peer| (*peer.name(), *peer.addr()))
-                            .collect(),
-                    },
-                ));
+                return Err(TagetSectionError::TargetSectionInfoOutdated(NetworkInfo {
+                    prefix: *self.section.prefix(),
+                    pk_set: public_key_set,
+                    elders: self
+                        .section
+                        .elders_info()
+                        .peers()
+                        .map(|peer| (*peer.name(), *peer.addr()))
+                        .collect(),
+                }));
             } else {
-                return Err(InfrastructureError::DkgInProgress);
+                return Err(TagetSectionError::DkgInProgress);
             }
         }
         Ok(())

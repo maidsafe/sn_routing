@@ -395,7 +395,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             // Pings are not handled
         }
         MessageType::NetworkInfo(message) => {
-            let command = Command::HandleInfrastructureMessage { sender, message };
+            let command = Command::HandleNetworkInfoMsg { sender, message };
             let _ = task::spawn(stage.handle_commands(command));
         }
         MessageType::NodeMessage(NodeMessage(msg_bytes)) => {

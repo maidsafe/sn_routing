@@ -38,8 +38,8 @@ pub(crate) enum Command {
         sender: Option<SocketAddr>,
         message: Message,
     },
-    /// Handle infrastructure query message.
-    HandleInfrastructureMessage {
+    /// Handle network info message.
+    HandleNetworkInfoMsg {
         sender: SocketAddr,
         message: NetworkInfoMsg,
     },
@@ -121,8 +121,8 @@ impl Debug for Command {
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
-            Self::HandleInfrastructureMessage { sender, message } => f
-                .debug_struct("HandleInfrastructureMessage")
+            Self::HandleNetworkInfoMsg { sender, message } => f
+                .debug_struct("HandleNetworkInfoMsg")
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
