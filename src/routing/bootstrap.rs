@@ -30,7 +30,6 @@ use std::{
     collections::{BTreeMap, VecDeque},
     mem,
     net::SocketAddr,
-    unimplemented,
 };
 use tokio::sync::mpsc;
 use tracing::Instrument;
@@ -573,7 +572,7 @@ mod tests {
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use futures::future::{self, Either};
-    use sn_messaging::infrastructure::NetworkInfo;
+    use sn_messaging::network_info::NetworkInfo;
     use tokio::{sync::mpsc::error::TryRecvError, task};
 
     #[tokio::test]
@@ -781,8 +780,6 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_get_section_response_success() -> Result<()> {
-        let mut rng = rand::thread_rng();
-
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (mut recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
