@@ -59,7 +59,7 @@ pub(crate) enum Variant {
     /// - from the node to be relocated back to its section after it was demoted.
     RelocatePromise(RelocatePromise),
     /// Sent from a bootstrapping peer to the section that responded with a
-    /// `GetSectionResponse::Succcess` to its `GetSectionRequest`.
+    /// `GetSectionResponse::Succcess` to its `GetSectionQuery`.
     JoinRequest(Box<JoinRequest>),
     /// Response to outdated JoinRequest
     JoinRetry {
