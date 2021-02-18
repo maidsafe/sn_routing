@@ -312,8 +312,11 @@ impl Routing {
         content: Bytes,
     ) -> Result<()> {
         if let DstLocation::EndUser(EndUser::Client { socket_id, .. }) = dst {
-            let msg = ClientMessage::from(content)?;
-            return self.send_message_to_client(socket_id, msg).await;
+            if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id) {
+                return self
+                    .send_message_to_client(*socket_addr, ClientMessage::from(content)?)
+                    .await;
+            }
         }
         let command = Command::SendUserMessage { src, dst, content };
         self.stage.clone().handle_commands(command).await
@@ -416,9 +419,9 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
         }
         MessageType::ClientMessage(message) => {
-            let enduser = stage.state.lock().await.get_enduser(&sender);
-            let public_key = match enduser {
-                Some(public_key) => public_key,
+            let end_user = stage.state.lock().await.get_enduser_by_addr(&sender);
+            let end_user = match end_user {
+                Some(end_user) => end_user,
                 None => {
                     // we are not yet bootstrapped, todo: inform enduser in a better way of this
                     let command = Command::SendMessage {
@@ -455,10 +458,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
 
             let event = Event::ClientMessageReceived {
                 msg: Box::new(message),
-                user: EndUser::Client {
-                    public_key,
-                    socket_id: sender,
-                },
+                user: end_user,
             };
 
             stage.send_event(event).await;
