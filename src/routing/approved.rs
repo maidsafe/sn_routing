@@ -798,8 +798,7 @@ impl Approved {
             .section
             .chain()
             .keys()
-            .map(move |key| (self.section.prefix(), key))
-            .chain(self.network.keys());
+            .chain(self.network.keys().map(|(_, key)| key));
 
         match msg.verify(known_keys) {
             Ok(VerifyStatus::Full) => Ok(true),
