@@ -255,21 +255,19 @@ impl Approved {
             SectionInfoMsg::GetSectionQuery(name) => {
                 debug!("Received GetSectionQuery({}) from {}", name, sender);
 
-                let response = if self.section.prefix().matches(&name) {
-                    if let Ok(pk_set) = self.public_key_set() {
-                        GetSectionResponse::Success(SectionInfo {
-                            prefix: self.section.elders_info().prefix,
-                            pk_set,
-                            elders: self
-                                .section
-                                .elders_info()
-                                .peers()
-                                .map(|peer| (*peer.name(), *peer.addr()))
-                                .collect(),
-                        })
-                    } else {
-                        GetSectionResponse::SectionInfoUpdate(TargetSectionError::NoSectionPkSet)
-                    }
+                let response = if let (true, Ok(pk_set)) =
+                    (self.section.prefix().matches(&name), self.public_key_set())
+                {
+                    GetSectionResponse::Success(SectionInfo {
+                        prefix: self.section.elders_info().prefix,
+                        pk_set,
+                        elders: self
+                            .section
+                            .elders_info()
+                            .peers()
+                            .map(|peer| (*peer.name(), *peer.addr()))
+                            .collect(),
+                    })
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
                     // Otherwise redirect to our elders.
@@ -891,28 +889,25 @@ impl Approved {
         dst_key: Option<bls::PublicKey>,
         bounced_msg: Message,
     ) -> Option<Command> {
-        trace!(
-            "Received BouncedUntrustedMessage({:?}) from {:?}...",
-            bounced_msg,
-            sender
-        );
+        let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
+        let _span_guard = span.enter();
 
         if let Some(dst_key) = dst_key {
             let resend_msg = match bounced_msg.extend_proof_chain(&dst_key, self.section.chain()) {
                 Ok(msg) => msg,
                 Err(err) => {
-                    trace!("...extending proof failed, discarding: {:?}", err);
+                    trace!("extending proof failed, discarding: {:?}", err);
                     return None;
                 }
             };
 
-            trace!("    ...resending with extended proof");
+            trace!("resending with extended proof");
             Some(Command::send_message_to_node(
                 sender.addr(),
                 resend_msg.to_bytes(),
             ))
         } else {
-            trace!("    ...missing dst key, discarding");
+            trace!("missing dst key, discarding");
             None
         }
     }

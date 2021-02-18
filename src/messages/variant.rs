@@ -18,6 +18,7 @@ use crate::{
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
@@ -184,10 +185,14 @@ impl Debug for Variant {
                 .field("elders_info", elders_info)
                 .field("member_info", member_info)
                 .finish(),
-            Self::Sync { section, .. } => f
+            Self::Sync { section, network } => f
                 .debug_struct("Sync")
                 .field("elders_info", section.elders_info())
                 .field("section_key", section.chain().last_key())
+                .field(
+                    "other_prefixes",
+                    &format_args!("({:b})", network.prefixes().format(", ")),
+                )
                 .finish(),
             Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
