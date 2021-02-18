@@ -2129,10 +2129,14 @@ impl Approved {
             variant,
         };
 
-        Ok(Vote::SendMessage {
+        let vote = Vote::SendMessage {
             message: Box::new(message),
             proof_chain,
-        })
+        };
+
+        trace!("Create {:?}", vote);
+
+        Ok(vote)
     }
 
     fn create_proof_chain(

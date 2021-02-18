@@ -89,7 +89,10 @@ impl Message {
                 if let Some(proof_chain) = msg.proof_chain.as_ref() {
                     // FIXME Assumes the nodes proof last key is the one signing this message
                     if !proof_chain.last_key().verify(signature, &signed_bytes) {
-                        error!("Failed signature: {:?}", msg);
+                        error!(
+                            "Failed signature: {:?} (proof chain: {:?})",
+                            msg, proof_chain
+                        );
                         return Err(CreateError::FailedSignature);
                     }
                 }

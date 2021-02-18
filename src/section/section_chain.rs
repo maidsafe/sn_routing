@@ -203,11 +203,7 @@ impl SectionChain {
     /// Returns `Error::KeyNotFound` if either `trusted_key` or `self.last_key()` is not present in
     /// `super_chain`.
     ///
-    /// If `trusted_key` is not reachable from `self.last_key()` then the only way to make the
-    /// resulting chain trusted is to extend it to some trusted common ancestor of both
-    /// `trusted_key` and `self.last_key()`. The only such trusted ancestor, based on the
-    /// information available to this function, is the genesis key which we assume is the root key
-    /// of `super_chain`. Thus a copy of `super_chain` is returned in this case.
+    /// Returns `Error::KeyOnWrongBranch` if `trusted_key` is not reachable from `self.last_key()`.
     pub fn extend(&self, trusted_key: &bls::PublicKey, super_chain: &Self) -> Result<Self, Error> {
         let trusted_key_index = super_chain
             .index_of(trusted_key)
@@ -219,7 +215,7 @@ impl SectionChain {
         if super_chain.is_ancestor(trusted_key_index, last_key_index) {
             super_chain.minimize(vec![trusted_key, self.last_key()])
         } else {
-            Ok(super_chain.clone())
+            Err(Error::KeyOnWrongBranch)
         }
     }
 
@@ -245,6 +241,14 @@ impl SectionChain {
     /// Returns whether `key` is present in this chain.
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys().any(|existing_key| existing_key == key)
+    }
+
+    /// Returns whether the given key is on the main branch - that is, it is reachable from the
+    /// current last key by following the parent links.
+    pub fn has_key_on_main_branch(&self, key: &bls::PublicKey) -> bool {
+        self.index_of(key)
+            .map(|index| self.is_ancestor(index, self.tree.len()))
+            .unwrap_or(false)
     }
 
     /// Compare the two keys by their position in the chain. The key that is higher (closer to the
@@ -376,6 +380,8 @@ pub enum Error {
     FailedSignature,
     #[error("key not found in the chain")]
     KeyNotFound,
+    #[error("key not on the main branch of the chain")]
+    KeyOnWrongBranch,
     #[error("chain doesn't contain any trusted keys")]
     Untrusted,
     #[error("chains are incompatible")]
@@ -922,7 +928,10 @@ mod tests {
         let chain = make_chain(pk1, vec![(&pk1, pk2, sig2.clone())]);
         assert_eq!(
             chain.extend(&pk0, &main_chain),
-            Ok(make_chain(pk0, vec![(&pk0, pk1, sig1), (&pk1, pk2, sig2)]))
+            Ok(make_chain(
+                pk0,
+                vec![(&pk0, pk1, sig1.clone()), (&pk1, pk2, sig2)]
+            ))
         );
 
         // in:      2->3
@@ -932,11 +941,20 @@ mod tests {
         let chain = make_chain(pk2, vec![(&pk2, pk3, sig3)]);
         assert_eq!(chain.extend(&pk1, &main_chain), Err(Error::KeyNotFound));
 
-        // in:       2
-        // new_root: 2
-        // out:      2
+        // in:      2
+        // trusted: 2
+        // out:     2
         let chain = make_chain(pk2, vec![]);
         assert_eq!(chain.extend(&pk2, &main_chain), Ok(make_chain(pk2, vec![])));
+
+        // in:      1
+        // trusted: 0
+        // out:     0->1
+        let chain = make_chain(pk1, vec![]);
+        assert_eq!(
+            chain.extend(&pk0, &main_chain),
+            Ok(make_chain(pk0, vec![(&pk0, pk1, sig1)]))
+        );
     }
 
     #[test]
@@ -944,10 +962,6 @@ mod tests {
         // main:    0->1->2->3
         //             |
         //             +->4
-        //
-        // in:      1->2->3
-        // trusted: 4
-        // out:     Error::Unreachable
         let (sk0, pk0) = gen_keypair();
         let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
         let (sk2, pk2, sig2) = gen_signed_keypair(&sk1);
@@ -964,8 +978,14 @@ mod tests {
             ],
         );
 
+        // in:      1->2->3
+        // trusted: 4
+        // out:     Error
         let chain = make_chain(pk1, vec![(&pk1, pk2, sig2), (&pk2, pk3, sig3)]);
-        assert_eq!(chain.extend(&pk4, &main_chain), Ok(main_chain));
+        assert_eq!(
+            chain.extend(&pk4, &main_chain),
+            Err(Error::KeyOnWrongBranch)
+        );
     }
 
     #[test]
