@@ -40,7 +40,7 @@ use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use sn_messaging::{
     client::Message as ClientMessage,
-    network_info::{ErrorResponse, Message as NetworkInfoMsg},
+    network_info::{Error as TargetSectionError, ErrorResponse, Message as NetworkInfoMsg},
     node::NodeMessage,
     DstLocation, EndUser, MessageType, SrcLocation, WireMsg,
 };
@@ -416,6 +416,23 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
         }
         MessageType::ClientMessage(message) => {
+            let enduser = stage.state.lock().await.get_enduser(&sender);
+            let public_key = match enduser {
+                Some(public_key) => public_key,
+                None => {
+                    // we are not yet bootstrapped, todo: inform enduser in a better way of this
+                    let command = Command::SendMessage {
+                        recipients: vec![sender],
+                        delivery_group_size: 1,
+                        message: MessageType::NetworkInfo(NetworkInfoMsg::BootstrapError(
+                            TargetSectionError::InvalidBootstrap,
+                        )),
+                    };
+                    let _ = task::spawn(stage.handle_commands(command));
+                    return;
+                }
+            };
+
             if let Some(client_pk) = message.target_section_pk() {
                 if let Some(bls_pk) = client_pk.bls() {
                     if let Err(error) = stage.check_key_status(&bls_pk).await {
@@ -439,7 +456,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             let event = Event::ClientMessageReceived {
                 msg: Box::new(message),
                 user: EndUser::Client {
-                    public_key: sn_data_types::PublicKey::from(crypto::gen_keypair().public),
+                    public_key,
                     socket_id: sender,
                 },
             };
