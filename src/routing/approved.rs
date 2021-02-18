@@ -76,20 +76,33 @@ impl EndUserRegistry {
         self.clients.get(socketaddr).copied()
     }
 
-    pub fn add(&mut self, socketaddr: SocketAddr, public_key: EndUserPK) {
-        match self.end_users.get_mut(&public_key) {
+    pub fn try_add(
+        &mut self,
+        sender: SocketAddr,
+        end_user: EndUserPK,
+        socketaddr_sig: EndUserSig,
+    ) -> Result<()> {
+        if let Ok(data) = &bincode::serialize(&sender) {
+            end_user
+                .verify(&socketaddr_sig, data)
+                .map_err(|_e| Error::InvalidState)?;
+        } else {
+            return Err(Error::InvalidState);
+        }
+        match self.end_users.get_mut(&end_user) {
             Some(clients) => {
-                if !clients.contains(&socketaddr) {
-                    let _ = clients.insert(socketaddr);
+                if !clients.contains(&sender) {
+                    let _ = clients.insert(sender);
                 }
             }
             None => {
                 let mut set = HashSet::default();
-                let _ = set.insert(socketaddr);
-                let _ = self.end_users.insert(public_key, set);
-                let _ = self.clients.insert(socketaddr, public_key);
+                let _ = set.insert(sender);
+                let _ = self.end_users.insert(end_user, set);
+                let _ = self.clients.insert(sender, end_user);
             }
         }
+        Ok(())
     }
 }
 
@@ -294,11 +307,12 @@ impl Approved {
                 end_user,
                 socketaddr_sig,
             } => {
-                if let Ok(data) = &bincode::serialize(&sender) {
-                    if end_user.verify(&socketaddr_sig, data).is_ok() {
-                        self.end_users.add(sender, end_user);
-                        return vec![];
-                    }
+                if self
+                    .end_users
+                    .try_add(sender, end_user, socketaddr_sig)
+                    .is_ok()
+                {
+                    return vec![];
                 }
 
                 let response = NetworkInfoMsg::BootstrapError(TargetSectionError::InvalidBootstrap);
