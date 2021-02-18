@@ -1,4 +1,4 @@
-// Copyright 2020 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -44,11 +44,11 @@ use sn_messaging::{
         Error as TargetSectionError, GetSectionResponse, Message as NetworkInfoMsg, NetworkInfo,
     },
     node::NodeMessage,
-    DstLocation, MessageType, SrcLocation,
+    DstLocation, EndUser, MessageType, SrcLocation,
 };
 use std::{
     cmp,
-    collections::{BTreeMap, HashSet},
+    collections::{btree_map::Entry, BTreeMap},
     net::SocketAddr,
     slice, unimplemented,
 };
@@ -59,48 +59,57 @@ pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
 pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
 const KEY_CACHE_SIZE: u8 = 5;
 
+type SocketId = XorName;
+
 struct EndUserRegistry {
-    clients: BTreeMap<SocketAddr, EndUserPK>,
-    end_users: BTreeMap<EndUserPK, HashSet<SocketAddr>>,
+    clients: BTreeMap<SocketAddr, EndUser>,
+    socket_id_mapping: BTreeMap<SocketId, SocketAddr>,
 }
 
 impl EndUserRegistry {
     pub fn new() -> Self {
         Self {
             clients: BTreeMap::default(),
-            end_users: BTreeMap::default(),
+            socket_id_mapping: BTreeMap::default(),
         }
     }
 
-    pub fn get_enduser(&self, socketaddr: &SocketAddr) -> Option<EndUserPK> {
+    pub fn get_enduser_by_addr(&self, socketaddr: &SocketAddr) -> Option<EndUser> {
         self.clients.get(socketaddr).copied()
+    }
+
+    pub fn get_socket_addr(&self, socket_id: &SocketId) -> Option<&SocketAddr> {
+        self.socket_id_mapping.get(socket_id)
     }
 
     pub fn try_add(
         &mut self,
         sender: SocketAddr,
-        end_user: EndUserPK,
+        end_user_pk: EndUserPK,
         socketaddr_sig: EndUserSig,
     ) -> Result<()> {
         if let Ok(data) = &bincode::serialize(&sender) {
-            end_user
+            end_user_pk
                 .verify(&socketaddr_sig, data)
                 .map_err(|_e| Error::InvalidState)?;
         } else {
             return Err(Error::InvalidState);
         }
-        match self.end_users.get_mut(&end_user) {
-            Some(clients) => {
-                if !clients.contains(&sender) {
-                    let _ = clients.insert(sender);
-                }
-            }
-            None => {
-                let mut set = HashSet::default();
-                let _ = set.insert(sender);
-                let _ = self.end_users.insert(end_user, set);
+        let socket_id = if let Ok(socket_id_src) = &bincode::serialize(&socketaddr_sig) {
+            XorName::from_content(&[socket_id_src])
+        } else {
+            return Err(Error::InvalidState);
+        };
+        let end_user = EndUser::Client {
+            public_key: end_user_pk,
+            socket_id,
+        };
+        match self.socket_id_mapping.entry(socket_id) {
+            Entry::Vacant(_) => {
                 let _ = self.clients.insert(sender, end_user);
+                let _ = self.socket_id_mapping.insert(socket_id, sender);
             }
+            Entry::Occupied(_) => (),
         }
         Ok(())
     }
@@ -158,8 +167,12 @@ impl Approved {
         }
     }
 
-    pub fn get_enduser(&self, sender: &SocketAddr) -> Option<EndUserPK> {
-        self.end_users.get_enduser(sender)
+    pub fn get_enduser_by_addr(&self, sender: &SocketAddr) -> Option<EndUser> {
+        self.end_users.get_enduser_by_addr(sender)
+    }
+
+    pub fn get_socket_addr(&self, id: &SocketId) -> Option<&SocketAddr> {
+        self.end_users.get_socket_addr(id)
     }
 
     pub fn node(&self) -> &Node {
