@@ -38,6 +38,7 @@ use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use sn_data_types::{PublicKey as EndUserPK, Signature as EndUserSig};
 use sn_messaging::{
     network_info::{
         Error as TargetSectionError, GetSectionResponse, Message as NetworkInfoMsg, NetworkInfo,
@@ -45,13 +46,52 @@ use sn_messaging::{
     node::NodeMessage,
     DstLocation, MessageType, SrcLocation,
 };
-use std::{cmp, net::SocketAddr, slice, unimplemented};
+use std::{
+    cmp,
+    collections::{BTreeMap, HashSet},
+    net::SocketAddr,
+    slice, unimplemented,
+};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
 pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
 pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
 const KEY_CACHE_SIZE: u8 = 5;
+
+struct EndUserRegistry {
+    clients: BTreeMap<SocketAddr, EndUserPK>,
+    end_users: BTreeMap<EndUserPK, HashSet<SocketAddr>>,
+}
+
+impl EndUserRegistry {
+    pub fn new() -> Self {
+        Self {
+            clients: BTreeMap::default(),
+            end_users: BTreeMap::default(),
+        }
+    }
+
+    pub fn get_enduser(&self, socketaddr: &SocketAddr) -> Option<EndUserPK> {
+        self.clients.get(socketaddr).copied()
+    }
+
+    pub fn add(&mut self, socketaddr: SocketAddr, public_key: EndUserPK) {
+        match self.end_users.get_mut(&public_key) {
+            Some(clients) => {
+                if !clients.contains(&socketaddr) {
+                    let _ = clients.insert(socketaddr);
+                }
+            }
+            None => {
+                let mut set = HashSet::default();
+                let _ = set.insert(socketaddr);
+                let _ = self.end_users.insert(public_key, set);
+                let _ = self.clients.insert(socketaddr, public_key);
+            }
+        }
+    }
+}
 
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (adult or elder).
@@ -69,6 +109,7 @@ pub(crate) struct Approved {
     pub(super) event_tx: mpsc::UnboundedSender<Event>,
     joins_allowed: bool,
     resource_proof: ResourceProof,
+    end_users: EndUserRegistry,
 }
 
 impl Approved {
@@ -100,7 +141,12 @@ impl Approved {
             event_tx,
             joins_allowed: true,
             resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
+            end_users: EndUserRegistry::new(),
         }
+    }
+
+    pub fn get_enduser(&self, sender: &SocketAddr) -> Option<EndUserPK> {
+        self.end_users.get_enduser(sender)
     }
 
     pub fn node(&self) -> &Node {
@@ -244,16 +290,39 @@ impl Approved {
                     message: MessageType::NetworkInfo(response),
                 }]
             }
+            NetworkInfoMsg::BootstrapCmd {
+                end_user,
+                socketaddr_sig,
+            } => {
+                if let Ok(data) = &bincode::serialize(&sender) {
+                    if end_user.verify(&socketaddr_sig, data).is_ok() {
+                        self.end_users.add(sender, end_user);
+                        return vec![];
+                    }
+                }
+
+                let response = NetworkInfoMsg::BootstrapError(TargetSectionError::InvalidBootstrap);
+                debug!("Sending {:?} to {}", response, sender);
+
+                vec![Command::SendMessage {
+                    recipients: vec![sender],
+                    delivery_group_size: 1,
+                    message: MessageType::NetworkInfo(response),
+                }]
+            }
             NetworkInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
                     let _ = tx.send((MessageType::NetworkInfo(message), sender)).await;
                 }
-
+                vec![]
+            }
+            NetworkInfoMsg::BootstrapError(error) => {
+                error!("BootstrapError received: {:?}", error);
                 vec![]
             }
             NetworkInfoMsg::NetworkInfoUpdate(error) => {
-                error!("TargetSectionError received: {:?}", error);
+                error!("NetworkInfoUpdate received: {:?}", error);
                 vec![]
             }
         }
