@@ -311,11 +311,21 @@ impl Routing {
         dst: DstLocation,
         content: Bytes,
     ) -> Result<()> {
-        if let DstLocation::EndUser(EndUser::Client { socket_id, .. }) = dst {
+        if let DstLocation::EndUser(EndUser::Client {
+            socket_id,
+            public_key,
+        }) = dst
+        {
             if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id) {
                 return self
                     .send_message_to_client(*socket_addr, ClientMessage::from(content)?)
                     .await;
+            } else {
+                debug!(
+                    "Could not find socketaddr corresponding to socket_id {:?} and public_key {:?}",
+                    socket_id, public_key
+                );
+                debug!("Sending user message instead.. (Command::SendUserMessage)");
             }
         }
         let command = Command::SendUserMessage { src, dst, content };
