@@ -40,8 +40,8 @@ use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
 use itertools::Itertools;
 use sn_messaging::{
     client::Message as ClientMessage,
-    network_info::{Error as TargetSectionError, ErrorResponse, Message as NetworkInfoMsg},
     node::NodeMessage,
+    section_info::{Error as TargetSectionError, ErrorResponse, Message as SectionInfoMsg},
     DstLocation, EndUser, MessageType, SrcLocation, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -407,8 +407,8 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
         MessageType::Ping => {
             // Pings are not handled
         }
-        MessageType::NetworkInfo(message) => {
-            let command = Command::HandleNetworkInfoMsg { sender, message };
+        MessageType::SectionInfo(message) => {
+            let command = Command::HandleSectionInfoMsg { sender, message };
             let _ = task::spawn(stage.handle_commands(command));
         }
         MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
@@ -437,7 +437,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                     let command = Command::SendMessage {
                         recipients: vec![sender],
                         delivery_group_size: 1,
-                        message: MessageType::NetworkInfo(NetworkInfoMsg::BootstrapError(
+                        message: MessageType::SectionInfo(SectionInfoMsg::RegisterEndUserError(
                             TargetSectionError::InvalidBootstrap(format!(
                                 "No enduser found for {} and msg {:?}",
                                 sender, message
@@ -456,7 +456,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                         let command = Command::SendMessage {
                             recipients: vec![sender],
                             delivery_group_size: 1,
-                            message: MessageType::NetworkInfo(NetworkInfoMsg::NetworkInfoUpdate(
+                            message: MessageType::SectionInfo(SectionInfoMsg::SectionInfoUpdate(
                                 ErrorResponse {
                                     correlation_id,
                                     error,

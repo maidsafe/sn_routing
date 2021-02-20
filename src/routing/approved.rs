@@ -40,10 +40,10 @@ use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_data_types::{PublicKey as EndUserPK, Signature as EndUserSig};
 use sn_messaging::{
-    network_info::{
-        Error as TargetSectionError, GetSectionResponse, Message as NetworkInfoMsg, NetworkInfo,
-    },
     node::NodeMessage,
+    section_info::{
+        Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
+    },
     DstLocation, EndUser, MessageType, SrcLocation,
 };
 use std::{
@@ -270,18 +270,18 @@ impl Approved {
         Ok(commands)
     }
 
-    pub async fn handle_networkinfo_msg(
+    pub async fn handle_sectioninfo_msg(
         &mut self,
         sender: SocketAddr,
-        message: NetworkInfoMsg,
+        message: SectionInfoMsg,
     ) -> Vec<Command> {
         match message {
-            NetworkInfoMsg::GetSectionQuery(name) => {
+            SectionInfoMsg::GetSectionQuery(name) => {
                 debug!("Received GetSectionQuery({}) from {}", name, sender);
 
                 let response = if self.section.prefix().matches(&name) {
                     if let Ok(pk_set) = self.public_key_set() {
-                        GetSectionResponse::Success(NetworkInfo {
+                        GetSectionResponse::Success(SectionInfo {
                             prefix: self.section.elders_info().prefix,
                             pk_set,
                             elders: self
@@ -292,9 +292,7 @@ impl Approved {
                                 .collect(),
                         })
                     } else {
-                        GetSectionResponse::SectionNetworkInfoUpdate(
-                            TargetSectionError::NoSectionPkSet,
-                        )
+                        GetSectionResponse::SectionInfoUpdate(TargetSectionError::NoSectionPkSet)
                     }
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
@@ -307,16 +305,16 @@ impl Approved {
                     GetSectionResponse::Redirect(addrs)
                 };
 
-                let response = NetworkInfoMsg::GetSectionResponse(response);
+                let response = SectionInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::NetworkInfo(response),
+                    message: MessageType::SectionInfo(response),
                 }]
             }
-            NetworkInfoMsg::BootstrapCmd {
+            SectionInfoMsg::RegisterEndUserCmd {
                 end_user,
                 socketaddr_sig,
             } => {
@@ -329,31 +327,30 @@ impl Approved {
                 }
 
                 let response =
-                    NetworkInfoMsg::BootstrapError(TargetSectionError::InvalidBootstrap(format!(
-                        "Failed to add enduser {} from {}",
-                        end_user, sender
-                    )));
+                    SectionInfoMsg::RegisterEndUserError(TargetSectionError::InvalidBootstrap(
+                        format!("Failed to add enduser {} from {}", end_user, sender),
+                    ));
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::NetworkInfo(response),
+                    message: MessageType::SectionInfo(response),
                 }]
             }
-            NetworkInfoMsg::GetSectionResponse(_) => {
+            SectionInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx.send((MessageType::NetworkInfo(message), sender)).await;
+                    let _ = tx.send((MessageType::SectionInfo(message), sender)).await;
                 }
                 vec![]
             }
-            NetworkInfoMsg::BootstrapError(error) => {
-                error!("BootstrapError received: {:?}", error);
+            SectionInfoMsg::RegisterEndUserError(error) => {
+                error!("RegisterEndUserError received: {:?}", error);
                 vec![]
             }
-            NetworkInfoMsg::NetworkInfoUpdate(error) => {
-                error!("NetworkInfoUpdate received: {:?}", error);
+            SectionInfoMsg::SectionInfoUpdate(error) => {
+                error!("SectionInfoUpdate received: {:?}", error);
                 vec![]
             }
         }
@@ -1974,7 +1971,7 @@ impl Approved {
         }
         if bls_pk != self.section.chain().last_key() {
             if let Ok(public_key_set) = self.public_key_set() {
-                return Err(TargetSectionError::TargetSectionInfoOutdated(NetworkInfo {
+                return Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
                     prefix: *self.section.prefix(),
                     pk_set: public_key_set,
                     elders: self

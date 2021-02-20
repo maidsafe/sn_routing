@@ -22,8 +22,8 @@ use bytes::Bytes;
 use futures::future;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    network_info::{GetSectionResponse, Message as NetworkInfoMsg, NetworkInfo},
     node::NodeMessage,
+    section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DstLocation, MessageType, WireMsg,
 };
 use std::{
@@ -148,7 +148,7 @@ impl<'a> State<'a> {
             let (response, sender) = self.receive_get_section_response().await?;
 
             match response {
-                GetSectionResponse::Success(NetworkInfo {
+                GetSectionResponse::Success(SectionInfo {
                     prefix,
                     pk_set,
                     elders,
@@ -167,7 +167,7 @@ impl<'a> State<'a> {
                     );
                     bootstrap_addrs = new_bootstrap_addrs.to_vec();
                 }
-                GetSectionResponse::SectionNetworkInfoUpdate(error) => {
+                GetSectionResponse::SectionInfoUpdate(error) => {
                     error!("Infrastructure error: {:?}", error);
                 }
             }
@@ -186,11 +186,11 @@ impl<'a> State<'a> {
             None => self.node.name(),
         };
 
-        let message = NetworkInfoMsg::GetSectionQuery(destination);
+        let message = SectionInfoMsg::GetSectionQuery(destination);
 
         let _ = self
             .send_tx
-            .send((MessageType::NetworkInfo(message), recipients))
+            .send((MessageType::SectionInfo(message), recipients))
             .await;
 
         Ok(())
@@ -199,13 +199,13 @@ impl<'a> State<'a> {
     async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionResponse(response)) => {
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionResponse(response)) => {
                     match response {
                         GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
                             error!("Invalid GetSectionResponse::Redirect: missing peers");
                             continue;
                         }
-                        GetSectionResponse::Success(NetworkInfo { prefix, .. })
+                        GetSectionResponse::Success(SectionInfo { prefix, .. })
                             if !prefix.matches(&self.node.name()) =>
                         {
                             error!("Invalid GetSectionResponse::Success: bad prefix");
@@ -213,7 +213,7 @@ impl<'a> State<'a> {
                         }
                         GetSectionResponse::Redirect(_)
                         | GetSectionResponse::Success { .. }
-                        | GetSectionResponse::SectionNetworkInfoUpdate(_) => {
+                        | GetSectionResponse::SectionInfoUpdate(_) => {
                             return Ok((response, sender))
                         }
                     }
@@ -222,7 +222,7 @@ impl<'a> State<'a> {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
                     self.backlog_message(message, sender)
                 }
-                MessageType::NetworkInfo(_) | MessageType::ClientMessage(_) | MessageType::Ping => {
+                MessageType::SectionInfo(_) | MessageType::ClientMessage(_) | MessageType::Ping => {
                 }
             }
         }
@@ -376,7 +376,7 @@ impl<'a> State<'a> {
                 MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
                     Message::from_bytes(Bytes::from(msg_bytes))?
                 }
-                MessageType::Ping | MessageType::ClientMessage(_) | MessageType::NetworkInfo(_) => {
+                MessageType::Ping | MessageType::ClientMessage(_) | MessageType::SectionInfo(_) => {
                     continue
                 }
             };
@@ -572,7 +572,7 @@ mod tests {
     use anyhow::{Error, Result};
     use assert_matches::assert_matches;
     use futures::future::{self, Either};
-    use sn_messaging::network_info::NetworkInfo;
+    use sn_messaging::section_info::SectionInfo;
     use tokio::{sync::mpsc::error::TryRecvError, task};
 
     #[tokio::test]
@@ -610,11 +610,11 @@ mod tests {
             let (message, recipients) = send_rx.try_recv()?;
 
             assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message, MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(name)) => {
+            assert_matches!(message, MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(name)) => {
                 assert_eq!(name, *peer.name());
             });
 
-            let infrastructure_info = NetworkInfo {
+            let infrastructure_info = SectionInfo {
                 prefix: elders_info.prefix,
                 pk_set,
                 elders: elders_info
@@ -623,10 +623,10 @@ mod tests {
                     .collect(),
             };
             // Send GetSectionResponse::Success
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Success(
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -694,16 +694,16 @@ mod tests {
             assert_eq!(recipients, vec![bootstrap_node.addr]);
             assert_matches!(
                 message,
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
             );
 
             // Send GetSectionResponse::Redirect
             let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(
                 new_bootstrap_addrs.clone(),
             ));
 
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             // Receive new GetSectionQuery
@@ -712,7 +712,7 @@ mod tests {
             assert_eq!(recipients, new_bootstrap_addrs);
             assert_matches!(
                 message,
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
             );
 
             Ok(())
@@ -745,25 +745,25 @@ mod tests {
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
             );
 
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
             );
 
             Ok(())
@@ -810,10 +810,10 @@ mod tests {
             let (message, _) = send_rx.try_recv()?;
             assert_matches!(
                 message,
-                MessageType::NetworkInfo(NetworkInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
             );
 
-            let infrastructure_info = NetworkInfo {
+            let infrastructure_info = SectionInfo {
                 prefix: bad_prefix,
                 pk_set: bls::SecretKeySet::random(0, &mut rand::thread_rng()).public_keys(),
                 elders: (0..ELDER_SIZE)
@@ -821,15 +821,15 @@ mod tests {
                     .collect(),
             };
 
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Success(
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
             assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
 
-            let infrastructure_info = NetworkInfo {
+            let infrastructure_info = SectionInfo {
                 prefix: good_prefix,
                 pk_set: bls::SecretKeySet::random(0, &mut rand::thread_rng()).public_keys(),
                 elders: (0..ELDER_SIZE)
@@ -837,11 +837,11 @@ mod tests {
                     .collect(),
             };
 
-            let message = NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Success(
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::NetworkInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
 
             Ok(())
         };

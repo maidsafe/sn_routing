@@ -16,7 +16,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    network_info::Message as NetworkInfoMsg, node::NodeMessage, DstLocation, MessageType,
+    node::NodeMessage, section_info::Message as SectionInfoMsg, DstLocation, MessageType,
     SrcLocation,
 };
 use std::{
@@ -39,9 +39,9 @@ pub(crate) enum Command {
         message: Message,
     },
     /// Handle network info message.
-    HandleNetworkInfoMsg {
+    HandleSectionInfoMsg {
         sender: SocketAddr,
-        message: NetworkInfoMsg,
+        message: SectionInfoMsg,
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
@@ -121,8 +121,8 @@ impl Debug for Command {
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
-            Self::HandleNetworkInfoMsg { sender, message } => f
-                .debug_struct("HandleNetworkInfoMsg")
+            Self::HandleSectionInfoMsg { sender, message } => f
+                .debug_struct("HandleSectionInfoMsg")
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),

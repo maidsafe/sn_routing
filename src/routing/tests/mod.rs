@@ -32,8 +32,8 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
 use sn_messaging::{
-    network_info::{GetSectionResponse, Message as NetworkInfoMsg},
     node::NodeMessage,
+    section_info::{GetSectionResponse, Message as SectionInfoMsg},
     DstLocation, MessageType, SrcLocation,
 };
 use std::{
@@ -53,10 +53,10 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     let new_node = Node::new(crypto::gen_keypair(), gen_addr());
 
-    let message = NetworkInfoMsg::GetSectionQuery(new_node.name());
+    let message = SectionInfoMsg::GetSectionQuery(new_node.name());
 
     let mut commands = stage
-        .handle_command(Command::HandleNetworkInfoMsg {
+        .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node.addr,
             message,
         })
@@ -67,7 +67,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::NetworkInfo(message), ..
+            message: MessageType::SectionInfo(message), ..
         }) => (recipients, message)
     );
 
@@ -75,7 +75,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     assert_matches!(
         message,
-        NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Success { .. })
+        SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success { .. })
     );
 
     Ok(())
@@ -98,10 +98,10 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let new_node_name = bad_prefix.substituted_in(rand::random());
     let new_node_addr = gen_addr();
 
-    let message = NetworkInfoMsg::GetSectionQuery(new_node_name);
+    let message = SectionInfoMsg::GetSectionQuery(new_node_name);
 
     let mut commands = stage
-        .handle_command(Command::HandleNetworkInfoMsg {
+        .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node_addr,
             message,
         })
@@ -112,14 +112,14 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::NetworkInfo(message), ..
+            message: MessageType::SectionInfo(message), ..
         }) => (recipients, message)
     );
 
     assert_eq!(recipients, [new_node_addr]);
     assert_matches!(
         message,
-        NetworkInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
+        SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
             assert_eq!(addrs, elders_addrs)
         }
     );
