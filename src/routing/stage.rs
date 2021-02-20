@@ -8,7 +8,7 @@
 
 use super::{bootstrap, Approved, Comm, Command};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
-use sn_messaging::{network_info::Error as TargetSectionError, MessageType};
+use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -101,11 +101,11 @@ impl Stage {
                     .handle_message(sender, message)
                     .await
             }
-            Command::HandleNetworkInfoMsg { sender, message } => Ok(self
+            Command::HandleSectionInfoMsg { sender, message } => Ok(self
                 .state
                 .lock()
                 .await
-                .handle_networkinfo_msg(sender, message)
+                .handle_sectioninfo_msg(sender, message)
                 .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleVote { vote, proof_share } => {
@@ -212,7 +212,7 @@ impl Stage {
                 }
                 vec![]
             }
-            MessageType::NetworkInfo(_) => {
+            MessageType::SectionInfo(_) => {
                 for recipient in recipients {
                     let _ = self
                         .comm
