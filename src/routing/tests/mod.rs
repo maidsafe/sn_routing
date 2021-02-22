@@ -1356,6 +1356,94 @@ async fn handle_untrusted_sync() -> Result<()> {
 }
 
 #[tokio::test]
+async fn handle_bounced_untrusted_sync() -> Result<()> {
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1 = bls::SecretKey::random();
+    let pk1 = sk1.public_key();
+    let sig1 = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let sk2_set = SecretKeySet::random();
+    let sk2 = sk2_set.secret_key();
+    let pk2 = sk2.public_key();
+    let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
+
+    let mut chain = SectionChain::new(pk0);
+    chain.insert(&pk0, pk1, sig1)?;
+    chain.insert(&pk1, pk2, sig2)?;
+
+    let (elders_info, mut nodes) = create_elders_info();
+    let proven_elders_info = proven(&sk0, elders_info.clone())?;
+    let section_full = Section::new(chain, proven_elders_info)?;
+    let section_trimmed = section_full.trimmed(2);
+
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let node = nodes.remove(0);
+    let section_key_share = create_section_key_share(&sk2_set, 0);
+    let state = Approved::new(
+        node.clone(),
+        section_full,
+        Some(section_key_share),
+        event_tx,
+    );
+    let stage = Stage::new(state, create_comm().await?);
+
+    let orig_message = Message::single_src(
+        &node,
+        DstLocation::Direct,
+        Variant::Sync {
+            section: section_trimmed,
+            network: Network::new(),
+        },
+        None,
+        None,
+    )?;
+
+    let sender = create_node();
+    let bounced_message = Message::single_src(
+        &sender,
+        DstLocation::Node(node.name()),
+        Variant::BouncedUntrustedMessage(Box::new(orig_message)),
+        None,
+        Some(pk0),
+    )?;
+
+    let commands = stage
+        .handle_command(Command::HandleMessage {
+            message: bounced_message,
+            sender: Some(sender.addr),
+        })
+        .await?;
+
+    let mut message_resent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                ..
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::Sync { section, .. } => {
+                assert_eq!(recipients, [sender.addr]);
+                assert!(section.chain().has_key(&pk0));
+                message_resent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(message_resent);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn relocation_of_non_elder() -> Result<()> {
     relocation(RelocatedPeerRole::NonElder).await
 }

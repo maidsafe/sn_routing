@@ -326,14 +326,14 @@ impl Message {
 
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
     // last key (and therefore the signature) intact.
+    // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
+    // the signed data.
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
         full_chain: &SectionChain,
     ) -> Result<Self, ExtendProofChainError> {
-        if let Variant::Sync { section, .. } = &mut self.variant {
-            section.extend_chain(new_first_key, full_chain)?
-        } else if let Some(proof_chain) = &mut self.proof_chain {
+        if let Some(proof_chain) = &mut self.proof_chain {
             *proof_chain = proof_chain.extend(new_first_key, full_chain)?
         } else {
             return Err(ExtendProofChainError::NoProofChain);

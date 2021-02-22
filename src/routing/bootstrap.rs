@@ -186,7 +186,11 @@ impl<'a> State<'a> {
         recipients: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<()> {
-        debug!("{} Sending GetSectionQuery to {:?}", self.node, recipients);
+        if recipients.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Sending GetSectionQuery to {:?}", recipients);
 
         let destination = relocate_details
             .map(|details| *details.destination())

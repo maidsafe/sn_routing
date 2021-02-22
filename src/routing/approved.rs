@@ -675,14 +675,11 @@ impl Approved {
             Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                Ok(self
-                    .handle_bounced_untrusted_message(
-                        msg.src().to_node_peer(sender)?,
-                        *msg.dst_key(),
-                        *message.clone(),
-                    )
-                    .into_iter()
-                    .collect())
+                Ok(vec![self.handle_bounced_untrusted_message(
+                    msg.src().to_node_peer(sender)?,
+                    *msg.dst_key(),
+                    *message.clone(),
+                )?])
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
@@ -887,28 +884,52 @@ impl Approved {
         sender: Peer,
         dst_key: Option<bls::PublicKey>,
         bounced_msg: Message,
-    ) -> Option<Command> {
+    ) -> Result<Command> {
         let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
         let _span_guard = span.enter();
 
-        if let Some(dst_key) = dst_key {
-            let resend_msg = match bounced_msg.extend_proof_chain(&dst_key, self.section.chain()) {
-                Ok(msg) => msg,
-                Err(err) => {
-                    trace!("extending proof failed, discarding: {:?}", err);
-                    return None;
-                }
-            };
+        let dst_key = dst_key.ok_or_else(|| {
+            error!("missing dst key");
+            Error::InvalidMessage
+        })?;
 
-            trace!("resending with extended proof");
-            Some(Command::send_message_to_node(
-                sender.addr(),
-                resend_msg.to_bytes(),
-            ))
-        } else {
-            trace!("missing dst key, discarding");
-            None
-        }
+        let resend_msg = match bounced_msg.variant() {
+            Variant::Sync { section, network } => {
+                // `Sync` messages are handled specially, because they don't carry a proof chain.
+                // Instead we use the section chain that's part of the included `Section` struct.
+                // Problem is we can't extend that chain as it would invalidate the signature. We
+                // must construct a new message instead.
+                let section = section
+                    .extend_chain(&dst_key, self.section.chain())
+                    .map_err(|err| {
+                        error!("extending section chain failed: {:?}", err);
+                        Error::InvalidMessage // TODO: more specific error
+                    })?;
+
+                Message::single_src(
+                    &self.node,
+                    DstLocation::Direct,
+                    Variant::Sync {
+                        section,
+                        network: network.clone(),
+                    },
+                    None,
+                    None,
+                )?
+            }
+            _ => bounced_msg
+                .extend_proof_chain(&dst_key, self.section.chain())
+                .map_err(|err| {
+                    error!("extending proof chain failed: {:?}", err);
+                    Error::InvalidMessage // TODO: more specific error
+                })?,
+        };
+
+        trace!("resending with extended proof");
+        Ok(Command::send_message_to_node(
+            sender.addr(),
+            resend_msg.to_bytes(),
+        ))
     }
 
     fn handle_bounced_unknown_message(
