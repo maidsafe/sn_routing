@@ -341,11 +341,13 @@ impl Network {
                 RoutingEvent::Relocated { .. } => {
                     if let Some(Node::Joined {
                         node,
+                        name,
                         age,
                         is_relocating,
                         ..
                     }) = self.nodes.get_mut(&id)
                     {
+                        *name = node.name().await;
                         *age = node.age().await;
                         *is_relocating = false;
                         self.stats.relocation_successes += 1;
@@ -410,18 +412,16 @@ impl Network {
         let mut cache = BTreeMap::new();
 
         let nodes = self.nodes.values().filter_map(|node| match node {
-            Node::Joined {
-                node, name, prefix, ..
-            } => Some((node, name, prefix)),
+            Node::Joined { node, prefix, .. } => Some((node, prefix)),
             Node::Joining => None,
         });
 
-        for (node, name, prefix) in nodes {
+        for (node, prefix) in nodes {
             let dst = *cache
                 .entry(prefix)
                 .or_insert_with(|| prefix.substituted_in(rand::random()));
 
-            if self.try_send_probe(node, *name, dst).await? {
+            if self.try_send_probe(node, dst).await? {
                 self.probe_tracker.send(*prefix, dst);
             }
         }
@@ -433,7 +433,7 @@ impl Network {
         Ok(())
     }
 
-    async fn try_send_probe(&self, node: &Routing, src: XorName, dst: XorName) -> Result<bool> {
+    async fn try_send_probe(&self, node: &Routing, dst: XorName) -> Result<bool> {
         let public_key_set = if let Ok(public_key_set) = node.public_key_set().await {
             public_key_set
         } else {
@@ -457,6 +457,13 @@ impl Network {
             },
         };
         let bytes = bincode::serialize(&message)?.into();
+
+        // There can be a significant delay between a node being relocated and us receiving the
+        // `Relocated` event. Using the current node name instead of the one reported by the last
+        // `Relocated` event reduced send errors due to src location mismatch which would cause the
+        // section health to appear lower than it actually is.
+        let src = node.name().await;
+
         let itinerary = Itinerary {
             src: SrcLocation::Node(src),
             dst: DstLocation::Section(dst),

@@ -471,7 +471,10 @@ impl Approved {
 
     // Send `vote` to `recipients`.
     fn send_vote(&self, recipients: &[Peer], vote: Vote) -> Result<Vec<Command>> {
-        let key_share = self.section_keys_provider.key_share()?;
+        let key_share = self.section_keys_provider.key_share().map_err(|err| {
+            error!("Can't vote for {:?}: {}", vote, err);
+            err
+        })?;
         self.send_vote_with(recipients, vote, key_share)
     }
 
@@ -1113,6 +1116,10 @@ impl Approved {
             // Keep it around even if we are not elder anymore, in case we need to resend it.
             match self.relocate_state {
                 None => {
+                    trace!(
+                        "Received RelocatePromise to section at {}",
+                        promise.destination
+                    );
                     self.relocate_state = Some(RelocateState::Delayed(msg_bytes.clone()));
                     self.send_event(Event::RelocationStarted {
                         previous_name: self.node.name(),
