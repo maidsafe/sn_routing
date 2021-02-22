@@ -11,6 +11,7 @@ pub(crate) mod command;
 mod approved;
 mod bootstrap;
 mod comm;
+mod enduser_registry;
 mod event_stream;
 mod split_barrier;
 mod stage;
@@ -320,7 +321,7 @@ impl Routing {
             {
                 if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id)
                 {
-                    socket = Some(socket_addr.clone());
+                    socket = Some(*socket_addr);
                 }
             }
 
