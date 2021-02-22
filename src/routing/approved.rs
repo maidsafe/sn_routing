@@ -50,7 +50,7 @@ use std::{
     cmp,
     collections::{btree_map::Entry, BTreeMap},
     net::SocketAddr,
-    slice, unimplemented,
+    slice,
 };
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -855,7 +855,7 @@ impl Approved {
         let src_name = match src {
             SrcLocation::Node(name) => name,
             SrcLocation::Section(prefix) => prefix.name(),
-            _ => unimplemented!(),
+            SrcLocation::EndUser(_) => return Err(Error::InvalidSrcLocation),
         };
 
         let bounce_dst_key = *self.section_key_by_name(&src_name);
