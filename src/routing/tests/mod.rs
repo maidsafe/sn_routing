@@ -1203,17 +1203,17 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 #[tokio::test]
 async fn handle_sync() -> Result<()> {
     // Create first `Section` with a chain of length 2
-    let sk0_set = SecretKeySet::random();
-    let pk0 = sk0_set.secret_key().public_key();
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
     let sk1_set = SecretKeySet::random();
     let pk1 = sk1_set.secret_key().public_key();
-    let pk1_signature = sk0_set.secret_key().sign(bincode::serialize(&pk1)?);
+    let pk1_signature = sk0.sign(bincode::serialize(&pk1)?);
 
     let mut chain = SectionChain::new(pk0);
     assert_eq!(chain.insert(&pk0, pk1, pk1_signature), Ok(()));
 
     let (old_elders_info, mut nodes) = create_elders_info();
-    let proven_old_elders_info = proven(sk0_set.secret_key(), old_elders_info.clone())?;
+    let proven_old_elders_info = proven(&sk0, old_elders_info.clone())?;
     let old_section = Section::new(chain.clone(), proven_old_elders_info)?;
 
     // Create our node
@@ -1278,7 +1278,82 @@ async fn handle_sync() -> Result<()> {
     Ok(())
 }
 
-// TODO: add test that untrusted `Sync` is not applied
+#[tokio::test]
+async fn handle_untrusted_sync() -> Result<()> {
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1 = bls::SecretKey::random();
+    let pk1 = sk1.public_key();
+    let sig1 = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let sk2 = bls::SecretKey::random();
+    let pk2 = sk2.public_key();
+    let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
+
+    let mut chain = SectionChain::new(pk0);
+    chain.insert(&pk0, pk1, sig1)?;
+    chain.insert(&pk1, pk2, sig2)?;
+
+    let (old_elders_info, _) = create_elders_info();
+    let proven_old_elders_info = proven(&sk0, old_elders_info.clone())?;
+    let old_section = Section::new(SectionChain::new(pk0), proven_old_elders_info)?;
+
+    let (new_elders_info, _) = create_elders_info();
+    let proven_new_elders_info = proven(&sk2, new_elders_info.clone())?;
+    let new_section = Section::new(chain.truncate(2), proven_new_elders_info)?;
+
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let node = create_node();
+    let state = Approved::new(node, old_section, None, event_tx);
+    let stage = Stage::new(state, create_comm().await?);
+
+    let sender = create_node();
+    let orig_message = Message::single_src(
+        &sender,
+        DstLocation::Direct,
+        Variant::Sync {
+            section: new_section,
+            network: Network::new(),
+        },
+        None,
+        None,
+    )?;
+
+    let commands = stage
+        .handle_command(Command::HandleMessage {
+            message: orig_message.clone(),
+            sender: Some(sender.addr),
+        })
+        .await?;
+
+    let mut bounce_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                ..
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::BouncedUntrustedMessage(bounced_message) => {
+                assert_eq!(**bounced_message, orig_message);
+                assert_eq!(recipients, [sender.addr]);
+                bounce_sent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(bounce_sent);
+    assert_matches!(event_rx.try_recv(), Err(_));
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn relocation_of_non_elder() -> Result<()> {
