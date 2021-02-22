@@ -316,9 +316,17 @@ impl Routing {
             public_key,
         }) = dst
         {
-            if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id) {
+            let mut socket = None;
+            {
+                if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id)
+                {
+                    socket = Some(socket_addr.clone());
+                }
+            }
+
+            if let Some(socket_addr) = socket {
                 return self
-                    .send_message_to_client(*socket_addr, ClientMessage::from(content)?)
+                    .send_message_to_client(socket_addr, ClientMessage::from(content)?)
                     .await;
             } else {
                 debug!(
