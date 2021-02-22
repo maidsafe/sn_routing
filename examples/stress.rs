@@ -352,10 +352,9 @@ impl Network {
                     let dst = match dst {
                         DstLocation::Section(name) => name,
                         DstLocation::Node(name) => name,
-                        DstLocation::Direct => {
+                        DstLocation::Direct | DstLocation::EndUser(_) => {
                             return Err(format_err!("unexpected probe message dst: {:?}", dst))
                         }
-                        _ => unimplemented!(),
                     };
 
                     self.probe_tracker.receive(&dst, message.proof_share);
