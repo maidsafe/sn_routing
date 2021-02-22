@@ -44,7 +44,7 @@ resource_proof = "0.8.0"
   features = [ "sha3" ]
 
   [dependencies.tokio]
-  version = "~0.2.22"
+  version = "~0.2.24"
   features = [ "sync", "time", "rt-util" ]
 
   [dependencies.tracing]
@@ -65,3 +65,7 @@ sn_data_types = "0.14.1"
   [dev-dependencies.rand]
   version = "~0.7.3"
   features = [ "small_rng" ]
+
+  [dev-dependencies.tokio]
+  version = "~0.2.24"
+  features = [ "stream", "udp" ]

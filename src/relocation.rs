@@ -209,7 +209,7 @@ pub(crate) enum RelocateState {
     // will exchange it for an actual `Relocate` message.
     Delayed(Bytes),
     // Relocation in progress. The sender is used to pass messages to the bootstrap task.
-    InProgress(mpsc::Sender<(MessageType, SocketAddr)>),
+    InProgress(mpsc::UnboundedSender<(MessageType, SocketAddr)>),
 }
 
 /// Action to relocate a node.

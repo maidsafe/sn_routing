@@ -153,7 +153,7 @@ impl Approved {
         }
     }
 
-    pub async fn handle_message(
+    pub fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
@@ -182,7 +182,7 @@ impl Approved {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 commands.extend(self.update_section_knowledge(&msg)?);
-                commands.extend(self.handle_useful_message(sender, msg).await?);
+                commands.extend(self.handle_useful_message(sender, msg)?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -200,7 +200,7 @@ impl Approved {
         Ok(commands)
     }
 
-    pub async fn handle_infrastructure_message(
+    pub fn handle_infrastructure_message(
         &mut self,
         sender: SocketAddr,
         message: InfrastructureMessage,
@@ -248,9 +248,7 @@ impl Approved {
             InfrastructureMessage::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx
-                        .send((MessageType::InfrastructureMessage(message), sender))
-                        .await;
+                    let _ = tx.send((MessageType::InfrastructureMessage(message), sender));
                 }
 
                 vec![]
@@ -567,7 +565,7 @@ impl Approved {
         }
     }
 
-    async fn handle_useful_message(
+    fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
@@ -656,9 +654,7 @@ impl Approved {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
                         let node_msg = NodeMessage::new(msg.to_bytes());
-                        let _ = message_tx
-                            .send((MessageType::NodeMessage(node_msg), sender))
-                            .await;
+                        let _ = message_tx.send((MessageType::NodeMessage(node_msg), sender));
                     } else {
                         error!("Missig sender of {:?}", msg);
                     }
@@ -944,7 +940,7 @@ impl Approved {
             }
         }
 
-        let (message_tx, message_rx) = mpsc::channel(1);
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
         self.relocate_state = Some(RelocateState::InProgress(message_tx));
 
         let bootstrap_addrs: Vec<_> = self

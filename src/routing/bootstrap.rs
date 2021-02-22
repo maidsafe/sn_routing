@@ -75,7 +75,7 @@ pub(crate) async fn initial(
 pub(crate) async fn relocate(
     node: Node,
     comm: &Comm,
-    recv_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
+    recv_rx: mpsc::UnboundedReceiver<(MessageType, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
@@ -527,7 +527,7 @@ enum JoinResponse {
 // or by receiver of deserialized `Message` and provides a unified interface on top of them.
 enum MessageReceiver<'a> {
     Raw(&'a mut mpsc::Receiver<ConnectionEvent>),
-    Deserialized(mpsc::Receiver<(MessageType, SocketAddr)>),
+    Deserialized(mpsc::UnboundedReceiver<(MessageType, SocketAddr)>),
 }
 
 impl<'a> MessageReceiver<'a> {
@@ -585,7 +585,7 @@ mod tests {
     #[tokio::test]
     async fn bootstrap_as_adult() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel();
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
@@ -633,7 +633,7 @@ mod tests {
             let message = InfrastructureMessage::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::InfrastructureMessage(message), bootstrap_addr))?;
+            recv_tx.send((MessageType::InfrastructureMessage(message), bootstrap_addr))?;
             task::yield_now().await;
 
             // Receive JoinRequest
@@ -662,7 +662,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
                 bootstrap_addr,
             ))?;
@@ -683,7 +683,7 @@ mod tests {
     #[tokio::test]
     async fn receive_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel();
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -710,7 +710,7 @@ mod tests {
                 new_bootstrap_addrs.clone(),
             ));
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
@@ -740,7 +740,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel();
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -761,7 +761,7 @@ mod tests {
             let message =
                 InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
@@ -772,7 +772,7 @@ mod tests {
             let message =
                 InfrastructureMessage::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
@@ -799,7 +799,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_get_section_response_success() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel();
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -843,7 +843,7 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
@@ -862,7 +862,7 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::InfrastructureMessage(message),
                 bootstrap_node.addr,
             ))?;
@@ -878,7 +878,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_join_response_rejoin() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel();
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -922,7 +922,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
                 bootstrap_node.addr,
             ))?;
@@ -941,7 +941,7 @@ mod tests {
                 None,
             )?;
 
-            recv_tx.try_send((
+            recv_tx.send((
                 MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
                 bootstrap_node.addr,
             ))?;

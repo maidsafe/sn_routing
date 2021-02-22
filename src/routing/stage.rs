@@ -95,18 +95,13 @@ impl Stage {
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
             Command::HandleMessage { sender, message } => {
-                self.state
-                    .lock()
-                    .await
-                    .handle_message(sender, message)
-                    .await
+                self.state.lock().await.handle_message(sender, message)
             }
             Command::HandleInfrastructureMessage { sender, message } => Ok(self
                 .state
                 .lock()
                 .await
-                .handle_infrastructure_message(sender, message)
-                .await),
+                .handle_infrastructure_message(sender, message)),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleVote { vote, proof_share } => {
                 self.state.lock().await.handle_vote(vote, proof_share)
@@ -244,7 +239,7 @@ impl Stage {
         &self,
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
-        message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
+        message_rx: mpsc::UnboundedReceiver<(MessageType, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let node = self.state.lock().await.node().clone();
         let previous_name = node.name();
