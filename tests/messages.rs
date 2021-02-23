@@ -1,4 +1,4 @@
-// Copyright 2020 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -19,7 +19,6 @@ use sn_messaging::{
 use sn_routing::{Config, Error, Event, NodeElderChange};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
-use xor_name::XorName;
 
 #[tokio::test]
 async fn test_messages_client_node() -> Result<()> {
@@ -34,36 +33,7 @@ async fn test_messages_client_node() -> Result<()> {
     let keypair = Keypair::new_ed25519(&mut rng);
     let pk = keypair.public_key();
 
-    let random_xor = XorName::random();
-    let id = MessageId(random_xor);
-    let message = Message::Query {
-        query: Query::Transfer(TransferQuery::GetBalance(pk)),
-        id,
-        target_section_pk: None,
-    };
-
-    let message_clone = message.clone();
-
-    let node_addr = node.our_connection_info();
-    // spawn node events listener
-    let node_handler = tokio::spawn(async move {
-        while let Some(event) = event_stream.next().await {
-            match event {
-                Event::ClientMessageReceived { msg, user } => {
-                    assert_eq!(*msg, message_clone.clone());
-                    node.send_message(
-                        SrcLocation::Node(node.name().await),
-                        DstLocation::EndUser(user),
-                        message_clone.clone().serialize()?,
-                    )
-                    .await?;
-                    break;
-                }
-                _other => {}
-            }
-        }
-        Ok::<(), Error>(())
-    });
+    let id = MessageId::new();
 
     // create a client which sends a message to the node
     let mut config = sn_routing::TransportConfig {
@@ -72,11 +42,51 @@ async fn test_messages_client_node() -> Result<()> {
     };
     config.local_ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
+    let node_addr = node.our_connection_info();
+
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
     client_endpoint.connect_to(&node_addr).await?;
 
-    let client_msg_bytes = WireMsg::serialize_client_msg(&message)?;
+    let socket_addr = client_endpoint.socket_addr();
+    let socketaddr_sig = keypair.sign(&bincode::serialize(&socket_addr)?);
+    let registration = sn_messaging::section_info::Message::RegisterEndUserCmd {
+        end_user: pk,
+        socketaddr_sig,
+    };
+    let registration_bytes = WireMsg::serialize_sectioninfo_msg(&registration)?;
+
+    client_endpoint
+        .send_message(registration_bytes, &node_addr)
+        .await?;
+
+    let query = Message::Query {
+        query: Query::Transfer(TransferQuery::GetBalance(pk)),
+        id,
+        target_section_pk: None,
+    };
+    let query_clone = query.clone();
+    let client_msg_bytes = WireMsg::serialize_client_msg(&query)?;
+
+    // spawn node events listener
+    let node_handler = tokio::spawn(async move {
+        while let Some(event) = event_stream.next().await {
+            match event {
+                Event::ClientMessageReceived { msg, user } => {
+                    assert_eq!(*msg, query_clone.clone());
+                    node.send_message(
+                        SrcLocation::Node(node.name().await),
+                        DstLocation::EndUser(user),
+                        query_clone.clone().serialize()?,
+                    )
+                    .await?;
+                    break;
+                }
+                _other => println!("{:?}", _other),
+            }
+        }
+        Ok::<(), Error>(())
+    });
 
     client_endpoint
         .send_message(client_msg_bytes, &node_addr)
@@ -86,7 +96,7 @@ async fn test_messages_client_node() -> Result<()> {
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let expected_bytes = message.serialize()?;
+        let expected_bytes = query.serialize()?;
         assert_eq!(resp, expected_bytes);
     }
 
@@ -106,6 +116,8 @@ async fn test_messages_between_nodes() -> Result<()> {
     let node1_contact = node1.our_connection_info();
     let node1_name = node1.name().await;
 
+    println!("spawning node handler");
+
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
@@ -120,6 +132,8 @@ async fn test_messages_between_nodes() -> Result<()> {
         Err(format_err!("message not received"))
     });
 
+    println!("node handler spawned");
+
     // start a second node which sends a message to the first node
     let (node2, mut event_stream) = create_node(config_with_contact(node1_contact)).await?;
 
@@ -133,6 +147,8 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     let node2_name = node2.name().await;
 
+    println!("sending msg..");
+
     node2
         .send_message(
             SrcLocation::Node(node2_name),
@@ -141,8 +157,12 @@ async fn test_messages_between_nodes() -> Result<()> {
         )
         .await?;
 
+    println!("msg sent");
+
     // just await for node1 to receive message from node2
     let dst = node_handler.await??;
+    println!("Got dst: {:?} (expecting: {}", dst.name(), node2_name);
+    println!("sending response from {:?}..", node1_name);
 
     // send response from node1 to node2
     node1
@@ -152,6 +172,8 @@ async fn test_messages_between_nodes() -> Result<()> {
             Bytes::from_static(response),
         )
         .await?;
+
+    println!("checking response received..");
 
     // check we received the response message from node1
     while let Some(event) = event_stream.next().await {
