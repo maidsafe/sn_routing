@@ -621,16 +621,8 @@ impl Approved {
                 }
             }
             Variant::RelocatePromise(promise) => {
-                if promise.name != self.node.name() {
-                    if !self.is_elder() {
-                        return Ok(MessageStatus::Useless);
-                    }
-
-                    if self.section.is_elder(&promise.name) {
-                        // If the peer is honest and is still elder then we probably haven't yet
-                        // processed its demotion. Bounce the message back and try again on resend.
-                        return Ok(MessageStatus::Unknown);
-                    }
+                if let Some(status) = self.decide_relocate_promise_status(promise) {
+                    return Ok(status);
                 }
             }
             Variant::Relocate(_)
@@ -800,6 +792,29 @@ impl Approved {
                 }
             }
         }
+    }
+
+    // Decide how to handle a `RelocatePromise` message.
+    fn decide_relocate_promise_status(&self, promise: &RelocatePromise) -> Option<MessageStatus> {
+        if promise.name == self.node.name() {
+            // Promise to relocate us.
+            if self.relocate_state.is_some() {
+                // Already received a promise or already relocating. discard.
+                return Some(MessageStatus::Useless);
+            }
+        } else {
+            // Promise returned from a node to be relocated, to be exchanged for the actual
+            // `Relocate` message.
+            if !self.is_elder() || self.section.is_elder(&promise.name) {
+                // If we are not elder, maybe we just haven't processed our promotion yet.
+                // If they are still elder, maybe we just haven't processed their demotion yet.
+                //
+                // In both cases, bounce the message and try again on resend (if any).
+                return Some(MessageStatus::Unknown);
+            }
+        }
+
+        None
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
