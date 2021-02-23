@@ -418,7 +418,18 @@ impl Approved {
 
         if let Some(info) = self.section.members().get(&name) {
             let info = info.clone().leave()?;
-            self.vote(Vote::Offline(info))
+
+            // Don't send the `Offline` vote to the peer being lost as that send would fail,
+            // triggering a chain of further `Offline` votes.
+            let elders: Vec<_> = self
+                .section
+                .elders_info()
+                .peers()
+                .filter(|peer| peer.name() != info.peer.name())
+                .copied()
+                .collect();
+
+            self.send_vote(&elders, Vote::Offline(info))
         } else {
             Ok(vec![])
         }
@@ -459,11 +470,7 @@ impl Approved {
 
     // Send vote to all our elders.
     fn vote(&self, vote: Vote) -> Result<Vec<Command>> {
-        let mut elders: Vec<_> = self.section.elders_info().peers().copied().collect();
-        // Exclude the offline elder from the recipients.
-        if let Vote::Offline(ref info) = vote {
-            elders.retain(|elder| elder.name() != info.peer.name());
-        }
+        let elders: Vec<_> = self.section.elders_info().peers().copied().collect();
         self.send_vote(&elders, vote)
     }
 
