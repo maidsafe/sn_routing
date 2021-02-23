@@ -30,7 +30,7 @@ pub(crate) struct SplitBarrier {
 }
 
 impl SplitBarrier {
-    pub fn handle_our_section(
+    pub fn handle_our_elders(
         &mut self,
         our_name: &XorName,
         current_section: &Section,
@@ -193,6 +193,184 @@ fn update(
     }
 }
 
-// TODO: write tests
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    use crate::{
+        consensus::test_utils::{prove, proven},
+        peer::Peer,
+        section::{test_utils::gen_addr, MemberInfo},
+        SectionChain, ELDER_SIZE, MIN_AGE, RECOMMENDED_SECTION_SIZE,
+    };
+    use anyhow::Result;
+    use itertools::Itertools;
+    use rand::{seq::IteratorRandom, Rng};
+
+    #[test]
+    fn split_empty_prefix() -> Result<()> {
+        let mut rng = rand::thread_rng();
+
+        let sk: bls::SecretKey = rng.gen();
+        let pk = sk.public_key();
+
+        let prefix0 = Prefix::default().pushed(false);
+        let prefix1 = Prefix::default().pushed(true);
+
+        let members0: Vec<_> = (0..RECOMMENDED_SECTION_SIZE)
+            .map(|_| gen_peer(&mut rng, &prefix0))
+            .collect();
+        let members1: Vec<_> = (0..RECOMMENDED_SECTION_SIZE)
+            .map(|_| gen_peer(&mut rng, &prefix1))
+            .collect();
+
+        let our_name = members0
+            .iter()
+            .chain(&members1)
+            .choose(&mut rng)
+            .expect("members are empty")
+            .name();
+
+        // Create the pre-split `Section`.
+        let chain = SectionChain::new(pk);
+
+        let elders = members0
+            .iter()
+            .chain(&members1)
+            .sorted_by_key(|peer| peer.age())
+            .take(ELDER_SIZE)
+            .copied();
+
+        let elders_info = EldersInfo::new(elders, Prefix::default());
+        let elders_info = proven(&sk, elders_info)?;
+
+        let mut section = Section::new(chain, elders_info)?;
+
+        for peer in members0.iter().chain(&members1).copied() {
+            let info = MemberInfo::joined(peer);
+            let info = proven(&sk, info)?;
+            assert!(section.update_member(info));
+        }
+
+        let network = Network::new();
+
+        // Create the ops to trigger the split.
+        let (op0, op1) = gen_ops(&mut rng, &sk, prefix0, &members0)?;
+        let (op2, op3) = gen_ops(&mut rng, &sk, prefix1, &members1)?;
+        let ops = [op0, op1, op2, op3];
+
+        // Apply the ops in every possible order
+        for op_sequence in ops.iter().permutations(ops.len()) {
+            let mut section = section.clone();
+            let mut network = network.clone();
+
+            let mut barrier = SplitBarrier::default();
+            let mut our = None;
+            let mut sibling = None;
+
+            // Apply the ops. Once the barrier produces both our and sibling states,
+            // proceed to validate them.
+            for op in op_sequence {
+                match op {
+                    Op::OurElders {
+                        elders_info,
+                        key_proof,
+                    } => barrier.handle_our_elders(
+                        our_name,
+                        &section,
+                        &network,
+                        elders_info.clone(),
+                        key_proof.clone(),
+                    ),
+                    Op::TheirKey(key) => {
+                        barrier.handle_their_key(our_name, &section, &network, key.clone())
+                    }
+                }
+
+                match barrier.take(section.prefix()) {
+                    (Some(new_our), Some(new_sibling)) => {
+                        our = Some(new_our);
+                        sibling = Some(new_sibling);
+                        break;
+                    }
+                    (Some(our), None) => {
+                        section = our.section;
+                        network = our.network;
+                    }
+                    (None, Some(_)) => unreachable!(),
+                    (None, None) => continue,
+                }
+            }
+
+            let (our, sibling) = if let (Some(our), Some(sibling)) = (our, sibling) {
+                (our, sibling)
+            } else {
+                panic!("the barrier should have given the post-split states");
+            };
+
+            assert_ne!(our.section.chain().last_key(), &pk);
+            assert_ne!(sibling.section.chain().last_key(), &pk);
+            assert_ne!(
+                our.section.chain().last_key(),
+                sibling.section.chain().last_key()
+            );
+
+            assert!(our.network.has_key(sibling.section.chain().last_key()));
+            assert!(sibling.network.has_key(our.section.chain().last_key()));
+
+            assert_eq!(
+                our.network.get(sibling.section.prefix()),
+                Some(sibling.section.elders_info())
+            );
+            assert_eq!(
+                sibling.network.get(our.section.prefix()),
+                Some(our.section.elders_info())
+            );
+        }
+
+        Ok(())
+    }
+
+    enum Op {
+        OurElders {
+            elders_info: Proven<EldersInfo>,
+            key_proof: Proof,
+        },
+        TheirKey(Proven<(Prefix, bls::PublicKey)>),
+    }
+
+    fn gen_ops(
+        rng: &mut impl Rng,
+        sk: &bls::SecretKey,
+        prefix: Prefix,
+        members: &[Peer],
+    ) -> Result<(Op, Op)> {
+        let new_sk: bls::SecretKey = rng.gen();
+        let new_pk = new_sk.public_key();
+
+        let elders = members
+            .iter()
+            .sorted_by_key(|peer| peer.age())
+            .take(ELDER_SIZE)
+            .copied();
+        let elders_info = EldersInfo::new(elders, prefix);
+        let elders_info = proven(&new_sk, elders_info)?;
+        let key_proof = prove(sk, &new_pk)?;
+        let their_key = proven(sk, (prefix, new_pk))?;
+
+        Ok((
+            Op::OurElders {
+                elders_info,
+                key_proof,
+            },
+            Op::TheirKey(their_key),
+        ))
+    }
+
+    fn gen_peer(rng: &mut impl Rng, prefix: &Prefix) -> Peer {
+        Peer::new(
+            prefix.substituted_in(rng.gen()),
+            gen_addr(),
+            rng.gen_range(MIN_AGE, MIN_AGE + 5),
+        )
+    }
+}

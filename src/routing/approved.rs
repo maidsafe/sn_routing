@@ -1643,7 +1643,7 @@ impl Approved {
         elders_info: Proven<EldersInfo>,
         key_proof: Proof,
     ) -> Result<Vec<Command>> {
-        self.split_barrier.handle_our_section(
+        self.split_barrier.handle_our_elders(
             &self.node.name(),
             &self.section,
             &self.network,
