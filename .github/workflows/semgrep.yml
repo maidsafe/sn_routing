@@ -11,5 +11,6 @@ jobs:
       with:
         publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
         publishDeployment: 346
+        config: p/r2c
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
