@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.44.0](https://github.com/maidsafe/sn_routing/compare/v0.43.4...v0.44.0) (2021-02-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** removes send_message_to_client api,
+
+### Features
+
+* **enduser:** add mapping between socketaddr and pk ([1ff902d](https://github.com/maidsafe/sn_routing/commit/1ff902da2f28d89ed6ecb3efe502efea8476135e))
+* **messages:** remove MsgEnvelope ([57df069](https://github.com/maidsafe/sn_routing/commit/57df069f6ed5d7c9afe3b665158181cce70ceb15))
+
+
+### Bug Fixes
+
+* add missing routing to client of relayed client message ([fbde5b1](https://github.com/maidsafe/sn_routing/commit/fbde5b10d734fcf5037b0d37767ba5093376e46e))
+* addresss review comments ([27dcac5](https://github.com/maidsafe/sn_routing/commit/27dcac57b78daa9b41c481ed3970453d172720b4))
+* post-rebase issues ([906ef03](https://github.com/maidsafe/sn_routing/commit/906ef031585f3db19a546928e76c8304a7f3c7f3))
+* remove unnecessary error mapping ([0f3418b](https://github.com/maidsafe/sn_routing/commit/0f3418b2ea4d66f438604ded2682d76f95e70d6f))
+* remove use of wildcard match and unimplemented macro ([84c53d8](https://github.com/maidsafe/sn_routing/commit/84c53d8db16f1ab237c46ad5e8221b2a80758d54))
+
+
+* **deps:** update sn_messaging, sn_data_types ([367b673](https://github.com/maidsafe/sn_routing/commit/367b6731b90b7211679282b2fcaa8852f3449ccd))
+
 ### [0.43.4](https://github.com/maidsafe/sn_routing/compare/v0.43.3...v0.43.4) (2021-02-23)
 
 ### [0.43.3](https://github.com/maidsafe/sn_routing/compare/v0.43.2...v0.43.3) (2021-02-18)
