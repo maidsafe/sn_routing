@@ -43,12 +43,10 @@ impl EndUserRegistry {
         end_user_pk: EndUserPK,
         socketaddr_sig: EndUserSig,
     ) -> Result<()> {
-        let data = &bincode::serialize(&sender).map_err(Error::Bincode)?;
         end_user_pk
-            .verify(&socketaddr_sig, data)
+            .verify(&socketaddr_sig, &bincode::serialize(&sender)?)
             .map_err(|_e| Error::FailedSignature)?;
-        let socket_id_src = &bincode::serialize(&socketaddr_sig).map_err(Error::Bincode)?;
-        let socket_id = XorName::from_content(&[socket_id_src]);
+        let socket_id = XorName::from_content(&[&bincode::serialize(&socketaddr_sig)?]);
         let end_user = EndUser::Client {
             public_key: end_user_pk,
             socket_id,
