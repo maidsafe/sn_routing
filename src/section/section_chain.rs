@@ -62,7 +62,7 @@ impl SectionChain {
     /// Merges two chains into one.
     ///
     /// This succeeds only if the root key of one of the chain is present in the other one.
-    /// Otherwise it returns `Error::Incompatible`
+    /// Otherwise it returns `Error::InvalidOperation`
     pub fn merge(&mut self, mut other: Self) -> Result<(), Error> {
         let root_index = if let Some(index) = self.index_of(other.root_key()) {
             index
@@ -70,7 +70,7 @@ impl SectionChain {
             mem::swap(self, &mut other);
             index
         } else {
-            return Err(Error::Incompatible);
+            return Err(Error::InvalidOperation);
         };
 
         let mut reindex_map = vec![0; other.len()];
@@ -203,7 +203,7 @@ impl SectionChain {
     /// Returns `Error::KeyNotFound` if either `trusted_key` or `self.last_key()` is not present in
     /// `super_chain`.
     ///
-    /// Returns `Error::KeyOnWrongBranch` if `trusted_key` is not reachable from `self.last_key()`.
+    /// Returns `Error::InvalidOperation` if `trusted_key` is not reachable from `self.last_key()`.
     pub fn extend(&self, trusted_key: &bls::PublicKey, super_chain: &Self) -> Result<Self, Error> {
         let trusted_key_index = super_chain
             .index_of(trusted_key)
@@ -215,7 +215,7 @@ impl SectionChain {
         if super_chain.is_ancestor(trusted_key_index, last_key_index) {
             super_chain.minimize(vec![trusted_key, self.last_key()])
         } else {
-            Err(Error::KeyOnWrongBranch)
+            Err(Error::InvalidOperation)
         }
     }
 
@@ -427,12 +427,10 @@ pub enum Error {
     FailedSignature,
     #[error("key not found in the chain")]
     KeyNotFound,
-    #[error("key not on the main branch of the chain")]
-    KeyOnWrongBranch,
     #[error("chain doesn't contain any trusted keys")]
     Untrusted,
-    #[error("chains are incompatible")]
-    Incompatible,
+    #[error("attempted operation is invalid")]
+    InvalidOperation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -759,7 +757,7 @@ mod tests {
         // out: Err(Incompatible)
         let lhs = make_chain(pk0, vec![(&pk0, pk1, sig1)]);
         let rhs = make_chain(pk2, vec![(&pk2, pk3, sig3)]);
-        assert_eq!(merge_chains(lhs, rhs), Err(Error::Incompatible));
+        assert_eq!(merge_chains(lhs, rhs), Err(Error::InvalidOperation));
     }
 
     #[test]
@@ -1000,7 +998,16 @@ mod tests {
         let chain = make_chain(pk1, vec![]);
         assert_eq!(
             chain.extend(&pk0, &main_chain),
-            Ok(make_chain(pk0, vec![(&pk0, pk1, sig1)]))
+            Ok(make_chain(pk0, vec![(&pk0, pk1, sig1.clone())]))
+        );
+
+        // in:      0->1
+        // trusted: 2
+        // out:     Error
+        let chain = make_chain(pk0, vec![(&pk0, pk1, sig1)]);
+        assert_eq!(
+            chain.extend(&pk2, &main_chain),
+            Err(Error::InvalidOperation)
         );
     }
 
@@ -1013,7 +1020,7 @@ mod tests {
         let (sk1, pk1, sig1) = gen_signed_keypair(&sk0);
         let (sk2, pk2, sig2) = gen_signed_keypair(&sk1);
         let (_, pk3, sig3) = gen_signed_keypair(&sk2);
-        let (_, pk4, sig4) = gen_signed_keypair(&sk1);
+        let (_, pk4, sig4) = gen_signed_keypair_filter(&sk1, |pk| pk > &pk2);
 
         let main_chain = make_chain(
             pk0,
@@ -1027,11 +1034,11 @@ mod tests {
 
         // in:      1->2->3
         // trusted: 4
-        // out:     Error
+        // out:     Error::InvalidOperation
         let chain = make_chain(pk1, vec![(&pk1, pk2, sig2), (&pk2, pk3, sig3)]);
         assert_eq!(
             chain.extend(&pk4, &main_chain),
-            Err(Error::KeyOnWrongBranch)
+            Err(Error::InvalidOperation)
         );
     }
 

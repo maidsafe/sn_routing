@@ -50,7 +50,7 @@ pub(crate) async fn initial(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
-    let span = trace_span!("bootstrap::initial", name = %node.name());
+    let span = trace_span!("bootstrap", name = %node.name());
 
     let state = State::new(node, send_tx, recv_rx);
 
@@ -78,15 +78,12 @@ pub(crate) async fn relocate(
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-    let span = trace_span!("bootstrap::relocate", name = %node.name());
-
     let state = State::new(node, send_tx, recv_rx);
 
     future::join(
         state.run(bootstrap_addrs, Some(relocate_details)),
         send_messages(send_rx, comm),
     )
-    .instrument(span)
     .await
     .0
 }

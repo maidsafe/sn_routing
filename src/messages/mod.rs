@@ -265,7 +265,11 @@ impl Message {
                     .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
                     .map(|(_, key)| key);
 
-                VerifyStatus::from_section_chain_result(proof_chain.verify(trusted_keys))
+                if proof_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
             SrcAuthority::Section { prefix, signature } => {
                 // Proof chain is required for section-src messages.
