@@ -57,7 +57,7 @@ pub(crate) fn delivery_targets(
             let target_name = user.name();
             section_candidates(&target_name, our_name, section, network)?
         }
-        DstLocation::Node(target_name) => {
+        DstLocation::Node(target_name) | DstLocation::AccumulatingNode(target_name) => {
             if target_name == our_name {
                 return Ok((Vec::new(), 0));
             }
@@ -167,6 +167,7 @@ where
 {
     let dst_name = match dst {
         DstLocation::Node(name) => *name,
+        DstLocation::AccumulatingNode(name) => *name,
         DstLocation::Section(name) => *name,
         DstLocation::EndUser(_) | DstLocation::Direct => {
             error!("Invalid destination for signature targets: {:?}", dst);

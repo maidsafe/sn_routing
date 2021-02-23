@@ -8,6 +8,7 @@
 
 use super::{
     enduser_registry::{EndUserRegistry, SocketId},
+    message_accumulator::MessageAccumulator,
     Command, SplitBarrier,
 };
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
     message_filter::MessageFilter,
     messages::{
         JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, ResourceProofResponse,
-        Variant, VerifyStatus,
+        SrcAuthority, Variant, VerifyStatus,
     },
     network::Network,
     node::Node,
@@ -65,6 +66,7 @@ pub(crate) struct Approved {
     section: Section,
     network: Network,
     section_keys_provider: SectionKeysProvider,
+    message_accumulator: MessageAccumulator,
     vote_accumulator: VoteAccumulator,
     split_barrier: SplitBarrier,
     // Voter for DKG
@@ -99,6 +101,7 @@ impl Approved {
             network: Network::new(),
             section_keys_provider,
             vote_accumulator: Default::default(),
+            message_accumulator: Default::default(),
             split_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_state: None,
@@ -665,7 +668,31 @@ impl Approved {
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
-                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone())
+                if msg.dst() == &DstLocation::AccumulatingNode(self.node().name()) {
+                    if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
+                        match self.message_accumulator.add(
+                            &bincode::serialize(&msg.signable_view())?,
+                            proof_share.clone(),
+                        ) {
+                            Ok(_) => {
+                                trace!("Successfully accumulated message: {:?}", msg);
+                                self.handle_user_message(
+                                    msg.src().src_location(),
+                                    *msg.dst(),
+                                    content.clone(),
+                                )
+                            }
+                            Err(err) => {
+                                trace!("Error accumulating message at destination: {:?}", err);
+                                Ok(vec![])
+                            }
+                        }
+                    } else {
+                        Err(Error::InvalidSrcLocation)
+                    }
+                } else {
+                    self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone())
+                }
             }
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
@@ -748,7 +775,9 @@ impl Approved {
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
     fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
-        self.is_elder() || dst == &DstLocation::Node(self.node.name())
+        self.is_elder()
+            || dst == &DstLocation::Node(self.node.name())
+            || dst == &DstLocation::AccumulatingNode(self.node.name())
     }
 
     // Decide how to handle a `Vote` message.
@@ -2016,12 +2045,28 @@ impl Approved {
             return Err(Error::InvalidDstLocation);
         }
 
+        if matches!(dst, DstLocation::AccumulatingNode(_)) && !matches!(src, SrcLocation::Node(_)) {
+            error!("Not sending user message {:?} -> {:?}: src should be a single node for dst accumulation", src, dst);
+            return Err(Error::InvalidSrcLocation);
+        }
+
         let variant = Variant::UserMessage(content);
 
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg = Message::single_src(&self.node, dst, variant, None, None)?;
+                let msg = if matches!(dst, DstLocation::AccumulatingNode(_)) {
+                    Message::for_dst_accumulation(
+                        &self.node,
+                        self.section_keys_provider.key_share()?,
+                        dst,
+                        variant,
+                        None,
+                        None,
+                    )?
+                } else {
+                    Message::single_src(&self.node, dst, variant, None, None)?
+                };
                 let mut commands = vec![];
 
                 if dst.contains(&self.node.name(), self.section.prefix()) {
