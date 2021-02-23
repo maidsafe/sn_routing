@@ -108,7 +108,7 @@ impl Approved {
         }
     }
 
-    pub fn get_enduser_by_addr(&self, sender: &SocketAddr) -> Option<EndUser> {
+    pub fn get_enduser_by_addr(&self, sender: &SocketAddr) -> Option<&EndUser> {
         self.end_users.get_enduser_by_addr(sender)
     }
 
@@ -211,7 +211,7 @@ impl Approved {
         Ok(commands)
     }
 
-    pub async fn handle_sectioninfo_msg(
+    pub async fn handle_section_info_msg(
         &mut self,
         sender: SocketAddr,
         message: SectionInfoMsg,

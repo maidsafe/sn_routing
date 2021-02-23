@@ -105,7 +105,7 @@ impl Stage {
                 .state
                 .lock()
                 .await
-                .handle_sectioninfo_msg(sender, message)
+                .handle_section_info_msg(sender, message)
                 .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleVote { vote, proof_share } => {
