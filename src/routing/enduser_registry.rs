@@ -33,8 +33,18 @@ impl EndUserRegistry {
         self.clients.get(socketaddr)
     }
 
-    pub fn get_socket_addr(&self, socket_id: &SocketId) -> Option<&SocketAddr> {
-        self.socket_id_mapping.get(socket_id)
+    pub fn get_socket_addr(&self, socket_id: SocketId) -> Option<&SocketAddr> {
+        self.socket_id_mapping.get(&socket_id)
+    }
+
+    pub fn get_all_socket_addr<'a>(
+        &'a self,
+        end_user_pk: &'a EndUserPK,
+    ) -> impl Iterator<Item = &'a SocketAddr> {
+        self.clients
+            .iter()
+            .filter(move |(_, end_user)| end_user.id() == end_user_pk)
+            .map(|(socket_addr, _)| socket_addr)
     }
 
     pub fn try_add(

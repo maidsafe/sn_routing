@@ -41,7 +41,9 @@ use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use sn_data_types::PublicKey as EndUserPK;
 use sn_messaging::{
+    client::Message as ClientMessage,
     node::NodeMessage,
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
@@ -112,8 +114,15 @@ impl Approved {
         self.end_users.get_enduser_by_addr(sender)
     }
 
-    pub fn get_socket_addr(&self, id: &SocketId) -> Option<&SocketAddr> {
+    pub fn get_socket_addr(&self, id: SocketId) -> Option<&SocketAddr> {
         self.end_users.get_socket_addr(id)
+    }
+
+    pub fn get_all_socket_addr<'a>(
+        &'a self,
+        end_user: &'a EndUserPK,
+    ) -> impl Iterator<Item = &'a SocketAddr> {
+        self.end_users.get_all_socket_addr(end_user)
     }
 
     pub fn node(&self) -> &Node {
@@ -638,8 +647,7 @@ impl Approved {
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => {
-                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone());
-                Ok(vec![])
+                self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone())
             }
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
@@ -951,8 +959,37 @@ impl Approved {
         Ok(commands)
     }
 
-    fn handle_user_message(&self, src: SrcLocation, dst: DstLocation, content: Bytes) {
-        self.send_event(Event::MessageReceived { content, src, dst })
+    fn handle_user_message(
+        &self,
+        src: SrcLocation,
+        dst: DstLocation,
+        content: Bytes,
+    ) -> Result<Vec<Command>> {
+        if let DstLocation::EndUser(end_user) = &dst {
+            let recipients = match end_user {
+                EndUser::AllClients(public_key) => {
+                    self.get_all_socket_addr(public_key).copied().collect()
+                }
+                EndUser::Client { socket_id, .. } => {
+                    if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
+                        vec![socket_addr]
+                    } else {
+                        vec![]
+                    }
+                }
+            };
+            if recipients.is_empty() {
+                return Err(Error::CannotRoute);
+            };
+            return Ok(vec![Command::SendMessage {
+                recipients,
+                delivery_group_size: 1,
+                message: MessageType::ClientMessage(ClientMessage::from(content)?),
+            }]);
+        }
+
+        self.send_event(Event::MessageReceived { content, src, dst });
+        Ok(vec![])
     }
 
     fn handle_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
