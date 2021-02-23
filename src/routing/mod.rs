@@ -322,7 +322,7 @@ impl Routing {
                 .state
                 .lock()
                 .await
-                .get_socket_addr(&socket_id)
+                .get_socket_addr(socket_id)
                 .copied();
 
             if let Some(socket_addr) = socket_addr {
