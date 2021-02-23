@@ -317,15 +317,15 @@ impl Routing {
             public_key,
         }) = dst
         {
-            let mut socket = None;
-            {
-                if let Some(socket_addr) = self.stage.state.lock().await.get_socket_addr(&socket_id)
-                {
-                    socket = Some(*socket_addr);
-                }
-            }
+            let socket_addr = self
+                .stage
+                .state
+                .lock()
+                .await
+                .get_socket_addr(&socket_id)
+                .copied();
 
-            if let Some(socket_addr) = socket {
+            if let Some(socket_addr) = socket_addr {
                 return self
                     .send_message_to_client(socket_addr, ClientMessage::from(content)?)
                     .await;
@@ -438,7 +438,12 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
         }
         MessageType::ClientMessage(message) => {
-            let end_user = stage.state.lock().await.get_enduser_by_addr(&sender);
+            let end_user = stage
+                .state
+                .lock()
+                .await
+                .get_enduser_by_addr(&sender)
+                .copied();
             let end_user = match end_user {
                 Some(end_user) => end_user,
                 None => {

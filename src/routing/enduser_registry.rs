@@ -29,8 +29,8 @@ impl EndUserRegistry {
         }
     }
 
-    pub fn get_enduser_by_addr(&self, socketaddr: &SocketAddr) -> Option<EndUser> {
-        self.clients.get(socketaddr).copied()
+    pub fn get_enduser_by_addr(&self, socketaddr: &SocketAddr) -> Option<&EndUser> {
+        self.clients.get(socketaddr)
     }
 
     pub fn get_socket_addr(&self, socket_id: &SocketId) -> Option<&SocketAddr> {
@@ -43,26 +43,20 @@ impl EndUserRegistry {
         end_user_pk: EndUserPK,
         socketaddr_sig: EndUserSig,
     ) -> Result<()> {
-        if let Ok(data) = &bincode::serialize(&sender) {
-            end_user_pk
-                .verify(&socketaddr_sig, data)
-                .map_err(|_e| Error::InvalidState)?;
-        } else {
-            return Err(Error::InvalidState);
-        }
-        let socket_id = if let Ok(socket_id_src) = &bincode::serialize(&socketaddr_sig) {
-            XorName::from_content(&[socket_id_src])
-        } else {
-            return Err(Error::InvalidState);
-        };
+        let data = &bincode::serialize(&sender).map_err(Error::Bincode)?;
+        end_user_pk
+            .verify(&socketaddr_sig, data)
+            .map_err(|_e| Error::FailedSignature)?;
+        let socket_id_src = &bincode::serialize(&socketaddr_sig).map_err(Error::Bincode)?;
+        let socket_id = XorName::from_content(&[socket_id_src]);
         let end_user = EndUser::Client {
             public_key: end_user_pk,
             socket_id,
         };
         match self.socket_id_mapping.entry(socket_id) {
-            Entry::Vacant(_) => {
+            Entry::Vacant(entry) => {
                 let _ = self.clients.insert(sender, end_user);
-                let _ = self.socket_id_mapping.insert(socket_id, sender);
+                let _ = entry.insert(sender);
             }
             Entry::Occupied(_) => (),
         }
