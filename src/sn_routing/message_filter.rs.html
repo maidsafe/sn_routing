@@ -96,8 +96,6 @@
 <span id="95">95</span>
 <span id="96">96</span>
 <span id="97">97</span>
-<span id="98">98</span>
-<span id="99">99</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -107,11 +105,9 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">location</span>::<span class="ident">DstLocation</span>,
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>},
-};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>};
 <span class="kw">use</span> <span class="ident">lru_time_cache</span>::<span class="ident">LruCache</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">time</span>::<span class="ident">Duration</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
