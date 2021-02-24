@@ -287,6 +287,11 @@ impl Routing {
             .collect()
     }
 
+    /// Returns the last known public key of the section with `prefix`.
+    pub async fn section_key(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
+        self.stage.state.lock().await.section_key(prefix).copied()
+    }
+
     /// Returns the info about the section matches the name.
     pub async fn match_section(
         &self,
