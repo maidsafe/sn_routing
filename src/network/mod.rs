@@ -170,6 +170,14 @@ impl Network {
         self.keys.get_matching(name).map(|entry| &entry.value.1)
     }
 
+    /// Returns the latest known key for a section with `prefix`.
+    /// If this returns `None` that means the latest known key is the genesis key.
+    pub fn key_by_prefix(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
+        self.keys
+            .get_equal_or_ancestor(prefix)
+            .map(|entry| &entry.value.1)
+    }
+
     /// Returns the elders_info and the latest known key for the prefix that matches `name`,
     /// excluding self section.
     pub fn section_by_name(&self, name: &XorName) -> (Option<bls::PublicKey>, Option<EldersInfo>) {

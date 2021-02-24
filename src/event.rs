@@ -74,6 +74,9 @@ pub enum Event {
         prefix: Prefix,
         /// The BLS public key of our section.
         key: bls::PublicKey,
+        /// The BLS public key of the sibling section, if this event is fired during a split.
+        /// Otherwise `None`.
+        sibling_key: Option<bls::PublicKey>,
         /// The set of elders of our section.
         elders: BTreeSet<XorName>,
         /// Promoted, demoted or no change?
@@ -137,12 +140,14 @@ impl Debug for Event {
             Self::EldersChanged {
                 prefix,
                 key,
+                sibling_key,
                 elders,
                 self_status_change,
             } => formatter
                 .debug_struct("EldersChanged")
                 .field("prefix", prefix)
                 .field("key", key)
+                .field("sibling_key", sibling_key)
                 .field("elders", elders)
                 .field("self_status_change", self_status_change)
                 .finish(),

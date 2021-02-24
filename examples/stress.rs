@@ -303,6 +303,7 @@ impl Network {
                     key,
                     elders,
                     self_status_change,
+                    ..
                 } => {
                     if let Some(Node::Joined {
                         name,
