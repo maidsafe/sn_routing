@@ -1691,9 +1691,21 @@ impl Approved {
                 NodeElderChange::None
             };
 
+            let sibling_key = if new_prefix != old_prefix {
+                Some(
+                    *self
+                        .network
+                        .key_by_prefix(&new_prefix.sibling())
+                        .unwrap_or_else(|| self.section.chain().last_key()),
+                )
+            } else {
+                None
+            };
+
             self.send_event(Event::EldersChanged {
                 prefix: *self.section.prefix(),
                 key: *self.section.chain().last_key(),
+                sibling_key,
                 elders: self.section.elders_info().elders.keys().copied().collect(),
                 self_status_change,
             });
