@@ -169,6 +169,11 @@
 <span id="168">168</span>
 <span id="169">169</span>
 <span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -246,6 +251,9 @@
         <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
         <span class="doccomment">/// The BLS public key of our section.</span>
         <span class="ident">key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
+        <span class="doccomment">/// The BLS public key of the sibling section, if this event is fired during a split.</span>
+        <span class="doccomment">/// Otherwise `None`.</span>
+        <span class="ident">sibling_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="doccomment">/// The set of elders of our section.</span>
         <span class="ident">elders</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Promoted, demoted or no change?</span>
@@ -309,12 +317,14 @@
             <span class="self">Self</span>::<span class="ident">EldersChanged</span> {
                 <span class="ident">prefix</span>,
                 <span class="ident">key</span>,
+                <span class="ident">sibling_key</span>,
                 <span class="ident">elders</span>,
                 <span class="ident">self_status_change</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">formatter</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;EldersChanged&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;prefix&quot;</span>, <span class="ident">prefix</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;key&quot;</span>, <span class="ident">key</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;sibling_key&quot;</span>, <span class="ident">sibling_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders&quot;</span>, <span class="ident">elders</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;self_status_change&quot;</span>, <span class="ident">self_status_change</span>)
                 .<span class="ident">finish</span>(),

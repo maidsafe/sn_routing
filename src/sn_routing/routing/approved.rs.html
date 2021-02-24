@@ -2174,6 +2174,31 @@
 <span id="2173">2173</span>
 <span id="2174">2174</span>
 <span id="2175">2175</span>
+<span id="2176">2176</span>
+<span id="2177">2177</span>
+<span id="2178">2178</span>
+<span id="2179">2179</span>
+<span id="2180">2180</span>
+<span id="2181">2181</span>
+<span id="2182">2182</span>
+<span id="2183">2183</span>
+<span id="2184">2184</span>
+<span id="2185">2185</span>
+<span id="2186">2186</span>
+<span id="2187">2187</span>
+<span id="2188">2188</span>
+<span id="2189">2189</span>
+<span id="2190">2190</span>
+<span id="2191">2191</span>
+<span id="2192">2192</span>
+<span id="2193">2193</span>
+<span id="2194">2194</span>
+<span id="2195">2195</span>
+<span id="2196">2196</span>
+<span id="2197">2197</span>
+<span id="2198">2198</span>
+<span id="2199">2199</span>
+<span id="2200">2200</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2335,6 +2360,24 @@
             .<span class="ident">key_share</span>()<span class="question-mark">?</span>
             .<span class="ident">public_key_set</span>
             .<span class="ident">clone</span>())
+    }
+
+    <span class="doccomment">/// Returns the latest known public key of the section with `prefix`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">prefix</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) {
+            <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>())
+        } <span class="kw">else</span> {
+            <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">key_by_prefix</span>(<span class="ident">prefix</span>).<span class="ident">or_else</span>(<span class="op">|</span><span class="op">|</span> {
+                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_elder</span>() {
+                    <span class="comment">// We are elder - the first key is the genesis key</span>
+                    <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">first_key</span>())
+                } <span class="kw">else</span> {
+                    <span class="comment">// We are not elder - the chain might be truncated so the first key is not</span>
+                    <span class="comment">// necessarily the genesis key.</span>
+                    <span class="prelude-val">None</span>
+                }
+            })
+        }
     }
 
     <span class="doccomment">/// Returns our index in the current BLS group if this node is a member of one, or</span>
@@ -3855,6 +3898,12 @@
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>);
             }
 
+            <span class="kw">let</span> <span class="ident">sibling_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_prefix</span> <span class="op">!</span><span class="op">=</span> <span class="ident">old_prefix</span> {
+                <span class="self">self</span>.<span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="ident">new_prefix</span>.<span class="ident">sibling</span>()).<span class="ident">copied</span>()
+            } <span class="kw">else</span> {
+                <span class="prelude-val">None</span>
+            };
+
             <span class="kw">let</span> <span class="ident">self_status_change</span> <span class="op">=</span> <span class="kw">if</span> <span class="op">!</span><span class="ident">old_is_elder</span> <span class="op">&amp;&amp;</span> <span class="ident">new_is_elder</span> {
                 <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Promoted to elder&quot;</span>);
                 <span class="ident">NodeElderChange</span>::<span class="ident">Promoted</span>
@@ -3871,6 +3920,7 @@
             <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">EldersChanged</span> {
                 <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(),
                 <span class="ident">key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+                <span class="ident">sibling_key</span>,
                 <span class="ident">elders</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">copied</span>().<span class="ident">collect</span>(),
                 <span class="ident">self_status_change</span>,
             });
