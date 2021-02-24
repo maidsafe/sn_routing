@@ -670,17 +670,24 @@ impl Approved {
             Variant::UserMessage(content) => {
                 if msg.dst() == &DstLocation::AccumulatingNode(self.node().name()) {
                     if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
-                        match self.message_accumulator.add(
-                            &bincode::serialize(&msg.signable_view())?,
-                            proof_share.clone(),
-                        ) {
-                            Ok(_) => {
+                        let signed_bytes = bincode::serialize(&msg.signable_view())?;
+                        match self
+                            .message_accumulator
+                            .add(&signed_bytes, proof_share.clone())
+                        {
+                            Ok(proof) => {
                                 trace!("Successfully accumulated message: {:?}", msg);
-                                self.handle_user_message(
-                                    msg.src().src_location(),
-                                    *msg.dst(),
-                                    content.clone(),
-                                )
+                                let key = msg.proof_chain_last_key()?;
+                                if key.verify(&proof.signature, signed_bytes) {
+                                    self.handle_user_message(
+                                        msg.src().src_location(),
+                                        *msg.dst(),
+                                        content.clone(),
+                                    )
+                                } else {
+                                    trace!("Aggregated signature is invalid. Handling message {:?} skipped", msg);
+                                    Ok(vec![])
+                                }
                             }
                             Err(err) => {
                                 trace!("Error accumulating message at destination: {:?}", err);
@@ -2061,7 +2068,7 @@ impl Approved {
                         self.section_keys_provider.key_share()?,
                         dst,
                         variant,
-                        None,
+                        Some(self.section().create_proof_chain_for_our_info(None)),
                         None,
                     )?
                 } else {
