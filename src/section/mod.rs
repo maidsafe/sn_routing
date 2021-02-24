@@ -97,12 +97,7 @@ impl Section {
             return Err(Error::InvalidMessage);
         }
 
-        let prev_last_key = *self.chain.last_key();
         self.chain.merge(other.chain.clone())?;
-
-        if !self.chain.has_key_on_main_branch(&prev_last_key) {
-            warn!("fork resolved");
-        }
 
         if &other.elders_info.proof.public_key == self.chain.last_key() {
             self.elders_info = other.elders_info;
@@ -134,8 +129,6 @@ impl Section {
             return false;
         }
 
-        let prev_last_key = *self.chain.last_key();
-
         if let Err(error) = self.chain.insert(
             &new_key_proof.public_key,
             new_elders_info.proof.public_key,
@@ -146,10 +139,6 @@ impl Section {
                 new_elders_info.proof.public_key, new_key_proof.public_key, error,
             );
             return false;
-        }
-
-        if !self.chain.has_key_on_main_branch(&prev_last_key) {
-            warn!("fork resolved");
         }
 
         if &new_elders_info.proof.public_key == self.chain.last_key() {

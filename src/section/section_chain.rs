@@ -243,12 +243,68 @@ impl SectionChain {
         self.keys().any(|existing_key| existing_key == key)
     }
 
-    /// Returns whether the given key is on the main branch - that is, it is reachable from the
-    /// current last key by following the parent links.
-    pub fn has_key_on_main_branch(&self, key: &bls::PublicKey) -> bool {
-        self.index_of(key)
-            .map(|index| self.is_ancestor(index, self.tree.len()))
-            .unwrap_or(false)
+    /// Given a collection of keys that are already trusted, returns whether this chain is also
+    /// trusted. A chain is considered trusted only if at least on of the `trusted_keys` is on its
+    /// main branch.
+    ///
+    /// # Explanation
+    ///
+    /// Consider this chain that contains fork:
+    ///
+    /// ```ascii-art
+    /// A->B->C
+    ///    |
+    ///    +->D
+    /// ```
+    ///
+    /// Now if the only trusted key is `D`, then there is no way to prove the chain is trusted,
+    /// because this chain would be indistinguishable in terms of trust from any other chain with
+    /// the same general "shape", say:
+    ///
+    /// ```ascii-art
+    /// W->X->Y->Z
+    ///    |
+    ///    +->D
+    /// ```
+    ///
+    /// So an adversary is easily able to forge any such chain.
+    ///
+    /// When the trusted key is on the main branch, on the other hand:
+    ///
+    /// ```ascii-art
+    /// D->E->F
+    ///    |
+    ///    +->G
+    /// ```
+    ///
+    /// Then such chain is impossible to forge because the adversary would have to have access to
+    /// the secret key corresponding to `D` in order to validly sign `E`. Thus such chain can be
+    /// safely considered trusted.
+    pub fn check_trust<'a, I>(&self, trusted_keys: I) -> bool
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
+        let mut index = self.tree.len();
+
+        loop {
+            let (key, parent_index) = if index > 0 {
+                let block = &self.tree[index - 1];
+                (&block.key, Some(block.parent_index))
+            } else {
+                (&self.root, None)
+            };
+
+            if trusted_keys.contains(key) {
+                return true;
+            }
+
+            if let Some(next_index) = parent_index {
+                index = next_index;
+            } else {
+                return false;
+            }
+        }
     }
 
     /// Compare the two keys by their position in the chain. The key that is higher (closer to the
@@ -267,15 +323,6 @@ impl SectionChain {
     /// Returns the number of blocks in the chain. This is always >= 1.
     pub fn len(&self) -> usize {
         1 + self.tree.len()
-    }
-
-    /// Checks that the chain contains at least one key from `trusted_keys`.
-    pub fn check_trust<'a, I>(&self, trusted_keys: I) -> bool
-    where
-        I: IntoIterator<Item = &'a bls::PublicKey>,
-    {
-        let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
-        self.keys().any(|key| trusted_keys.contains(key))
     }
 
     fn insert_block(&mut self, new_block: Block) -> usize {
