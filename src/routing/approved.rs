@@ -1630,7 +1630,10 @@ impl Approved {
 
                 commands.extend(self.vote(Vote::OurElders(elders_info))?);
             }
-        } else if self.network.update_neighbour_info(elders_info) {
+        } else if self
+            .network
+            .update_neighbour_info(elders_info, None, self.section.chain())
+        {
             // Other section
             self.network.prune_neighbours(self.section.prefix());
         }

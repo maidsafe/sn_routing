@@ -18,3 +18,11 @@ pub(crate) use self::{
     vote::{Vote, VoteAccumulationError, VoteAccumulator},
 };
 pub(crate) use bls_signature_aggregator::{Proof, ProofShare, SignatureAggregator};
+use serde::Serialize;
+
+// Verify the integrity of `message` against `proof`.
+pub(crate) fn verify_proof<T: Serialize>(proof: &Proof, message: &T) -> bool {
+    bincode::serialize(message)
+        .map(|bytes| proof.verify(&bytes))
+        .unwrap_or(false)
+}

@@ -45,23 +45,23 @@ impl SplitBarrier {
         {
             if elders_info.value.prefix.matches(our_name) {
                 update(&mut self.our, current_section, current_network, |state| {
-                    state.update_elders(elders_info.clone(), key_proof)
+                    state.update_elders(elders_info.clone(), key_proof.clone())
                 });
                 update(
                     &mut self.sibling,
                     current_section,
                     current_network,
-                    |state| state.update_neighbour_info(elders_info),
+                    |state| state.update_sibling_info(elders_info, key_proof),
                 );
             } else {
                 update(
                     &mut self.sibling,
                     current_section,
                     current_network,
-                    |state| state.update_elders(elders_info.clone(), key_proof),
+                    |state| state.update_elders(elders_info.clone(), key_proof.clone()),
                 );
                 update(&mut self.our, current_section, current_network, |state| {
-                    state.update_neighbour_info(elders_info)
+                    state.update_sibling_info(elders_info, key_proof)
                 });
             }
         } else {
@@ -155,8 +155,11 @@ impl State {
         }
     }
 
-    fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
-        if self.network.update_neighbour_info(elders_info) {
+    fn update_sibling_info(&mut self, elders_info: Proven<EldersInfo>, key_proof: Proof) -> bool {
+        if self
+            .network
+            .update_neighbour_info(elders_info, Some(key_proof), self.section.chain())
+        {
             self.network.prune_neighbours(self.section.prefix());
             true
         } else {
