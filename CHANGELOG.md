@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.45.0](https://github.com/maidsafe/sn_routing/compare/v0.44.0...v0.45.0) (2021-02-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* added new field to the `Event::EldersChanged` variant.
+
+### Features
+
+* add sibling key to Event::EldersChanged ([afd33e3](https://github.com/maidsafe/sn_routing/commit/afd33e3607b6a467145042fffd9ff274dd5c89b4))
+* new API: Routing::section_key ([486ee61](https://github.com/maidsafe/sn_routing/commit/486ee61dfd77eaffcb2bd86c8c0eba6f470ec678))
+
 ## [0.44.0](https://github.com/maidsafe/sn_routing/compare/v0.43.4...v0.44.0) (2021-02-23)
 
 
