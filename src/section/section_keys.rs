@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 /// All the key material needed to sign or combine signature for our section key.
 #[derive(Debug)]
@@ -26,13 +26,17 @@ pub struct SectionKeysProvider {
     /// A cache for current and previous section BLS keys.
     cache: MiniKeyCache,
     /// The new keys to use when section update completes.
-    pending: Option<SectionKeyShare>,
+    // TODO: evict outdated keys.
+    // TODO: alternatively, store the pending keys in DkgVoter instead. That way the outdated ones
+    //       would get dropped when the DKG session itself gets dropped which we already have
+    //       implemented.
+    pending: HashMap<bls::PublicKey, SectionKeyShare>,
 }
 
 impl SectionKeysProvider {
     pub fn new(cache_size: u8, current: Option<SectionKeyShare>) -> Self {
         let mut provider = Self {
-            pending: None,
+            pending: HashMap::new(),
             cache: MiniKeyCache::with_capacity(cache_size as usize),
         };
         if let Some(share) = current {
@@ -60,16 +64,12 @@ impl SectionKeysProvider {
     }
 
     pub fn insert_dkg_outcome(&mut self, share: SectionKeyShare) {
-        self.pending = Some(share);
+        let public_key = share.public_key_set.public_key();
+        let _ = self.pending.insert(public_key, share);
     }
 
     pub fn finalise_dkg(&mut self, public_key: &bls::PublicKey) {
-        if let Some(share) = &self.pending {
-            if *public_key != share.public_key_set.public_key() {
-                return;
-            }
-        }
-        if let Some(share) = self.pending.take() {
+        if let Some(share) = self.pending.remove(public_key) {
             if let Some(evicted) = self.cache.add(public_key, share) {
                 trace!("evicted old key from cache: {:?}", evicted);
             }
