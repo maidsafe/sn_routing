@@ -241,16 +241,31 @@ impl Message {
                     .map(|(_, key)| key);
                 self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
             }
-            SrcAuthority::BlsShare { proof_share, .. } => {
-                if proof_share
+            SrcAuthority::BlsShare {
+                proof_share,
+                public_key,
+                ..
+            } => {
+                // Proof chain is required for accumulation at destination.
+                let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
+                    proof_chain
+                } else {
+                    return Err(Error::InvalidMessage);
+                };
+
+                if !proof_share
                     .public_key_set
                     .public_key_share(proof_share.index)
                     .verify(&proof_share.signature_share, &bytes)
                 {
-                    Ok(VerifyStatus::Full)
-                } else {
-                    Err(Error::FailedSignature)
+                    return Err(Error::FailedSignature);
                 }
+                let trusted_keys = trusted_keys
+                    .into_iter()
+                    .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
+                    .map(|(_, key)| key);
+
+                proof_chain.check_trust(trusted_keys).into()
             }
             SrcAuthority::Section { prefix, signature } => {
                 // Proof chain is required for section-src messages.
