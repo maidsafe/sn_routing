@@ -160,6 +160,24 @@ impl Approved {
             .clone())
     }
 
+    /// Returns the latest known public key of the section with `prefix`.
+    pub fn section_key(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
+        if prefix == self.section.prefix() || prefix.is_extension_of(self.section.prefix()) {
+            Some(self.section.chain().last_key())
+        } else {
+            self.network.key_by_prefix(prefix).or_else(|| {
+                if self.is_elder() {
+                    // We are elder - the first key is the genesis key
+                    Some(self.section.chain().first_key())
+                } else {
+                    // We are not elder - the chain might be truncated so the first key is not
+                    // necessarily the genesis key.
+                    None
+                }
+            })
+        }
+    }
+
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub fn our_index(&self) -> Result<usize> {
@@ -1678,6 +1696,12 @@ impl Approved {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
+            let sibling_key = if new_prefix != old_prefix {
+                self.section_key(&new_prefix.sibling()).copied()
+            } else {
+                None
+            };
+
             let self_status_change = if !old_is_elder && new_is_elder {
                 info!("Promoted to elder");
                 NodeElderChange::Promoted
@@ -1689,17 +1713,6 @@ impl Approved {
                 NodeElderChange::Demoted
             } else {
                 NodeElderChange::None
-            };
-
-            let sibling_key = if new_prefix != old_prefix {
-                Some(
-                    *self
-                        .network
-                        .key_by_prefix(&new_prefix.sibling())
-                        .unwrap_or_else(|| self.section.chain().last_key()),
-                )
-            } else {
-                None
             };
 
             self.send_event(Event::EldersChanged {
