@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.46.0](https://github.com/maidsafe/sn_routing/compare/v0.45.1...v0.46.0) (2021-02-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **accumulation:** this uses a new version of sn_messaging with a breaking
+change
+
+### Features
+
+* **accumulation:** add support for accumlation at dest node ([f892838](https://github.com/maidsafe/sn_routing/commit/f892838c994f243e6be17b5276b1c80ff10f5c3a))
+
+
+### Bug Fixes
+
+* **dst-accumulation:** verify aggregated signature with proof chain ([bd99595](https://github.com/maidsafe/sn_routing/commit/bd99595379307f0f6b19bccaac0b3b8e145e0fcf))
+
 ### [0.45.1](https://github.com/maidsafe/sn_routing/compare/v0.45.0...v0.45.1) (2021-02-24)
 
 ## [0.45.0](https://github.com/maidsafe/sn_routing/compare/v0.44.0...v0.45.0) (2021-02-24)
