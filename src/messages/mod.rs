@@ -78,11 +78,7 @@ impl Message {
                 }
             }
             SrcAuthority::BlsShare { proof_share, .. } => {
-                if !proof_share
-                    .public_key_set
-                    .public_key_share(proof_share.index)
-                    .verify(&proof_share.signature_share, &signed_bytes)
-                {
+                if !proof_share.verify(&signed_bytes) {
                     error!("Failed signature: {:?}", msg);
                     return Err(CreateError::FailedSignature);
                 }
@@ -133,8 +129,7 @@ impl Message {
         Ok(msg)
     }
 
-    /// Creates a message signed using a BLS KeyShare for
-    /// destination accumulation
+    /// Creates a message signed using a BLS KeyShare for destination accumulation
     pub(crate) fn for_dst_accumulation(
         node: &Node,
         key_share: &SectionKeyShare,
@@ -253,11 +248,7 @@ impl Message {
                     return Err(Error::InvalidMessage);
                 };
 
-                if !proof_share
-                    .public_key_set
-                    .public_key_share(proof_share.index)
-                    .verify(&proof_share.signature_share, &bytes)
-                {
+                if !proof_share.verify(&bytes) {
                     return Err(Error::FailedSignature);
                 }
                 let trusted_keys = trusted_keys

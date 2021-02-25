@@ -34,8 +34,7 @@ pub enum SrcAuthority {
         /// ed-25519 signature of the message corresponding to the public key of the source peer.
         signature: SimpleSignature,
     },
-    /// Authority of a single peer that used
-    /// it's BLS Keyshare to sign the message.
+    /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
     BlsShare {
         /// Public key of the source peer.
         public_key: PublicKey,
@@ -91,7 +90,7 @@ impl SrcAuthority {
     pub(crate) fn as_section_prefix(&self) -> Result<&Prefix> {
         match self {
             Self::Section { prefix, .. } => Ok(prefix),
-            _ => Err(Error::InvalidSrcLocation),
+            Self::Node { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 }

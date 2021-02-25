@@ -8,7 +8,6 @@
 
 use super::{
     enduser_registry::{EndUserRegistry, SocketId},
-    message_accumulator::MessageAccumulator,
     Command, SplitBarrier,
 };
 use crate::{
@@ -38,6 +37,7 @@ use crate::{
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
+use bls_signature_aggregator::{Error as AggregatorError, SignatureAggregator};
 use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
@@ -66,7 +66,7 @@ pub(crate) struct Approved {
     section: Section,
     network: Network,
     section_keys_provider: SectionKeysProvider,
-    message_accumulator: MessageAccumulator,
+    message_accumulator: SignatureAggregator,
     vote_accumulator: VoteAccumulator,
     split_barrier: SplitBarrier,
     // Voter for DKG
@@ -667,40 +667,7 @@ impl Approved {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
             }
-            Variant::UserMessage(content) => {
-                if msg.dst() == &DstLocation::AccumulatingNode(self.node().name()) {
-                    if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
-                        let signed_bytes = bincode::serialize(&msg.signable_view())?;
-                        match self
-                            .message_accumulator
-                            .add(&signed_bytes, proof_share.clone())
-                        {
-                            Ok(proof) => {
-                                trace!("Successfully accumulated message: {:?}", msg);
-                                let key = msg.proof_chain_last_key()?;
-                                if key.verify(&proof.signature, signed_bytes) {
-                                    self.handle_user_message(
-                                        msg.src().src_location(),
-                                        *msg.dst(),
-                                        content.clone(),
-                                    )
-                                } else {
-                                    trace!("Aggregated signature is invalid. Handling message {:?} skipped", msg);
-                                    Ok(vec![])
-                                }
-                            }
-                            Err(err) => {
-                                trace!("Error accumulating message at destination: {:?}", err);
-                                Ok(vec![])
-                            }
-                        }
-                    } else {
-                        Err(Error::InvalidSrcLocation)
-                    }
-                } else {
-                    self.handle_user_message(msg.src().src_location(), *msg.dst(), content.clone())
-                }
-            }
+            Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(self
@@ -1013,12 +980,9 @@ impl Approved {
         Ok(commands)
     }
 
-    fn handle_user_message(
-        &self,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    ) -> Result<Vec<Command>> {
+    fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
+        let src = msg.src().clone();
+        let dst = *msg.dst();
         if let DstLocation::EndUser(end_user) = &dst {
             let recipients = match end_user {
                 EndUser::AllClients(public_key) => {
@@ -1041,8 +1005,45 @@ impl Approved {
                 message: MessageType::ClientMessage(ClientMessage::from(content)?),
             }]);
         }
+        if let DstLocation::AccumulatingNode(_name) = &dst {
+            if let SrcAuthority::BlsShare { proof_share, .. } = &src {
+                let signed_bytes = bincode::serialize(&msg.signable_view())?;
+                match self
+                    .message_accumulator
+                    .add(&signed_bytes, proof_share.clone())
+                {
+                    Ok(proof) => {
+                        trace!("Successfully aggregated signatures for message: {:?}", msg);
+                        let key = msg.proof_chain_last_key()?;
+                        if key.verify(&proof.signature, signed_bytes) {
+                            self.send_event(Event::MessageReceived {
+                                content,
+                                src: src.src_location(),
+                                dst,
+                            });
+                        } else {
+                            trace!(
+                                "Aggregated signature is invalid. Handling message {:?} skipped",
+                                msg
+                            );
+                        }
+                    }
+                    Err(AggregatorError::NotEnoughShares) => {}
+                    Err(err) => {
+                        trace!("Error accumulating message at destination: {:?}", err);
+                    }
+                }
+                return Ok(vec![]);
+            } else {
+                return Err(Error::InvalidSrcLocation);
+            }
+        }
 
-        self.send_event(Event::MessageReceived { content, src, dst });
+        self.send_event(Event::MessageReceived {
+            content,
+            src: src.src_location(),
+            dst,
+        });
         Ok(vec![])
     }
 
