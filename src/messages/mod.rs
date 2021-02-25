@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use sn_messaging::DstLocation;
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
-use xor_name::Prefix;
+use xor_name::{Prefix, XorName};
 
 /// Message sent over the network.
 #[derive(Clone, Eq, Serialize, Deserialize)]
@@ -133,11 +133,13 @@ impl Message {
     pub(crate) fn for_dst_accumulation(
         node: &Node,
         key_share: &SectionKeyShare,
-        dst: DstLocation,
-        variant: Variant,
-        proof_chain: Option<SectionProofChain>,
+        dst_node_name: XorName,
+        user_msg: Bytes,
+        proof_chain: SectionProofChain,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, CreateError> {
+        let dst = DstLocation::AccumulatingNode(dst_node_name);
+        let variant = Variant::UserMessage(user_msg);
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
@@ -155,7 +157,7 @@ impl Message {
             age: node.age,
         };
 
-        Self::new_signed(src, dst, variant, proof_chain, dst_key)
+        Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)
     }
 
     pub(crate) fn signable_view(&self) -> SignableView {

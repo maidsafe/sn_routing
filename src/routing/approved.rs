@@ -2058,21 +2058,20 @@ impl Approved {
             return Err(Error::InvalidSrcLocation);
         }
 
-        let variant = Variant::UserMessage(content);
-
         match src {
             SrcLocation::Node(_) => {
                 // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg = if matches!(dst, DstLocation::AccumulatingNode(_)) {
+                let msg = if let DstLocation::AccumulatingNode(name) = dst {
                     Message::for_dst_accumulation(
                         &self.node,
                         self.section_keys_provider.key_share()?,
-                        dst,
-                        variant,
-                        Some(self.section().create_proof_chain_for_our_info(None)),
+                        name,
+                        content,
+                        self.section().create_proof_chain_for_our_info(None),
                         None,
                     )?
                 } else {
+                    let variant = Variant::UserMessage(content);
                     Message::single_src(&self.node, dst, variant, None, None)?
                 };
                 let mut commands = vec![];
@@ -2089,6 +2088,7 @@ impl Approved {
                 Ok(commands)
             }
             SrcLocation::Section(_) => {
+                let variant = Variant::UserMessage(content);
                 let vote = self.create_send_message_vote(dst, variant, None)?;
                 let recipients = delivery_group::signature_targets(
                     &dst,
