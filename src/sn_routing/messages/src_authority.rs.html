@@ -79,6 +79,22 @@
 <span id="78">78</span>
 <span id="79">79</span>
 <span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -93,6 +109,7 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
 };
+<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">ProofShare</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">SrcLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
@@ -101,8 +118,9 @@
 <span class="doccomment">/// Source authority of a message.</span>
 <span class="doccomment">/// Src of message and authority to send it. Authority is validated by the signature.</span>
 <span class="doccomment">/// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates</span>
-<span class="doccomment">/// agains the pub key and we know th epub key then we are good. If the proof is not recodnised we</span>
-<span class="doccomment">/// ask for a longer chain that can be recodnised). Therefor we don&#39;t need to sign this field.</span>
+<span class="doccomment">/// agains the pub key and we know th epub key then we are good. If the proof is not recognised we</span>
+<span class="doccomment">/// ask for a longer chain that can be recognised). Therefore we don&#39;t need to sign this field.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">SrcAuthority</span> {
     <span class="doccomment">/// Authority of a single peer.</span>
@@ -113,6 +131,15 @@
         <span class="ident">age</span>: <span class="ident">u8</span>,
         <span class="doccomment">/// ed-25519 signature of the message corresponding to the public key of the source peer.</span>
         <span class="ident">signature</span>: <span class="ident">SimpleSignature</span>,
+    },
+    <span class="doccomment">/// Authority of a single peer that uses it&#39;s BLS Keyshare to sign the message.</span>
+    <span class="ident">BlsShare</span> {
+        <span class="doccomment">/// Public key of the source peer.</span>
+        <span class="ident">public_key</span>: <span class="ident">PublicKey</span>,
+        <span class="doccomment">/// Age of the source peer.</span>
+        <span class="ident">age</span>: <span class="ident">u8</span>,
+        <span class="doccomment">/// Proof Share signed by the peer&#39;s BLS KeyShare</span>
+        <span class="ident">proof_share</span>: <span class="ident">ProofShare</span>,
     },
     <span class="doccomment">/// Authority of a whole section.</span>
     <span class="ident">Section</span> {
@@ -127,6 +154,7 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">src_location</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span> {
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">Node</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
+            <span class="self">Self</span>::<span class="ident">BlsShare</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
             <span class="self">Self</span>::<span class="ident">Section</span> { <span class="ident">prefix</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="kw-2">*</span><span class="ident">prefix</span>),
         }
     }
@@ -138,6 +166,7 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">to_node_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">Node</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
+            <span class="self">Self</span>::<span class="ident">BlsShare</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
             <span class="self">Self</span>::<span class="ident">Section</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>),
         }
     }
@@ -148,6 +177,9 @@
             <span class="self">Self</span>::<span class="ident">Section</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>),
             <span class="self">Self</span>::<span class="ident">Node</span> {
                 <span class="ident">public_key</span>, <span class="ident">age</span>, ..
+            }
+            <span class="op">|</span> <span class="self">Self</span>::<span class="ident">BlsShare</span> {
+                <span class="ident">public_key</span>, <span class="ident">age</span>, ..
             } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">Peer</span>::<span class="ident">new</span>(<span class="ident">name</span>(<span class="ident">public_key</span>), <span class="ident">addr</span>, <span class="kw-2">*</span><span class="ident">age</span>)),
         }
     }
@@ -156,7 +188,7 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">as_section_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Prefix</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">Section</span> { <span class="ident">prefix</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">prefix</span>),
-            <span class="self">Self</span>::<span class="ident">Node</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>),
+            <span class="self">Self</span>::<span class="ident">Node</span> { .. } <span class="op">|</span> <span class="self">Self</span>::<span class="ident">BlsShare</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>),
         }
     }
 }
