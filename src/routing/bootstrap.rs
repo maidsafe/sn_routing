@@ -145,7 +145,7 @@ impl<'a> State<'a> {
             self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
-            let (response, sender) = self.receive_get_section_response().await?;
+            let (response, sender) = self.receive_get_section_response(relocate_details).await?;
 
             match response {
                 GetSectionResponse::Success(SectionInfo {
@@ -188,10 +188,9 @@ impl<'a> State<'a> {
     ) -> Result<()> {
         debug!("{} Sending GetSectionQuery to {:?}", self.node, recipients);
 
-        let destination = match relocate_details {
-            Some(details) => *details.destination(),
-            None => self.node.name(),
-        };
+        let destination = relocate_details
+            .map(|details| *details.destination())
+            .unwrap_or_else(|| self.node.name());
 
         let message = SectionInfoMsg::GetSectionQuery(destination);
 
@@ -203,7 +202,14 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
+    async fn receive_get_section_response(
+        &mut self,
+        relocate_details: Option<&SignedRelocateDetails>,
+    ) -> Result<(GetSectionResponse, SocketAddr)> {
+        let destination = relocate_details
+            .map(|details| *details.destination())
+            .unwrap_or_else(|| self.node.name());
+
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
                 MessageType::SectionInfo(SectionInfoMsg::GetSectionResponse(response)) => {
@@ -213,7 +219,7 @@ impl<'a> State<'a> {
                             continue;
                         }
                         GetSectionResponse::Success(SectionInfo { prefix, .. })
-                            if !prefix.matches(&self.node.name()) =>
+                            if !prefix.matches(&destination) =>
                         {
                             error!("Invalid GetSectionResponse::Success: bad prefix");
                             continue;
