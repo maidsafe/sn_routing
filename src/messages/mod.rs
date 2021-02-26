@@ -25,7 +25,7 @@ use crate::{
 use bls_signature_aggregator::ProofShare;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use sn_messaging::DstLocation;
+use sn_messaging::{Aggregation, DstLocation};
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
 use xor_name::{Prefix, XorName};
@@ -40,6 +40,8 @@ pub(crate) struct Message {
     src: SrcAuthority,
     /// Destination location.
     dst: DstLocation,
+    ///
+    aggregation: Aggregation,
     /// The body of the message.
     variant: Variant,
     /// Proof chain to verify the message trust. Does not need to be signed.
@@ -116,6 +118,7 @@ impl Message {
         let mut msg = Message {
             dst,
             src,
+            aggregation: Aggregation::None,
             proof_chain,
             variant,
             dst_key,
@@ -133,12 +136,12 @@ impl Message {
     pub(crate) fn for_dst_accumulation(
         node: &Node,
         key_share: &SectionKeyShare,
-        dst_node_name: XorName,
+        dst: DstLocation,
         user_msg: Bytes,
         proof_chain: SectionProofChain,
         dst_key: Option<bls::PublicKey>,
+        src_section: XorName,
     ) -> Result<Self, CreateError> {
-        let dst = DstLocation::AccumulatingNode(dst_node_name);
         let variant = Variant::UserMessage(user_msg);
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -152,6 +155,7 @@ impl Message {
             signature_share,
         };
         let src = SrcAuthority::BlsShare {
+            src_section,
             proof_share,
             public_key: node.keypair.public,
             age: node.age,
@@ -304,6 +308,18 @@ impl Message {
     /// Getter
     pub fn hash(&self) -> &MessageHash {
         &self.hash
+    }
+
+    /// Elders will aggregate a group sig before
+    /// they all all send one copy of it each to dst.
+    pub fn aggregate_at_src(&self) -> bool {
+        matches!(self.src, SrcAuthority::Section { .. })
+    }
+
+    /// Elders will send their signed message, which
+    /// recipients aggregate.
+    pub fn aggregate_at_dst(&self) -> bool {
+        matches!(self.src, SrcAuthority::BlsShare { .. })
     }
 
     /// Returns the attached proof chain, if any.

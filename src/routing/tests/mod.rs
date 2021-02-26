@@ -32,6 +32,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
 use sn_messaging::{
+    location::{Aggregation, Itinerary},
     node::NodeMessage,
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
     DstLocation, MessageType, SrcLocation,
@@ -1458,8 +1459,11 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
 
     let commands = stage
         .handle_command(Command::SendUserMessage {
-            src,
-            dst,
+            itry: Itinerary {
+                src,
+                dst,
+                aggregation: Aggregation::None,
+            },
             content: content.clone(),
         })
         .await?;

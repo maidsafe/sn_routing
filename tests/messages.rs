@@ -14,6 +14,7 @@ use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::{
     client::{Message, Query, TransferQuery},
+    location::{Aggregation, Itinerary},
     DstLocation, MessageId, SrcLocation, WireMsg,
 };
 use sn_routing::{Config, Error, Event, NodeElderChange};
@@ -75,8 +76,11 @@ async fn test_messages_client_node() -> Result<()> {
                 Event::ClientMessageReceived { msg, user } => {
                     assert_eq!(*msg, query_clone.clone());
                     node.send_message(
-                        SrcLocation::Node(node.name().await),
-                        DstLocation::EndUser(user),
+                        Itinerary {
+                            src: SrcLocation::Node(node.name().await),
+                            dst: DstLocation::EndUser(user),
+                            aggregation: Aggregation::None,
+                        },
                         query_clone.clone().serialize()?,
                     )
                     .await?;
@@ -149,13 +153,13 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     println!("sending msg..");
 
-    node2
-        .send_message(
-            SrcLocation::Node(node2_name),
-            DstLocation::Node(node1_name),
-            Bytes::from_static(msg),
-        )
-        .await?;
+    let itry = Itinerary {
+        src: SrcLocation::Node(node2_name),
+        dst: DstLocation::Node(node1_name),
+        aggregation: Aggregation::None,
+    };
+
+    node2.send_message(itry, Bytes::from_static(msg)).await?;
 
     println!("msg sent");
 
@@ -164,13 +168,15 @@ async fn test_messages_between_nodes() -> Result<()> {
     println!("Got dst: {:?} (expecting: {}", dst.name(), node2_name);
     println!("sending response from {:?}..", node1_name);
 
+    let itry = Itinerary {
+        src: SrcLocation::Node(node1_name),
+        dst,
+        aggregation: Aggregation::None,
+    };
+
     // send response from node1 to node2
     node1
-        .send_message(
-            SrcLocation::Node(node1_name),
-            dst,
-            Bytes::from_static(response),
-        )
+        .send_message(itry, Bytes::from_static(response))
         .await?;
 
     println!("checking response received..");

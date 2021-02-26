@@ -49,7 +49,7 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    DstLocation, EndUser, MessageType, SrcLocation,
+    DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
@@ -749,9 +749,7 @@ impl Approved {
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
     fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
-        self.is_elder()
-            || dst == &DstLocation::Node(self.node.name())
-            || dst == &DstLocation::AccumulatingNode(self.node.name())
+        self.is_elder() || dst == &DstLocation::Node(self.node.name())
     }
 
     // Decide how to handle a `Vote` message.
@@ -815,15 +813,14 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Command> {
-        let src = msg.src().src_location();
-        let src_name = match src {
-            SrcLocation::Node(name) => name,
-            SrcLocation::Section(prefix) => prefix.name(),
-            SrcLocation::EndUser(_) => return Err(Error::InvalidSrcLocation),
+        let src_name = match msg.src() {
+            SrcAuthority::Node { public_key, .. } => crypto::name(public_key),
+            SrcAuthority::BlsShare { public_key, .. } => crypto::name(public_key),
+            SrcAuthority::Section { prefix, .. } => prefix.name(),
         };
 
         let bounce_dst_key = *self.section_key_by_name(&src_name);
-        let bounce_dst = if src.is_section() {
+        let bounce_dst = if msg.aggregate_at_src() {
             DstLocation::Section(src_name)
         } else {
             DstLocation::Node(src_name)
@@ -1005,8 +1002,16 @@ impl Approved {
                 message: MessageType::ClientMessage(ClientMessage::from(content)?),
             }]);
         }
-        if let DstLocation::AccumulatingNode(_name) = &dst {
-            if let SrcAuthority::BlsShare { proof_share, .. } = &src {
+        if msg.aggregate_at_dst() {
+            if !matches!(dst, DstLocation::Node(_)) {
+                return Err(Error::InvalidDstLocation);
+            }
+            if let SrcAuthority::BlsShare {
+                proof_share,
+                src_section,
+                ..
+            } = &src
+            {
                 let signed_bytes = bincode::serialize(&msg.signable_view())?;
                 match self
                     .message_accumulator
@@ -1018,7 +1023,7 @@ impl Approved {
                         if key.verify(&proof.signature, signed_bytes) {
                             self.send_event(Event::MessageReceived {
                                 content,
-                                src: src.src_location(),
+                                src: SrcLocation::Section(*src_section),
                                 dst,
                             });
                         } else {
@@ -2031,73 +2036,62 @@ impl Approved {
         Ok(commands)
     }
 
-    pub fn send_user_message(
-        &mut self,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    ) -> Result<Vec<Command>> {
-        if !src.contains(&self.node.name()) {
+    pub fn send_user_message(&mut self, itry: Itinerary, content: Bytes) -> Result<Vec<Command>> {
+        let are_we_src =
+            matches!(itry.src, SrcLocation::Node(_)) && itry.src.name() == self.node.name();
+        if !are_we_src {
             error!(
-                "Not sending user message {:?} -> {:?}: not part of the source location",
-                src, dst
+                "Not sending user message {:?} -> {:?}: we are not the source location",
+                itry.src, itry.dst
             );
             return Err(Error::InvalidSrcLocation);
         }
-
-        if matches!(dst, DstLocation::Direct) {
+        if matches!(itry.src, SrcLocation::EndUser(_)) {
+            return Err(Error::InvalidSrcLocation);
+        }
+        if matches!(itry.dst, DstLocation::Direct) {
             error!(
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
-                src, dst
+                itry.src, itry.dst
             );
             return Err(Error::InvalidDstLocation);
         }
 
-        if matches!(dst, DstLocation::AccumulatingNode(_)) && !matches!(src, SrcLocation::Node(_)) {
-            error!("Not sending user message {:?} -> {:?}: src should be a single node for dst accumulation", src, dst);
-            return Err(Error::InvalidSrcLocation);
+        // If the source is a single node, we don't even need to vote, so let's cut this short.
+        let msg = if itry.aggregate_at_dst() {
+            Message::for_dst_accumulation(
+                &self.node,
+                self.section_keys_provider.key_share()?,
+                itry.dst,
+                content,
+                self.section().create_proof_chain_for_our_info(None),
+                None,
+                self.section().prefix().name(),
+            )?
+        } else if itry.aggregate_at_src() {
+            let variant = Variant::UserMessage(content);
+            let vote = self.create_send_message_vote(itry.dst, variant, None)?;
+            let recipients = delivery_group::signature_targets(
+                &itry.dst,
+                self.section.elders_info().peers().copied(),
+            );
+            return self.send_vote(&recipients, vote);
+        } else {
+            let variant = Variant::UserMessage(content);
+            Message::single_src(&self.node, itry.dst, variant, None, None)?
+        };
+        let mut commands = vec![];
+
+        if itry.dst.contains(&self.node.name(), self.section.prefix()) {
+            commands.push(Command::HandleMessage {
+                sender: Some(self.node.addr),
+                message: msg.clone(),
+            });
         }
 
-        match src {
-            SrcLocation::Node(_) => {
-                // If the source is a single node, we don't even need to vote, so let's cut this short.
-                let msg = if let DstLocation::AccumulatingNode(name) = dst {
-                    Message::for_dst_accumulation(
-                        &self.node,
-                        self.section_keys_provider.key_share()?,
-                        name,
-                        content,
-                        self.section().create_proof_chain_for_our_info(None),
-                        None,
-                    )?
-                } else {
-                    let variant = Variant::UserMessage(content);
-                    Message::single_src(&self.node, dst, variant, None, None)?
-                };
-                let mut commands = vec![];
+        commands.extend(self.relay_message(&msg)?);
 
-                if dst.contains(&self.node.name(), self.section.prefix()) {
-                    commands.push(Command::HandleMessage {
-                        sender: Some(self.node.addr),
-                        message: msg.clone(),
-                    });
-                }
-
-                commands.extend(self.relay_message(&msg)?);
-
-                Ok(commands)
-            }
-            SrcLocation::Section(_) => {
-                let variant = Variant::UserMessage(content);
-                let vote = self.create_send_message_vote(dst, variant, None)?;
-                let recipients = delivery_group::signature_targets(
-                    &dst,
-                    self.section.elders_info().peers().copied(),
-                );
-                self.send_vote(&recipients, vote)
-            }
-            SrcLocation::EndUser(_) => Err(Error::InvalidSrcLocation),
-        }
+        Ok(commands)
     }
 
     fn create_send_message_vote(
