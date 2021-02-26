@@ -16,8 +16,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, DstLocation, MessageType,
-    SrcLocation,
+    node::NodeMessage, section_info::Message as SectionInfoMsg, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -71,11 +70,7 @@ pub(crate) enum Command {
         message: MessageType,
     },
     /// Send `UserMessage` with the given source and destination.
-    SendUserMessage {
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Bytes,
-    },
+    SendUserMessage { itry: Itinerary, content: Bytes },
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
     /// command is raised. The token is used to identify the timeout.
     ScheduleTimeout { duration: Duration, token: u64 },
@@ -167,10 +162,9 @@ impl Debug for Command {
                 .field("delivery_group_size", delivery_group_size)
                 .field("message", message)
                 .finish(),
-            Self::SendUserMessage { src, dst, content } => f
+            Self::SendUserMessage { itry, content } => f
                 .debug_struct("SendUserMessage")
-                .field("src", src)
-                .field("dst", dst)
+                .field("itry", itry)
                 .field("content", &format_args!("{:10}", HexFmt(content)))
                 .finish(),
             Self::ScheduleTimeout { duration, token } => f
