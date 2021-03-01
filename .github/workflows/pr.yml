@@ -5,7 +5,7 @@
 
 name: PR
 
-on: pull_request
+on: pull_request_target
 
 env:
   # Run all cargo commands with --verbose.
