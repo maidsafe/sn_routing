@@ -1450,6 +1450,11 @@ impl Approved {
             return Ok(commands);
         }
 
+        // Do not carry out relocation in genesis section.
+        if self.section.prefix().is_empty() {
+            return Ok(commands);
+        }
+        
         let relocations =
             relocation::actions(&self.section, &self.network, churn_name, churn_signature);
 
