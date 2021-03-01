@@ -88,7 +88,7 @@ impl Section {
     /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
         if !other.elders_info.self_verify() {
-            error!("can't merge sections: other elders_info failed verification");
+            error!("can't merge sections: other elders_info failed self-verification");
             return Err(Error::InvalidMessage);
         }
         if &other.elders_info.proof.public_key != other.chain.last_key() {
