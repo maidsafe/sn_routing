@@ -132,7 +132,7 @@ impl Debug for Command {
             Self::HandleVote { vote, proof_share } => f
                 .debug_struct("HandleVote")
                 .field("vote", vote)
-                .field("proof_share.index", &proof_share.index)
+                .field("proof_share", &proof_share)
                 .finish(),
             Self::HandleConsensus { vote, proof } => f
                 .debug_struct("HandleConsensus")

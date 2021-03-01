@@ -132,15 +132,6 @@ pub(crate) enum VoteAccumulationError {
     Serialization(#[from] bincode::Error),
 }
 
-#[derive(Debug)]
-struct SignableWrapper(Vote);
-
-impl Serialize for SignableWrapper {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        SignableView(&self.0).serialize(serializer)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

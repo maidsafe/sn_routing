@@ -477,7 +477,7 @@ impl Approved {
     // Send `vote` to `recipients`.
     fn send_vote(&self, recipients: &[Peer], vote: Vote) -> Result<Vec<Command>> {
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
-            error!("Can't vote for {:?}: {}", vote, err);
+            trace!("Can't vote for {:?}: {}", vote, err);
             err
         })?;
         self.send_vote_with(recipients, vote, key_share)
@@ -490,9 +490,9 @@ impl Approved {
         key_share: &SectionKeyShare,
     ) -> Result<Vec<Command>> {
         trace!(
-            "Vote for {:?} (public_key: {:?}, voters: {:?})",
+            "Vote for {:?}, key_share: {:?}, voters: {:?}",
             vote,
-            key_share.public_key_set.public_key(),
+            key_share,
             recipients,
         );
 
