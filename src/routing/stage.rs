@@ -130,14 +130,11 @@ impl Stage {
                 .lock()
                 .await
                 .handle_dkg_outcome(elders_info, outcome),
-            Command::HandleDkgFailure {
-                elders_info,
-                proofs,
-            } => self
+            Command::HandleDkgFailure(proofs) => self
                 .state
                 .lock()
                 .await
-                .handle_dkg_failure(elders_info, proofs)
+                .handle_dkg_failure(proofs)
                 .map(|command| vec![command]),
             Command::SendMessage {
                 recipients,

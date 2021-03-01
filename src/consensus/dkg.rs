@@ -36,14 +36,17 @@ const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 const BACKLOG_CAPACITY: usize = 100;
 
 /// Unique identified of a DKG session.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub struct DkgKey(Digest256);
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct DkgKey {
+    hash: Digest256,
+    generation: u64,
+}
 
 impl DkgKey {
-    pub fn new(elders_info: &EldersInfo) -> Self {
+    pub fn new(elders_info: &EldersInfo, generation: u64) -> Self {
         // Calculate the hash without involving serialization to avoid having to return `Result`.
         let mut hasher = Sha3::v256();
-        let mut output = Digest256::default();
+        let mut hash = Digest256::default();
 
         for peer in elders_info.elders.values() {
             hasher.update(&peer.name().0);
@@ -52,15 +55,15 @@ impl DkgKey {
 
         hasher.update(&elders_info.prefix.name().0);
         hasher.update(&elders_info.prefix.bit_count().to_le_bytes());
-        hasher.finalize(&mut output);
+        hasher.finalize(&mut hash);
 
-        Self(output)
+        Self { hash, generation }
     }
 }
 
 impl Debug for DkgKey {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "DkgKey({:10})", HexFmt(&self.0))
+        write!(f, "DkgKey({:10}/{})", HexFmt(&self.hash), self.generation)
     }
 }
 
@@ -105,13 +108,10 @@ impl DkgVoter {
         keypair: &Keypair,
         dkg_key: DkgKey,
         elders_info: EldersInfo,
-        key_index: u64,
     ) -> Vec<DkgCommand> {
-        if let Some(session) = self.sessions.get(&dkg_key) {
-            if !session.complete && session.key_index >= key_index {
-                trace!("DKG for {} already in progress", elders_info);
-                return vec![];
-            }
+        if self.sessions.contains_key(&dkg_key) {
+            trace!("DKG for {} already in progress", elders_info);
+            return vec![];
         }
 
         let name = crypto::name(&keypair.public);
@@ -154,7 +154,6 @@ impl DkgVoter {
                 let mut session = Session {
                     key_gen,
                     elders_info,
-                    key_index,
                     participant_index,
                     timer_token: 0,
                     failures: Default::default(),
@@ -172,7 +171,7 @@ impl DkgVoter {
 
                 let _ = self.sessions.insert(dkg_key, session);
                 self.sessions
-                    .retain(|_, session| session.key_index >= key_index);
+                    .retain(|old_dkg_key, _| old_dkg_key.generation >= dkg_key.generation);
 
                 commands
             }
@@ -226,9 +225,6 @@ impl DkgVoter {
 // Data for a DKG participant.
 struct Session {
     elders_info: EldersInfo,
-    // Section chain index of the key to be generated.
-    key_index: u64,
-    // Our participant index.
     participant_index: usize,
     key_gen: KeyGen,
     timer_token: u64,
@@ -411,10 +407,9 @@ impl Session {
         if self.failures.has_agreement(&self.elders_info) {
             self.complete = true;
 
-            Some(DkgCommand::HandleFailureAgreement {
-                elders_info: self.elders_info.clone(),
-                proofs: mem::take(&mut self.failures),
-            })
+            Some(DkgCommand::HandleFailureAgreement(mem::take(
+                &mut self.failures,
+            )))
         } else {
             None
         }
@@ -474,8 +469,8 @@ impl DkgFailureProofSet {
         self.0.len() >= majority(elders_info.elders.len())
     }
 
-    pub fn verify(&self, elders_info: &EldersInfo) -> bool {
-        let hash = failure_proof_hash(&DkgKey::new(elders_info));
+    pub fn verify(&self, elders_info: &EldersInfo, generation: u64) -> bool {
+        let hash = failure_proof_hash(&DkgKey::new(elders_info, generation));
         let votes = self
             .0
             .iter()
@@ -494,17 +489,13 @@ impl DkgFailureProofSet {
 // Create a value whose signature serves as the proof that a failure of a DKG session with the given
 // `dkg_key` was observed.
 fn failure_proof_hash(dkg_key: &DkgKey) -> Digest256 {
-    // Scramble the bytes by XOR-ing them with this, so that the signature of the resulting digest
-    // is different from a signature of just the `dkg_key`.
-    const SCRAMBLE: &[u8] = b"failure";
-
-    let mut output = dkg_key.0;
-
-    for (o, s) in output.iter_mut().zip(SCRAMBLE.iter().cycle()) {
-        *o ^= s;
-    }
-
-    output
+    let mut hasher = Sha3::v256();
+    let mut hash = Digest256::default();
+    hasher.update(&dkg_key.hash);
+    hasher.update(&dkg_key.generation.to_le_bytes());
+    hasher.update(b"failure");
+    hasher.finalize(&mut hash);
+    hash
 }
 
 struct Backlog(VecDeque<(DkgKey, DkgMessage)>);
@@ -560,10 +551,7 @@ pub(crate) enum DkgCommand {
         dkg_key: DkgKey,
         proof: DkgFailureProof,
     },
-    HandleFailureAgreement {
-        elders_info: EldersInfo,
-        proofs: DkgFailureProofSet,
-    },
+    HandleFailureAgreement(DkgFailureProofSet),
 }
 
 impl DkgCommand {
@@ -607,13 +595,7 @@ impl DkgCommand {
                     message.to_bytes(),
                 ))
             }
-            Self::HandleFailureAgreement {
-                elders_info,
-                proofs,
-            } => Ok(Command::HandleDkgFailure {
-                elders_info,
-                proofs,
-            }),
+            Self::HandleFailureAgreement(proofs) => Ok(Command::HandleDkgFailure(proofs)),
         }
     }
 }
@@ -662,8 +644,8 @@ mod tests {
         let elders_info0 = EldersInfo::new(iter::once(peer0), Prefix::default());
         let elders_info1 = EldersInfo::new(iter::once(peer1), Prefix::default());
 
-        let key0 = DkgKey::new(&elders_info0);
-        let key1 = DkgKey::new(&elders_info1);
+        let key0 = DkgKey::new(&elders_info0, 0);
+        let key1 = DkgKey::new(&elders_info1, 0);
 
         assert_ne!(key0, key1);
     }
@@ -676,9 +658,9 @@ mod tests {
 
         let node = Node::new(crypto::gen_keypair(), gen_addr());
         let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());
-        let dkg_key = DkgKey::new(&elders_info);
+        let dkg_key = DkgKey::new(&elders_info, 0);
 
-        let commands = voter.start(&node.keypair, dkg_key, elders_info, 0);
+        let commands = voter.start(&node.keypair, dkg_key, elders_info);
         assert_matches!(&commands[..], &[DkgCommand::HandleOutcome { .. }]);
     }
 
@@ -698,7 +680,7 @@ mod tests {
         let mut messages = Vec::new();
 
         let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
-        let dkg_key = DkgKey::new(&elders_info);
+        let dkg_key = DkgKey::new(&elders_info, 0);
 
         let mut actors: HashMap<_, _> = nodes
             .into_iter()
@@ -708,7 +690,7 @@ mod tests {
         for actor in actors.values_mut() {
             let commands = actor
                 .voter
-                .start(&actor.node.keypair, dkg_key, elders_info.clone(), 0);
+                .start(&actor.node.keypair, dkg_key, elders_info.clone());
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))

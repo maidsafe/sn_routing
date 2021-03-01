@@ -455,15 +455,8 @@ impl Approved {
         result
     }
 
-    pub fn handle_dkg_failure(
-        &mut self,
-        elders_info: EldersInfo,
-        proofs: DkgFailureProofSet,
-    ) -> Result<Command> {
-        let variant = Variant::DKGFailureAgreement {
-            elders_info,
-            proofs,
-        };
+    pub fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
+        let variant = Variant::DKGFailureAgreement(proofs);
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
@@ -696,22 +689,16 @@ impl Approved {
             Variant::DKGStart {
                 dkg_key,
                 elders_info,
-                generation,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone(), *generation),
+            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DKGMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
             }
             Variant::DKGFailureObservation { dkg_key, proof } => {
                 self.handle_dkg_failure_observation(*dkg_key, *proof)
             }
-            Variant::DKGFailureAgreement {
-                elders_info,
-                proofs,
-            } => self.handle_dkg_failure_agreement(
-                &msg.src().to_node_name()?,
-                elders_info.clone(),
-                proofs,
-            ),
+            Variant::DKGFailureAgreement(proofs) => {
+                self.handle_dkg_failure_agreement(&msg.src().to_node_name()?, proofs)
+            }
             Variant::Vote {
                 content,
                 proof_share,
@@ -1355,11 +1342,10 @@ impl Approved {
         &mut self,
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
-        generation: u64,
     ) -> Result<Vec<Command>> {
         trace!("Received DKGStart for {}", new_elders_info);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_elders_info, generation)
+            .start(&self.node.keypair, dkg_key, new_elders_info)
             .into_commands(&self.node)
     }
 
@@ -1389,7 +1375,6 @@ impl Approved {
     fn handle_dkg_failure_agreement(
         &self,
         sender: &XorName,
-        elders_info: EldersInfo,
         proofs: &DkgFailureProofSet,
     ) -> Result<Vec<Command>> {
         let sender = &self
@@ -1399,25 +1384,17 @@ impl Approved {
             .ok_or(Error::InvalidSrcLocation)?
             .peer;
 
-        if !proofs.verify(&elders_info) {
-            error!(
-                "Ignore DKG failure agreement with invalid proofs: {}",
-                elders_info
-            );
-            return Ok(vec![]);
-        }
-
-        if !self
+        let elders_info = self
             .section
             .promote_and_demote_elders(&self.node.name())
-            .contains(&elders_info)
-        {
-            trace!(
-                "Ignore DKG failure agreement for outdated participants: {}",
-                elders_info
-            );
+            .into_iter()
+            .find(|elders_info| proofs.verify(elders_info, self.section.chain().len() as u64));
+        let elders_info = if let Some(elders_info) = elders_info {
+            elders_info
+        } else {
+            trace!("Ignore DKG failure agreement with invalid proofs or outdated participants",);
             return Ok(vec![]);
-        }
+        };
 
         trace!(
             "Received DKG failure agreement - restarting: {}",
@@ -2016,11 +1993,10 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
 
-        let dkg_key = DkgKey::new(&elders_info);
+        let dkg_key = DkgKey::new(&elders_info, self.section.chain().len() as u64);
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,
-            generation: self.section.chain().len() as u64,
         };
         let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
         self.send_vote(recipients, vote)
