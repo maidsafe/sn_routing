@@ -499,12 +499,11 @@ impl Approved {
             content: vote.clone(),
             proof_share: proof_share.clone(),
         };
-        let proof_chain = self.section.chain().truncate(1);
         let message = Message::single_src(
             &self.node,
             DstLocation::Direct,
             variant,
-            Some(proof_chain),
+            None,
             Some(*self.section.chain().last_key()),
         )?;
 
