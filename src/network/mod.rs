@@ -28,7 +28,7 @@ pub struct Network {
     neighbours: PrefixMap<Proven<EldersInfo>>,
     // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
-    // Indices of our section keys that are trusted by other sections.
+    // Our section keys that are trusted by other sections.
     knowledge: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
 }
 
@@ -204,9 +204,9 @@ impl Network {
             .map(|entry| &entry.value.1)
     }
 
-    /// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split
-    /// occurred in the meantime, the index for sections covering the rest of the address space
-    /// are initialised to the old index that was stored for their common ancestor
+    /// Updates the key of our section that is known by some other section.
+    /// The passed in proven tuple consist of the prefix of the section whose knowledge we are
+    /// updaing and the key of our section we are updating it to.
     pub fn update_knowledge(&mut self, knowledge: Proven<(Prefix, bls::PublicKey)>) {
         trace!(
             "update knowledge of section ({:b}) about our section to {:?}",
@@ -399,7 +399,7 @@ mod tests {
         let pk1 = gen_key();
         let pk2 = gen_key();
 
-        update_their_knowledge_and_check_proving_index(
+        update_their_knowledge_and_check(
             vec![("1", pk1), ("10", pk2)],
             vec![("10", pk2), ("11", pk1)],
         )
@@ -410,7 +410,7 @@ mod tests {
         let pk1 = gen_key();
         let pk2 = gen_key();
 
-        update_their_knowledge_and_check_proving_index(
+        update_their_knowledge_and_check(
             vec![("1", pk1), ("10", pk2), ("11", pk2)],
             vec![("10", pk2), ("11", pk2)],
         )
@@ -494,13 +494,13 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    // Perform a series of updates to `knowledge`, then verify that the proving indices for
-    // the given dst locations are as expected.
+    // Perform a series of updates to `knowledge`, then verify that the known keys for the given
+    // dst locations are as expected.
     //
     // - `updates` - pairs of (prefix, key) to pass to `update_knowledge`
     // - `expected_trusted_keys` - pairs of (prefix, key) where the dst location name is
     //   generated such that it matches `prefix` and `key` is the expected trusted key.
-    fn update_their_knowledge_and_check_proving_index(
+    fn update_their_knowledge_and_check(
         updates: Vec<(&str, bls::PublicKey)>,
         expected_trusted_keys: Vec<(&str, bls::PublicKey)>,
     ) {
