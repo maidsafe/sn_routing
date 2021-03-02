@@ -147,9 +147,11 @@ impl Stage {
                 self.send_message(&recipients, delivery_group_size, message)
                     .await
             }
-            Command::SendUserMessage { itry, content } => {
-                self.state.lock().await.send_user_message(itry, content)
-            }
+            Command::SendUserMessage { itinerary, content } => self
+                .state
+                .lock()
+                .await
+                .send_user_message(itinerary, content),
             Command::ScheduleTimeout { duration, token } => Ok(self
                 .handle_schedule_timeout(duration, token)
                 .await

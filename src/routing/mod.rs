@@ -312,11 +312,11 @@ impl Routing {
     /// Send a message.
     /// Messages sent here, either section to section or node to node are signed
     /// and validated upon receipt by routing itself.
-    pub async fn send_message(&self, itry: Itinerary, content: Bytes) -> Result<()> {
+    pub async fn send_message(&self, itinerary: Itinerary, content: Bytes) -> Result<()> {
         if let DstLocation::EndUser(EndUser::Client {
             socket_id,
             public_key,
-        }) = itry.dst
+        }) = itinerary.dst
         {
             let socket_addr = self
                 .stage
@@ -338,7 +338,7 @@ impl Routing {
                 debug!("Sending user message instead.. (Command::SendUserMessage)");
             }
         }
-        let command = Command::SendUserMessage { itry, content };
+        let command = Command::SendUserMessage { itinerary, content };
         self.stage.clone().handle_commands(command).await
     }
 

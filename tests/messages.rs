@@ -153,13 +153,15 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     println!("sending msg..");
 
-    let itry = Itinerary {
+    let itinerary = Itinerary {
         src: SrcLocation::Node(node2_name),
         dst: DstLocation::Node(node1_name),
         aggregation: Aggregation::None,
     };
 
-    node2.send_message(itry, Bytes::from_static(msg)).await?;
+    node2
+        .send_message(itinerary, Bytes::from_static(msg))
+        .await?;
 
     println!("msg sent");
 
@@ -168,7 +170,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     println!("Got dst: {:?} (expecting: {}", dst.name(), node2_name);
     println!("sending response from {:?}..", node1_name);
 
-    let itry = Itinerary {
+    let itinerary = Itinerary {
         src: SrcLocation::Node(node1_name),
         dst,
         aggregation: Aggregation::None,
@@ -176,7 +178,7 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     // send response from node1 to node2
     node1
-        .send_message(itry, Bytes::from_static(response))
+        .send_message(itinerary, Bytes::from_static(response))
         .await?;
 
     println!("checking response received..");

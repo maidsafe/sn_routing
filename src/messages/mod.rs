@@ -40,7 +40,7 @@ pub(crate) struct Message {
     src: SrcAuthority,
     /// Destination location.
     dst: DstLocation,
-    ///
+    /// The aggregation scheme to be used.
     aggregation: Aggregation,
     /// The body of the message.
     variant: Variant,
@@ -311,15 +311,13 @@ impl Message {
     }
 
     /// Elders will aggregate a group sig before
-    /// they all all send one copy of it each to dst.
-    pub fn aggregate_at_src(&self) -> bool {
-        matches!(self.src, SrcAuthority::Section { .. })
-    }
-
-    /// Elders will send their signed message, which
-    /// recipients aggregate.
-    pub fn aggregate_at_dst(&self) -> bool {
-        matches!(self.src, SrcAuthority::BlsShare { .. })
+    /// they all send one copy of it each to dst.
+    pub fn aggregation(&self) -> Aggregation {
+        match self.src {
+            SrcAuthority::Section { .. } => Aggregation::AtSource,
+            SrcAuthority::BlsShare { .. } => Aggregation::AtDestination,
+            SrcAuthority::Node { .. } => Aggregation::None,
+        }
     }
 
     /// Returns the attached proof chain, if any.
