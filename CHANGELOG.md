@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.47.0](https://github.com/maidsafe/sn_routing/compare/v0.46.3...v0.47.0) (2021-03-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **messaging:** send_message api now requires an itinerary argument
+
+### Bug Fixes
+
+* issues pointed out in review comments ([d9a986e](https://github.com/maidsafe/sn_routing/commit/d9a986e5f4df278dd87cf08cf6b77ab725a70455))
+
+
+* **messaging:** add expected aggregation scheme, and use an itinerary ([a79d2d0](https://github.com/maidsafe/sn_routing/commit/a79d2d0f837354c46282410d387b2276af525848))
+
 ### [0.46.3](https://github.com/maidsafe/sn_routing/compare/v0.46.2...v0.46.3) (2021-03-02)
 
 ### [0.46.2](https://github.com/maidsafe/sn_routing/compare/v0.46.1...v0.46.2) (2021-03-01)
