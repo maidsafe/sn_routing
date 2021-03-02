@@ -363,7 +363,7 @@ impl SectionChain {
             self.tree.insert(insert_at, new_block);
 
             // Adjust the parent indices of the keys whose parents are after the inserted key.
-            for block in &mut self.tree {
+            for block in &mut self.tree[insert_at + 1..] {
                 if block.parent_index > insert_at {
                     block.parent_index += 1;
                 }
