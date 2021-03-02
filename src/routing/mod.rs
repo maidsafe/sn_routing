@@ -76,7 +76,7 @@ impl Default for Config {
 /// A node is a part of the network that can route messages and be a member of a section or group
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
-/// role, and can be any [`SrcLocation`].
+/// role, and can be `sn_messaging::SrcLocation::Node` or `sn_messaging::SrcLocation::Section`.
 pub struct Routing {
     stage: Arc<Stage>,
 }
