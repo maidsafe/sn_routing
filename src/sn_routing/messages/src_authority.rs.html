@@ -95,6 +95,8 @@
 <span id="94">94</span>
 <span id="95">95</span>
 <span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -134,6 +136,8 @@
     },
     <span class="doccomment">/// Authority of a single peer that uses it&#39;s BLS Keyshare to sign the message.</span>
     <span class="ident">BlsShare</span> {
+        <span class="doccomment">/// Section name at the time</span>
+        <span class="ident">src_section</span>: <span class="ident">XorName</span>,
         <span class="doccomment">/// Public key of the source peer.</span>
         <span class="ident">public_key</span>: <span class="ident">PublicKey</span>,
         <span class="doccomment">/// Age of the source peer.</span>
@@ -155,7 +159,7 @@
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">Node</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
             <span class="self">Self</span>::<span class="ident">BlsShare</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Node</span>(<span class="ident">name</span>(<span class="ident">public_key</span>)),
-            <span class="self">Self</span>::<span class="ident">Section</span> { <span class="ident">prefix</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="kw-2">*</span><span class="ident">prefix</span>),
+            <span class="self">Self</span>::<span class="ident">Section</span> { <span class="ident">prefix</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>::<span class="ident">Section</span>(<span class="ident">prefix</span>.<span class="ident">name</span>()),
         }
     }
 

@@ -198,9 +198,6 @@
 <span id="197">197</span>
 <span id="198">198</span>
 <span id="199">199</span>
-<span id="200">200</span>
-<span id="201">201</span>
-<span id="202">202</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -220,8 +217,7 @@
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::<span class="ident">NodeMessage</span>, <span class="ident">section_info</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>, <span class="ident">DstLocation</span>, <span class="ident">MessageType</span>,
-    <span class="ident">SrcLocation</span>,
+    <span class="ident">node</span>::<span class="ident">NodeMessage</span>, <span class="ident">section_info</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -276,8 +272,7 @@
     },
     <span class="doccomment">/// Send `UserMessage` with the given source and destination.</span>
     <span class="ident">SendUserMessage</span> {
-        <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
-        <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
+        <span class="ident">itinerary</span>: <span class="ident">Itinerary</span>,
         <span class="ident">content</span>: <span class="ident">Bytes</span>,
     },
     <span class="doccomment">/// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`</span>
@@ -371,10 +366,9 @@
                 .<span class="ident">field</span>(<span class="string">&quot;delivery_group_size&quot;</span>, <span class="ident">delivery_group_size</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+            <span class="self">Self</span>::<span class="ident">SendUserMessage</span> { <span class="ident">itinerary</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;SendUserMessage&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;src&quot;</span>, <span class="ident">src</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;dst&quot;</span>, <span class="ident">dst</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;itinerary&quot;</span>, <span class="ident">itinerary</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;content&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format_args</span><span class="macro">!</span>(<span class="string">&quot;{:10}&quot;</span>, <span class="ident">HexFmt</span>(<span class="ident">content</span>)))
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>

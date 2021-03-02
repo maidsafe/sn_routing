@@ -533,21 +533,6 @@
 <span id="532">532</span>
 <span id="533">533</span>
 <span id="534">534</span>
-<span id="535">535</span>
-<span id="536">536</span>
-<span id="537">537</span>
-<span id="538">538</span>
-<span id="539">539</span>
-<span id="540">540</span>
-<span id="541">541</span>
-<span id="542">542</span>
-<span id="543">543</span>
-<span id="544">544</span>
-<span id="545">545</span>
-<span id="546">546</span>
-<span id="547">547</span>
-<span id="548">548</span>
-<span id="549">549</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -564,7 +549,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::<span class="ident">Proven</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
+    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionChain</span>},
 };
 
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
@@ -579,8 +564,8 @@
     <span class="ident">neighbours</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="comment">// BLS public keys of known sections excluding ours.</span>
     <span class="ident">keys</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="comment">// Indices of our section keys that are trusted by other sections.</span>
-    <span class="ident">knowledge</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">u64</span>)<span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="comment">// Our section keys that are trusted by other sections.</span>
+    <span class="ident">knowledge</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Network</span> {
@@ -627,7 +612,7 @@
     <span class="doccomment">/// Merge two `Network`s into one.</span>
     <span class="doccomment">/// TODO: make this operation commutative, associative and idempotent (CRDT)</span>
     <span class="doccomment">/// TODO: return bool indicating whether anything changed.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">other</span>: <span class="self">Self</span>, <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SectionProofChain</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">other</span>: <span class="self">Self</span>, <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SectionChain</span>) {
         <span class="comment">// FIXME: these operations are not commutative:</span>
 
         <span class="kw">for</span> <span class="ident">entry</span> <span class="kw">in</span> <span class="ident">other</span>.<span class="ident">neighbours</span> {
@@ -740,53 +725,32 @@
         )
     }
 
-    <span class="doccomment">/// Returns the index of the public key in our_history that will be trusted by the given</span>
-    <span class="doccomment">/// section.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">knowledge_by_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="doccomment">/// Returns the public key in our chain that will be trusted by the given section.</span>
+    <span class="doccomment">/// If `None` is returned, the only key guaranteed to be trusted is the root key.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">knowledge_by_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">knowledge</span>
             .<span class="ident">get_equal_or_ancestor</span>(<span class="ident">prefix</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
-            .<span class="ident">unwrap_or</span>(<span class="number">0</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
     }
 
-    <span class="doccomment">/// Returns the index of the public key in our chain that will be trusted by the given</span>
-    <span class="doccomment">/// location</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">knowledge_by_location</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
-        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="ident">dst</span>.<span class="ident">name</span>() {
-            <span class="ident">name</span>
-        } <span class="kw">else</span> {
-            <span class="kw">return</span> <span class="number">0</span>;
-        };
-
-        <span class="kw">let</span> (<span class="ident">prefix</span>, <span class="ident">index</span>) <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">entry</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">knowledge</span>.<span class="ident">get_matching</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>) {
-            (<span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">0</span>, <span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
-        } <span class="kw">else</span> {
-            <span class="kw">return</span> <span class="number">0</span>;
-        };
-
-        <span class="comment">// TODO: we might not need to do this anymore because we have the bounce untrusted messages</span>
-        <span class="comment">// mechanism now.</span>
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sibling_entry</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">knowledge</span>.<span class="ident">get_equal_or_ancestor</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">sibling</span>()) {
-            <span class="comment">// The sibling section might not have processed the split yet, so it might still be in</span>
-            <span class="comment">// `dst`&#39;s location. Because of that, we need to return index that would be trusted</span>
-            <span class="comment">// by them too.</span>
-            <span class="ident">index</span>.<span class="ident">min</span>(<span class="ident">sibling_entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
-        } <span class="kw">else</span> {
-            <span class="ident">index</span>
-        }
+    <span class="doccomment">/// Returns the public key in our chain that will be trusted by the given location.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">knowledge_by_location</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">knowledge</span>
+            .<span class="ident">get_matching</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>.<span class="ident">name</span>()<span class="question-mark">?</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
     }
 
-    <span class="doccomment">/// Updates the entry in `knowledge` for `prefix` to `new_index`; if a split</span>
-    <span class="doccomment">/// occurred in the meantime, the index for sections covering the rest of the address space</span>
-    <span class="doccomment">/// are initialised to the old index that was stored for their common ancestor</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_knowledge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">new_index</span>: <span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">u64</span>)<span class="op">&gt;</span>) {
+    <span class="doccomment">/// Updates the key of our section that is known by some other section.</span>
+    <span class="doccomment">/// The passed in proven tuple consist of the prefix of the section whose knowledge we are</span>
+    <span class="doccomment">/// updaing and the key of our section we are updating it to.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_knowledge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">knowledge</span>: <span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>) {
         <span class="macro">trace</span><span class="macro">!</span>(
-            <span class="string">&quot;update knowledge of section ({:b}) about our section to {}&quot;</span>,
-            <span class="ident">new_index</span>.<span class="ident">value</span>.<span class="number">0</span>,
-            <span class="ident">new_index</span>.<span class="ident">value</span>.<span class="number">1</span>,
+            <span class="string">&quot;update knowledge of section ({:b}) about our section to {:?}&quot;</span>,
+            <span class="ident">knowledge</span>.<span class="ident">value</span>.<span class="number">0</span>,
+            <span class="ident">knowledge</span>.<span class="ident">value</span>.<span class="number">1</span>,
         );
 
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">knowledge</span>.<span class="ident">insert</span>(<span class="ident">new_index</span>);
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">knowledge</span>.<span class="ident">insert</span>(<span class="ident">knowledge</span>);
     }
 
     <span class="doccomment">/// Returns network statistics.</span>
@@ -968,17 +932,23 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">update_their_knowledge_after_split_from_one_sibling</span>() {
-        <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;10&quot;</span>, <span class="number">2</span>)],
-            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">1</span>)],
+        <span class="kw">let</span> <span class="ident">pk1</span> <span class="op">=</span> <span class="ident">gen_key</span>();
+        <span class="kw">let</span> <span class="ident">pk2</span> <span class="op">=</span> <span class="ident">gen_key</span>();
+
+        <span class="ident">update_their_knowledge_and_check</span>(
+            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="ident">pk1</span>), (<span class="string">&quot;10&quot;</span>, <span class="ident">pk2</span>)],
+            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="ident">pk2</span>), (<span class="string">&quot;11&quot;</span>, <span class="ident">pk1</span>)],
         )
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">update_their_knowledge_after_split_from_both_siblings</span>() {
-        <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="number">1</span>), (<span class="string">&quot;10&quot;</span>, <span class="number">2</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">2</span>)],
-            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="number">2</span>), (<span class="string">&quot;11&quot;</span>, <span class="number">2</span>)],
+        <span class="kw">let</span> <span class="ident">pk1</span> <span class="op">=</span> <span class="ident">gen_key</span>();
+        <span class="kw">let</span> <span class="ident">pk2</span> <span class="op">=</span> <span class="ident">gen_key</span>();
+
+        <span class="ident">update_their_knowledge_and_check</span>(
+            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;1&quot;</span>, <span class="ident">pk1</span>), (<span class="string">&quot;10&quot;</span>, <span class="ident">pk2</span>), (<span class="string">&quot;11&quot;</span>, <span class="ident">pk2</span>)],
+            <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;10&quot;</span>, <span class="ident">pk2</span>), (<span class="string">&quot;11&quot;</span>, <span class="ident">pk2</span>)],
         )
     }
 
@@ -1060,32 +1030,32 @@
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actual</span>, <span class="ident">expected</span>);
     }
 
-    <span class="comment">// Perform a series of updates to `knowledge`, then verify that the proving indices for</span>
-    <span class="comment">// the given dst locations are as expected.</span>
+    <span class="comment">// Perform a series of updates to `knowledge`, then verify that the known keys for the given</span>
+    <span class="comment">// dst locations are as expected.</span>
     <span class="comment">//</span>
-    <span class="comment">// - `updates` - pairs of (prefix, version) to pass to `update_knowledge`</span>
-    <span class="comment">// - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is</span>
-    <span class="comment">//   generated such that it matches `prefix` and `version` is the expected trusted key version.</span>
-    <span class="kw">fn</span> <span class="ident">update_their_knowledge_and_check_proving_index</span>(
-        <span class="ident">updates</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">u64</span>)<span class="op">&gt;</span>,
-        <span class="ident">expected_trusted_key_indices</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">u64</span>)<span class="op">&gt;</span>,
+    <span class="comment">// - `updates` - pairs of (prefix, key) to pass to `update_knowledge`</span>
+    <span class="comment">// - `expected_trusted_keys` - pairs of (prefix, key) where the dst location name is</span>
+    <span class="comment">//   generated such that it matches `prefix` and `key` is the expected trusted key.</span>
+    <span class="kw">fn</span> <span class="ident">update_their_knowledge_and_check</span>(
+        <span class="ident">updates</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>,
+        <span class="ident">expected_trusted_keys</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>,
     ) {
         <span class="kw">let</span> <span class="ident">sk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>();
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">map</span> <span class="op">=</span> <span class="ident">Network</span>::<span class="ident">new</span>();
 
-        <span class="kw">for</span> (<span class="ident">prefix_str</span>, <span class="ident">version</span>) <span class="kw">in</span> <span class="ident">updates</span> {
+        <span class="kw">for</span> (<span class="ident">prefix_str</span>, <span class="ident">key</span>) <span class="kw">in</span> <span class="ident">updates</span> {
             <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">prefix_str</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, (<span class="ident">prefix</span>, <span class="ident">version</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, (<span class="ident">prefix</span>, <span class="ident">key</span>)).<span class="ident">unwrap</span>();
             <span class="ident">map</span>.<span class="ident">update_knowledge</span>(<span class="ident">payload</span>);
         }
 
-        <span class="kw">for</span> (<span class="ident">dst_name_prefix_str</span>, <span class="ident">expected_index</span>) <span class="kw">in</span> <span class="ident">expected_trusted_key_indices</span> {
+        <span class="kw">for</span> (<span class="ident">dst_name_prefix_str</span>, <span class="ident">expected_key</span>) <span class="kw">in</span> <span class="ident">expected_trusted_keys</span> {
             <span class="kw">let</span> <span class="ident">dst_name_prefix</span>: <span class="ident">Prefix</span> <span class="op">=</span> <span class="ident">dst_name_prefix_str</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="ident">dst_name</span> <span class="op">=</span> <span class="ident">dst_name_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>());
             <span class="kw">let</span> <span class="ident">dst</span> <span class="op">=</span> <span class="ident">DstLocation</span>::<span class="ident">Section</span>(<span class="ident">dst_name</span>);
 
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>.<span class="ident">knowledge_by_location</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>), <span class="ident">expected_index</span>);
+            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>.<span class="ident">knowledge_by_location</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">expected_key</span>));
         }
     }
 

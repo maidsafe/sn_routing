@@ -497,8 +497,6 @@
 <span id="496">496</span>
 <span id="497">497</span>
 <span id="498">498</span>
-<span id="499">499</span>
-<span id="500">500</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -535,7 +533,7 @@
     <span class="ident">messages</span>::<span class="ident">Message</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionProofChain</span>},
+    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionChain</span>},
     <span class="ident">TransportConfig</span>, <span class="ident">MIN_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
@@ -545,7 +543,7 @@
     <span class="ident">client</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">ClientMessage</span>,
     <span class="ident">node</span>::<span class="ident">NodeMessage</span>,
     <span class="ident">section_info</span>::{<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">TargetSectionError</span>, <span class="ident">ErrorResponse</span>, <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>},
-    <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">MessageType</span>, <span class="ident">SrcLocation</span>, <span class="ident">WireMsg</span>,
+    <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::{<span class="ident">sync</span>::<span class="ident">mpsc</span>, <span class="ident">task</span>};
@@ -578,7 +576,7 @@
 <span class="doccomment">/// A node is a part of the network that can route messages and be a member of a section or group</span>
 <span class="doccomment">/// location. Its methods can be used to send requests and responses as either an individual</span>
 <span class="doccomment">/// `Node` or as a part of a section or group location. Their `src` argument indicates that</span>
-<span class="doccomment">/// role, and can be any [`SrcLocation`].</span>
+<span class="doccomment">/// role, and can be `sn_messaging::SrcLocation::Node` or `sn_messaging::SrcLocation::Section`.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Routing</span> {
     <span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>,
 }
@@ -814,16 +812,11 @@
     <span class="doccomment">/// Send a message.</span>
     <span class="doccomment">/// Messages sent here, either section to section or node to node are signed</span>
     <span class="doccomment">/// and validated upon receipt by routing itself.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
-        <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
-        <span class="ident">content</span>: <span class="ident">Bytes</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">itinerary</span>: <span class="ident">Itinerary</span>, <span class="ident">content</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">DstLocation</span>::<span class="ident">EndUser</span>(<span class="ident">EndUser</span>::<span class="ident">Client</span> {
             <span class="ident">socket_id</span>,
             <span class="ident">public_key</span>,
-        }) <span class="op">=</span> <span class="ident">dst</span>
+        }) <span class="op">=</span> <span class="ident">itinerary</span>.<span class="ident">dst</span>
         {
             <span class="kw">let</span> <span class="ident">socket_addr</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">stage</span>
@@ -845,7 +838,7 @@
                 <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Sending user message instead.. (Command::SendUserMessage)&quot;</span>);
             }
         }
-        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> };
+        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">itinerary</span>, <span class="ident">content</span> };
         <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
@@ -872,7 +865,7 @@
     }
 
     <span class="doccomment">/// Returns our section proof chain.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionProofChain</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
         <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
     }
 
@@ -912,10 +905,16 @@
 }
 
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(<span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>, <span class="ident">bytes</span>: <span class="ident">Bytes</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>) {
+    <span class="kw">let</span> <span class="ident">span</span> <span class="op">=</span> {
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="macro">trace_span</span><span class="macro">!</span>(<span class="string">&quot;handle_message&quot;</span>, <span class="ident">name</span> <span class="op">=</span> <span class="op">%</span><span class="ident">state</span>.<span class="ident">node</span>().<span class="ident">name</span>(), <span class="op">%</span><span class="ident">sender</span>)
+    };
+    <span class="kw">let</span> <span class="ident">_span_guard</span> <span class="op">=</span> <span class="ident">span</span>.<span class="ident">enter</span>();
+
     <span class="kw">let</span> <span class="ident">message_type</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">WireMsg</span>::<span class="ident">deserialize</span>(<span class="ident">bytes</span>) {
         <span class="prelude-val">Ok</span>(<span class="ident">message_type</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">message_type</span>,
         <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
-            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message from {}: {}&quot;</span>, <span class="ident">sender</span>, <span class="ident">error</span>);
+            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize message: {}&quot;</span>, <span class="ident">error</span>);
             <span class="kw">return</span>;
         }
     };
@@ -938,10 +937,7 @@
                     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
                 }
                 <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="macro">error</span><span class="macro">!</span>(
-                        <span class="string">&quot;Error occurred when deserialising node message bytes from {}: {}&quot;</span>,
-                        <span class="ident">sender</span>, <span class="ident">error</span>
-                    );
+                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize node message: {}&quot;</span>, <span class="ident">error</span>);
                 }
             }
         }

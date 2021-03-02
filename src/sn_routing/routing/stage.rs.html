@@ -273,6 +273,8 @@
 <span id="272">272</span>
 <span id="273">273</span>
 <span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -423,9 +425,11 @@
                 <span class="self">self</span>.<span class="ident">send_message</span>(<span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">message</span>)
                     .<span class="kw">await</span>
             }
-            <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_user_message</span>(<span class="ident">src</span>, <span class="ident">dst</span>, <span class="ident">content</span>)
-            }
+            <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> { <span class="ident">itinerary</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
+                .<span class="ident">state</span>
+                .<span class="ident">lock</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">send_user_message</span>(<span class="ident">itinerary</span>, <span class="ident">content</span>),
             <span class="ident">Command</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                 .<span class="ident">handle_schedule_timeout</span>(<span class="ident">duration</span>, <span class="ident">token</span>)
                 .<span class="kw">await</span>
