@@ -439,17 +439,23 @@ impl Network {
             return Ok(false);
         };
 
+        // There can be a significant delay between a node being relocated and us receiving the
+        // `Relocated` event. Using the current node name instead of the one reported by the last
+        // `Relocated` event reduced send errors due to src location mismatch which would cause the
+        // section health to appear lower than it actually is.
+        let src = node.name().await;
+
         // The message dst is unique so we use it also as its indentifier.
         let bytes = bincode::serialize(&dst)?;
         let signature_share = node
             .sign_as_elder(&bytes, &public_key_set.public_key())
             .await
-            .context("failed to sign probe")?;
+            .with_context(|| format!("failed to sign probe by {}", src))?;
 
         let index = node
             .our_index()
             .await
-            .context("failed to retrieve key share index")?;
+            .with_context(|| format!("failed to retrieve key share index by {}", src))?;
 
         let message = ProbeMessage {
             proof_share: ProofShare {
@@ -460,12 +466,6 @@ impl Network {
         };
         let bytes = bincode::serialize(&message)?.into();
 
-        // There can be a significant delay between a node being relocated and us receiving the
-        // `Relocated` event. Using the current node name instead of the one reported by the last
-        // `Relocated` event reduced send errors due to src location mismatch which would cause the
-        // section health to appear lower than it actually is.
-        let src = node.name().await;
-
         let itinerary = Itinerary {
             src: SrcLocation::Node(src),
             dst: DstLocation::Section(dst),
@@ -475,7 +475,9 @@ impl Network {
         match node.send_message(itinerary, bytes).await {
             Ok(()) => Ok(true),
             Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
-            Err(error) => Err(Error::from(error).context("failed to send probe")),
+            Err(error) => {
+                Err(Error::from(error).context(format!("failed to send probe by {}", src)))
+            }
         }
     }
 
