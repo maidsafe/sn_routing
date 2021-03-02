@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use anyhow::{format_err, Error, Result};
+use anyhow::{format_err, Context, Error, Result};
 use bls_signature_aggregator::{ProofShare, SignatureAggregator};
 use futures::{
     future,
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
     let mut network = Network::new();
 
     // Create the genesis node
-    network.create_node(event_tx.clone()).await?;
+    network.create_node(event_tx.clone()).await;
 
     let mut churn_events = schedule.events();
 
@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
             event = churn_events.next() => {
                 match event {
                     Some(ChurnEvent::Join) => {
-                        network.create_node(event_tx.clone()).await?
+                        network.create_node(event_tx.clone()).await
                     }
                     Some(ChurnEvent::Drop) => {
                         network.remove_random_node()
@@ -211,7 +211,7 @@ impl Network {
     }
 
     // Create new node and let it join the network.
-    async fn create_node(&mut self, event_tx: UnboundedSender<Event>) -> Result<()> {
+    async fn create_node(&mut self, event_tx: UnboundedSender<Event>) {
         let bootstrap_addrs = self.get_bootstrap_addrs();
 
         let id = self.new_node_id();
@@ -231,8 +231,6 @@ impl Network {
         let _ = task::spawn(add_node(id, config, event_tx));
 
         self.try_print_status();
-
-        Ok(())
     }
 
     // Remove a random node where the probability of a node to be removed is inversely proportional
@@ -445,9 +443,13 @@ impl Network {
         let bytes = bincode::serialize(&dst)?;
         let signature_share = node
             .sign_as_elder(&bytes, &public_key_set.public_key())
-            .await?;
+            .await
+            .context("failed to sign probe")?;
 
-        let index = node.our_index().await?;
+        let index = node
+            .our_index()
+            .await
+            .context("failed to retrieve key share index")?;
 
         let message = ProbeMessage {
             proof_share: ProofShare {
@@ -473,7 +475,7 @@ impl Network {
         match node.send_message(itinerary, bytes).await {
             Ok(()) => Ok(true),
             Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
-            Err(error) => Err(error.into()),
+            Err(error) => Err(Error::from(error).context("failed to send probe")),
         }
     }
 

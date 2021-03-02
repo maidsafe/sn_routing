@@ -170,8 +170,11 @@ impl DkgVoter {
                 );
 
                 let _ = self.sessions.insert(dkg_key, session);
+
+                // Remove uneeded old sessions.
                 self.sessions
                     .retain(|old_dkg_key, _| old_dkg_key.generation >= dkg_key.generation);
+                self.backlog.prune(&dkg_key);
 
                 commands
             }
@@ -336,34 +339,48 @@ impl Session {
             return vec![];
         };
 
-        if participants.iter().eq(self.elders_info.elders.keys()) {
-            trace!(
-                "DKG for {} complete: {:?}",
-                self.elders_info,
-                outcome.public_key_set.public_key()
-            );
-
-            self.complete = true;
-
-            let outcome = SectionKeyShare {
-                public_key_set: outcome.public_key_set,
-                index: self.participant_index,
-                secret_key_share: outcome.secret_key_share,
-            };
-
-            vec![DkgCommand::HandleOutcome {
-                elders_info: self.elders_info.clone(),
-                outcome,
-            }]
-        } else {
+        // Less than 100% participation
+        if !participants.iter().eq(self.elders_info.elders.keys()) {
             trace!(
                 "DKG for {} failed: unexpected participants: {:?}",
                 self.elders_info,
                 participants.iter().format(", ")
             );
 
-            self.report_failure(dkg_key, keypair)
+            return self.report_failure(dkg_key, keypair);
         }
+
+        // Corrupted DKG outcome. This can happen when a DKG session is restarted using the same set
+        // of participants and the same generation, but some of the participants are unaware of the
+        // restart (due to lag, etc...) and keep sending messages for the original session which
+        // then get mixed with the messages of the restarted session.
+        if outcome
+            .public_key_set
+            .public_key_share(self.participant_index)
+            != outcome.secret_key_share.public_key_share()
+        {
+            trace!("DKG for {} failed: corrupted outcome", self.elders_info);
+            return self.report_failure(dkg_key, keypair);
+        }
+
+        trace!(
+            "DKG for {} complete: {:?}",
+            self.elders_info,
+            outcome.public_key_set.public_key()
+        );
+
+        self.complete = true;
+
+        let outcome = SectionKeyShare {
+            public_key_set: outcome.public_key_set,
+            index: self.participant_index,
+            secret_key_share: outcome.secret_key_share,
+        };
+
+        vec![DkgCommand::HandleOutcome {
+            elders_info: self.elders_info.clone(),
+            outcome,
+        }]
     }
 
     fn report_failure(&mut self, dkg_key: &DkgKey, keypair: &Keypair) -> Vec<DkgCommand> {
@@ -528,6 +545,11 @@ impl Backlog {
         }
 
         output
+    }
+
+    fn prune(&mut self, dkg_key: &DkgKey) {
+        self.0
+            .retain(|(old_dkg_key, _)| old_dkg_key.generation >= dkg_key.generation)
     }
 }
 
