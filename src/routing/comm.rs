@@ -253,7 +253,7 @@ impl Debug for ConnectionEvent {
 
 async fn handle_disconnection_events(
     mut disconnections: qp2p::DisconnectionEvents,
-    mut event_tx: mpsc::Sender<ConnectionEvent>,
+    event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
     while let Some(peer_addr) = disconnections.next().await {
         let _ = event_tx
@@ -264,7 +264,7 @@ async fn handle_disconnection_events(
 
 async fn handle_incoming_messages(
     mut incoming_msgs: qp2p::IncomingMessages,
-    mut event_tx: mpsc::Sender<ConnectionEvent>,
+    event_tx: mpsc::Sender<ConnectionEvent>,
 ) {
     while let Some((src, msg)) = incoming_msgs.next().await {
         let _ = event_tx.send(ConnectionEvent::Received((src, msg))).await;
@@ -493,7 +493,7 @@ mod tests {
                 transport.new_endpoint().await?;
             let addr = endpoint.socket_addr();
 
-            let (mut tx, rx) = mpsc::channel(1);
+            let (tx, rx) = mpsc::channel(1);
 
             let _ = tokio::spawn(async move {
                 while let Some((_src, msg)) = incoming_messages.next().await {

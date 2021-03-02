@@ -405,7 +405,7 @@ async fn handle_consensus_on_online() -> Result<()> {
     let status = handle_online_command(&new_peer, &sk_set, &stage, &elders_info).await?;
     assert!(status.node_approval_sent);
 
-    assert_matches!(event_rx.try_recv(), Ok(Event::MemberJoined { name, age, .. }) => {
+    assert_matches!(event_rx.recv().await, Some(Event::MemberJoined { name, age, .. }) => {
         assert_eq!(name, *new_peer.name());
         assert_eq!(age, MIN_AGE);
     });
@@ -628,7 +628,7 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
 
     // Simulate peer with the same name is rejoin and verify resulted behaviours.
     let status = handle_online_command(&peer, &sk_set, &stage, &elders_info).await?;
-    assert!(event_rx.try_recv().is_err());
+    assert!(event_rx.recv().await.is_none());
 
     // A rejoin node with low age will be rejected.
     if age / 2 <= MIN_AGE {
@@ -694,7 +694,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
         .handle_command(Command::HandleConsensus { vote, proof })
         .await?;
 
-    assert_matches!(event_rx.try_recv(), Ok(Event::MemberLeft { name, age, }) => {
+    assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, age, }) => {
         assert_eq!(name, *existing_peer.name());
         assert_eq!(age, MIN_AGE);
     });
@@ -790,7 +790,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     assert!(dkg_start_sent);
 
-    assert_matches!(event_rx.try_recv(), Ok(Event::MemberLeft { name, .. }) => {
+    assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, .. }) => {
         assert_eq!(name, *remove_peer.name());
     });
 
@@ -1268,8 +1268,8 @@ async fn handle_sync() -> Result<()> {
 
     // Verify our `Section` got updated.
     assert_matches!(
-        event_rx.try_recv(),
-        Ok(Event::EldersChanged { key, elders, .. }) => {
+        event_rx.recv().await,
+        Some(Event::EldersChanged { key, elders, .. }) => {
             assert_eq!(key, pk2);
             assert_eq!(elders, new_elders);
         }
@@ -1690,8 +1690,8 @@ async fn handle_elders_update() -> Result<()> {
     assert_eq!(sync_actual_recipients, sync_expected_recipients);
 
     assert_matches!(
-        event_rx.try_recv(),
-        Ok(Event::EldersChanged { key, elders, .. }) => {
+        event_rx.recv().await,
+        Some(Event::EldersChanged { key, elders, .. }) => {
             assert_eq!(key, pk1);
             assert_eq!(elders, elder_names1);
         }
