@@ -17,8 +17,26 @@ use std::{
 };
 use thiserror::Error;
 
-/// Chain of section BLS keys where every key is proven (signed) by the previous key, except the
+/// Chain of section BLS keys where every key is proven (signed) by its parent key, except the
 /// first one.
+///
+/// # CRDT
+///
+/// The operations that mutate the chain ([`insert`](Self::insert) and [`merge`](Self::merge)) are
+/// commutative, associative and idempotent. This means the chain is a
+/// [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type).
+///
+/// # Forks
+///
+/// It's possible to insert multiple keys that all have the same parent key. This is called a
+/// "fork". The chain implements automatic fork resolution which means that even in the presence of
+/// forks the chain presents the blocks in a well-defined unique and deterministic order.
+///
+/// # Block order
+///
+/// Block are ordered primarily according to their parent-child relation (parents always precede
+/// children) and forks are resolved by additionally ordering the sibling blocks according to the
+/// `Ord` relation of their public key. That is, "lower" keys precede "higher" keys.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "Deserialized")]
 pub struct SectionChain {
@@ -244,7 +262,7 @@ impl SectionChain {
     }
 
     /// Given a collection of keys that are already trusted, returns whether this chain is also
-    /// trusted. A chain is considered trusted only if at least on of the `trusted_keys` is on its
+    /// trusted. A chain is considered trusted only if at least one of the `trusted_keys` is on its
     /// main branch.
     ///
     /// # Explanation
@@ -326,8 +344,8 @@ impl SectionChain {
     }
 
     fn insert_block(&mut self, new_block: Block) -> usize {
-        // Find the index into `self.tree` to insert the new key at. All the keys above will be
-        // pushed upwards.
+        // Find the index into `self.tree` to insert the new block at so that the block order as
+        // described in the `SectionChain` doc comment is maintained.
         let insert_at = self
             .tree
             .iter()
@@ -344,7 +362,7 @@ impl SectionChain {
         if self.tree.get(insert_at).map(|block| &block.key) != Some(&new_block.key) {
             self.tree.insert(insert_at, new_block);
 
-            // Adjust the parent indices of the keys whose parents are above the inserted key.
+            // Adjust the parent indices of the keys whose parents are after the inserted key.
             for block in &mut self.tree {
                 if block.parent_index > insert_at {
                     block.parent_index += 1;
