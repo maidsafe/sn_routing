@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.47.1](https://github.com/maidsafe/sn_routing/compare/v0.47.0...v0.47.1) (2021-03-02)
+
+
+### Features
+
+* implement new SectionChain that can resolve forks ([a3d786f](https://github.com/maidsafe/sn_routing/commit/a3d786feb6f2bf6314c550423ec2789313fbf7be))
+* replace (old) SectionProofChain with (new) SectionChain ([03fb82c](https://github.com/maidsafe/sn_routing/commit/03fb82cbf20b8f881bdb0df6a781e3f95f8f0118))
+
+
+### Bug Fixes
+
+* bug in SectionChain::minimize ([0eef78e](https://github.com/maidsafe/sn_routing/commit/0eef78e2f7d3a729e38c2421a54be58ff07ff5d4))
+* correctly handle section chain extend edge case ([cae05ba](https://github.com/maidsafe/sn_routing/commit/cae05bab837e66e2a6f7754133f4937451e0bbe0))
+* ensure section elders info is always signed with the last chain key ([82fad1a](https://github.com/maidsafe/sn_routing/commit/82fad1aca7d55e5b83b3af3658ffeae5f3873581))
+* make SectionChain::check_trust more strict ([8dcd021](https://github.com/maidsafe/sn_routing/commit/8dcd0215ba4cb8d8d2d57c3782fbdd267a278065))
+
 ## [0.47.0](https://github.com/maidsafe/sn_routing/compare/v0.46.3...v0.47.0) (2021-03-02)
 
 
