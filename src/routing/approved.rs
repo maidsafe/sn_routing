@@ -596,6 +596,12 @@ impl Approved {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
+            Variant::Sync { section, .. } => {
+                // Ignore `Sync` not for our section.
+                if !section.prefix().matches(&self.node.name()) {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::Vote {
                 content,
                 proof_share,
@@ -620,8 +626,7 @@ impl Approved {
                     }
                 }
             }
-            Variant::Sync { .. }
-            | Variant::Relocate(_)
+            Variant::Relocate(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGMessage { .. }
