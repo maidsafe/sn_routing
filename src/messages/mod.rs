@@ -20,7 +20,7 @@ use crate::{
     crypto::{self, name, Verifier},
     error::{Error, Result},
     node::Node,
-    section::{ExtendError, SectionKeyShare, SectionProofChain, TrustStatus},
+    section::{SectionChain, SectionChainError, SectionKeyShare},
 };
 use bls_signature_aggregator::ProofShare;
 use bytes::Bytes;
@@ -45,7 +45,7 @@ pub(crate) struct Message {
     /// The body of the message.
     variant: Variant,
     /// Proof chain to verify the message trust. Does not need to be signed.
-    proof_chain: Option<SectionProofChain>,
+    proof_chain: Option<SectionChain>,
     /// Source's knowledge of the destination section key. If present, the destination can use it
     /// to determine the length of the proof of messages sent to the source so the source would
     /// trust it (the proof needs to start at this key).
@@ -89,7 +89,10 @@ impl Message {
                 if let Some(proof_chain) = msg.proof_chain.as_ref() {
                     // FIXME Assumes the nodes proof last key is the one signing this message
                     if !proof_chain.last_key().verify(signature, &signed_bytes) {
-                        error!("Failed signature: {:?}", msg);
+                        error!(
+                            "Failed signature: {:?} (proof chain: {:?})",
+                            msg, proof_chain
+                        );
                         return Err(CreateError::FailedSignature);
                     }
                 }
@@ -112,7 +115,7 @@ impl Message {
         src: SrcAuthority,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: Option<SectionProofChain>,
+        proof_chain: Option<SectionChain>,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Message, CreateError> {
         let mut msg = Message {
@@ -138,7 +141,7 @@ impl Message {
         key_share: &SectionKeyShare,
         dst: DstLocation,
         user_msg: Bytes,
-        proof_chain: SectionProofChain,
+        proof_chain: SectionChain,
         dst_key: Option<bls::PublicKey>,
         src_section: XorName,
     ) -> Result<Self, CreateError> {
@@ -177,7 +180,7 @@ impl Message {
         node: &Node,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: Option<SectionProofChain>,
+        proof_chain: Option<SectionChain>,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, CreateError> {
         let serialized = bincode::serialize(&SignableView {
@@ -200,7 +203,7 @@ impl Message {
     pub(crate) fn section_src(
         plain: PlainMessage,
         signature: bls::Signature,
-        proof_chain: SectionProofChain,
+        proof_chain: SectionChain,
     ) -> Result<Self, CreateError> {
         Self::new_signed(
             SrcAuthority::Section {
@@ -262,7 +265,11 @@ impl Message {
                     .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
                     .map(|(_, key)| key);
 
-                proof_chain.check_trust(trusted_keys).into()
+                if proof_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
             SrcAuthority::Section { prefix, signature } => {
                 // Proof chain is required for section-src messages.
@@ -281,7 +288,11 @@ impl Message {
                     .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
                     .map(|(_, key)| key);
 
-                proof_chain.check_trust(trusted_keys).into()
+                if proof_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
         }
     }
@@ -321,7 +332,7 @@ impl Message {
     }
 
     /// Returns the attached proof chain, if any.
-    pub(crate) fn proof_chain(&self) -> Result<&SectionProofChain> {
+    pub(crate) fn proof_chain(&self) -> Result<&SectionChain> {
         self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
     }
 
@@ -335,12 +346,12 @@ impl Message {
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
-        full_chain: &SectionProofChain,
+        full_chain: &SectionChain,
     ) -> Result<Self, ExtendProofChainError> {
         if let Variant::Sync { section, .. } = &mut self.variant {
             section.extend_chain(new_first_key, full_chain)?
         } else if let Some(proof_chain) = &mut self.proof_chain {
-            proof_chain.extend(new_first_key, full_chain)?
+            *proof_chain = proof_chain.extend(new_first_key, full_chain)?
         } else {
             return Err(ExtendProofChainError::NoProofChain);
         }
@@ -388,16 +399,6 @@ pub enum VerifyStatus {
     Unknown,
 }
 
-impl Into<Result<VerifyStatus>> for TrustStatus {
-    fn into(self) -> Result<VerifyStatus> {
-        match self {
-            Self::Trusted => Ok(VerifyStatus::Full),
-            Self::Unknown => Ok(VerifyStatus::Unknown),
-            Self::Invalid => Err(Error::InvalidMessage),
-        }
-    }
-}
-
 /// Status of an incomming message.
 #[derive(Eq, PartialEq)]
 pub enum MessageStatus {
@@ -435,7 +436,7 @@ pub enum ExtendProofChainError {
     #[error("message has no proof chain")]
     NoProofChain,
     #[error("failed to extend proof chain: {}", .0)]
-    Extend(#[from] ExtendError),
+    Extend(#[from] SectionChainError),
     #[error("failed to re-create message: {}", .0)]
     Create(#[from] CreateError),
 }
@@ -471,9 +472,9 @@ mod tests {
         let sk1 = bls::SecretKey::random();
         let pk1 = sk1.public_key();
 
-        let mut full_proof_chain = SectionProofChain::new(sk0.public_key());
+        let mut full_proof_chain = SectionChain::new(pk0);
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
-        let _ = full_proof_chain.push(pk1, pk1_sig);
+        let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info)?;
@@ -490,7 +491,7 @@ mod tests {
             &node,
             DstLocation::Direct,
             variant,
-            Some(full_proof_chain.slice(1..)),
+            Some(full_proof_chain.truncate(1)),
             Some(pk1),
         )?;
 

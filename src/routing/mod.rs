@@ -33,7 +33,7 @@ use crate::{
     messages::Message,
     node::Node,
     peer::Peer,
-    section::{EldersInfo, SectionProofChain},
+    section::{EldersInfo, SectionChain},
     TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
@@ -365,7 +365,7 @@ impl Routing {
     }
 
     /// Returns our section proof chain.
-    pub async fn our_history(&self) -> SectionProofChain {
+    pub async fn our_history(&self) -> SectionChain {
         self.stage.state.lock().await.section().chain().clone()
     }
 
@@ -405,10 +405,16 @@ async fn handle_connection_events(
 }
 
 async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
+    let span = {
+        let state = stage.state.lock().await;
+        trace_span!("handle_message", name = %state.node().name(), %sender)
+    };
+    let _span_guard = span.enter();
+
     let message_type = match WireMsg::deserialize(bytes) {
         Ok(message_type) => message_type,
         Err(error) => {
-            error!("Failed to deserialize message from {}: {}", sender, error);
+            error!("Failed to deserialize message: {}", error);
             return;
         }
     };
@@ -431,10 +437,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                     let _ = task::spawn(stage.handle_commands(command));
                 }
                 Err(error) => {
-                    error!(
-                        "Error occurred when deserialising node message bytes from {}: {}",
-                        sender, error
-                    );
+                    error!("Failed to deserialize node message: {}", error);
                 }
             }
         }

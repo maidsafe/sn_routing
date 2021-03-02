@@ -96,7 +96,7 @@ impl RelocateDetails {
     ) -> Self {
         let destination_key = *network
             .key_by_name(&destination)
-            .unwrap_or_else(|| section.chain().first_key());
+            .unwrap_or_else(|| section.chain().root_key());
 
         Self {
             pub_id: *peer.name(),
@@ -296,8 +296,10 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::proven, peer::test_utils::arbitrary_unique_peers,
-        section::EldersInfo, SectionProofChain, ELDER_SIZE, MIN_AGE,
+        consensus::test_utils::proven,
+        peer::test_utils::arbitrary_unique_peers,
+        section::{EldersInfo, SectionChain},
+        ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
     use assert_matches::assert_matches;
@@ -354,7 +356,7 @@ mod tests {
         );
         let elders_info = proven(&sk, elders_info)?;
 
-        let mut section = Section::new(SectionProofChain::new(pk), elders_info)?;
+        let mut section = Section::new(SectionChain::new(pk), elders_info)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);

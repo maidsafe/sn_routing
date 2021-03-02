@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, MemberInfo, Section, SectionProofChain},
+    section::{EldersInfo, MemberInfo, Section, SectionChain},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -83,8 +83,10 @@ pub(crate) enum Variant {
         dkg_key: DkgKey,
         /// The DKG particpants.
         elders_info: EldersInfo,
-        /// The section chain index of the key to be generated.
-        key_index: u64,
+        /// A DKG "generation". A DKG with higher generation supersedes a DKG with lower but DKGs
+        /// with the same generation need to executed in parallel as we can't tell which one "wins"
+        /// before they complete.
+        generation: u64,
     },
     /// Message exchanged for DKG process.
     DKGMessage {
@@ -121,13 +123,13 @@ pub(crate) enum Variant {
 impl Variant {
     pub(crate) fn verify<'a, I>(
         &self,
-        proof_chain: Option<&SectionProofChain>,
+        proof_chain: Option<&SectionChain>,
         trusted_keys: I,
     ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        match self {
+        let proof_chain = match self {
             Self::NodeApproval {
                 elders_info,
                 member_info,
@@ -142,9 +144,9 @@ impl Variant {
                     return Err(Error::InvalidMessage);
                 }
 
-                proof_chain.check_trust(trusted_keys).into()
+                proof_chain
             }
-            Self::Sync { section, .. } => section.chain().check_trust(trusted_keys).into(),
+            Self::Sync { section, .. } => section.chain(),
             Self::NeighbourInfo { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
@@ -152,9 +154,15 @@ impl Variant {
                     return Err(Error::InvalidMessage);
                 }
 
-                proof_chain.check_trust(trusted_keys).into()
+                proof_chain
             }
-            _ => Ok(VerifyStatus::Full),
+            _ => return Ok(VerifyStatus::Full),
+        };
+
+        if proof_chain.check_trust(trusted_keys) {
+            Ok(VerifyStatus::Full)
+        } else {
+            Ok(VerifyStatus::Unknown)
         }
     }
 }
@@ -204,12 +212,12 @@ impl Debug for Variant {
             Self::DKGStart {
                 dkg_key,
                 elders_info,
-                key_index,
+                generation,
             } => f
                 .debug_struct("DKGStart")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
-                .field("key_index", key_index)
+                .field("generation", generation)
                 .finish(),
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{consensus::Proof, section::SectionProofChain};
+use crate::{consensus::Proof, section::SectionChain};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, fmt::Debug};
 use xor_name::Prefix;
@@ -23,8 +23,8 @@ impl<T: Serialize> Proven<T> {
         Self { value, proof }
     }
 
-    pub fn verify(&self, history: &SectionProofChain) -> bool {
-        history.has_key(&self.proof.public_key) && self.self_verify()
+    pub fn verify(&self, section_chain: &SectionChain) -> bool {
+        section_chain.has_key(&self.proof.public_key) && self.self_verify()
     }
 
     pub fn self_verify(&self) -> bool {
