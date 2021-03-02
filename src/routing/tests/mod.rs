@@ -1459,7 +1459,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
 
     let commands = stage
         .handle_command(Command::SendUserMessage {
-            itry: Itinerary {
+            itinerary: Itinerary {
                 src,
                 dst,
                 aggregation: Aggregation::None,

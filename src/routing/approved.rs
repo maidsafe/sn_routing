@@ -49,7 +49,7 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
+    Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
 use std::{cmp, net::SocketAddr, slice};
 use tokio::sync::mpsc;
@@ -820,7 +820,7 @@ impl Approved {
         };
 
         let bounce_dst_key = *self.section_key_by_name(&src_name);
-        let bounce_dst = if msg.aggregate_at_src() {
+        let bounce_dst = if matches!(msg.aggregation(), Aggregation::AtSource) {
             DstLocation::Section(src_name)
         } else {
             DstLocation::Node(src_name)
@@ -1002,46 +1002,39 @@ impl Approved {
                 message: MessageType::ClientMessage(ClientMessage::from(content)?),
             }]);
         }
-        if msg.aggregate_at_dst() {
-            if !matches!(dst, DstLocation::Node(_)) {
-                return Err(Error::InvalidDstLocation);
-            }
-            if let SrcAuthority::BlsShare {
-                proof_share,
-                src_section,
-                ..
-            } = &src
+        if let SrcAuthority::BlsShare {
+            proof_share,
+            src_section,
+            ..
+        } = &src
+        {
+            let signed_bytes = bincode::serialize(&msg.signable_view())?;
+            match self
+                .message_accumulator
+                .add(&signed_bytes, proof_share.clone())
             {
-                let signed_bytes = bincode::serialize(&msg.signable_view())?;
-                match self
-                    .message_accumulator
-                    .add(&signed_bytes, proof_share.clone())
-                {
-                    Ok(proof) => {
-                        trace!("Successfully aggregated signatures for message: {:?}", msg);
-                        let key = msg.proof_chain_last_key()?;
-                        if key.verify(&proof.signature, signed_bytes) {
-                            self.send_event(Event::MessageReceived {
-                                content,
-                                src: SrcLocation::Section(*src_section),
-                                dst,
-                            });
-                        } else {
-                            trace!(
-                                "Aggregated signature is invalid. Handling message {:?} skipped",
-                                msg
-                            );
-                        }
-                    }
-                    Err(AggregatorError::NotEnoughShares) => {}
-                    Err(err) => {
-                        trace!("Error accumulating message at destination: {:?}", err);
+                Ok(proof) => {
+                    trace!("Successfully aggregated signatures for message: {:?}", msg);
+                    let key = msg.proof_chain_last_key()?;
+                    if key.verify(&proof.signature, signed_bytes) {
+                        self.send_event(Event::MessageReceived {
+                            content,
+                            src: SrcLocation::Section(*src_section),
+                            dst,
+                        });
+                    } else {
+                        trace!(
+                            "Aggregated signature is invalid. Handling message {:?} skipped",
+                            msg
+                        );
                     }
                 }
-                return Ok(vec![]);
-            } else {
-                return Err(Error::InvalidSrcLocation);
+                Err(AggregatorError::NotEnoughShares) => {}
+                Err(err) => {
+                    trace!("Error accumulating message at destination: {:?}", err);
+                }
             }
+            return Ok(vec![]);
         }
 
         self.send_event(Event::MessageReceived {
@@ -2036,53 +2029,60 @@ impl Approved {
         Ok(commands)
     }
 
-    pub fn send_user_message(&mut self, itry: Itinerary, content: Bytes) -> Result<Vec<Command>> {
-        let are_we_src =
-            matches!(itry.src, SrcLocation::Node(_)) && itry.src.name() == self.node.name();
+    pub fn send_user_message(
+        &mut self,
+        itinerary: Itinerary,
+        content: Bytes,
+    ) -> Result<Vec<Command>> {
+        let are_we_src = itinerary.src.equals(&self.node.name())
+            || itinerary.src.equals(&self.section().prefix().name());
         if !are_we_src {
             error!(
                 "Not sending user message {:?} -> {:?}: we are not the source location",
-                itry.src, itry.dst
+                itinerary.src, itinerary.dst
             );
             return Err(Error::InvalidSrcLocation);
         }
-        if matches!(itry.src, SrcLocation::EndUser(_)) {
+        if matches!(itinerary.src, SrcLocation::EndUser(_)) {
             return Err(Error::InvalidSrcLocation);
         }
-        if matches!(itry.dst, DstLocation::Direct) {
+        if matches!(itinerary.dst, DstLocation::Direct) {
             error!(
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
-                itry.src, itry.dst
+                itinerary.src, itinerary.dst
             );
             return Err(Error::InvalidDstLocation);
         }
 
-        // If the source is a single node, we don't even need to vote, so let's cut this short.
-        let msg = if itry.aggregate_at_dst() {
+        // If the msg is to be aggregated at dst, we don't vote among our peers, wemsimply send the msg as our vote to the dst.
+        let msg = if itinerary.aggregate_at_dst() {
             Message::for_dst_accumulation(
                 &self.node,
                 self.section_keys_provider.key_share()?,
-                itry.dst,
+                itinerary.dst,
                 content,
                 self.section().create_proof_chain_for_our_info(None),
                 None,
                 self.section().prefix().name(),
             )?
-        } else if itry.aggregate_at_src() {
+        } else if itinerary.aggregate_at_src() {
             let variant = Variant::UserMessage(content);
-            let vote = self.create_send_message_vote(itry.dst, variant, None)?;
+            let vote = self.create_send_message_vote(itinerary.dst, variant, None)?;
             let recipients = delivery_group::signature_targets(
-                &itry.dst,
+                &itinerary.dst,
                 self.section.elders_info().peers().copied(),
             );
             return self.send_vote(&recipients, vote);
         } else {
             let variant = Variant::UserMessage(content);
-            Message::single_src(&self.node, itry.dst, variant, None, None)?
+            Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
         let mut commands = vec![];
 
-        if itry.dst.contains(&self.node.name(), self.section.prefix()) {
+        if itinerary
+            .dst
+            .contains(&self.node.name(), self.section.prefix())
+        {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),

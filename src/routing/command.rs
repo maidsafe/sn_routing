@@ -70,7 +70,10 @@ pub(crate) enum Command {
         message: MessageType,
     },
     /// Send `UserMessage` with the given source and destination.
-    SendUserMessage { itry: Itinerary, content: Bytes },
+    SendUserMessage {
+        itinerary: Itinerary,
+        content: Bytes,
+    },
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
     /// command is raised. The token is used to identify the timeout.
     ScheduleTimeout { duration: Duration, token: u64 },
@@ -162,9 +165,9 @@ impl Debug for Command {
                 .field("delivery_group_size", delivery_group_size)
                 .field("message", message)
                 .finish(),
-            Self::SendUserMessage { itry, content } => f
+            Self::SendUserMessage { itinerary, content } => f
                 .debug_struct("SendUserMessage")
-                .field("itry", itry)
+                .field("itinerary", itinerary)
                 .field("content", &format_args!("{:10}", HexFmt(content)))
                 .finish(),
             Self::ScheduleTimeout { duration, token } => f

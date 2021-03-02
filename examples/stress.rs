@@ -457,13 +457,13 @@ impl Network {
             },
         };
         let bytes = bincode::serialize(&message)?.into();
-        let itry = Itinerary {
+        let itinerary = Itinerary {
             src: SrcLocation::Node(src),
             dst: DstLocation::Section(dst),
             aggregation: Aggregation::None,
         };
 
-        match node.send_message(itry, bytes).await {
+        match node.send_message(itinerary, bytes).await {
             Ok(()) => Ok(true),
             Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
             Err(error) => Err(error.into()),
