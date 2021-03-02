@@ -582,16 +582,19 @@ mod tests {
         consensus::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
         section::MemberInfo, ELDER_SIZE, MIN_AGE,
     };
-    use anyhow::{Error, Result};
+    use anyhow::{anyhow, Error, Result};
     use assert_matches::assert_matches;
-    use futures::future::{self, Either};
+    use futures::{
+        future::{self, Either},
+        pin_mut,
+    };
     use sn_messaging::section_info::SectionInfo;
-    use tokio::{sync::mpsc::error::TryRecvError, task};
+    use tokio::task;
 
     #[tokio::test]
     async fn bootstrap_as_adult() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
@@ -620,7 +623,10 @@ mod tests {
             task::yield_now().await;
 
             // Receive GetSectionQuery
-            let (message, recipients) = send_rx.try_recv()?;
+            let (message, recipients) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
             assert_eq!(recipients, [bootstrap_addr]);
             assert_matches!(message, MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(name)) => {
@@ -643,7 +649,10 @@ mod tests {
             task::yield_now().await;
 
             // Receive JoinRequest
-            let (message, recipients) = send_rx.try_recv()?;
+            let (message, recipients) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
                 Message::from_bytes(Bytes::from(bytes))?);
 
@@ -689,7 +698,7 @@ mod tests {
     #[tokio::test]
     async fn receive_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -702,7 +711,10 @@ mod tests {
             task::yield_now().await;
 
             // Receive GetSectionQuery
-            let (message, recipients) = send_rx.try_recv()?;
+            let (message, recipients) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
             assert_eq!(recipients, vec![bootstrap_node.addr]);
             assert_matches!(
@@ -720,7 +732,10 @@ mod tests {
             task::yield_now().await;
 
             // Receive new GetSectionQuery
-            let (message, recipients) = send_rx.try_recv()?;
+            let (message, recipients) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
             assert_eq!(recipients, new_bootstrap_addrs);
             assert_matches!(
@@ -731,8 +746,8 @@ mod tests {
             Ok(())
         };
 
-        futures::pin_mut!(bootstrap_task);
-        futures::pin_mut!(test_task);
+        pin_mut!(bootstrap_task);
+        pin_mut!(test_task);
 
         match future::select(bootstrap_task, test_task).await {
             Either::Left(_) => unreachable!(),
@@ -743,7 +758,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_get_section_response_redirect() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -755,7 +770,11 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (message, _) = send_rx.try_recv()?;
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
+
             assert_matches!(
                 message,
                 MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
@@ -765,7 +784,7 @@ mod tests {
 
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
-            assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
+            assert_matches!(send_rx.recv().await, None);
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
@@ -773,7 +792,11 @@ mod tests {
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
 
-            let (message, _) = send_rx.try_recv()?;
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
+
             assert_matches!(
                 message,
                 MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
@@ -782,8 +805,8 @@ mod tests {
             Ok(())
         };
 
-        futures::pin_mut!(bootstrap_task);
-        futures::pin_mut!(test_task);
+        pin_mut!(bootstrap_task);
+        pin_mut!(test_task);
 
         match future::select(bootstrap_task, test_task).await {
             Either::Left(_) => unreachable!(),
@@ -794,7 +817,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_get_section_response_success() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -820,7 +843,11 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (message, _) = send_rx.try_recv()?;
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
+
             assert_matches!(
                 message,
                 MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
@@ -840,7 +867,7 @@ mod tests {
 
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
-            assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
+            assert_matches!(send_rx.recv().await, None);
 
             let infrastructure_info = SectionInfo {
                 prefix: good_prefix,
@@ -867,7 +894,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_join_response_rejoin() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (mut recv_tx, recv_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
@@ -895,7 +922,11 @@ mod tests {
         let test_task = async {
             task::yield_now().await;
 
-            let (message, _) = send_rx.try_recv()?;
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
@@ -916,7 +947,7 @@ mod tests {
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
-            assert_matches!(send_rx.try_recv(), Err(TryRecvError::Empty));
+            assert_matches!(send_rx.recv().await, None);
 
             // Send `Rejoin` with good prefix
             let message = Message::single_src(
@@ -936,15 +967,19 @@ mod tests {
             ))?;
             task::yield_now().await;
 
-            let (message, _) = send_rx.try_recv()?;
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())
         };
 
-        futures::pin_mut!(join_task);
-        futures::pin_mut!(test_task);
+        pin_mut!(join_task);
+        pin_mut!(test_task);
 
         match future::select(join_task, test_task).await {
             Either::Left(_) => unreachable!(),

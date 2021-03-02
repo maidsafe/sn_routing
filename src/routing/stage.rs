@@ -31,7 +31,7 @@ impl Stage {
         let (cancel_timer_tx, mut cancel_timer_rx) = watch::channel(false);
 
         // Take out the initial value.
-        let _ = futures::executor::block_on(cancel_timer_rx.recv());
+        let _ = futures::executor::block_on(cancel_timer_rx.changed());
 
         Self {
             state: Mutex::new(state),
@@ -88,7 +88,7 @@ impl Stage {
     // Terminate this routing instance - cancel all scheduled timers including any future ones,
     // close all network connections and stop accepting new connections.
     pub fn terminate(&self) {
-        let _ = self.cancel_timer_tx.broadcast(true);
+        let _ = self.cancel_timer_tx.send(true);
         self.comm.terminate()
     }
 
@@ -234,8 +234,8 @@ impl Stage {
         }
 
         tokio::select! {
-            _ = time::delay_for(duration) => Some(Command::HandleTimeout(token)),
-            _ = cancel_rx.recv() => None,
+            _ = time::sleep(duration) => Some(Command::HandleTimeout(token)),
+            _ = cancel_rx.changed() => None,
         }
     }
 

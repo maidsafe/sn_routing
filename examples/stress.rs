@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            event = event_rx.recv() => {
+            event = event_rx.recv().await => {
                 if let Some(event) = event {
                     network.handle_event(event).await?
                 } else {
