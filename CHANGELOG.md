@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.47.4](https://github.com/maidsafe/sn_routing/compare/v0.47.3...v0.47.4) (2021-03-03)
+
+
+### Bug Fixes
+
+* always send their Offline vote to relocated elders ([7f77e97](https://github.com/maidsafe/sn_routing/commit/7f77e970adaf30c4653a60299829501e90453a4e))
+* avoid invalidating signature when resending bounced Sync message ([d482dab](https://github.com/maidsafe/sn_routing/commit/d482dab96b8e2bdd5d49aa1579b50bce8f459e64))
+* check trust with all known keys, not just the src matching ones ([2c9a1b2](https://github.com/maidsafe/sn_routing/commit/2c9a1b280cee471514f8254cd82cf19deb1383b5))
+* cover all cases of RelocatePromise handling ([5966d3d](https://github.com/maidsafe/sn_routing/commit/5966d3db21045d7e56851bd22c2d46e9ebdf50bb))
+* ignore Sync messages not for our section ([6d90fcf](https://github.com/maidsafe/sn_routing/commit/6d90fcff2b2a1873b56915b8f3dc202b5394681b))
+
 ### [0.47.3](https://github.com/maidsafe/sn_routing/compare/v0.47.2...v0.47.3) (2021-03-03)
 
 
