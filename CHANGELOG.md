@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.47.3](https://github.com/maidsafe/sn_routing/compare/v0.47.2...v0.47.3) (2021-03-03)
+
+
+### Bug Fixes
+
+* respond with GetSectionResponse::Redirect on missing pk set ([69a1fb8](https://github.com/maidsafe/sn_routing/commit/69a1fb840cbbb54b8ccb5af8856e3991d3ac46dd))
+* **bootstrap:** avoid duplicate GetSectionRequest ([84327e2](https://github.com/maidsafe/sn_routing/commit/84327e2521dfcace503886e3d4b79c3118cc4464))
+* **bootstrap:** require GetSectionResponse to match our destination, not name ([4f484f1](https://github.com/maidsafe/sn_routing/commit/4f484f1ea93f5d83180d5c77fcb5b3a680322d31))
+* **stress-test:** fix probe message sending ([a8a184c](https://github.com/maidsafe/sn_routing/commit/a8a184c70f57801140d4fb521b230485ab353727))
+
 ### [0.47.2](https://github.com/maidsafe/sn_routing/compare/v0.47.1...v0.47.2) (2021-03-02)
 
 
