@@ -301,6 +301,11 @@
 <span id="300">300</span>
 <span id="301">301</span>
 <span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -322,6 +327,7 @@
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
+<span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">VecDeque</span>,
@@ -488,10 +494,14 @@
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;member_info&quot;</span>, <span class="ident">member_info</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+            <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;Sync&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">section</span>.<span class="ident">elders_info</span>())
                 .<span class="ident">field</span>(<span class="string">&quot;section_key&quot;</span>, <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>())
+                .<span class="ident">field</span>(
+                    <span class="string">&quot;other_prefixes&quot;</span>,
+                    <span class="kw-2">&amp;</span><span class="macro">format_args</span><span class="macro">!</span>(<span class="string">&quot;({:b})&quot;</span>, <span class="ident">network</span>.<span class="ident">prefixes</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>)),
+                )
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">Relocate</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;Relocate({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">RelocatePromise</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;RelocatePromise({:?})&quot;</span>, <span class="ident">payload</span>),
