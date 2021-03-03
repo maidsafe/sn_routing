@@ -26,7 +26,7 @@ use sn_messaging::{
     DstLocation, MessageType, WireMsg,
 };
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     mem,
     net::SocketAddr,
 };
@@ -137,11 +137,15 @@ impl<'a> State<'a> {
         mut bootstrap_addrs: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<(Prefix, bls::PublicKey, BTreeMap<XorName, SocketAddr>)> {
+        // Avoid sending more than one request to the same peer.
+        let mut used_addrs = HashSet::new();
+
         loop {
+            used_addrs.extend(bootstrap_addrs.iter().copied());
             self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
-            let (response, sender) = self.receive_get_section_response().await?;
+            let (response, sender) = self.receive_get_section_response(relocate_details).await?;
 
             match response {
                 GetSectionResponse::Success(SectionInfo {
@@ -156,12 +160,19 @@ impl<'a> State<'a> {
                     );
                     return Ok((prefix, key, elders));
                 }
-                GetSectionResponse::Redirect(new_bootstrap_addrs) => {
-                    info!(
-                        "Bootstrapping redirected to another set of peers: {:?}",
-                        new_bootstrap_addrs,
-                    );
-                    bootstrap_addrs = new_bootstrap_addrs.to_vec();
+                GetSectionResponse::Redirect(mut new_bootstrap_addrs) => {
+                    // Ignore already used addresses
+                    new_bootstrap_addrs.retain(|addr| !used_addrs.contains(addr));
+
+                    if new_bootstrap_addrs.is_empty() {
+                        debug!("Bootstrapping redirected to the same set of peers we already contacted - ignoring");
+                    } else {
+                        info!(
+                            "Bootstrapping redirected to another set of peers: {:?}",
+                            new_bootstrap_addrs,
+                        );
+                        bootstrap_addrs = new_bootstrap_addrs;
+                    }
                 }
                 GetSectionResponse::SectionInfoUpdate(error) => {
                     error!("Infrastructure error: {:?}", error);
@@ -177,10 +188,9 @@ impl<'a> State<'a> {
     ) -> Result<()> {
         debug!("{} Sending GetSectionQuery to {:?}", self.node, recipients);
 
-        let destination = match relocate_details {
-            Some(details) => *details.destination(),
-            None => self.node.name(),
-        };
+        let destination = relocate_details
+            .map(|details| *details.destination())
+            .unwrap_or_else(|| self.node.name());
 
         let message = SectionInfoMsg::GetSectionQuery(destination);
 
@@ -192,7 +202,14 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    async fn receive_get_section_response(&mut self) -> Result<(GetSectionResponse, SocketAddr)> {
+    async fn receive_get_section_response(
+        &mut self,
+        relocate_details: Option<&SignedRelocateDetails>,
+    ) -> Result<(GetSectionResponse, SocketAddr)> {
+        let destination = relocate_details
+            .map(|details| *details.destination())
+            .unwrap_or_else(|| self.node.name());
+
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
                 MessageType::SectionInfo(SectionInfoMsg::GetSectionResponse(response)) => {
@@ -202,7 +219,7 @@ impl<'a> State<'a> {
                             continue;
                         }
                         GetSectionResponse::Success(SectionInfo { prefix, .. })
-                            if !prefix.matches(&self.node.name()) =>
+                            if !prefix.matches(&destination) =>
                         {
                             error!("Invalid GetSectionResponse::Success: bad prefix");
                             continue;
