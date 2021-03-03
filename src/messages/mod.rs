@@ -17,7 +17,7 @@ pub(crate) use self::{
     variant::{JoinRequest, ResourceProofResponse, Variant},
 };
 use crate::{
-    crypto::{self, name, Verifier},
+    crypto::{self, Verifier},
     error::{Error, Result},
     node::Node,
     section::{SectionChain, SectionChainError, SectionKeyShare},
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use sn_messaging::{Aggregation, DstLocation};
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
-use xor_name::{Prefix, XorName};
+use xor_name::XorName;
 
 /// Message sent over the network.
 #[derive(Clone, Eq, Serialize, Deserialize)]
@@ -218,9 +218,9 @@ impl Message {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub(crate) fn verify<'a, I>(&'a self, trusted_keys: I) -> Result<VerifyStatus>
+    pub(crate) fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
-        I: IntoIterator<Item = (&'a Prefix, &'a bls::PublicKey)>,
+        I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         let bytes = bincode::serialize(&SignableView {
             dst: &self.dst,
@@ -239,17 +239,9 @@ impl Message {
                 }
 
                 // Variant-specific verification.
-                let trusted_keys = trusted_keys
-                    .into_iter()
-                    .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
-                    .map(|(_, key)| key);
                 self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
             }
-            SrcAuthority::BlsShare {
-                proof_share,
-                public_key,
-                ..
-            } => {
+            SrcAuthority::BlsShare { proof_share, .. } => {
                 // Proof chain is required for accumulation at destination.
                 let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
                     proof_chain
@@ -260,10 +252,6 @@ impl Message {
                 if !proof_share.verify(&bytes) {
                     return Err(Error::FailedSignature);
                 }
-                let trusted_keys = trusted_keys
-                    .into_iter()
-                    .filter(|(known_prefix, _)| known_prefix.matches(&name(public_key)))
-                    .map(|(_, key)| key);
 
                 if proof_chain.check_trust(trusted_keys) {
                     Ok(VerifyStatus::Full)
@@ -271,7 +259,7 @@ impl Message {
                     Ok(VerifyStatus::Unknown)
                 }
             }
-            SrcAuthority::Section { prefix, signature } => {
+            SrcAuthority::Section { signature, .. } => {
                 // Proof chain is required for section-src messages.
                 let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
                     proof_chain
@@ -282,11 +270,6 @@ impl Message {
                 if !proof_chain.last_key().verify(signature, &bytes) {
                     return Err(Error::FailedSignature);
                 }
-
-                let trusted_keys = trusted_keys
-                    .into_iter()
-                    .filter(|(known_prefix, _)| prefix.is_compatible(known_prefix))
-                    .map(|(_, key)| key);
 
                 if proof_chain.check_trust(trusted_keys) {
                     Ok(VerifyStatus::Full)
@@ -343,14 +326,14 @@ impl Message {
 
     // Extend the current message proof chain so it starts at `new_first_key` while keeping the
     // last key (and therefore the signature) intact.
+    // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
+    // the signed data.
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
         full_chain: &SectionChain,
     ) -> Result<Self, ExtendProofChainError> {
-        if let Variant::Sync { section, .. } = &mut self.variant {
-            section.extend_chain(new_first_key, full_chain)?
-        } else if let Some(proof_chain) = &mut self.proof_chain {
+        if let Some(proof_chain) = &mut self.proof_chain {
             *proof_chain = proof_chain.extend(new_first_key, full_chain)?
         } else {
             return Err(ExtendProofChainError::NoProofChain);
@@ -495,21 +478,12 @@ mod tests {
             Some(pk1),
         )?;
 
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk1)))?,
-            VerifyStatus::Full
-        );
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk0)))?,
-            VerifyStatus::Unknown
-        );
+        assert_eq!(message.verify(iter::once(&pk1))?, VerifyStatus::Full);
+        assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Unknown);
 
         let message = message.extend_proof_chain(&pk0, &full_proof_chain)?;
 
-        assert_eq!(
-            message.verify(iter::once((&Prefix::default(), &pk0)))?,
-            VerifyStatus::Full
-        );
+        assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Full);
 
         Ok(())
     }

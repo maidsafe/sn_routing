@@ -186,7 +186,11 @@ impl<'a> State<'a> {
         recipients: Vec<SocketAddr>,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<()> {
-        debug!("{} Sending GetSectionQuery to {:?}", self.node, recipients);
+        if recipients.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Sending GetSectionQuery to {:?}", recipients);
 
         let destination = relocate_details
             .map(|details| *details.destination())
@@ -483,11 +487,7 @@ impl<'a> State<'a> {
     }
 
     fn verify_message(&self, message: &Message, trusted_key: Option<&bls::PublicKey>) -> bool {
-        // The message verification will use only those trusted keys whose prefix is compatible with
-        // the message source. By using empty prefix, we make sure `trusted_key` is always used.
-        let prefix = Prefix::default();
-
-        match message.verify(trusted_key.map(|key| (&prefix, key))) {
+        match message.verify(trusted_key) {
             Ok(VerifyStatus::Full) => true,
             Ok(VerifyStatus::Unknown) if trusted_key.is_none() => true,
             Ok(VerifyStatus::Unknown) => {

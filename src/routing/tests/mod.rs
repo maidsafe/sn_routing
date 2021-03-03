@@ -1203,17 +1203,17 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 #[tokio::test]
 async fn handle_sync() -> Result<()> {
     // Create first `Section` with a chain of length 2
-    let sk0_set = SecretKeySet::random();
-    let pk0 = sk0_set.secret_key().public_key();
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
     let sk1_set = SecretKeySet::random();
     let pk1 = sk1_set.secret_key().public_key();
-    let pk1_signature = sk0_set.secret_key().sign(bincode::serialize(&pk1)?);
+    let pk1_signature = sk0.sign(bincode::serialize(&pk1)?);
 
     let mut chain = SectionChain::new(pk0);
     assert_eq!(chain.insert(&pk0, pk1, pk1_signature), Ok(()));
 
     let (old_elders_info, mut nodes) = create_elders_info();
-    let proven_old_elders_info = proven(sk0_set.secret_key(), old_elders_info.clone())?;
+    let proven_old_elders_info = proven(&sk0, old_elders_info.clone())?;
     let old_section = Section::new(chain.clone(), proven_old_elders_info)?;
 
     // Create our node
@@ -1278,7 +1278,170 @@ async fn handle_sync() -> Result<()> {
     Ok(())
 }
 
-// TODO: add test that untrusted `Sync` is not applied
+#[tokio::test]
+async fn handle_untrusted_sync() -> Result<()> {
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1 = bls::SecretKey::random();
+    let pk1 = sk1.public_key();
+    let sig1 = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let sk2 = bls::SecretKey::random();
+    let pk2 = sk2.public_key();
+    let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
+
+    let mut chain = SectionChain::new(pk0);
+    chain.insert(&pk0, pk1, sig1)?;
+    chain.insert(&pk1, pk2, sig2)?;
+
+    let (old_elders_info, _) = create_elders_info();
+    let proven_old_elders_info = proven(&sk0, old_elders_info.clone())?;
+    let old_section = Section::new(SectionChain::new(pk0), proven_old_elders_info)?;
+
+    let (new_elders_info, _) = create_elders_info();
+    let proven_new_elders_info = proven(&sk2, new_elders_info.clone())?;
+    let new_section = Section::new(chain.truncate(2), proven_new_elders_info)?;
+
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let node = create_node();
+    let state = Approved::new(node, old_section, None, event_tx);
+    let stage = Stage::new(state, create_comm().await?);
+
+    let sender = create_node();
+    let orig_message = Message::single_src(
+        &sender,
+        DstLocation::Direct,
+        Variant::Sync {
+            section: new_section,
+            network: Network::new(),
+        },
+        None,
+        None,
+    )?;
+
+    let commands = stage
+        .handle_command(Command::HandleMessage {
+            message: orig_message.clone(),
+            sender: Some(sender.addr),
+        })
+        .await?;
+
+    let mut bounce_sent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                ..
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::BouncedUntrustedMessage(bounced_message) => {
+                assert_eq!(**bounced_message, orig_message);
+                assert_eq!(recipients, [sender.addr]);
+                bounce_sent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(bounce_sent);
+    assert_matches!(event_rx.try_recv(), Err(_));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn handle_bounced_untrusted_sync() -> Result<()> {
+    let sk0 = bls::SecretKey::random();
+    let pk0 = sk0.public_key();
+
+    let sk1 = bls::SecretKey::random();
+    let pk1 = sk1.public_key();
+    let sig1 = sk0.sign(&bincode::serialize(&pk1)?);
+
+    let sk2_set = SecretKeySet::random();
+    let sk2 = sk2_set.secret_key();
+    let pk2 = sk2.public_key();
+    let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
+
+    let mut chain = SectionChain::new(pk0);
+    chain.insert(&pk0, pk1, sig1)?;
+    chain.insert(&pk1, pk2, sig2)?;
+
+    let (elders_info, mut nodes) = create_elders_info();
+    let proven_elders_info = proven(&sk0, elders_info.clone())?;
+    let section_full = Section::new(chain, proven_elders_info)?;
+    let section_trimmed = section_full.trimmed(2);
+
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let node = nodes.remove(0);
+    let section_key_share = create_section_key_share(&sk2_set, 0);
+    let state = Approved::new(
+        node.clone(),
+        section_full,
+        Some(section_key_share),
+        event_tx,
+    );
+    let stage = Stage::new(state, create_comm().await?);
+
+    let orig_message = Message::single_src(
+        &node,
+        DstLocation::Direct,
+        Variant::Sync {
+            section: section_trimmed,
+            network: Network::new(),
+        },
+        None,
+        None,
+    )?;
+
+    let sender = create_node();
+    let bounced_message = Message::single_src(
+        &sender,
+        DstLocation::Node(node.name()),
+        Variant::BouncedUntrustedMessage(Box::new(orig_message)),
+        None,
+        Some(pk0),
+    )?;
+
+    let commands = stage
+        .handle_command(Command::HandleMessage {
+            message: bounced_message,
+            sender: Some(sender.addr),
+        })
+        .await?;
+
+    let mut message_resent = false;
+
+    for command in commands {
+        let (recipients, message) = match command {
+            Command::SendMessage {
+                recipients,
+                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                ..
+            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            _ => continue,
+        };
+
+        match message.variant() {
+            Variant::Sync { section, .. } => {
+                assert_eq!(recipients, [sender.addr]);
+                assert!(section.chain().has_key(&pk0));
+                message_resent = true;
+            }
+            _ => continue,
+        }
+    }
+
+    assert!(message_resent);
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn relocation_of_non_elder() -> Result<()> {
@@ -1508,10 +1671,7 @@ async fn handle_elders_update() -> Result<()> {
         assert_eq!(section.chain().last_key(), &pk1);
 
         // The message is trusted even by peers who don't yet know the new section key.
-        assert_matches!(
-            message.verify(iter::once((&Prefix::default(), &pk0))),
-            Ok(VerifyStatus::Full)
-        );
+        assert_matches!(message.verify(iter::once(&pk0)), Ok(VerifyStatus::Full));
 
         // Merging the section contained in the message with the original section succeeds.
         assert_matches!(section0.clone().merge(section.clone()), Ok(()));

@@ -418,7 +418,18 @@ impl Approved {
 
         if let Some(info) = self.section.members().get(&name) {
             let info = info.clone().leave()?;
-            self.vote(Vote::Offline(info))
+
+            // Don't send the `Offline` vote to the peer being lost as that send would fail,
+            // triggering a chain of further `Offline` votes.
+            let elders: Vec<_> = self
+                .section
+                .elders_info()
+                .peers()
+                .filter(|peer| peer.name() != info.peer.name())
+                .copied()
+                .collect();
+
+            self.send_vote(&elders, Vote::Offline(info))
         } else {
             Ok(vec![])
         }
@@ -459,11 +470,7 @@ impl Approved {
 
     // Send vote to all our elders.
     fn vote(&self, vote: Vote) -> Result<Vec<Command>> {
-        let mut elders: Vec<_> = self.section.elders_info().peers().copied().collect();
-        // Exclude the offline elder from the recipients.
-        if let Vote::Offline(ref info) = vote {
-            elders.retain(|elder| elder.name() != info.peer.name());
-        }
+        let elders: Vec<_> = self.section.elders_info().peers().copied().collect();
         self.send_vote(&elders, vote)
     }
 
@@ -596,6 +603,12 @@ impl Approved {
                 // Skip validation of these. We will validate them inside the bootstrap task.
                 return Ok(MessageStatus::Useful);
             }
+            Variant::Sync { section, .. } => {
+                // Ignore `Sync` not for our section.
+                if !section.prefix().matches(&self.node.name()) {
+                    return Ok(MessageStatus::Useless);
+                }
+            }
             Variant::Vote {
                 content,
                 proof_share,
@@ -608,20 +621,11 @@ impl Approved {
                 }
             }
             Variant::RelocatePromise(promise) => {
-                if promise.name != self.node.name() {
-                    if !self.is_elder() {
-                        return Ok(MessageStatus::Useless);
-                    }
-
-                    if self.section.is_elder(&promise.name) {
-                        // If the peer is honest and is still elder then we probably haven't yet
-                        // processed its demotion. Bounce the message back and try again on resend.
-                        return Ok(MessageStatus::Unknown);
-                    }
+                if let Some(status) = self.decide_relocate_promise_status(promise) {
+                    return Ok(status);
                 }
             }
-            Variant::Sync { .. }
-            | Variant::Relocate(_)
+            Variant::Relocate(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DKGMessage { .. }
@@ -675,14 +679,11 @@ impl Approved {
             Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                Ok(self
-                    .handle_bounced_untrusted_message(
-                        msg.src().to_node_peer(sender)?,
-                        *msg.dst_key(),
-                        *message.clone(),
-                    )
-                    .into_iter()
-                    .collect())
+                Ok(vec![self.handle_bounced_untrusted_message(
+                    msg.src().to_node_peer(sender)?,
+                    *msg.dst_key(),
+                    *message.clone(),
+                )?])
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
@@ -793,13 +794,35 @@ impl Approved {
         }
     }
 
+    // Decide how to handle a `RelocatePromise` message.
+    fn decide_relocate_promise_status(&self, promise: &RelocatePromise) -> Option<MessageStatus> {
+        if promise.name == self.node.name() {
+            // Promise to relocate us.
+            if self.relocate_state.is_some() {
+                // Already received a promise or already relocating. discard.
+                return Some(MessageStatus::Useless);
+            }
+        } else {
+            // Promise returned from a node to be relocated, to be exchanged for the actual
+            // `Relocate` message.
+            if !self.is_elder() || self.section.is_elder(&promise.name) {
+                // If we are not elder, maybe we just haven't processed our promotion yet.
+                // If they are still elder, maybe we just haven't processed their demotion yet.
+                //
+                // In both cases, bounce the message and try again on resend (if any).
+                return Some(MessageStatus::Unknown);
+            }
+        }
+
+        None
+    }
+
     fn verify_message(&self, msg: &Message) -> Result<bool> {
         let known_keys = self
             .section
             .chain()
             .keys()
-            .map(move |key| (self.section.prefix(), key))
-            .chain(self.network.keys());
+            .chain(self.network.keys().map(|(_, key)| key));
 
         match msg.verify(known_keys) {
             Ok(VerifyStatus::Full) => Ok(true),
@@ -888,28 +911,52 @@ impl Approved {
         sender: Peer,
         dst_key: Option<bls::PublicKey>,
         bounced_msg: Message,
-    ) -> Option<Command> {
+    ) -> Result<Command> {
         let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
         let _span_guard = span.enter();
 
-        if let Some(dst_key) = dst_key {
-            let resend_msg = match bounced_msg.extend_proof_chain(&dst_key, self.section.chain()) {
-                Ok(msg) => msg,
-                Err(err) => {
-                    trace!("extending proof failed, discarding: {:?}", err);
-                    return None;
-                }
-            };
+        let dst_key = dst_key.ok_or_else(|| {
+            error!("missing dst key");
+            Error::InvalidMessage
+        })?;
 
-            trace!("resending with extended proof");
-            Some(Command::send_message_to_node(
-                sender.addr(),
-                resend_msg.to_bytes(),
-            ))
-        } else {
-            trace!("missing dst key, discarding");
-            None
-        }
+        let resend_msg = match bounced_msg.variant() {
+            Variant::Sync { section, network } => {
+                // `Sync` messages are handled specially, because they don't carry a proof chain.
+                // Instead we use the section chain that's part of the included `Section` struct.
+                // Problem is we can't extend that chain as it would invalidate the signature. We
+                // must construct a new message instead.
+                let section = section
+                    .extend_chain(&dst_key, self.section.chain())
+                    .map_err(|err| {
+                        error!("extending section chain failed: {:?}", err);
+                        Error::InvalidMessage // TODO: more specific error
+                    })?;
+
+                Message::single_src(
+                    &self.node,
+                    DstLocation::Direct,
+                    Variant::Sync {
+                        section,
+                        network: network.clone(),
+                    },
+                    None,
+                    None,
+                )?
+            }
+            _ => bounced_msg
+                .extend_proof_chain(&dst_key, self.section.chain())
+                .map_err(|err| {
+                    error!("extending proof chain failed: {:?}", err);
+                    Error::InvalidMessage // TODO: more specific error
+                })?,
+        };
+
+        trace!("resending with extended proof");
+        Ok(Command::send_message_to_node(
+            sender.addr(),
+            resend_msg.to_bytes(),
+        ))
     }
 
     fn handle_bounced_unknown_message(

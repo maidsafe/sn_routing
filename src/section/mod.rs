@@ -175,14 +175,19 @@ impl Section {
         &self.chain
     }
 
-    // Extend the section chain so it starts at `new_first_key` while keeping the last key intact.
+    // Extend the section chain so it starts at `trusted_key` while keeping the last key intact.
     pub(crate) fn extend_chain(
-        &mut self,
-        new_first_key: &bls::PublicKey,
+        &self,
+        trusted_key: &bls::PublicKey,
         full_chain: &SectionChain,
-    ) -> Result<(), SectionChainError> {
-        self.chain = self.chain.extend(new_first_key, full_chain)?;
-        Ok(())
+    ) -> Result<Self, SectionChainError> {
+        let chain = self.chain.extend(trusted_key, full_chain)?;
+
+        Ok(Self {
+            elders_info: self.elders_info.clone(),
+            chain,
+            members: self.members.clone(),
+        })
     }
 
     pub fn elders_info(&self) -> &EldersInfo {
