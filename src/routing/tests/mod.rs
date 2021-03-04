@@ -44,6 +44,7 @@ use std::{
     ops::Deref,
 };
 use tokio::sync::mpsc;
+use tokio::time::{timeout, Duration};
 use xor_name::{Prefix, XorName};
 
 #[tokio::test]
@@ -621,14 +622,13 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let _ = section.update_member(member_info);
 
     // Make a Node
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, _event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
     let stage = Stage::new(state, create_comm().await?);
 
     // Simulate peer with the same name is rejoin and verify resulted behaviours.
     let status = handle_online_command(&peer, &sk_set, &stage, &elders_info).await?;
-    assert!(event_rx.recv().await.is_none());
 
     // A rejoin node with low age will be rejected.
     if age / 2 <= MIN_AGE {
@@ -1350,7 +1350,9 @@ async fn handle_untrusted_sync() -> Result<()> {
     }
 
     assert!(bounce_sent);
-    assert_matches!(event_rx.try_recv(), Err(_));
+    assert!(timeout(Duration::from_secs(5), event_rx.recv())
+        .await
+        .is_err());
 
     Ok(())
 }

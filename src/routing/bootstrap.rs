@@ -620,8 +620,6 @@ mod tests {
 
         // Create the task that executes the body of the test, but don't run it either.
         let others = async {
-            task::yield_now().await;
-
             // Receive GetSectionQuery
             let (message, recipients) = send_rx
                 .recv()
@@ -646,7 +644,6 @@ mod tests {
                 infrastructure_info,
             ));
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
-            task::yield_now().await;
 
             // Receive JoinRequest
             let (message, recipients) = send_rx
@@ -708,8 +705,6 @@ mod tests {
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
         let test_task = async {
-            task::yield_now().await;
-
             // Receive GetSectionQuery
             let (message, recipients) = send_rx
                 .recv()
@@ -768,8 +763,6 @@ mod tests {
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
         let test_task = async {
-            task::yield_now().await;
-
             let (message, _) = send_rx
                 .recv()
                 .await
@@ -784,7 +777,6 @@ mod tests {
 
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
-            assert_matches!(send_rx.recv().await, None);
 
             let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
@@ -841,8 +833,6 @@ mod tests {
         // Send an invalid `BootstrapResponse::Join` followed by a valid one. The invalid one is
         // ignored and the valid one processed normally.
         let test_task = async {
-            task::yield_now().await;
-
             let (message, _) = send_rx
                 .recv()
                 .await
@@ -867,7 +857,6 @@ mod tests {
 
             recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
             task::yield_now().await;
-            assert_matches!(send_rx.recv().await, None);
 
             let infrastructure_info = SectionInfo {
                 prefix: good_prefix,
@@ -920,8 +909,6 @@ mod tests {
         let join_task = state.join(section_key, elders, None);
 
         let test_task = async {
-            task::yield_now().await;
-
             let (message, _) = send_rx
                 .recv()
                 .await
@@ -947,7 +934,6 @@ mod tests {
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
-            assert_matches!(send_rx.recv().await, None);
 
             // Send `Rejoin` with good prefix
             let message = Message::single_src(
@@ -965,7 +951,6 @@ mod tests {
                 MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
                 bootstrap_node.addr,
             ))?;
-            task::yield_now().await;
 
             let (message, _) = send_rx
                 .recv()
