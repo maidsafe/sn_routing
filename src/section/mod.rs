@@ -43,8 +43,11 @@ pub(crate) struct Section {
 impl Section {
     /// Creates a minimal `Section` initially containing only info about our elders
     /// (`elders_info`).
+    ///
+    /// Returns error if `elders_info` is not signed with the last key of `chain`.
     pub fn new(chain: SectionChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
-        if !chain.has_key(&elders_info.proof.public_key) {
+        if elders_info.proof.public_key != *chain.last_key() {
+            error!("can't create section: elders_info signed with incorrect key");
             // TODO: consider more specific error here.
             return Err(Error::InvalidMessage);
         }

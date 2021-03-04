@@ -303,26 +303,7 @@ impl SectionChain {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
-        let mut index = self.tree.len();
-
-        loop {
-            let (key, parent_index) = if index > 0 {
-                let block = &self.tree[index - 1];
-                (&block.key, Some(block.parent_index))
-            } else {
-                (&self.root, None)
-            };
-
-            if trusted_keys.contains(key) {
-                return true;
-            }
-
-            if let Some(next_index) = parent_index {
-                index = next_index;
-            } else {
-                return false;
-            }
-        }
+        self.main_branch().any(|key| trusted_keys.contains(key))
     }
 
     /// Compare the two keys by their position in the chain. The key that is higher (closer to the
@@ -341,6 +322,14 @@ impl SectionChain {
     /// Returns the number of blocks in the chain. This is always >= 1.
     pub fn len(&self) -> usize {
         1 + self.tree.len()
+    }
+
+    /// Returns the number of block on the main branch of the chain - that is - the ones reachable
+    /// from the last block.
+    ///
+    /// NOTE: this is a `O(n)` operation.
+    pub fn main_branch_len(&self) -> usize {
+        self.main_branch().count()
     }
 
     fn insert_block(&mut self, new_block: Block) -> usize {
@@ -429,6 +418,14 @@ impl SectionChain {
             max_index -= 1;
         }
     }
+
+    // Iterator over the key on the main branch of the chain in reverse order.
+    fn main_branch(&self) -> Branch {
+        Branch {
+            chain: self,
+            index: Some(self.tree.len()),
+        }
+    }
 }
 
 impl Debug for SectionChain {
@@ -476,6 +473,29 @@ impl Ord for Block {
 impl PartialOrd for Block {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+// Iterator over the keys on a single branch of the chain in reverse order.
+struct Branch<'a> {
+    chain: &'a SectionChain,
+    index: Option<usize>,
+}
+
+impl<'a> Iterator for Branch<'a> {
+    type Item = &'a bls::PublicKey;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.index?;
+
+        if index == 0 {
+            self.index = None;
+            Some(&self.chain.root)
+        } else {
+            let block = self.chain.tree.get(index - 1)?;
+            self.index = Some(block.parent_index);
+            Some(&block.key)
+        }
     }
 }
 
@@ -1069,6 +1089,23 @@ mod tests {
         let main_chain = make_chain(pk0, vec![(&pk0, pk1, sig1), (&pk1, pk2, sig2)]);
 
         assert_eq!(main_chain.cmp_by_position(&pk0, &pk1), Ordering::Less);
+    }
+
+    #[test]
+    fn main_branch_len() {
+        let (sk0, pk0) = gen_keypair();
+        let (_, pk1, sig1) = gen_signed_keypair(&sk0);
+        let (_, pk2, sig2) = gen_signed_keypair(&sk0);
+
+        // 0->1
+        let chain = make_chain(pk0, vec![(&pk0, pk1, sig1.clone())]);
+        assert_eq!(chain.main_branch_len(), 2);
+
+        // 0->1
+        // |
+        // +->2
+        let chain = make_chain(pk0, vec![(&pk0, pk1, sig1), (&pk0, pk2, sig2)]);
+        assert_eq!(chain.main_branch_len(), 2);
     }
 
     fn gen_keypair() -> (bls::SecretKey, bls::PublicKey) {

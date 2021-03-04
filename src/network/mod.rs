@@ -11,21 +11,21 @@ mod stats;
 
 use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
-    consensus::Proven,
+    consensus::{verify_proof, Proof, Proven},
     peer::Peer,
     section::{EldersInfo, SectionChain},
 };
 
 use serde::{Deserialize, Serialize};
 use sn_messaging::DstLocation;
-use std::{collections::HashSet, iter};
+use std::{borrow::Borrow, collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 
 /// Container for storing information about other sections in the network.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Network {
     // Neighbour sections: maps section prefixes to their latest signed elders infos.
-    neighbours: PrefixMap<Proven<EldersInfo>>,
+    neighbours: PrefixMap<NeighbourInfo>,
     // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
     // Our section keys that are trusted by other sections.
@@ -50,12 +50,14 @@ impl Network {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        self.neighbours.iter().map(|info| &info.value)
+        self.neighbours.iter().map(|info| &info.elders_info.value)
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
-        self.neighbours.get(prefix).map(|info| &info.value)
+        self.neighbours
+            .get(prefix)
+            .map(|info| &info.elders_info.value)
     }
 
     /// Returns prefixes of all known sections.
@@ -70,7 +72,12 @@ impl Network {
 
     /// Returns a `Peer` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
-        self.neighbours.get_matching(name)?.value.elders.get(name)
+        self.neighbours
+            .get_matching(name)?
+            .elders_info
+            .value
+            .elders
+            .get(name)
     }
 
     /// Merge two `Network`s into one.
@@ -98,14 +105,32 @@ impl Network {
         }
     }
 
-    pub fn update_neighbour_info(&mut self, elders_info: Proven<EldersInfo>) -> bool {
-        // TODO: verify
-        // if !elders_info.verify(section_chain) {
-        //     return false;
-        // }
+    /// Update the info about a neighbour section.
+    ///
+    /// If this is for our sibling section, then `elders_info` is signed by them and so the signing
+    /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
+    /// additional `key_proof` which signs it using a key that is present in `section_chain`.
+    ///
+    /// If this is for a non-sibling section, then currently we require the info to be signed by our
+    /// section (so we need to accumulate the signature for it first) and so `key_proof` is not
+    /// needed in that case.
+    pub fn update_neighbour_info(
+        &mut self,
+        elders_info: Proven<EldersInfo>,
+        key_proof: Option<Proof>,
+        section_chain: &SectionChain,
+    ) -> bool {
+        let info = NeighbourInfo {
+            elders_info: elders_info.clone(),
+            key_proof,
+        };
 
-        if let Some(old) = self.neighbours.insert(elders_info.clone()) {
-            if old == elders_info {
+        if !info.verify(section_chain) {
+            return false;
+        }
+
+        if let Some(old) = self.neighbours.insert(info) {
+            if old.elders_info == elders_info {
                 return false;
             }
         }
@@ -143,7 +168,7 @@ impl Network {
                     prefix,
                     self.neighbours
                         .descendants(prefix)
-                        .map(|info| &info.value.prefix),
+                        .map(|info| &info.elders_info.value.prefix),
                 )
             })
             .copied()
@@ -185,7 +210,7 @@ impl Network {
             self.keys.get_matching(name).map(|entry| entry.value.1),
             self.neighbours
                 .get_matching(name)
-                .map(|entry| entry.value.clone()),
+                .map(|entry| entry.elders_info.value.clone()),
         )
     }
 
@@ -296,6 +321,33 @@ where
     }
 
     check(our, other, &known)
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
+struct NeighbourInfo {
+    // If this is signed by our section, then `key_proof` is `None`. If this is signed by our
+    // sibling section, then `key_proof` contains the proof of the signing key itself signed by our
+    // section.
+    elders_info: Proven<EldersInfo>,
+    key_proof: Option<Proof>,
+}
+
+impl NeighbourInfo {
+    fn verify(&self, section_chain: &SectionChain) -> bool {
+        if let Some(key_proof) = &self.key_proof {
+            section_chain.has_key(&key_proof.public_key)
+                && verify_proof(key_proof, &self.elders_info.proof.public_key)
+                && self.elders_info.self_verify()
+        } else {
+            self.elders_info.verify(section_chain)
+        }
+    }
+}
+
+impl Borrow<Prefix> for NeighbourInfo {
+    fn borrow(&self) -> &Prefix {
+        &self.elders_info.value.prefix
+    }
 }
 
 #[cfg(test)]
@@ -419,6 +471,7 @@ mod tests {
     #[test]
     fn closest() {
         let sk = bls::SecretKey::random();
+        let chain = SectionChain::new(sk.public_key());
 
         let p01: Prefix = "01".parse().unwrap();
         let p10: Prefix = "10".parse().unwrap();
@@ -426,8 +479,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = Network::new();
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p01));
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p10));
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p01), None, &chain);
+        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p10), None, &chain);
 
         let mut rng = rand::thread_rng();
         let n01 = p01.substituted_in(rng.gen());
@@ -442,13 +495,14 @@ mod tests {
     #[test]
     fn prune_neighbours() {
         let sk = bls::SecretKey::random();
+        let chain = SectionChain::new(sk.public_key());
 
         let p00 = "00".parse().unwrap();
         let mut map = Network::new();
 
         let p1 = "1".parse().unwrap();
         let section1 = gen_proven_elders_info(&sk, p1);
-        let _ = map.update_neighbour_info(section1);
+        assert!(map.update_neighbour_info(section1, None, &chain));
         map.prune_neighbours(&p00);
 
         assert!(map.prefixes().any(|&prefix| prefix == p1));
@@ -457,7 +511,7 @@ mod tests {
         // we no longer need (1)
         let p10 = "10".parse().unwrap();
         let section10 = gen_proven_elders_info(&sk, p10);
-        let _ = map.update_neighbour_info(section10);
+        assert!(map.update_neighbour_info(section10, None, &chain));
         map.prune_neighbours(&p00);
 
         assert!(map.prefixes().any(|&prefix| prefix == p10));

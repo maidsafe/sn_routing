@@ -84,10 +84,6 @@ pub(crate) enum Variant {
         dkg_key: DkgKey,
         /// The DKG particpants.
         elders_info: EldersInfo,
-        /// A DKG "generation". A DKG with higher generation supersedes a DKG with lower but DKGs
-        /// with the same generation need to executed in parallel as we can't tell which one "wins"
-        /// before they complete.
-        generation: u64,
     },
     /// Message exchanged for DKG process.
     DKGMessage {
@@ -103,10 +99,7 @@ pub(crate) enum Variant {
     },
     /// Sent to the current elders by the DKG participants when at least majority of them observe
     /// a DKG failure.
-    DKGFailureAgreement {
-        elders_info: EldersInfo,
-        proofs: DkgFailureProofSet,
-    },
+    DKGFailureAgreement(DkgFailureProofSet),
     /// Message containing a single `Vote` to be accumulated in the vote accumulator.
     Vote {
         content: Vote,
@@ -217,12 +210,10 @@ impl Debug for Variant {
             Self::DKGStart {
                 dkg_key,
                 elders_info,
-                generation,
             } => f
                 .debug_struct("DKGStart")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
-                .field("generation", generation)
                 .finish(),
             Self::DKGMessage { dkg_key, message } => f
                 .debug_struct("DKGMessage")
@@ -234,14 +225,9 @@ impl Debug for Variant {
                 .field("dkg_key", dkg_key)
                 .field("proof", proof)
                 .finish(),
-            Self::DKGFailureAgreement {
-                elders_info,
-                proofs,
-            } => f
-                .debug_struct("DKGFailureAgreement")
-                .field("elders_info", elders_info)
-                .field("proofs", proofs)
-                .finish(),
+            Self::DKGFailureAgreement(proofs) => {
+                f.debug_tuple("DKGFailureAgreement").field(proofs).finish()
+            }
             Self::Vote {
                 content,
                 proof_share,

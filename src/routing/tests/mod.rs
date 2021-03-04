@@ -1030,7 +1030,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     let mut section_chain = SectionChain::new(pk0);
     let _ = section_chain.insert(&pk0, pk1, pk1_signature);
 
-    let proven_elders_info = proven(&sk0, elders_info)?;
+    let proven_elders_info = proven(sk1_set.secret_key(), elders_info)?;
     let section = Section::new(section_chain, proven_elders_info)?;
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
@@ -1123,7 +1123,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let mut chain = SectionChain::new(pk0);
     let _ = chain.insert(&pk0, pk1, pk1_signature);
 
-    let proven_elders_info = proven(&sk0, elders_info)?;
+    let proven_elders_info = proven(sk1_set.secret_key(), elders_info)?;
     let section = Section::new(chain.clone(), proven_elders_info)?;
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
@@ -1213,7 +1213,7 @@ async fn handle_sync() -> Result<()> {
     assert_eq!(chain.insert(&pk0, pk1, pk1_signature), Ok(()));
 
     let (old_elders_info, mut nodes) = create_elders_info();
-    let proven_old_elders_info = proven(&sk0, old_elders_info.clone())?;
+    let proven_old_elders_info = proven(sk1_set.secret_key(), old_elders_info.clone())?;
     let old_section = Section::new(chain.clone(), proven_old_elders_info)?;
 
     // Create our node
@@ -1374,7 +1374,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     chain.insert(&pk1, pk2, sig2)?;
 
     let (elders_info, mut nodes) = create_elders_info();
-    let proven_elders_info = proven(&sk0, elders_info.clone())?;
+    let proven_elders_info = proven(sk2, elders_info.clone())?;
     let section_full = Section::new(chain, proven_elders_info)?;
     let section_trimmed = section_full.trimmed(2);
 

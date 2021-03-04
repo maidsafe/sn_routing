@@ -59,10 +59,7 @@ pub(crate) enum Command {
         outcome: SectionKeyShare,
     },
     /// Handle a DKG failure that was observed by a majority of the DKG participants.
-    HandleDkgFailure {
-        elders_info: EldersInfo,
-        proofs: DkgFailureProofSet,
-    },
+    HandleDkgFailure(DkgFailureProofSet),
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
         recipients: Vec<SocketAddr>,
@@ -132,7 +129,7 @@ impl Debug for Command {
             Self::HandleVote { vote, proof_share } => f
                 .debug_struct("HandleVote")
                 .field("vote", vote)
-                .field("proof_share.index", &proof_share.index)
+                .field("proof_share", &proof_share)
                 .finish(),
             Self::HandleConsensus { vote, proof } => f
                 .debug_struct("HandleConsensus")
@@ -147,14 +144,9 @@ impl Debug for Command {
                 .field("elders_info", elders_info)
                 .field("outcome", &outcome.public_key_set.public_key())
                 .finish(),
-            Self::HandleDkgFailure {
-                elders_info,
-                proofs,
-            } => f
-                .debug_struct("HandleDkgFailure")
-                .field("elders_info", elders_info)
-                .field("proofs", proofs)
-                .finish(),
+            Self::HandleDkgFailure(proofs) => {
+                f.debug_tuple("HandleDkgFailure").field(proofs).finish()
+            }
             Self::SendMessage {
                 recipients,
                 delivery_group_size,
