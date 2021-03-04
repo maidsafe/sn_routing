@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.48.1](https://github.com/maidsafe/sn_routing/compare/v0.48.0...v0.48.1) (2021-03-04)
+
+
+### Bug Fixes
+
+* prevent creating Section with elders info signed with wrong key ([f0f839c](https://github.com/maidsafe/sn_routing/commit/f0f839cb124c94fede41c9a21882e6b00c5743de))
+* use chain main branch length as the DKG generation ([ed3a54e](https://github.com/maidsafe/sn_routing/commit/ed3a54e635661f6bb59d968a8a4c3d091f2a8587))
+* **dkg:** allow multiple pending key shares ([92dfc70](https://github.com/maidsafe/sn_routing/commit/92dfc70a8bd18108f0c3a2f6d657b1e72e0a76cd))
+* **dkg:** avoid mixing DKG messages from different generations ([e68ba2a](https://github.com/maidsafe/sn_routing/commit/e68ba2aad975285c3968a67b38040d110c4f7d78))
+* **dkg:** detect corrupted DKG outcome ([ec53c63](https://github.com/maidsafe/sn_routing/commit/ec53c63a78e5cf776219b75cb2c678710f9b34ae))
+* make sure sibling section info is valid and trusted ([2044b11](https://github.com/maidsafe/sn_routing/commit/2044b1106397071b581af8a64fae453d78f4ab3b))
+
 ## [0.48.0](https://github.com/maidsafe/sn_routing/compare/v0.47.5...v0.48.0) (2021-03-03)
 
 
