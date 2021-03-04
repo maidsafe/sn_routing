@@ -272,9 +272,6 @@
 <span id="271">271</span>
 <span id="272">272</span>
 <span id="273">273</span>
-<span id="274">274</span>
-<span id="275">275</span>
-<span id="276">276</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -408,14 +405,11 @@
                 .<span class="ident">lock</span>()
                 .<span class="kw">await</span>
                 .<span class="ident">handle_dkg_outcome</span>(<span class="ident">elders_info</span>, <span class="ident">outcome</span>),
-            <span class="ident">Command</span>::<span class="ident">HandleDkgFailure</span> {
-                <span class="ident">elders_info</span>,
-                <span class="ident">proofs</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
+            <span class="ident">Command</span>::<span class="ident">HandleDkgFailure</span>(<span class="ident">proofs</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
                 .<span class="ident">state</span>
                 .<span class="ident">lock</span>()
                 .<span class="kw">await</span>
-                .<span class="ident">handle_dkg_failure</span>(<span class="ident">elders_info</span>, <span class="ident">proofs</span>)
+                .<span class="ident">handle_dkg_failure</span>(<span class="ident">proofs</span>)
                 .<span class="ident">map</span>(<span class="op">|</span><span class="ident">command</span><span class="op">|</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">command</span>]),
             <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                 <span class="ident">recipients</span>,

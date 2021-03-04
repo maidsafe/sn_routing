@@ -343,6 +343,9 @@
 <span id="342">342</span>
 <span id="343">343</span>
 <span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -389,8 +392,11 @@
 <span class="kw">impl</span> <span class="ident">Section</span> {
     <span class="doccomment">/// Creates a minimal `Section` initially containing only info about our elders</span>
     <span class="doccomment">/// (`elders_info`).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Returns error if `elders_info` is not signed with the last key of `chain`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">chain</span>: <span class="ident">SectionChain</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">chain</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>) {
+        <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">proof</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="ident">chain</span>.<span class="ident">last_key</span>() {
+            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;can&#39;t create section: elders_info signed with incorrect key&quot;</span>);
             <span class="comment">// TODO: consider more specific error here.</span>
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
         }

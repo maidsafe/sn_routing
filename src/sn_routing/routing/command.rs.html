@@ -190,14 +190,6 @@
 <span id="189">189</span>
 <span id="190">190</span>
 <span id="191">191</span>
-<span id="192">192</span>
-<span id="193">193</span>
-<span id="194">194</span>
-<span id="195">195</span>
-<span id="196">196</span>
-<span id="197">197</span>
-<span id="198">198</span>
-<span id="199">199</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -260,10 +252,7 @@
         <span class="ident">outcome</span>: <span class="ident">SectionKeyShare</span>,
     },
     <span class="doccomment">/// Handle a DKG failure that was observed by a majority of the DKG participants.</span>
-    <span class="ident">HandleDkgFailure</span> {
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
-        <span class="ident">proofs</span>: <span class="ident">DkgFailureProofSet</span>,
-    },
+    <span class="ident">HandleDkgFailure</span>(<span class="ident">DkgFailureProofSet</span>),
     <span class="doccomment">/// Send a message to `delivery_group_size` peers out of the given `recipients`.</span>
     <span class="ident">SendMessage</span> {
         <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
@@ -333,7 +322,7 @@
             <span class="self">Self</span>::<span class="ident">HandleVote</span> { <span class="ident">vote</span>, <span class="ident">proof_share</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleVote&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;vote&quot;</span>, <span class="ident">vote</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;proof_share.index&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">proof_share</span>.<span class="ident">index</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;proof_share&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">proof_share</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleConsensus&quot;</span>)
@@ -348,14 +337,9 @@
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;outcome&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">outcome</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>())
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">HandleDkgFailure</span> {
-                <span class="ident">elders_info</span>,
-                <span class="ident">proofs</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleDkgFailure&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;proofs&quot;</span>, <span class="ident">proofs</span>)
-                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">HandleDkgFailure</span>(<span class="ident">proofs</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;HandleDkgFailure&quot;</span>).<span class="ident">field</span>(<span class="ident">proofs</span>).<span class="ident">finish</span>()
+            }
             <span class="self">Self</span>::<span class="ident">SendMessage</span> {
                 <span class="ident">recipients</span>,
                 <span class="ident">delivery_group_size</span>,
