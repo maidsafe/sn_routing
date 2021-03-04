@@ -172,8 +172,9 @@ impl DkgVoter {
                 let _ = self.sessions.insert(dkg_key, session);
 
                 // Remove uneeded old sessions.
-                self.sessions
-                    .retain(|old_dkg_key, _| old_dkg_key.generation >= dkg_key.generation);
+                self.sessions.retain(|existing_dkg_key, _| {
+                    existing_dkg_key.generation >= dkg_key.generation
+                });
                 self.backlog.prune(&dkg_key);
 
                 commands

@@ -1384,11 +1384,12 @@ impl Approved {
             .ok_or(Error::InvalidSrcLocation)?
             .peer;
 
+        let generation = self.section.chain().main_branch_len() as u64;
         let elders_info = self
             .section
             .promote_and_demote_elders(&self.node.name())
             .into_iter()
-            .find(|elders_info| proofs.verify(elders_info, self.section.chain().len() as u64));
+            .find(|elders_info| proofs.verify(elders_info, generation));
         let elders_info = if let Some(elders_info) = elders_info {
             elders_info
         } else {
@@ -1993,7 +1994,8 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
 
-        let dkg_key = DkgKey::new(&elders_info, self.section.chain().len() as u64);
+        let generation = self.section.chain().main_branch_len() as u64;
+        let dkg_key = DkgKey::new(&elders_info, generation);
         let variant = Variant::DKGStart {
             dkg_key,
             elders_info,

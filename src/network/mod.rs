@@ -111,7 +111,7 @@ impl Network {
     /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
     /// additional `key_proof` which signs it using a key that is present in `section_chain`.
     ///
-    /// If this is for a non-sibling section, the currently we require the info to be signed by our
+    /// If this is for a non-sibling section, then currently we require the info to be signed by our
     /// section (so we need to accumulate the signature for it first) and so `key_proof` is not
     /// needed in that case.
     pub fn update_neighbour_info(
