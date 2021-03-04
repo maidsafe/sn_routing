@@ -37,9 +37,9 @@ use std::{
 use structopt::StructOpt;
 use tokio::{
     sync::mpsc::{self, UnboundedSender},
-    task,
-    time::{self, DelayQueue},
+    task, time,
 };
+use tokio_util::time::delay_queue::DelayQueue;
 use tracing_subscriber::EnvFilter;
 use xor_name::{Prefix, XorName};
 use yansi::{Color, Style};
@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            event = event_rx.recv().await => {
+            event = event_rx.recv() => {
                 if let Some(event) = event {
                     network.handle_event(event).await?
                 } else {
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
                     None => unreachable!()
                 }
             }
-            _ = probes.next() => network.send_probes().await?,
+            _ = probes.tick() => network.send_probes().await?,
         }
     }
 

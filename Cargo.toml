@@ -61,6 +61,7 @@ structopt = "~0.3.17"
 tracing-appender = "~0.1.2"
 tracing-subscriber = "~0.2.15"
 yansi = "~0.5.0"
+tokio-util = { version = "~0.6.3", features = ["time"] }
 
   [dev-dependencies.rand]
   version = "~0.7.3"

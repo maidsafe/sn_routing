@@ -28,10 +28,9 @@ pub(crate) struct Stage {
 
 impl Stage {
     pub fn new(state: Approved, comm: Comm) -> Self {
-        let (cancel_timer_tx, mut cancel_timer_rx) = watch::channel(false);
+        let (cancel_timer_tx, cancel_timer_rx) = watch::channel(false);
 
         // Take out the initial value.
-        let _ = futures::executor::block_on(cancel_timer_rx.changed());
 
         Self {
             state: Mutex::new(state),
