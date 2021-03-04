@@ -9,12 +9,12 @@
 use crate::{
     crypto::{self, Digest256, Keypair, PublicKey, Signature, Verifier},
     error::Result,
-    majority,
     messages::{Message, Variant},
     node::Node,
     peer::Peer,
     routing::command::{self, Command},
     section::{EldersInfo, SectionKeyShare},
+    supermajority,
 };
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use hex_fmt::HexFmt;
@@ -139,7 +139,7 @@ impl DkgVoter {
             }];
         }
 
-        let threshold = majority(elders_info.elders.len()) - 1;
+        let threshold = supermajority(elders_info.elders.len()) - 1;
         let participants = elders_info
             .elders
             .values()
@@ -481,10 +481,10 @@ impl DkgFailureProofSet {
         }
     }
 
-    // Check whether we have proofs from a majority of the participants. The contained proofs are
-    // assumed valid.
+    // Check whether we have enough proofs to reach agreement on the failure. The contained proofs
+    // are assumed valid.
     fn has_agreement(&self, elders_info: &EldersInfo) -> bool {
-        self.0.len() >= majority(elders_info.elders.len())
+        has_failure_agreement(elders_info.elders.len(), self.0.len())
     }
 
     pub fn verify(&self, elders_info: &EldersInfo, generation: u64) -> bool {
@@ -500,8 +500,15 @@ impl DkgFailureProofSet {
             .filter(|proof| proof.public_key.verify(&hash, &proof.signature).is_ok())
             .count();
 
-        votes >= majority(elders_info.elders.len())
+        has_failure_agreement(elders_info.elders.len(), votes)
     }
+}
+
+// Check whether we have enough proofs to reach agreement on the failure. We only need
+// `N - supermajority(N) + 1` proofs, because that already makes a supermajority agreement on a
+// successful outcome impossible.
+fn has_failure_agreement(num_participants: usize, num_votes: usize) -> bool {
+    num_votes > num_participants - supermajority(num_participants)
 }
 
 // Create a value whose signature serves as the proof that a failure of a DKG session with the given
