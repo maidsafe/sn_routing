@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.49.0](https://github.com/maidsafe/sn_routing/compare/v0.48.1...v0.49.0) (2021-03-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tokio:** new Tokio v1 is not backward compatible with previous runtime versions < 1.
+
+* **tokio:** upgrade tokio to v1.2.0 and qp2p 0.10.0 ([e5adc1a](https://github.com/maidsafe/sn_routing/commit/e5adc1a6e21c4b7f3aa62497535b7740cd08a3f3))
+
 ### [0.48.1](https://github.com/maidsafe/sn_routing/compare/v0.48.0...v0.48.1) (2021-03-04)
 
 
