@@ -953,6 +953,26 @@
 <span id="952">952</span>
 <span id="953">953</span>
 <span id="954">954</span>
+<span id="955">955</span>
+<span id="956">956</span>
+<span id="957">957</span>
+<span id="958">958</span>
+<span id="959">959</span>
+<span id="960">960</span>
+<span id="961">961</span>
+<span id="962">962</span>
+<span id="963">963</span>
+<span id="964">964</span>
+<span id="965">965</span>
+<span id="966">966</span>
+<span id="967">967</span>
+<span id="968">968</span>
+<span id="969">969</span>
+<span id="970">970</span>
+<span id="971">971</span>
+<span id="972">972</span>
+<span id="973">973</span>
+<span id="974">974</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1538,16 +1558,19 @@
         <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>,
         <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
     };
-    <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
+    <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">anyhow</span>, <span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
-    <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>};
+    <span class="kw">use</span> <span class="ident">futures</span>::{
+        <span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>},
+        <span class="ident">pin_mut</span>,
+    };
     <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">section_info</span>::<span class="ident">SectionInfo</span>;
-    <span class="kw">use</span> <span class="ident">tokio</span>::{<span class="ident">sync</span>::<span class="ident">mpsc</span>::<span class="ident">error</span>::<span class="ident">TryRecvError</span>, <span class="ident">task</span>};
+    <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">task</span>;
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">bootstrap_as_adult</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
@@ -1573,10 +1596,11 @@
 
         <span class="comment">// Create the task that executes the body of the test, but don&#39;t run it either.</span>
         <span class="kw">let</span> <span class="ident">others</span> <span class="op">=</span> <span class="kw">async</span> {
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
-
             <span class="comment">// Receive GetSectionQuery</span>
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, [<span class="ident">bootstrap_addr</span>]);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">name</span>)) <span class="op">=</span><span class="op">&gt;</span> {
@@ -1596,10 +1620,12 @@
                 <span class="ident">infrastructure_info</span>,
             ));
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>), <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
             <span class="comment">// Receive JoinRequest</span>
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;JoinRequest was not received&quot;</span>))<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span>
                 <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
 
@@ -1645,7 +1671,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">receive_get_section_response_redirect</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
@@ -1655,10 +1681,11 @@
 
         <span class="kw">let</span> <span class="ident">bootstrap_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">bootstrap</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>], <span class="prelude-val">None</span>);
         <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
-
             <span class="comment">// Receive GetSectionQuery</span>
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>]);
             <span class="macro">assert_matches</span><span class="macro">!</span>(
@@ -1676,7 +1703,10 @@
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
             <span class="comment">// Receive new GetSectionQuery</span>
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">recipients</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">recipients</span>, <span class="ident">new_bootstrap_addrs</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(
@@ -1687,8 +1717,8 @@
             <span class="prelude-val">Ok</span>(())
         };
 
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">bootstrap_task</span>);
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">bootstrap_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
 
         <span class="kw">match</span> <span class="ident">future</span>::<span class="ident">select</span>(<span class="ident">bootstrap_task</span>, <span class="ident">test_task</span>).<span class="kw">await</span> {
             <span class="ident">Either</span>::<span class="ident">Left</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable</span><span class="macro">!</span>(),
@@ -1699,7 +1729,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">invalid_get_section_response_redirect</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
@@ -1709,9 +1739,11 @@
 
         <span class="kw">let</span> <span class="ident">bootstrap_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">bootstrap</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_node</span>.<span class="ident">addr</span>], <span class="prelude-val">None</span>);
         <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>))
@@ -1721,7 +1753,6 @@
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>), <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
-            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">send_rx</span>.<span class="ident">try_recv</span>(), <span class="prelude-val">Err</span>(<span class="ident">TryRecvError</span>::<span class="ident">Empty</span>));
 
             <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">gen_addr</span>()).<span class="ident">collect</span>();
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>));
@@ -1729,7 +1760,11 @@
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>), <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
+
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>))
@@ -1738,8 +1773,8 @@
             <span class="prelude-val">Ok</span>(())
         };
 
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">bootstrap_task</span>);
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">bootstrap_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
 
         <span class="kw">match</span> <span class="ident">future</span>::<span class="ident">select</span>(<span class="ident">bootstrap_task</span>, <span class="ident">test_task</span>).<span class="kw">await</span> {
             <span class="ident">Either</span>::<span class="ident">Left</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable</span><span class="macro">!</span>(),
@@ -1750,7 +1785,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">invalid_get_section_response_success</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
@@ -1774,9 +1809,11 @@
         <span class="comment">// Send an invalid `BootstrapResponse::Join` followed by a valid one. The invalid one is</span>
         <span class="comment">// ignored and the valid one processed normally.</span>
         <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>))
@@ -1796,7 +1833,6 @@
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>), <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
-            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">send_rx</span>.<span class="ident">try_recv</span>(), <span class="prelude-val">Err</span>(<span class="ident">TryRecvError</span>::<span class="ident">Empty</span>));
 
             <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">SectionInfo</span> {
                 <span class="ident">prefix</span>: <span class="ident">good_prefix</span>,
@@ -1823,7 +1859,7 @@
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">invalid_join_response_rejoin</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(), <span class="ident">gen_addr</span>());
@@ -1849,9 +1885,11 @@
         <span class="kw">let</span> <span class="ident">join_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">join</span>(<span class="ident">section_key</span>, <span class="ident">elders</span>, <span class="prelude-val">None</span>);
 
         <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;NodeMessage was not received&quot;</span>))<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="kw">_</span>));
 
@@ -1872,7 +1910,6 @@
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
-            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">send_rx</span>.<span class="ident">try_recv</span>(), <span class="prelude-val">Err</span>(<span class="ident">TryRecvError</span>::<span class="ident">Empty</span>));
 
             <span class="comment">// Send `Rejoin` with good prefix</span>
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
@@ -1890,17 +1927,20 @@
                 <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>::<span class="ident">new</span>(<span class="ident">message</span>.<span class="ident">to_bytes</span>())),
                 <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>,
             ))<span class="question-mark">?</span>;
-            <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>.<span class="ident">try_recv</span>()<span class="question-mark">?</span>;
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;NodeMessage was not received&quot;</span>))<span class="question-mark">?</span>;
+
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="kw">_</span>));
 
             <span class="prelude-val">Ok</span>(())
         };
 
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">join_task</span>);
-        <span class="ident">futures</span>::<span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">join_task</span>);
+        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">test_task</span>);
 
         <span class="kw">match</span> <span class="ident">future</span>::<span class="ident">select</span>(<span class="ident">join_task</span>, <span class="ident">test_task</span>).<span class="kw">await</span> {
             <span class="ident">Either</span>::<span class="ident">Left</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable</span><span class="macro">!</span>(),

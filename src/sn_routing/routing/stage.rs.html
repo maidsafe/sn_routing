@@ -271,7 +271,6 @@
 <span id="270">270</span>
 <span id="271">271</span>
 <span id="272">272</span>
-<span id="273">273</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -303,10 +302,9 @@
 
 <span class="kw">impl</span> <span class="ident">Stage</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">state</span>: <span class="ident">Approved</span>, <span class="ident">comm</span>: <span class="ident">Comm</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="kw">let</span> (<span class="ident">cancel_timer_tx</span>, <span class="kw-2">mut</span> <span class="ident">cancel_timer_rx</span>) <span class="op">=</span> <span class="ident">watch</span>::<span class="ident">channel</span>(<span class="bool-val">false</span>);
+        <span class="kw">let</span> (<span class="ident">cancel_timer_tx</span>, <span class="ident">cancel_timer_rx</span>) <span class="op">=</span> <span class="ident">watch</span>::<span class="ident">channel</span>(<span class="bool-val">false</span>);
 
         <span class="comment">// Take out the initial value.</span>
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">futures</span>::<span class="ident">executor</span>::<span class="ident">block_on</span>(<span class="ident">cancel_timer_rx</span>.<span class="ident">recv</span>());
 
         <span class="self">Self</span> {
             <span class="ident">state</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">state</span>),
@@ -363,7 +361,7 @@
     <span class="comment">// Terminate this routing instance - cancel all scheduled timers including any future ones,</span>
     <span class="comment">// close all network connections and stop accepting new connections.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">terminate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cancel_timer_tx</span>.<span class="ident">broadcast</span>(<span class="bool-val">true</span>);
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cancel_timer_tx</span>.<span class="ident">send</span>(<span class="bool-val">true</span>);
         <span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">terminate</span>()
     }
 
@@ -509,8 +507,8 @@
         }
 
         <span class="ident">tokio</span>::<span class="macro">select</span><span class="macro">!</span> {
-            <span class="kw">_</span> <span class="op">=</span> <span class="ident">time</span>::<span class="ident">delay_for</span>(<span class="ident">duration</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>)),
-            <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_rx</span>.<span class="ident">recv</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
+            <span class="kw">_</span> <span class="op">=</span> <span class="ident">time</span>::<span class="ident">sleep</span>(<span class="ident">duration</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>)),
+            <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_rx</span>.<span class="ident">changed</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
         }
     }
 

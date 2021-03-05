@@ -781,7 +781,7 @@
 
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_disconnection_events</span>(
     <span class="kw-2">mut</span> <span class="ident">disconnections</span>: <span class="ident">qp2p</span>::<span class="ident">DisconnectionEvents</span>,
-    <span class="kw-2">mut</span> <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
+    <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
 ) {
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer_addr</span>) <span class="op">=</span> <span class="ident">disconnections</span>.<span class="ident">next</span>().<span class="kw">await</span> {
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>
@@ -792,7 +792,7 @@
 
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_incoming_messages</span>(
     <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>: <span class="ident">qp2p</span>::<span class="ident">IncomingMessages</span>,
-    <span class="kw-2">mut</span> <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
+    <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
 ) {
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">incoming_msgs</span>.<span class="ident">next</span>().<span class="kw">await</span> {
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">event_tx</span>.<span class="ident">send</span>(<span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">msg</span>))).<span class="kw">await</span>;
@@ -1021,7 +1021,7 @@
                 <span class="ident">transport</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">endpoint</span>.<span class="ident">socket_addr</span>();
 
-            <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+            <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tokio</span>::<span class="ident">spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">_src</span>, <span class="ident">msg</span>)) <span class="op">=</span> <span class="ident">incoming_messages</span>.<span class="ident">next</span>().<span class="kw">await</span> {
