@@ -70,6 +70,8 @@ pub enum Event {
         prefix: Prefix,
         /// The BLS public key of our section.
         key: bls::PublicKey,
+        /// The previous BLS public key of our section.
+        previous_key: bls::PublicKey,
         /// The BLS public key of the sibling section, if this event is fired during a split.
         /// Otherwise `None`.
         sibling_key: Option<bls::PublicKey>,
@@ -133,6 +135,7 @@ impl Debug for Event {
             Self::EldersChanged {
                 prefix,
                 key,
+                previous_key,
                 sibling_key,
                 elders,
                 self_status_change,
@@ -140,6 +143,7 @@ impl Debug for Event {
                 .debug_struct("EldersChanged")
                 .field("prefix", prefix)
                 .field("key", key)
+                .field("previous_key", previous_key)
                 .field("sibling_key", sibling_key)
                 .field("elders", elders)
                 .field("self_status_change", self_status_change)

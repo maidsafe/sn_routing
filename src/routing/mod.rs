@@ -108,6 +108,7 @@ impl Routing {
             state.send_event(Event::EldersChanged {
                 prefix: *section.prefix(),
                 key: *section.chain().last_key(),
+                previous_key: *section.chain().last_key(),
                 sibling_key: None,
                 elders: section.elders_info().elders.keys().copied().collect(),
                 self_status_change: NodeElderChange::Promoted,

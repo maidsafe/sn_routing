@@ -1450,11 +1450,11 @@ impl Approved {
             return Ok(commands);
         }
 
-        // Do not carry out relocation in genesis section.
-        if self.section.prefix().is_empty() {
+        // TEMP: Do not carry out relocations (used to be disabled only in genesis section)
+        if self.section.prefix().bit_count() < u16::MAX as usize {
             return Ok(commands);
         }
-        
+
         let relocations =
             relocation::actions(&self.section, &self.network, churn_name, churn_signature);
 
@@ -1769,8 +1769,8 @@ impl Approved {
             if new_is_elder {
                 info!(
                     "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
-                    self.section.prefix(),
-                    self.section.chain().last_key(),
+                    new_prefix,
+                    new_last_key,
                     self.section.elders_info().peers().format(", ")
                 );
 
@@ -1807,8 +1807,9 @@ impl Approved {
             };
 
             self.send_event(Event::EldersChanged {
-                prefix: *self.section.prefix(),
-                key: *self.section.chain().last_key(),
+                prefix: new_prefix,
+                key: new_last_key,
+                previous_key: old_last_key,
                 sibling_key,
                 elders: self.section.elders_info().elders.keys().copied().collect(),
                 self_status_change,

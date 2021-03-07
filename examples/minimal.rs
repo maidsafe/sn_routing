@@ -239,13 +239,14 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
         Event::EldersChanged {
             prefix,
             key,
+            previous_key,
             sibling_key,
             elders,
             self_status_change,
         } => {
             info!(
-                "Node #{} elders changed - prefix: {:b}, key: {:?}, sibling key: {:?}, elders: {:?}, node elder status change: {:?}",
-                index, prefix, key, sibling_key, elders, self_status_change
+                "Node #{} elders changed - prefix: {:b}, key: {:?}, previous_key: {:?}, sibling key: {:?}, elders: {:?}, node elder status change: {:?}",
+                index, prefix, key, previous_key, sibling_key, elders, self_status_change
             );
         }
         Event::MessageReceived { content, src, dst } => info!(
