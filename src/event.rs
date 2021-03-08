@@ -38,7 +38,10 @@ pub enum NodeElderChange {
 ///
 /// `Request` and `Response` events from section locations are only raised once the majority has
 /// been reached, i.e. enough members of the section have sent the same message.
+#[allow(clippy::large_enum_variant)]
 pub enum Event {
+    /// This is the very first node in a network.
+    Genesis,
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -70,8 +73,6 @@ pub enum Event {
         prefix: Prefix,
         /// The BLS public key of our section.
         key: bls::PublicKey,
-        /// The previous BLS public key of our section.
-        previous_key: bls::PublicKey,
         /// The BLS public key of the sibling section, if this event is fired during a split.
         /// Otherwise `None`.
         sibling_key: Option<bls::PublicKey>,
@@ -110,6 +111,7 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
+            Self::Genesis => write!(formatter, "Genesis"),
             Self::MessageReceived { content, src, dst } => write!(
                 formatter,
                 "MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
@@ -135,7 +137,6 @@ impl Debug for Event {
             Self::EldersChanged {
                 prefix,
                 key,
-                previous_key,
                 sibling_key,
                 elders,
                 self_status_change,
@@ -143,7 +144,6 @@ impl Debug for Event {
                 .debug_struct("EldersChanged")
                 .field("prefix", prefix)
                 .field("key", key)
-                .field("previous_key", previous_key)
                 .field("sibling_key", sibling_key)
                 .field("elders", elders)
                 .field("self_status_change", self_status_change)

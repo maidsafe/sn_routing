@@ -1809,7 +1809,6 @@ impl Approved {
             self.send_event(Event::EldersChanged {
                 prefix: new_prefix,
                 key: new_last_key,
-                previous_key: old_last_key,
                 sibling_key,
                 elders: self.section.elders_info().elders.keys().copied().collect(),
                 self_status_change,
@@ -2145,6 +2144,7 @@ impl Approved {
         };
         let mut commands = vec![];
 
+        // consider removing this, we are getting duplciate msgs by it
         if itinerary
             .dst
             .contains(&self.node.name(), self.section.prefix())

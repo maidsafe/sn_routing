@@ -29,7 +29,7 @@ use self::{
 use crate::{
     crypto,
     error::Result,
-    event::{Event, NodeElderChange},
+    event::Event,
     messages::Message,
     node::Node,
     peer::Peer,
@@ -99,20 +99,13 @@ impl Routing {
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
         let (state, comm, backlog) = if config.first {
-            info!("{} Starting a new network as the seed node.", node_name);
+            info!("{} Starting a new network as the genesis node.", node_name);
             let comm = Comm::new(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info()).with_age(MIN_AGE + 1);
             let state = Approved::first_node(node, event_tx)?;
-            let section = state.section();
+            //let section = state.section();
 
-            state.send_event(Event::EldersChanged {
-                prefix: *section.prefix(),
-                key: *section.chain().last_key(),
-                previous_key: *section.chain().last_key(),
-                sibling_key: None,
-                elders: section.elders_info().elders.keys().copied().collect(),
-                self_status_change: NodeElderChange::Promoted,
-            });
+            state.send_event(Event::Genesis);
 
             (state, comm, vec![])
         } else {
