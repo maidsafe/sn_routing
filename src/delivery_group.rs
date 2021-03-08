@@ -10,7 +10,7 @@
 
 use crate::{
     error::{Error, Result},
-    majority,
+    //majority,
     network::Network,
     peer::Peer,
     section::Section,
@@ -115,18 +115,19 @@ fn candidates(
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
-    let mut dg_size = majority(ELDER_SIZE);
+    let mut dg_size = ELDER_SIZE; //majority(ELDER_SIZE);
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
         // If we don't have enough contacts send to as many as possible
         // up to majority of Elders
         dg_size = cmp::min(len, dg_size);
-        if len < majority(ELDER_SIZE) {
+        if len < ELDER_SIZE {
+            //majority(ELDER_SIZE) {
             warn!(
                 "Delivery group only {:?} when it should be {:?}",
                 len,
-                majority(ELDER_SIZE)
+                ELDER_SIZE //majority(ELDER_SIZE)
             )
         }
 
@@ -178,6 +179,6 @@ where
         .into_iter()
         .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
         .collect();
-    list.truncate(cmp::min(list.len(), majority(ELDER_SIZE)));
+    list.truncate(cmp::min(list.len(), ELDER_SIZE)); // majority(ELDER_SIZE)
     list
 }
