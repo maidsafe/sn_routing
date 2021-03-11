@@ -403,7 +403,7 @@ mod tests {
         let send_comm = Comm::new(transport_config(), tx).await?;
 
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
-        let (mut recv_endpoint, _, mut incoming_msgs, _) = recv_transport.new_endpoint().await?;
+        let (recv_endpoint, _, mut incoming_msgs, _) = recv_transport.new_endpoint().await?;
         let recv_addr = recv_endpoint.socket_addr();
 
         // Send the first message.
