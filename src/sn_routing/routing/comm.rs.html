@@ -931,7 +931,7 @@
         <span class="kw">let</span> <span class="ident">send_comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">transport_config</span>(), <span class="ident">tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">recv_transport</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>()), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">recv_endpoint</span>, <span class="kw">_</span>, <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">recv_transport</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">recv_endpoint</span>, <span class="kw">_</span>, <span class="kw-2">mut</span> <span class="ident">incoming_msgs</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">recv_transport</span>.<span class="ident">new_endpoint</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">recv_addr</span> <span class="op">=</span> <span class="ident">recv_endpoint</span>.<span class="ident">socket_addr</span>();
 
         <span class="comment">// Send the first message.</span>
