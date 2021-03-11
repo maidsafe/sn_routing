@@ -14,9 +14,9 @@ use sn_routing::{Event, NodeElderChange};
 
 #[tokio::test]
 async fn test_node_drop() -> Result<()> {
-    // NOTE: create at least 3 nodes, so when one is dropped the remaining ones still form a
-    // majority and the `Offline` votes accumulate.
-    let mut nodes = create_connected_nodes(3).await?;
+    // NOTE: create at least 4 nodes, so when one is dropped the remaining ones still form a
+    // supermajority and the `Offline` votes accumulate.
+    let mut nodes = create_connected_nodes(4).await?;
 
     for (_, events) in &mut nodes[1..] {
         assert_event!(
