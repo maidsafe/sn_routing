@@ -1270,9 +1270,9 @@ async fn handle_sync() -> Result<()> {
     // Verify our `Section` got updated.
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { key, elders, .. }) => {
-            assert_eq!(key, pk2);
-            assert_eq!(elders, new_elders);
+        Some(Event::EldersChanged { elders, .. }) => {
+            assert_eq!(elders.key, pk2);
+            assert_eq!(elders.elders, new_elders);
         }
     );
 
@@ -1685,9 +1685,9 @@ async fn handle_elders_update() -> Result<()> {
 
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { key, elders, .. }) => {
-            assert_eq!(key, pk1);
-            assert_eq!(elders, elder_names1);
+        Some(Event::EldersChanged { elders, .. }) => {
+            assert_eq!(elders.key, pk1);
+            assert_eq!(elders.elders, elder_names1);
         }
     );
 
