@@ -52,8 +52,7 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    Aggregation, DstLocation, DstLocation, EndUser, EndUser, HeaderInfo, Itinerary, Itinerary,
-    MessageType, MessageType, SrcLocation, SrcLocation,
+    Aggregation, DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation,
 };
 use std::{
     cmp::{self, Ordering},
@@ -2219,7 +2218,24 @@ impl Core {
         Ok(commands)
     }
 
-    pub fn send_user_message(
+    /// Returns the info about the section matches the name.
+    pub async fn match_section(
+        &self,
+        name: &XorName,
+    ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+        let prefix = self.section.prefix();
+        if prefix.matches(name) {
+            let section = self.section();
+            (
+                Some(*section.chain().last_key()),
+                Some(section.elders_info().clone()),
+            )
+        } else {
+            self.network().section_by_name(name)
+        }
+    }
+
+    pub async fn send_user_message(
         &mut self,
         itinerary: Itinerary,
         content: Bytes,
@@ -2273,13 +2289,26 @@ impl Core {
             .dst
             .contains(&self.node.name(), self.section.prefix())
         {
+            let hdr_info = match itinerary.dst.name() {
+                Some(name) => {
+                    let (section_pk, _) = self.match_section(&name).await;
+                    if let Some(pk) = section_pk {
+                        Some(HeaderInfo {
+                            dest_section_pk: pk,
+                            dest: name,
+                        })
+                    } else {
+                        warn!("No section pk found matching name {:?}", name);
+                        None
+                    }
+                }
+                // direct message...
+                None => None,
+            };
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),
-                hdr_info: HeaderInfo {
-                    dest_section_pk: itinerary,
-                    dest: itinerary.dst.name(),
-                },
+                hdr_info,
             });
         }
 
