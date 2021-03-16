@@ -34,7 +34,7 @@ use crate::{
         EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
         SectionKeysProvider, MIN_AGE,
     },
-    ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
+    ELDER_SIZE,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bls_signature_aggregator::{Error as AggregatorError, SignatureAggregator};
@@ -1476,13 +1476,6 @@ impl Approved {
         self.send_relocate(peer, details)
     }
 
-    // Are we in the startup phase? Startup phase is when the network consists of only one section
-    // and it has no more than `recommended_section_size` members.
-    fn is_in_startup_phase(&self) -> bool {
-        self.section.prefix().is_empty()
-            && self.section.members().joined().count() <= RECOMMENDED_SECTION_SIZE
-    }
-
     fn handle_online_event(
         &mut self,
         new_info: MemberInfo,
@@ -1491,8 +1484,6 @@ impl Approved {
         proof: Proof,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
-
-        let is_startup_phase = self.is_in_startup_phase();
 
         if let Some(old_info) = self.section.members().get_proven(new_info.peer.name()) {
             // This node is rejoin with same name.
@@ -1535,7 +1526,6 @@ impl Approved {
             name: *new_info.value.peer.name(),
             previous_name,
             age: new_info.value.peer.age(),
-            startup_relocation: is_startup_phase,
         });
 
         commands
