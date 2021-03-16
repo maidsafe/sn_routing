@@ -51,7 +51,8 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
+    Aggregation, DstLocation, DstLocation, EndUser, EndUser, HeaderInfo, Itinerary, Itinerary,
+    MessageType, MessageType, SrcLocation, SrcLocation,
 };
 use std::{
     cmp::{self, Ordering},
@@ -2119,6 +2120,10 @@ impl Core {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),
+                hdr_info: HeaderInfo {
+                    dest_section_pk: itinerary,
+                    dest: itinerary.dst.name(),
+                },
             });
         }
 

@@ -17,7 +17,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, Itinerary, MessageType,
+    node::NodeMessage, section_info::Message as SectionInfoMsg, HeaderInfo, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -38,11 +38,13 @@ pub(crate) enum Command {
     HandleMessage {
         sender: Option<SocketAddr>,
         message: Message,
+        hdr_info: HeaderInfo,
     },
     /// Handle network info message.
     HandleSectionInfoMsg {
         sender: SocketAddr,
         message: SectionInfoMsg,
+        hdr_info: HeaderInfo,
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),

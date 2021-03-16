@@ -43,7 +43,7 @@ use sn_messaging::{
     client::Message as ClientMessage,
     node::NodeMessage,
     section_info::{Error as TargetSectionError, ErrorResponse, Message as SectionInfoMsg},
-    DstLocation, EndUser, Itinerary, MessageType, WireMsg,
+    DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -377,12 +377,48 @@ impl Routing {
         recipient: SocketAddr,
         message: ClientMessage,
     ) -> Result<()> {
-        let command = Command::SendMessage {
-            recipients: vec![recipient],
-            delivery_group_size: 1,
-            message: MessageType::ClientMessage(message),
+        let end_user = self
+            .stage
+            .state
+            .lock()
+            .await
+            .get_enduser_by_addr(&recipient)
+            .copied();
+        let end_user_pk = match end_user {
+            Some(end_user) => match end_user {
+                EndUser::AllClients(pk) => pk,
+                EndUser::Client {
+                    public_key,
+                    socket_id,
+                } => pk,
+            },
+            None => {
+                error!("No client end user known of to send ");
+                return Ok(());
+            }
         };
-        self.dispatcher.clone().handle_commands(command).await
+        let user_xor_name = XorName::from(end_user_pk);
+        let (target_section_pk, _) = self.match_section(&user_xor_name).await;
+        if let Some(section_pk) = target_section_pk {
+            let command = Command::SendMessage {
+                recipients: vec![recipient],
+                delivery_group_size: 1,
+                message: MessageType::ClientMessage {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: XorName::from(end_user_pk),
+                        dest_section_pk: section_pk,
+                    },
+                },
+            };
+            self.dispatcher.clone().handle_commands(command).await
+        } else {
+            warn!(
+                "No section PK matching our client PK xorname: {:?}",
+                user_xor_name
+            );
+            Ok(())
+        }
     }
 
     /// Returns the current BLS public key set if this node has one, or
@@ -447,28 +483,34 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     };
 
     match message_type {
-        MessageType::Ping => {
+        MessageType::Ping(_) => {
             // Pings are not handled
         }
-        MessageType::SectionInfo(message) => {
-            let command = Command::HandleSectionInfoMsg { sender, message };
+        MessageType::SectionInfo { msg, hdr_info } => {
+            let command = Command::HandleSectionInfoMsg {
+                sender,
+                message: msg,
+                hdr_info,
+            };
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
-        MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
-            match Message::from_bytes(Bytes::from(msg_bytes)) {
-                Ok(message) => {
-                    let command = Command::HandleMessage {
-                        message,
-                        sender: Some(sender),
-                    };
-                    let _ = task::spawn(dispatcher.handle_commands(command));
-                }
-                Err(error) => {
-                    error!("Failed to deserialize node message: {}", error);
-                }
+        MessageType::NodeMessage {
+            hdr_info,
+            msg: NodeMessage(msg_bytes),
+        } => match Message::from_bytes(Bytes::from(msg_bytes)) {
+            Ok(message) => {
+                let command = Command::HandleMessage {
+                    message,
+                    sender: Some(sender),
+                    hdr_info,
+                };
+                let _ = task::spawn(dispatcher.handle_commands(command));
             }
-        }
-        MessageType::ClientMessage(message) => {
+            Err(error) => {
+                error!("Failed to deserialize node message: {}", error);
+            }
+        },
+        MessageType::ClientMessage { msg, hdr_info } => {
             let end_user = dispatcher
                 .core
                 .lock()
@@ -478,44 +520,55 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             let end_user = match end_user {
                 Some(end_user) => end_user,
                 None => {
+                    // TODO: Update to handle messages, w/ added PK to all msgs...?
+
                     // we are not yet bootstrapped, todo: inform enduser in a better way of this
-                    let command = Command::SendMessage {
-                        recipients: vec![sender],
-                        delivery_group_size: 1,
-                        message: MessageType::SectionInfo(SectionInfoMsg::RegisterEndUserError(
-                            TargetSectionError::InvalidBootstrap(format!(
-                                "No enduser found for {} and msg {:?}",
-                                sender, message
-                            )),
-                        )),
-                    };
-                    let _ = task::spawn(dispatcher.handle_commands(command));
+
+                    // let command = Command::SendMessage {
+                    //     recipients: vec![sender],
+                    //     delivery_group_size: 1,
+                    //     message: MessageType::SectionInfo{
+                    //         msg: SectionInfoMsg::RegisterEndUserError(
+                    //         TargetSectionError::InvalidBootstrap(format!(
+                    //             "No enduser found for {} and msg {:?}",
+                    //             sender, msg
+                    //         )),
+                    //     ),
+                    // hdr_info: HeaderInfo{
+                    //     dest: "x",
+                    //     dest_section_pk: "s"
+                    // }
+                    //     },
+                    // };
+                    // let _ = task::spawn(dispatcher.handle_commands(command));
                     return;
                 }
             };
 
-            if let Some(client_pk) = message.target_section_pk() {
-                if let Some(bls_pk) = client_pk.bls() {
-                    if let Err(error) = dispatcher.check_key_status(&bls_pk).await {
-                        let correlation_id = message.id();
-                        let command = Command::SendMessage {
-                            recipients: vec![sender],
-                            delivery_group_size: 1,
-                            message: MessageType::SectionInfo(SectionInfoMsg::SectionInfoUpdate(
-                                ErrorResponse {
-                                    correlation_id,
-                                    error,
-                                },
-                            )),
-                        };
-                        let _ = task::spawn(dispatcher.handle_commands(command));
-                        return;
-                    }
-                }
+            let dest = hdr_info.dest;
+            let client_pk = hdr_info.dest_section_pk;
+            if let Err(error) = stage.check_key_status(&client_pk).await {
+                let correlation_id = msg.id();
+                let command = Command::SendMessage {
+                    recipients: vec![sender],
+                    delivery_group_size: 1,
+                    message: MessageType::SectionInfo {
+                        msg: SectionInfoMsg::SectionInfoUpdate(ErrorResponse {
+                            correlation_id,
+                            error,
+                        }),
+                        hdr_info: HeaderInfo {
+                            dest,
+                            dest_section_pk: client_pk,
+                        },
+                    },
+                };
+                let _ = task::spawn(stage.handle_commands(command));
+                return;
             }
 
             let event = Event::ClientMessageReceived {
-                msg: Box::new(message),
+                msg: Box::new(msg),
                 user: end_user,
             };
 
