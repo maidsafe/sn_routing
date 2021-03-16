@@ -43,10 +43,13 @@ use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_data_types::PublicKey as EndUserPK;
-use sn_messaging::{Aggregation, DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation, client::Message as ClientMessage, node::NodeMessage, section_info::{
+use sn_messaging::{
+    client::Message as ClientMessage,
+    node::NodeMessage,
+    section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
+    Aggregation, DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation,
 };
 use std::{
     cmp::{self, Ordering},
@@ -2068,7 +2071,24 @@ impl Approved {
         Ok(commands)
     }
 
-    pub fn send_user_message(
+    /// Returns the info about the section matches the name.
+    pub async fn match_section(
+        &self,
+        name: &XorName,
+    ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+        let prefix = self.section.prefix();
+        if prefix.matches(name) {
+            let section = self.section();
+            (
+                Some(*section.chain().last_key()),
+                Some(section.elders_info().clone()),
+            )
+        } else {
+            self.network().section_by_name(name)
+        }
+    }
+
+    pub async fn send_user_message(
         &mut self,
         itinerary: Itinerary,
         content: Bytes,
@@ -2123,13 +2143,26 @@ impl Approved {
             .dst
             .contains(&self.node.name(), self.section.prefix())
         {
+            let hdr_info = match itinerary.dst.name() {
+                Some(name) => {
+                    let (section_pk, _) = self.match_section(&name).await;
+                    if let Some(pk) = section_pk {
+                        Some(HeaderInfo {
+                            dest_section_pk: pk,
+                            dest: name,
+                        })
+                    } else {
+                        warn!("No section pk found matching name {:?}", name);
+                        None
+                    }
+                }
+                // direct message...
+                None => None,
+            };
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),
-                hdr_info: HeaderInfo{
-                    dest_section_pk: itinerary,
-                    dest: itinerary.dst.name()
-                }
+                hdr_info,
             });
         }
 
