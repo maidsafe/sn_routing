@@ -48,8 +48,6 @@ pub enum Event {
         /// The destination location that receives the message.
         dst: DstLocation,
     },
-    /// The node has been promoted to adult
-    PromotedToAdult,
     /// A new peer joined our section.
     MemberJoined {
         /// Name of the node
@@ -58,8 +56,6 @@ pub enum Event {
         previous_name: Option<XorName>,
         /// Age of the node
         age: u8,
-        /// Indication that is has been relocated during startup.
-        startup_relocation: bool,
     },
     /// A node left our section.
     MemberLeft {
@@ -119,18 +115,15 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::PromotedToAdult => write!(formatter, "PromotedToAdult"),
             Self::MemberJoined {
                 name,
                 previous_name,
                 age,
-                startup_relocation,
             } => formatter
                 .debug_struct("MemberJoined")
                 .field("name", name)
                 .field("previous_name", previous_name)
                 .field("age", age)
-                .field("startup_relocation", startup_relocation)
                 .finish(),
             Self::MemberLeft { name, age } => formatter
                 .debug_struct("MemberLeft")
