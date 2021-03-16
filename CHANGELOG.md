@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.50.0](https://github.com/maidsafe/sn_routing/compare/v0.49.1...v0.50.0) (2021-03-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove `Event::PromotedToAdult` and the `startup_relocation` field of `Event::MemberJoined`, both parts of public API.
+
+### Features
+
+* remove unused events and event properties ([238a301](https://github.com/maidsafe/sn_routing/commit/238a3016a1731a3abc7ca91b83e546992af85ec0))
+
 ### [0.49.1](https://github.com/maidsafe/sn_routing/compare/v0.49.0...v0.49.1) (2021-03-11)
 
 ## [0.49.0](https://github.com/maidsafe/sn_routing/compare/v0.48.1...v0.49.0) (2021-03-05)
