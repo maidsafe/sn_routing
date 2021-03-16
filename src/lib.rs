@@ -1,4 +1,4 @@
-// Copyright 2018 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -72,7 +72,7 @@ extern crate tracing;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
-    event::{Event, NodeElderChange, SendStream},
+    event::{Elders, Event, NodeElderChange, SendStream},
     routing::{Config, EventStream, Routing},
     section::{SectionChain, SectionChainError, MIN_AGE},
 };
