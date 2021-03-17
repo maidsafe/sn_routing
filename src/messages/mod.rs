@@ -143,7 +143,7 @@ impl Message {
         user_msg: Bytes,
         proof_chain: SectionChain,
         dst_key: Option<bls::PublicKey>,
-        src_section: XorName,
+        src_name: XorName,
     ) -> Result<Self, CreateError> {
         let variant = Variant::UserMessage(user_msg);
         let serialized = bincode::serialize(&SignableView {
@@ -158,7 +158,7 @@ impl Message {
             signature_share,
         };
         let src = SrcAuthority::BlsShare {
-            src_section,
+            src_name,
             proof_share,
             public_key: node.keypair.public,
             age: node.age,
@@ -207,7 +207,7 @@ impl Message {
     ) -> Result<Self, CreateError> {
         Self::new_signed(
             SrcAuthority::Section {
-                prefix: plain.src,
+                src_name: plain.src,
                 signature,
             },
             plain.dst,

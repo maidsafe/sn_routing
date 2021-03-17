@@ -292,21 +292,14 @@ impl Routing {
         self.stage.state.lock().await.section_key(prefix).copied()
     }
 
-    /// Returns the info about the section matches the name.
-    pub async fn match_section(
+    /// Returns the info about the section matching the name.
+    pub async fn matching_section(
         &self,
         name: &XorName,
     ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
         let state = self.stage.state.lock().await;
-        if state.section().prefix().matches(name) {
-            let section = state.section();
-            (
-                Some(*section.chain().last_key()),
-                Some(section.elders_info().clone()),
-            )
-        } else {
-            state.network().section_by_name(name)
-        }
+        let (key, elders_info) = state.matching_section(name);
+        (key.copied(), elders_info.cloned())
     }
 
     /// Send a message.

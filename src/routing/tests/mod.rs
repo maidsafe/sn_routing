@@ -267,7 +267,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     };
 
     let relocate_message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(relocated_node_old_name),
         dst_key: section_key,
         variant: Variant::Relocate(relocate_details),
@@ -972,7 +972,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     // Create a message signed by a key now known to the node.
     let message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(node_name),
         dst_key: pk1,
         variant: Variant::UserMessage(Bytes::from_static(b"hello")),
@@ -1135,7 +1135,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(other_node.name()),
         dst_key: pk1,
         variant: Variant::UserMessage(original_message_content.clone()),
