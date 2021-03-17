@@ -137,15 +137,14 @@ impl Message {
 
     /// Creates a message signed using a BLS KeyShare for destination accumulation
     pub(crate) fn for_dst_accumulation(
-        node: &Node,
         key_share: &SectionKeyShare,
+        src_name: XorName,
         dst: DstLocation,
-        user_msg: Bytes,
+        content: Bytes,
         proof_chain: SectionChain,
         dst_key: Option<bls::PublicKey>,
-        src_name: XorName,
     ) -> Result<Self, CreateError> {
-        let variant = Variant::UserMessage(user_msg);
+        let variant = Variant::UserMessage(content);
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
@@ -160,8 +159,6 @@ impl Message {
         let src = SrcAuthority::BlsShare {
             src_name,
             proof_share,
-            public_key: node.keypair.public,
-            age: node.age,
         };
 
         Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)

@@ -38,10 +38,6 @@ pub enum SrcAuthority {
     BlsShare {
         /// Name in the source section
         src_name: XorName,
-        /// Public key of the source peer.
-        public_key: PublicKey,
-        /// Age of the source peer.
-        age: u8,
         /// Proof Share signed by the peer's BLS KeyShare
         proof_share: ProofShare,
     },
@@ -58,7 +54,7 @@ impl SrcAuthority {
     pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
             Self::Node { public_key, .. } => SrcLocation::Node(name(public_key)),
-            Self::BlsShare { public_key, .. } => SrcLocation::Node(name(public_key)),
+            Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
             Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }
@@ -70,7 +66,7 @@ impl SrcAuthority {
     pub(crate) fn name(&self) -> XorName {
         match self {
             Self::Node { public_key, .. } => name(public_key),
-            Self::BlsShare { public_key, .. } => name(public_key),
+            Self::BlsShare { src_name, .. } => *src_name,
             Self::Section { src_name, .. } => *src_name,
         }
     }
@@ -78,13 +74,10 @@ impl SrcAuthority {
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
     pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Section { .. } => Err(Error::InvalidSrcLocation),
             Self::Node {
                 public_key, age, ..
-            }
-            | Self::BlsShare {
-                public_key, age, ..
             } => Ok(Peer::new(name(public_key), addr, *age)),
+            Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 }

@@ -843,12 +843,7 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Command> {
-        let src_name = match msg.src() {
-            SrcAuthority::Node { public_key, .. } => crypto::name(public_key),
-            SrcAuthority::BlsShare { public_key, .. } => crypto::name(public_key),
-            SrcAuthority::Section { src_name, .. } => *src_name,
-        };
-
+        let src_name = msg.src().name();
         let bounce_dst_key = *self.section_key_by_name(&src_name);
         let bounce_dst = if matches!(msg.aggregation(), Aggregation::AtSource) {
             DstLocation::Section(src_name)
@@ -2103,13 +2098,12 @@ impl Approved {
         // If the msg is to be aggregated at dst, we don't vote among our peers, wemsimply send the msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
             Message::for_dst_accumulation(
-                &self.node,
                 self.section_keys_provider.key_share()?,
+                self.section().prefix().name(),
                 itinerary.dst,
                 content,
                 self.create_proof_chain(&itinerary.dst, None)?,
                 None,
-                self.section().prefix().name(),
             )?
         } else if itinerary.aggregate_at_src() {
             let variant = Variant::UserMessage(content);
