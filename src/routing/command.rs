@@ -12,6 +12,7 @@ use crate::{
     messages::Message,
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
+    XorName,
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
@@ -102,21 +103,26 @@ pub(crate) enum Command {
 
 impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
-    pub fn send_message_to_node(recipient: &SocketAddr, message_bytes: Bytes) -> Self {
-        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message_bytes)
+    pub fn send_message_to_node(
+        recipient: (&SocketAddr, XorName),
+        message_bytes: Bytes,
+        hdr_info: Option<HeaderInfo>,
+    ) -> Self {
+        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message_bytes, hdr_info)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
-        recipients: &[SocketAddr],
+        recipients: [(&SocketAddr, XorName)],
         delivery_group_size: usize,
         message_bytes: Bytes,
+        hdr_info: HeaderInfo,
     ) -> Self {
-        let node_msg = NodeMessage::new(message_bytes);
+        let msg = NodeMessage::new(message_bytes);
         Self::SendMessage {
             recipients: recipients.to_vec(),
             delivery_group_size,
-            message: MessageType::NodeMessage(node_msg),
+            message: MessageType::NodeMessage { hdr_info, msg },
         }
     }
 }
@@ -124,15 +130,22 @@ impl Command {
 impl Debug for Command {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::HandleMessage { sender, message } => f
+            Self::HandleMessage {
+                sender, message, ..
+            } => f
                 .debug_struct("HandleMessage")
                 .field("sender", sender)
                 .field("message", message)
                 .finish(),
-            Self::HandleSectionInfoMsg { sender, message } => f
+            Self::HandleSectionInfoMsg {
+                sender,
+                message,
+                hdr_info,
+            } => f
                 .debug_struct("HandleSectionInfoMsg")
                 .field("sender", sender)
                 .field("message", message)
+                .field("hdr_info", hdr_info)
                 .finish(),
             Self::HandleTimeout(token) => f.debug_tuple("HandleTimeout").field(token).finish(),
             Self::HandleConnectionLost(addr) => {
