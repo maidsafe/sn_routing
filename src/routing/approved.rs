@@ -269,9 +269,17 @@ impl Approved {
         &mut self,
         sender: SocketAddr,
         message: SectionInfoMsg,
+        hdr_info: HeaderInfo, // The HeaderInfo contains the XorName of the sender and a random PK during the initial SectionQuery,
     ) -> Vec<Command> {
+        // Provide our PK as the dest PK, only redundant as the message itself contains details regarding relocation/registration.
+        let hdr_info = HeaderInfo {
+            dest: hdr_info.dest,
+            dest_section_pk: *self.section().chain().last_key(),
+        };
+
         match message {
-            SectionInfoMsg::GetSectionQuery(name) => {
+            SectionInfoMsg::GetSectionQuery(pk) => {
+                let name = crypto::name(&pk);
                 debug!("Received GetSectionQuery({}) from {}", name, sender);
 
                 let response = if let (true, Ok(pk_set)) =
@@ -304,7 +312,10 @@ impl Approved {
                 vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::SectionInfo(response),
+                    message: MessageType::SectionInfo {
+                        msg: response,
+                        hdr_info,
+                    },
                 }]
             }
             SectionInfoMsg::RegisterEndUserCmd {
@@ -328,13 +339,24 @@ impl Approved {
                 vec![Command::SendMessage {
                     recipients: vec![sender],
                     delivery_group_size: 1,
-                    message: MessageType::SectionInfo(response),
+                    message: MessageType::SectionInfo {
+                        msg: response,
+                        hdr_info,
+                    },
                 }]
             }
             SectionInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx.send((MessageType::SectionInfo(message), sender)).await;
+                    let _ = tx
+                        .send((
+                            MessageType::SectionInfo {
+                                msg: message,
+                                hdr_info,
+                            },
+                            sender,
+                        ))
+                        .await;
                 }
                 vec![]
             }
@@ -408,18 +430,20 @@ impl Approved {
 
         if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
             trace!("Lost connection to {}", peer);
+            // Try to send a "ping" message to probe the peer connection. If it succeeds, the
+            // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
+            // it offline.
+            Some(Command::SendMessage {
+                recipients: vec![addr],
+                delivery_group_size: 1,
+                message: MessageType::Ping(HeaderInfo {
+                    dest: *peer.name(),
+                    dest_section_pk: *self.section.chain().last_key(),
+                }),
+            })
         } else {
             return None;
         }
-
-        // Try to send a "ping" message to probe the peer connection. If it succeeds, the
-        // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
-        // it offline.
-        Some(Command::SendMessage {
-            recipients: vec![addr],
-            delivery_group_size: 1,
-            message: MessageType::Ping,
-        })
     }
 
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
@@ -866,7 +890,11 @@ impl Approved {
         let bounce_msg = bounce_msg.to_bytes();
 
         if let Some(sender) = sender {
-            Ok(Command::send_message_to_node(&sender, bounce_msg))
+            let hdr_info = HeaderInfo {
+                dest: src_name,
+                dest_section_pk: bounce_dst_key,
+            };
+            Ok(Command::send_message_to_node(&sender, bounce_msg, hdr_info))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -880,11 +908,12 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg_bytes: Bytes,
     ) -> Result<Command> {
+        let src_key = self.section.chain().last_key().clone();
         let bounce_msg = Message::single_src(
             &self.node,
             DstLocation::Direct,
             Variant::BouncedUnknownMessage {
-                src_key: *self.section.chain().last_key(),
+                src_key,
                 message: msg_bytes,
             },
             None,
@@ -901,8 +930,13 @@ impl Approved {
                 .any(|peer| peer.addr() == sender)
         });
 
+        let hdr_info = HeaderInfo {
+            dest: self.section.prefix().name(),
+            dest_section_pk: src_key,
+        };
+
         if let Some(sender) = our_elder_sender {
-            Ok(Command::send_message_to_node(&sender, bounce_msg))
+            Ok(Command::send_message_to_node(&sender, bounce_msg, hdr_info))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -954,6 +988,10 @@ impl Approved {
                 })?,
         };
 
+        let hdr_info = HeaderInfo {
+            dest: sender.name().clone(),
+            dest_section_pk: None,
+        };
         trace!("resending with extended proof");
         Ok(Command::send_message_to_node(
             sender.addr(),
@@ -1717,7 +1755,7 @@ impl Approved {
         Ok(Command::HandleMessage {
             message,
             sender: None,
-            hdr_info
+            hdr_info,
         })
     }
 
@@ -2347,7 +2385,15 @@ impl Approved {
             .map(Peer::addr)
             .copied()
             .collect();
-        Command::send_message_to_nodes(&targets, targets.len(), msg)
+
+        let dest_section_pk = self.section_chain().last_key().clone();
+
+        let hdr_info = HeaderInfo {
+            dest: self.section.prefix().name(),
+            dest_section_pk,
+        };
+
+        Command::send_message_to_nodes(&targets, targets.len(), msg, hdr_info)
     }
 
     ////////////////////////////////////////////////////////////////////////////

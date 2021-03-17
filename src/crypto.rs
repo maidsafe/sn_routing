@@ -39,8 +39,8 @@ pub fn pub_key(name: &XorName) -> Result<PublicKey, ed25519_dalek::SignatureErro
     PublicKey::from_bytes(&name.0)
 }
 
-pub fn name(public_key: &PublicKey) -> XorName {
-    XorName(public_key.to_bytes())
+pub fn name(public_key: &sn_data_types::PublicKey) -> XorName {
+    XorName(public_key.to_bytes().into())
 }
 
 /// Construct a random `Keypair`
@@ -54,7 +54,7 @@ pub fn gen_keypair_within_range(range: &RangeInclusive<XorName>) -> Keypair {
 
     loop {
         let keypair = Keypair::generate(&mut rng);
-        if range.contains(&name(&keypair.public)) {
+        if range.contains(&name(&sn_data_types::PublicKey::Ed25519(keypair.public))) {
             return keypair;
         }
     }

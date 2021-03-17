@@ -93,18 +93,24 @@ impl Stage {
 
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
-            Command::HandleMessage { sender, message } => {
+            Command::HandleMessage {
+                sender, message, ..
+            } => {
                 self.state
                     .lock()
                     .await
                     .handle_message(sender, message)
                     .await
             }
-            Command::HandleSectionInfoMsg { sender, message } => Ok(self
+            Command::HandleSectionInfoMsg {
+                sender,
+                message,
+                hdr_info,
+            } => Ok(self
                 .state
                 .lock()
                 .await
-                .handle_section_info_msg(sender, message)
+                .handle_section_info_msg(sender, message, hdr_info)
                 .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleConsensus { vote, proof } => {
@@ -188,7 +194,7 @@ impl Stage {
         let msg_bytes = message.serialize()?;
 
         let cmds = match message {
-            MessageType::Ping | MessageType::NodeMessage(_) => self
+            MessageType::Ping(_) | MessageType::NodeMessage { .. } => self
                 .comm
                 .send(recipients, delivery_group_size, msg_bytes)
                 .await
@@ -196,7 +202,7 @@ impl Stage {
                 .into_iter()
                 .map(Command::HandlePeerLost)
                 .collect(),
-            MessageType::ClientMessage(_) => {
+            MessageType::ClientMessage { .. } => {
                 for recipient in recipients {
                     if self
                         .comm
@@ -209,7 +215,7 @@ impl Stage {
                 }
                 vec![]
             }
-            MessageType::SectionInfo(_) => {
+            MessageType::SectionInfo { .. } => {
                 for recipient in recipients {
                     let _ = self
                         .comm
@@ -264,6 +270,7 @@ impl Stage {
             .map(|(message, sender)| Command::HandleMessage {
                 message,
                 sender: Some(sender),
+                hdr_info: None,
             })
             .collect();
         Ok(commands)
