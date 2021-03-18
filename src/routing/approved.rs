@@ -649,12 +649,44 @@ impl Approved {
         }
     }
 
+    fn accumulate_message(&mut self, msg: Message) -> Result<Option<Message>> {
+        let proof_share = if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
+            proof_share
+        } else {
+            // Not an accumulating message, return unchanged.
+            return Ok(Some(msg));
+        };
+
+        let signed_bytes = bincode::serialize(&msg.signable_view())?;
+        match self
+            .message_accumulator
+            .add(&signed_bytes, proof_share.clone())
+        {
+            Ok(proof) => {
+                trace!("Successfully accumulated signatures for message: {:?}", msg);
+                Ok(Some(msg.into_dst_accumulated(proof)?))
+            }
+            Err(AggregatorError::NotEnoughShares) => Ok(None),
+            Err(err) => {
+                error!("Error accumulating message at destination: {:?}", err);
+                Err(Error::InvalidSignatureShare)
+            }
+        }
+    }
+
     async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
+
+        let msg = if let Some(msg) = self.accumulate_message(msg)? {
+            msg
+        } else {
+            return Ok(vec![]);
+        };
+
         match msg.variant() {
             Variant::NeighbourInfo { elders_info, .. } => {
                 if msg.dst().is_section() {
@@ -2095,18 +2127,19 @@ impl Approved {
             return Err(Error::InvalidDstLocation);
         }
 
+        let variant = Variant::UserMessage(content);
+
         // If the msg is to be aggregated at dst, we don't vote among our peers, wemsimply send the msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
             Message::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
                 self.section().prefix().name(),
                 itinerary.dst,
-                content,
+                variant,
                 self.create_proof_chain(&itinerary.dst, None)?,
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
-            let variant = Variant::UserMessage(content);
             let vote = self.create_send_message_vote(itinerary.dst, variant, None)?;
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
@@ -2114,7 +2147,6 @@ impl Approved {
             );
             return self.send_vote(&recipients, vote);
         } else {
-            let variant = Variant::UserMessage(content);
             Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
         let mut commands = vec![];
