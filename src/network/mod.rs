@@ -17,7 +17,6 @@ use crate::{
 };
 
 use serde::{Deserialize, Serialize};
-use sn_messaging::DstLocation;
 use std::{borrow::Borrow, collections::HashSet, iter};
 use xor_name::{Prefix, XorName};
 
@@ -205,27 +204,22 @@ impl Network {
 
     /// Returns the elders_info and the latest known key for the prefix that matches `name`,
     /// excluding self section.
-    pub fn section_by_name(&self, name: &XorName) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+    pub fn section_by_name(
+        &self,
+        name: &XorName,
+    ) -> (Option<&bls::PublicKey>, Option<&EldersInfo>) {
         (
-            self.keys.get_matching(name).map(|entry| entry.value.1),
+            self.keys.get_matching(name).map(|entry| &entry.value.1),
             self.neighbours
                 .get_matching(name)
-                .map(|entry| entry.elders_info.value.clone()),
+                .map(|entry| &entry.elders_info.value),
         )
     }
 
-    /// Returns the public key in our chain that will be trusted by the given section.
-    /// If `None` is returned, the only key guaranteed to be trusted is the root key.
-    pub fn knowledge_by_section(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
+    /// Returns the public key in our chain that will be trusted by the given name.
+    pub fn knowledge_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
         self.knowledge
-            .get_equal_or_ancestor(prefix)
-            .map(|entry| &entry.value.1)
-    }
-
-    /// Returns the public key in our chain that will be trusted by the given location.
-    pub fn knowledge_by_location(&self, dst: &DstLocation) -> Option<&bls::PublicKey> {
-        self.knowledge
-            .get_matching(&dst.name()?)
+            .get_matching(name)
             .map(|entry| &entry.value.1)
     }
 
@@ -571,9 +565,8 @@ mod tests {
         for (dst_name_prefix_str, expected_key) in expected_trusted_keys {
             let dst_name_prefix: Prefix = dst_name_prefix_str.parse().unwrap();
             let dst_name = dst_name_prefix.substituted_in(rand::random());
-            let dst = DstLocation::Section(dst_name);
 
-            assert_eq!(map.knowledge_by_location(&dst), Some(&expected_key));
+            assert_eq!(map.knowledge_by_name(&dst_name), Some(&expected_key));
         }
     }
 

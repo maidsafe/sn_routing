@@ -218,10 +218,15 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         .await?
         .into_iter();
 
-    let vote = assert_matches!(
+    let message = assert_matches!(
         commands.next(),
-        Some(Command::HandleVote { vote, .. }) => vote
+        Some(Command::HandleMessage { message, .. }) => message
     );
+    let vote = assert_matches!(
+        message.variant(),
+        Variant::Vote { content, .. } => content
+    );
+
     assert_matches!(
         vote,
         Vote::Online { member_info, previous_name, their_knowledge } => {
@@ -229,8 +234,8 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
             assert_eq!(*member_info.peer.addr(), new_node.addr);
             assert_eq!(member_info.peer.age(), MIN_AGE + 1);
             assert_eq!(member_info.state, PeerState::Joined);
-            assert_eq!(previous_name, None);
-            assert_eq!(their_knowledge, None);
+            assert_eq!(*previous_name, None);
+            assert_eq!(*their_knowledge, None);
         }
     );
 
@@ -267,7 +272,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     };
 
     let relocate_message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(relocated_node_old_name),
         dst_key: section_key,
         variant: Variant::Relocate(relocate_details),
@@ -306,8 +311,12 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let mut online_voted = false;
 
     for command in commands {
-        let vote = match command {
-            Command::HandleVote { vote, .. } => vote,
+        let message = match command {
+            Command::HandleMessage { message, .. } => message,
+            _ => continue,
+        };
+        let vote = match message.variant() {
+            Variant::Vote { content, .. } => content,
             _ => continue,
         };
 
@@ -319,8 +328,8 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         {
             assert_eq!(member_info.peer, relocated_node.peer());
             assert_eq!(member_info.state, PeerState::Joined);
-            assert_eq!(previous_name, Some(relocated_node_old_name));
-            assert_eq!(their_knowledge, Some(section_key));
+            assert_eq!(*previous_name, Some(relocated_node_old_name));
+            assert_eq!(*their_knowledge, Some(section_key));
 
             online_voted = true;
         }
@@ -333,13 +342,12 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
 #[tokio::test]
 async fn accumulate_votes() -> Result<()> {
-    let (elders_info, mut nodes) = create_elders_info();
+    let (elders_info, nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
-    let node = nodes.remove(0);
     let state = Approved::new(
-        node,
+        nodes[0].clone(),
         section,
         Some(section_key_share),
         mpsc::unbounded_channel().0,
@@ -356,10 +364,21 @@ async fn accumulate_votes() -> Result<()> {
 
     for index in 0..THRESHOLD {
         let proof_share = vote.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
-        let commands = stage
-            .handle_command(Command::HandleVote {
-                vote: vote.clone(),
+        let message = Message::single_src(
+            &nodes[index],
+            DstLocation::Direct,
+            Variant::Vote {
+                content: vote.clone(),
                 proof_share,
+            },
+            None,
+            None,
+        )?;
+
+        let commands = stage
+            .handle_command(Command::HandleMessage {
+                message,
+                sender: Some(nodes[0].addr),
             })
             .await?;
         assert!(commands.is_empty());
@@ -370,10 +389,20 @@ async fn accumulate_votes() -> Result<()> {
         THRESHOLD,
         &sk_set.secret_key_share(THRESHOLD),
     )?;
-    let mut commands = stage
-        .handle_command(Command::HandleVote {
-            vote: vote.clone(),
+    let message = Message::single_src(
+        &nodes[THRESHOLD],
+        DstLocation::Direct,
+        Variant::Vote {
+            content: vote.clone(),
             proof_share,
+        },
+        None,
+        None,
+    )?;
+    let mut commands = stage
+        .handle_command(Command::HandleMessage {
+            message,
+            sender: Some(nodes[THRESHOLD].addr),
         })
         .await?
         .into_iter();
@@ -484,15 +513,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
             _ => continue,
         };
 
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
-        let actual_elders_info = match &message.variant {
+        let actual_elders_info = match message.variant() {
             Variant::DKGStart { elders_info, .. } => elders_info,
             _ => continue,
         };
@@ -565,19 +586,7 @@ async fn handle_online_command(
                 assert_eq!(recipients, [*peer.addr()]);
                 status.node_approval_sent = true;
             }
-            Variant::Vote { content, .. } => {
-                let message = if let Vote::SendMessage { message, .. } = content {
-                    message
-                } else {
-                    continue;
-                };
-
-                let details = if let Variant::Relocate(details) = &message.variant {
-                    details
-                } else {
-                    continue;
-                };
-
+            Variant::Relocate(details) => {
                 if details.pub_id != *peer.name() {
                     continue;
                 }
@@ -755,15 +764,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
             _ => continue,
         };
 
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
-        let actual_elders_info = match &message.variant {
+        let actual_elders_info = match message.variant() {
             Variant::DKGStart { elders_info, .. } => elders_info,
             _ => continue,
         };
@@ -972,7 +973,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     // Create a message signed by a key now known to the node.
     let message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(node_name),
         dst_key: pk1,
         variant: Variant::UserMessage(Bytes::from_static(b"hello")),
@@ -1135,7 +1136,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
-        src: Prefix::default(),
+        src: Prefix::default().name(),
         dst: DstLocation::Node(other_node.name()),
         dst_key: pk1,
         variant: Variant::UserMessage(original_message_content.clone()),
@@ -1504,18 +1505,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         if recipients != [*relocated_peer.addr()] {
             continue;
         }
-
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
         match relocated_peer_role {
             RelocatedPeerRole::NonElder => {
-                let details = match &message.variant {
+                let details = match message.variant() {
                     Variant::Relocate(details) => details,
                     _ => continue,
                 };
@@ -1524,7 +1516,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
                 assert_eq!(details.age, relocated_peer.age() + 1);
             }
             RelocatedPeerRole::Elder => {
-                let promise = match &message.variant {
+                let promise = match message.variant() {
                     Variant::RelocatePromise(promise) => promise,
                     _ => continue,
                 };

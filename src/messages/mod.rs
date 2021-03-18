@@ -22,7 +22,7 @@ use crate::{
     node::Node,
     section::{SectionChain, SectionChainError, SectionKeyShare},
 };
-use bls_signature_aggregator::ProofShare;
+use bls_signature_aggregator::{Proof, ProofShare};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sn_messaging::{Aggregation, DstLocation};
@@ -84,10 +84,18 @@ impl Message {
                     error!("Failed signature: {:?}", msg);
                     return Err(CreateError::FailedSignature);
                 }
+
+                if Some(&proof_share.public_key_set.public_key()) != msg.proof_chain_last_key().ok()
+                {
+                    error!(
+                        "Proof share public key doesn't match proof chain last key: {:?}",
+                        msg
+                    );
+                    return Err(CreateError::PublicKeyMismatch);
+                }
             }
             SrcAuthority::Section { signature, .. } => {
                 if let Some(proof_chain) = msg.proof_chain.as_ref() {
-                    // FIXME Assumes the nodes proof last key is the one signing this message
                     if !proof_chain.last_key().verify(signature, &signed_bytes) {
                         error!(
                             "Failed signature: {:?} (proof chain: {:?})",
@@ -137,15 +145,13 @@ impl Message {
 
     /// Creates a message signed using a BLS KeyShare for destination accumulation
     pub(crate) fn for_dst_accumulation(
-        node: &Node,
         key_share: &SectionKeyShare,
+        src_name: XorName,
         dst: DstLocation,
-        user_msg: Bytes,
+        variant: Variant,
         proof_chain: SectionChain,
         dst_key: Option<bls::PublicKey>,
-        src_section: XorName,
     ) -> Result<Self, CreateError> {
-        let variant = Variant::UserMessage(user_msg);
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
@@ -158,13 +164,49 @@ impl Message {
             signature_share,
         };
         let src = SrcAuthority::BlsShare {
-            src_section,
+            src_name,
             proof_share,
-            public_key: node.keypair.public,
-            age: node.age,
         };
 
         Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)
+    }
+
+    /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
+    /// Returns errors if src is not `BlsShare` or if the proof is invalid.
+    pub(crate) fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
+        let (proof_share, src_name) = if let SrcAuthority::BlsShare {
+            proof_share,
+            src_name,
+        } = &self.src
+        {
+            (proof_share.clone(), *src_name)
+        } else {
+            error!("not a message for dst accumulation");
+            return Err(Error::InvalidMessage);
+        };
+
+        if proof_share.public_key_set.public_key() != proof.public_key {
+            error!("proof public key doesn't match proof share public key");
+            return Err(Error::InvalidMessage);
+        }
+
+        if Some(&proof.public_key) != self.proof_chain_last_key().ok() {
+            error!("proof public key doesn't match proof chain last key");
+            return Err(Error::InvalidMessage);
+        }
+
+        let bytes = bincode::serialize(&self.signable_view())?;
+
+        if !proof.verify(&bytes) {
+            return Err(Error::FailedSignature);
+        }
+
+        self.src = SrcAuthority::Section {
+            signature: proof.signature,
+            src_name,
+        };
+
+        Ok(self)
     }
 
     pub(crate) fn signable_view(&self) -> SignableView {
@@ -207,7 +249,7 @@ impl Message {
     ) -> Result<Self, CreateError> {
         Self::new_signed(
             SrcAuthority::Section {
-                prefix: plain.src,
+                src_name: plain.src,
                 signature,
             },
             plain.dst,
@@ -248,6 +290,10 @@ impl Message {
                 } else {
                     return Err(Error::InvalidMessage);
                 };
+
+                if proof_share.public_key_set.public_key() != *proof_chain.last_key() {
+                    return Err(Error::InvalidMessage);
+                }
 
                 if !proof_share.verify(&bytes) {
                     return Err(Error::FailedSignature);
@@ -402,6 +448,8 @@ pub enum CreateError {
     Bincode(#[from] bincode::Error),
     #[error("signature check failed")]
     FailedSignature,
+    #[error("public key mismatch")]
+    PublicKeyMismatch,
 }
 
 impl From<CreateError> for Error {
@@ -409,6 +457,7 @@ impl From<CreateError> for Error {
         match src {
             CreateError::Bincode(inner) => Self::Bincode(inner),
             CreateError::FailedSignature => Self::FailedSignature,
+            CreateError::PublicKeyMismatch => Self::InvalidMessage,
         }
     }
 }

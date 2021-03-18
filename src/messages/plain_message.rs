@@ -9,13 +9,13 @@
 use super::{SignableView, Variant};
 use serde::{Deserialize, Serialize};
 use sn_messaging::DstLocation;
-use xor_name::Prefix;
+use xor_name::XorName;
 
 /// Section-source message without signature and proof.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub(crate) struct PlainMessage {
-    /// Prefix of the source section.
-    pub src: Prefix,
+    /// Name in the source section.
+    pub src: XorName,
     /// Destination location.
     pub dst: DstLocation,
     /// The latest key of the destination section according to the sender's knowledge.

@@ -58,8 +58,9 @@ pub(crate) enum Vote {
         key: bls::PublicKey,
     },
 
-    // Voted to send an user message whose source is our section.
-    SendMessage {
+    // Voted to accumulate the message at the source (that is, our section) and then send it to its
+    // destination.
+    AccumulateAtSrc {
         message: Box<PlainMessage>,
         proof_chain: SectionChain,
     },
@@ -102,7 +103,7 @@ impl<'a> Serialize for SignableView<'a> {
             Vote::OurElders(info) => info.proof.public_key.serialize(serializer),
             Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             Vote::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
-            Vote::SendMessage { message, .. } => message.as_signable().serialize(serializer),
+            Vote::AccumulateAtSrc { message, .. } => message.as_signable().serialize(serializer),
             Vote::JoinsAllowed(joins_allowed) => joins_allowed.serialize(serializer),
         }
     }

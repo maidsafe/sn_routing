@@ -186,6 +186,21 @@ impl Approved {
         }
     }
 
+    /// Returns the info about the section matching the name.
+    pub fn matching_section(
+        &self,
+        name: &XorName,
+    ) -> (Option<&bls::PublicKey>, Option<&EldersInfo>) {
+        if self.section.prefix().matches(name) {
+            (
+                Some(self.section.chain().last_key()),
+                Some(self.section.elders_info()),
+            )
+        } else {
+            self.network.section_by_name(name)
+        }
+    }
+
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub fn our_index(&self) -> Result<usize> {
@@ -367,10 +382,10 @@ impl Approved {
                 self.handle_their_knowledge_event(prefix, key, proof);
                 Ok(vec![])
             }
-            Vote::SendMessage {
+            Vote::AccumulateAtSrc {
                 message,
                 proof_chain,
-            } => Ok(vec![self.handle_send_message_event(
+            } => Ok(vec![self.handle_accumulate_at_src_event(
                 *message,
                 proof_chain,
                 proof,
@@ -497,8 +512,8 @@ impl Approved {
 
         // Broadcast the vote to the rest of the section elders.
         let variant = Variant::Vote {
-            content: vote.clone(),
-            proof_share: proof_share.clone(),
+            content: vote,
+            proof_share,
         };
         let message = Message::single_src(
             &self.node,
@@ -508,32 +523,7 @@ impl Approved {
             Some(*self.section.chain().last_key()),
         )?;
 
-        let mut others = Vec::new();
-        let mut handle = false;
-
-        for recipient in recipients {
-            if recipient.name() == &self.node.name() {
-                handle = true;
-            } else {
-                others.push(*recipient.addr());
-            }
-        }
-
-        let mut commands = vec![];
-
-        if !others.is_empty() {
-            commands.push(Command::send_message_to_nodes(
-                &others,
-                others.len(),
-                message.to_bytes(),
-            ));
-        }
-
-        if handle {
-            commands.push(Command::HandleVote { vote, proof_share });
-        }
-
-        Ok(commands)
+        Ok(self.send_or_handle(message, recipients))
     }
 
     fn check_lagging(
@@ -608,7 +598,7 @@ impl Approved {
                 ..
             } => {
                 if let Some(status) =
-                    self.decide_vote_status(&msg.src().to_node_name()?, content, proof_share)
+                    self.decide_vote_status(&msg.src().name(), content, proof_share)
                 {
                     return Ok(status);
                 }
@@ -634,12 +624,44 @@ impl Approved {
         }
     }
 
+    fn accumulate_message(&mut self, msg: Message) -> Result<Option<Message>> {
+        let proof_share = if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
+            proof_share
+        } else {
+            // Not an accumulating message, return unchanged.
+            return Ok(Some(msg));
+        };
+
+        let signed_bytes = bincode::serialize(&msg.signable_view())?;
+        match self
+            .message_accumulator
+            .add(&signed_bytes, proof_share.clone())
+        {
+            Ok(proof) => {
+                trace!("Successfully accumulated signatures for message: {:?}", msg);
+                Ok(Some(msg.into_dst_accumulated(proof)?))
+            }
+            Err(AggregatorError::NotEnoughShares) => Ok(None),
+            Err(err) => {
+                error!("Error accumulating message at destination: {:?}", err);
+                Err(Error::InvalidSignatureShare)
+            }
+        }
+    }
+
     async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
+
+        let msg = if let Some(msg) = self.accumulate_message(msg)? {
+            msg
+        } else {
+            return Ok(vec![]);
+        };
+
         match msg.variant() {
             Variant::NeighbourInfo { elders_info, .. } => {
                 if msg.dst().is_section() {
@@ -667,13 +689,13 @@ impl Approved {
             }
             Variant::JoinRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                self.handle_join_request(msg.src().to_node_peer(sender)?, *join_request.clone())
+                self.handle_join_request(msg.src().peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
             Variant::BouncedUntrustedMessage(message) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
-                    msg.src().to_node_peer(sender)?,
+                    msg.src().peer(sender)?,
                     *msg.dst_key(),
                     *message.clone(),
                 )?])
@@ -681,7 +703,7 @@ impl Approved {
             Variant::BouncedUnknownMessage { src_key, message } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_bounced_unknown_message(
-                    msg.src().to_node_peer(sender)?,
+                    msg.src().peer(sender)?,
                     message.clone(),
                     src_key,
                 )
@@ -691,13 +713,13 @@ impl Approved {
                 elders_info,
             } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DKGMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().to_node_name()?)
+                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
             }
             Variant::DKGFailureObservation { dkg_key, proof } => {
                 self.handle_dkg_failure_observation(*dkg_key, *proof)
             }
             Variant::DKGFailureAgreement(proofs) => {
-                self.handle_dkg_failure_agreement(&msg.src().to_node_name()?, proofs)
+                self.handle_dkg_failure_agreement(&msg.src().name(), proofs)
             }
             Variant::Vote {
                 content,
@@ -828,12 +850,7 @@ impl Approved {
         sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<Command> {
-        let src_name = match msg.src() {
-            SrcAuthority::Node { public_key, .. } => crypto::name(public_key),
-            SrcAuthority::BlsShare { public_key, .. } => crypto::name(public_key),
-            SrcAuthority::Section { prefix, .. } => prefix.name(),
-        };
-
+        let src_name = msg.src().name();
         let bounce_dst_key = *self.section_key_by_name(&src_name);
         let bounce_dst = if matches!(msg.aggregation(), Aggregation::AtSource) {
             DstLocation::Section(src_name)
@@ -1040,7 +1057,7 @@ impl Approved {
         }
         if let SrcAuthority::BlsShare {
             proof_share,
-            src_section,
+            src_name,
             ..
         } = &src
         {
@@ -1055,7 +1072,7 @@ impl Approved {
                     if key.verify(&proof.signature, signed_bytes) {
                         self.send_event(Event::MessageReceived {
                             content,
-                            src: SrcLocation::Section(*src_section),
+                            src: SrcLocation::Section(*src_name),
                             dst,
                         });
                     } else {
@@ -1659,7 +1676,7 @@ impl Approved {
         self.network.update_knowledge(knowledge)
     }
 
-    fn handle_send_message_event(
+    fn handle_accumulate_at_src_event(
         &self,
         message: PlainMessage,
         proof_chain: SectionChain,
@@ -1902,17 +1919,20 @@ impl Approved {
         // We need to construct a proof that would be trusted by the destination section.
         let known_key = self
             .network
-            .knowledge_by_location(&DstLocation::Section(details.destination))
+            .knowledge_by_name(&details.destination)
             .unwrap_or_else(|| self.section.chain().root_key());
 
+        let src = details.pub_id;
         let dst = DstLocation::Node(details.pub_id);
         let variant = Variant::Relocate(details);
 
-        trace!("Send {:?} -> {:?}", variant, dst);
-
-        // Vote accumulated at destination.
-        let vote = self.create_send_message_vote(dst, variant, Some(known_key))?;
-        self.send_vote(slice::from_ref(recipient), vote)
+        self.send_message_for_dst_accumulation(
+            src,
+            dst,
+            variant,
+            Some(known_key),
+            slice::from_ref(recipient),
+        )
     }
 
     fn send_relocate_promise(
@@ -1923,12 +1943,11 @@ impl Approved {
         // Note: this message is first sent to a single node who then sends it back to the section
         // where it needs to be handled by all the elders. This is why the destination is
         // `Section`, not `Node`.
+        let src = promise.name;
         let dst = DstLocation::Section(promise.name);
         let variant = Variant::RelocatePromise(promise);
 
-        // Vote accumulated at destination
-        let vote = self.create_send_message_vote(dst, variant, None)?;
-        self.send_vote(slice::from_ref(recipient), vote)
+        self.send_message_for_dst_accumulation(src, dst, variant, None, slice::from_ref(recipient))
     }
 
     fn return_relocate_promise(&self) -> Option<Command> {
@@ -1942,13 +1961,13 @@ impl Approved {
 
     fn send_neighbour_info(
         &mut self,
-        dst: Prefix,
+        dst: XorName,
         nonce: MessageHash,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Option<Command>> {
         let dst_knowledge = self
             .network
-            .knowledge_by_section(&dst)
+            .knowledge_by_name(&dst)
             .unwrap_or_else(|| self.section.chain().root_key());
         let proof_chain = self
             .section
@@ -1962,7 +1981,7 @@ impl Approved {
         trace!("sending NeighbourInfo {:?}", variant);
         let msg = Message::single_src(
             &self.node,
-            DstLocation::Section(dst.name()),
+            DstLocation::Section(dst),
             variant,
             Some(proof_chain),
             dst_key,
@@ -1990,8 +2009,14 @@ impl Approved {
             dkg_key,
             elders_info,
         };
-        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-        self.send_vote(recipients, vote)
+
+        self.send_message_for_dst_accumulation(
+            self.section.prefix().name(),
+            DstLocation::Direct,
+            variant,
+            None,
+            recipients,
+        )
     }
 
     // Send message over the network.
@@ -2085,27 +2110,27 @@ impl Approved {
             return Err(Error::InvalidDstLocation);
         }
 
-        // If the msg is to be aggregated at dst, we don't vote among our peers, wemsimply send the msg as our vote to the dst.
+        let variant = Variant::UserMessage(content);
+
+        // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
+        // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
             Message::for_dst_accumulation(
-                &self.node,
                 self.section_keys_provider.key_share()?,
+                itinerary.src.name(),
                 itinerary.dst,
-                content,
+                variant,
                 self.create_proof_chain(&itinerary.dst, None)?,
                 None,
-                self.section().prefix().name(),
             )?
         } else if itinerary.aggregate_at_src() {
-            let variant = Variant::UserMessage(content);
-            let vote = self.create_send_message_vote(itinerary.dst, variant, None)?;
+            let vote = self.create_accumulate_at_src_vote(itinerary.dst, variant, None)?;
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
                 self.section.elders_info().peers().copied(),
             );
             return self.send_vote(&recipients, vote);
         } else {
-            let variant = Variant::UserMessage(content);
             Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
         let mut commands = vec![];
@@ -2125,7 +2150,86 @@ impl Approved {
         Ok(commands)
     }
 
-    fn create_send_message_vote(
+    fn send_message_for_dst_accumulation(
+        &self,
+        src: XorName,
+        dst: DstLocation,
+        variant: Variant,
+        proof_chain_first_key: Option<&bls::PublicKey>,
+        recipients: &[Peer],
+    ) -> Result<Vec<Command>> {
+        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
+        let dst_key = if let Some(name) = dst.name() {
+            *self.section_key_by_name(&name)
+        } else {
+            // NOTE: `dst` is `Direct`. We use this only if the recipient is in our section, so
+            // it's OK to use our latest key as the `dst_key`.
+            *self.section.chain().last_key()
+        };
+
+        let key_share = self.section_keys_provider.key_share().map_err(|err| {
+            trace!(
+                "Can't create message {:?} for accumulation at dst {:?}: {}",
+                variant,
+                dst,
+                err
+            );
+            err
+        })?;
+        let message = Message::for_dst_accumulation(
+            key_share,
+            src,
+            dst,
+            variant,
+            proof_chain,
+            Some(dst_key),
+        )?;
+
+        trace!(
+            "Send {:?} for accumulation at dst to {:?}",
+            message,
+            recipients
+        );
+
+        Ok(self.send_or_handle(message, recipients))
+    }
+
+    // Send the message to all `recipients`. If one of the recipients is us, don't send it over the
+    // network but handle it directly.
+    fn send_or_handle(&self, message: Message, recipients: &[Peer]) -> Vec<Command> {
+        let mut commands = vec![];
+        let mut others = Vec::new();
+        let mut handle = false;
+
+        trace!("Send {:?} to {:?}", message, recipients);
+
+        for recipient in recipients {
+            if recipient.name() == &self.node.name() {
+                handle = true;
+            } else {
+                others.push(*recipient.addr());
+            }
+        }
+
+        if !others.is_empty() {
+            commands.push(Command::send_message_to_nodes(
+                &others,
+                others.len(),
+                message.to_bytes(),
+            ));
+        }
+
+        if handle {
+            commands.push(Command::HandleMessage {
+                sender: Some(self.node.addr),
+                message,
+            });
+        }
+
+        commands
+    }
+
+    fn create_accumulate_at_src_vote(
         &self,
         dst: DstLocation,
         variant: Variant,
@@ -2142,13 +2246,13 @@ impl Approved {
         };
 
         let message = PlainMessage {
-            src: *self.section.prefix(),
+            src: self.section.prefix().name(),
             dst,
             dst_key,
             variant,
         };
 
-        let vote = Vote::SendMessage {
+        let vote = Vote::AccumulateAtSrc {
             message: Box::new(message),
             proof_chain,
         };
@@ -2164,7 +2268,7 @@ impl Approved {
         first_key: Option<&bls::PublicKey>,
     ) -> Result<SectionChain> {
         let first_key = first_key
-            .or_else(|| self.network.knowledge_by_location(dst))
+            .or_else(|| self.network.knowledge_by_name(&dst.name()?))
             .unwrap_or_else(|| self.section.chain().root_key());
 
         let last_key = self
@@ -2204,11 +2308,11 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        let src_prefix = if let Ok(prefix) = msg.src().as_section_prefix() {
-            prefix
-        } else {
-            return Ok(vec![]);
-        };
+        let src_name = msg.src().name();
+        let src_prefix = self
+            .matching_section(&src_name)
+            .1
+            .map(|elders_info| &elders_info.prefix);
 
         let src_key = if let Ok(key) = msg.proof_chain_last_key() {
             key
@@ -2216,35 +2320,41 @@ impl Approved {
             return Ok(vec![]);
         };
 
-        let is_neighbour = self.section.prefix().is_neighbour(src_prefix);
+        let is_neighbour = src_prefix
+            .map(|src_prefix| self.section.prefix().is_neighbour(src_prefix))
+            .unwrap_or(false);
 
         let mut commands = Vec::new();
         let mut vote_send_neighbour_info = false;
 
-        if !src_prefix.matches(&self.node.name()) && !self.network.has_key(src_key) {
-            // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
-            // via `NeighbourInfo`.
-            if is_neighbour {
-                vote_send_neighbour_info = true;
-            } else {
-                commands.extend(self.vote(Vote::TheirKey {
-                    prefix: *src_prefix,
-                    key: *src_key,
-                })?);
+        if let Some(src_prefix) = src_prefix {
+            if !src_prefix.matches(&self.node.name()) && !self.network.has_key(src_key) {
+                // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
+                // via `NeighbourInfo`.
+                if is_neighbour {
+                    vote_send_neighbour_info = true;
+                } else {
+                    commands.extend(self.vote(Vote::TheirKey {
+                        prefix: *src_prefix,
+                        key: *src_key,
+                    })?);
+                }
             }
         }
 
         if let Some(new) = msg.dst_key() {
-            let old = self
-                .network
-                .knowledge_by_section(src_prefix)
-                .unwrap_or_else(|| self.section.chain().root_key());
+            if let Some(src_prefix) = src_prefix {
+                let old = self
+                    .network
+                    .knowledge_by_name(&src_name)
+                    .unwrap_or_else(|| self.section.chain().root_key());
 
-            if self.section.chain().cmp_by_position(new, old) == Ordering::Greater {
-                commands.extend(self.vote(Vote::TheirKnowledge {
-                    prefix: *src_prefix,
-                    key: *new,
-                })?);
+                if self.section.chain().cmp_by_position(new, old) == Ordering::Greater {
+                    commands.extend(self.vote(Vote::TheirKnowledge {
+                        prefix: *src_prefix,
+                        key: *new,
+                    })?);
+                }
             }
 
             if is_neighbour && new != self.section.chain().last_key() {
@@ -2255,9 +2365,8 @@ impl Approved {
         if vote_send_neighbour_info {
             // TODO: if src has split, consider sending to all child prefixes that are still our
             // neighbours.
-            let dst_key = self.network.key_by_name(&src_prefix.name()).cloned();
-
-            commands.extend(self.send_neighbour_info(*src_prefix, *msg.hash(), dst_key)?)
+            let dst_key = self.network.key_by_name(&src_name).cloned();
+            commands.extend(self.send_neighbour_info(src_name, *msg.hash(), dst_key)?)
         }
 
         Ok(commands)

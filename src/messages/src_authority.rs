@@ -15,7 +15,7 @@ use bls_signature_aggregator::ProofShare;
 use serde::{Deserialize, Serialize};
 use sn_messaging::SrcLocation;
 use std::net::SocketAddr;
-use xor_name::{Prefix, XorName};
+use xor_name::XorName;
 
 /// Source authority of a message.
 /// Src of message and authority to send it. Authority is validated by the signature.
@@ -36,19 +36,15 @@ pub enum SrcAuthority {
     },
     /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
     BlsShare {
-        /// Section name at the time
-        src_section: XorName,
-        /// Public key of the source peer.
-        public_key: PublicKey,
-        /// Age of the source peer.
-        age: u8,
+        /// Name in the source section
+        src_name: XorName,
         /// Proof Share signed by the peer's BLS KeyShare
         proof_share: ProofShare,
     },
     /// Authority of a whole section.
     Section {
-        /// Prefix of the source section.
-        prefix: Prefix,
+        /// Name in the source section.
+        src_name: XorName,
         /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
     },
@@ -58,8 +54,8 @@ impl SrcAuthority {
     pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
             Self::Node { public_key, .. } => SrcLocation::Node(name(public_key)),
-            Self::BlsShare { public_key, .. } => SrcLocation::Node(name(public_key)),
-            Self::Section { prefix, .. } => SrcLocation::Section(prefix.name()),
+            Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
+            Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }
 
@@ -67,32 +63,21 @@ impl SrcAuthority {
         matches!(self, Self::Section { .. })
     }
 
-    pub(crate) fn to_node_name(&self) -> Result<XorName> {
+    pub(crate) fn name(&self) -> XorName {
         match self {
-            Self::Node { public_key, .. } => Ok(name(public_key)),
-            Self::BlsShare { public_key, .. } => Ok(name(public_key)),
-            Self::Section { .. } => Err(Error::InvalidSrcLocation),
+            Self::Node { public_key, .. } => name(public_key),
+            Self::BlsShare { src_name, .. } => *src_name,
+            Self::Section { src_name, .. } => *src_name,
         }
     }
 
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
-    pub(crate) fn to_node_peer(&self, addr: SocketAddr) -> Result<Peer> {
+    pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Section { .. } => Err(Error::InvalidSrcLocation),
             Self::Node {
                 public_key, age, ..
-            }
-            | Self::BlsShare {
-                public_key, age, ..
             } => Ok(Peer::new(name(public_key), addr, *age)),
-        }
-    }
-
-    // If this is `Section`, returns the prefix.
-    pub(crate) fn as_section_prefix(&self) -> Result<&Prefix> {
-        match self {
-            Self::Section { prefix, .. } => Ok(prefix),
-            Self::Node { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
+            Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 }
