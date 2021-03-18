@@ -1943,12 +1943,11 @@ impl Approved {
         // Note: this message is first sent to a single node who then sends it back to the section
         // where it needs to be handled by all the elders. This is why the destination is
         // `Section`, not `Node`.
+        let src = promise.name;
         let dst = DstLocation::Section(promise.name);
         let variant = Variant::RelocatePromise(promise);
 
-        // Vote accumulated at destination
-        let vote = self.create_send_message_vote(dst, variant, None)?;
-        self.send_vote(slice::from_ref(recipient), vote)
+        self.send_message_for_dst_accumulation(src, dst, variant, None, slice::from_ref(recipient))
     }
 
     fn return_relocate_promise(&self) -> Option<Command> {
