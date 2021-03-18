@@ -484,15 +484,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
             _ => continue,
         };
 
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
-        let actual_elders_info = match &message.variant {
+        let actual_elders_info = match message.variant() {
             Variant::DKGStart { elders_info, .. } => elders_info,
             _ => continue,
         };
@@ -755,15 +747,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
             _ => continue,
         };
 
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
-        let actual_elders_info = match &message.variant {
+        let actual_elders_info = match message.variant() {
             Variant::DKGStart { elders_info, .. } => elders_info,
             _ => continue,
         };

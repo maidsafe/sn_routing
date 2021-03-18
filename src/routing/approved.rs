@@ -2032,8 +2032,13 @@ impl Approved {
             dkg_key,
             elders_info,
         };
-        let vote = self.create_send_message_vote(DstLocation::Direct, variant, None)?;
-        self.send_vote(recipients, vote)
+
+        self.send_message_for_dst_accumulation(
+            self.section.prefix().name(),
+            DstLocation::Direct,
+            variant,
+            recipients,
+        )
     }
 
     // Send message over the network.
@@ -2164,6 +2169,82 @@ impl Approved {
         commands.extend(self.relay_message(&msg)?);
 
         Ok(commands)
+    }
+
+    fn send_message_for_dst_accumulation(
+        &self,
+        src: XorName,
+        dst: DstLocation,
+        variant: Variant,
+        recipients: &[Peer],
+    ) -> Result<Vec<Command>> {
+        let proof_chain = self.create_proof_chain(&dst, None)?;
+        let dst_key = if let Some(name) = dst.name() {
+            *self.section_key_by_name(&name)
+        } else {
+            // NOTE: `dst` is `Direct`. We use this only if the recipient is in our section, so
+            // it's OK to use our latest key as the `dst_key`.
+            *self.section.chain().last_key()
+        };
+
+        let key_share = self.section_keys_provider.key_share().map_err(|err| {
+            trace!(
+                "Can't create message {:?} for accumulation at {:?}: {}",
+                variant,
+                dst,
+                err
+            );
+            err
+        })?;
+        let message = Message::for_dst_accumulation(
+            key_share,
+            src,
+            dst,
+            variant,
+            proof_chain,
+            Some(dst_key),
+        )?;
+
+        trace!(
+            "Send {:?} for accumulation at dst to {:?}",
+            message,
+            recipients
+        );
+
+        Ok(self.send_or_handle(message, recipients))
+    }
+
+    fn send_or_handle(&self, message: Message, recipients: &[Peer]) -> Vec<Command> {
+        let mut commands = vec![];
+        let mut others = Vec::new();
+        let mut handle = false;
+
+        trace!("Send {:?} to {:?}", message, recipients);
+
+        for recipient in recipients {
+            if recipient.name() == &self.node.name() {
+                handle = true;
+            } else {
+                others.push(*recipient.addr());
+            }
+        }
+
+        if !others.is_empty() {
+            commands.push(Command::send_message_to_nodes(
+                &others,
+                others.len(),
+                message.to_bytes(),
+            ));
+        }
+
+        if handle {
+            commands.push(Command::HandleMessage {
+                sender: Some(self.node.addr),
+                message,
+            });
+        }
+
+        commands
     }
 
     fn create_send_message_vote(
