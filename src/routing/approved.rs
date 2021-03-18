@@ -2112,11 +2112,12 @@ impl Approved {
 
         let variant = Variant::UserMessage(content);
 
-        // If the msg is to be aggregated at dst, we don't vote among our peers, wemsimply send the msg as our vote to the dst.
+        // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
+        // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
             Message::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
-                self.section().prefix().name(),
+                itinerary.src.name(),
                 itinerary.dst,
                 variant,
                 self.create_proof_chain(&itinerary.dst, None)?,
