@@ -512,8 +512,8 @@ impl Approved {
 
         // Broadcast the vote to the rest of the section elders.
         let variant = Variant::Vote {
-            content: vote.clone(),
-            proof_share: proof_share.clone(),
+            content: vote,
+            proof_share,
         };
         let message = Message::single_src(
             &self.node,
@@ -523,32 +523,7 @@ impl Approved {
             Some(*self.section.chain().last_key()),
         )?;
 
-        let mut others = Vec::new();
-        let mut handle = false;
-
-        for recipient in recipients {
-            if recipient.name() == &self.node.name() {
-                handle = true;
-            } else {
-                others.push(*recipient.addr());
-            }
-        }
-
-        let mut commands = vec![];
-
-        if !others.is_empty() {
-            commands.push(Command::send_message_to_nodes(
-                &others,
-                others.len(),
-                message.to_bytes(),
-            ));
-        }
-
-        if handle {
-            commands.push(Command::HandleVote { vote, proof_share });
-        }
-
-        Ok(commands)
+        Ok(self.send_or_handle(message, recipients))
     }
 
     fn check_lagging(
@@ -2214,6 +2189,8 @@ impl Approved {
         Ok(self.send_or_handle(message, recipients))
     }
 
+    // Send the message to all `recipients`. If one of the recipients is us, don't send it over the
+    // network but handle it directly.
     fn send_or_handle(&self, message: Message, recipients: &[Peer]) -> Vec<Command> {
         let mut commands = vec![];
         let mut others = Vec::new();
