@@ -1450,8 +1450,9 @@ impl Approved {
             return Ok(commands);
         }
 
-        // TEMP: Do not carry out relocations (used to be disabled only in genesis section)
-        if self.section.prefix().bit_count() < u16::MAX as usize {
+        // Consider: Set <= 4, as to not carry out relocations in first 16 sections.
+        // TEMP: Do not carry out relocations in the first section
+        if self.section.prefix().bit_count() < 1 {
             return Ok(commands);
         }
 
