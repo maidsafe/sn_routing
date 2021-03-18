@@ -268,9 +268,6 @@
 <span id="267">267</span>
 <span id="268">268</span>
 <span id="269">269</span>
-<span id="270">270</span>
-<span id="271">271</span>
-<span id="272">272</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -381,9 +378,6 @@
                 .<span class="ident">handle_section_info_msg</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
                 .<span class="kw">await</span>),
             <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
-            <span class="ident">Command</span>::<span class="ident">HandleVote</span> { <span class="ident">vote</span>, <span class="ident">proof_share</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_vote</span>(<span class="ident">vote</span>, <span class="ident">proof_share</span>)
-            }
             <span class="ident">Command</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_consensus</span>(<span class="ident">vote</span>, <span class="ident">proof</span>)
             }

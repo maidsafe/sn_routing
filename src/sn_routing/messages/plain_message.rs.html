@@ -46,13 +46,13 @@
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">SignableView</span>, <span class="ident">Variant</span>};
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// Section-source message without signature and proof.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">PlainMessage</span> {
-    <span class="doccomment">/// Prefix of the source section.</span>
-    <span class="kw">pub</span> <span class="ident">src</span>: <span class="ident">Prefix</span>,
+    <span class="doccomment">/// Name in the source section.</span>
+    <span class="kw">pub</span> <span class="ident">src</span>: <span class="ident">XorName</span>,
     <span class="doccomment">/// Destination location.</span>
     <span class="kw">pub</span> <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
     <span class="doccomment">/// The latest key of the destination section according to the sender&#39;s knowledge.</span>
