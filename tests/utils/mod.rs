@@ -23,6 +23,7 @@ use std::{
     time::Duration,
 };
 use tracing_subscriber::EnvFilter;
+use xor_name::Prefix;
 
 static LOG_INIT: Once = Once::new();
 
@@ -162,38 +163,38 @@ pub async fn verify_invariants_for_node(node: &Routing, elder_size: usize) -> Re
         return Ok(());
     }
 
-    let neighbour_sections = node.neighbour_sections().await;
+    let other_sections = node.other_sections().await;
 
-    if let Some(compatible_prefix) = neighbour_sections
+    if let Some(compatible_prefix) = other_sections
         .iter()
         .map(|info| &info.prefix)
         .find(|prefix| prefix.is_compatible(&our_prefix))
     {
         bail!(
-            "{}({:b}) Our prefix is compatible with one of the neighbour prefixes: {:?} (neighbour_sections: {:?})",
+            "{}({:b}) Our prefix is compatible with one of the other prefixes: {:?} (other_sections: {:?})",
             our_name,
             our_prefix,
             compatible_prefix,
-            neighbour_sections,
+            other_sections,
         );
     }
 
-    if let Some(info) = neighbour_sections
+    if let Some(info) = other_sections
         .iter()
         .find(|info| info.elders.len() < elder_size)
     {
         bail!(
-            "{}({:b}) A neighbour section {:?} is below the minimum size ({}/{}) (neighbour_sections: {:?})",
+            "{}({:b}) An other section {:?} is below the minimum size ({}/{}) (other_sections: {:?})",
             our_name,
             our_prefix,
             info.prefix,
             info.elders.len(),
             elder_size,
-            neighbour_sections,
+            other_sections,
         );
     }
 
-    for info in &neighbour_sections {
+    for info in &other_sections {
         if let Some(name) = info.elders.keys().find(|name| !info.prefix.matches(name)) {
             bail!(
                 "{}({:b}) A name in a section doesn't match its prefix: {:?}, {:?}",
@@ -205,34 +206,17 @@ pub async fn verify_invariants_for_node(node: &Routing, elder_size: usize) -> Re
         }
     }
 
-    let non_neighbours: Vec<_> = neighbour_sections
-        .iter()
-        .map(|info| &info.prefix)
-        .filter(|prefix| !our_prefix.is_neighbour(prefix))
-        .collect();
-    if !non_neighbours.is_empty() {
-        bail!(
-            "{}({:b}) Some of our known sections aren't neighbours of our section: {:?}",
-            our_name,
-            our_prefix,
-            non_neighbours,
-        );
-    }
+    let address_space_covered = Prefix::default().is_covered_by(
+        iter::once(&our_prefix).chain(other_sections.iter().map(|info| &info.prefix)),
+    );
 
-    let all_neighbours_covered = {
-        (0..our_prefix.bit_count()).all(|i| {
-            our_prefix
-                .with_flipped_bit(i as u8)
-                .is_covered_by(neighbour_sections.iter().map(|info| &info.prefix))
-        })
-    };
-    if !all_neighbours_covered {
+    if !address_space_covered {
         bail!(
-            "{}({:b}) Some neighbours aren't fully covered by our known sections: {:?}",
+            "{}({:b}) Known sections don't fully cover the whole address space: {:?}",
             our_name,
             our_prefix,
             iter::once(our_prefix)
-                .chain(neighbour_sections.iter().map(|info| info.prefix))
+                .chain(other_sections.iter().map(|info| info.prefix))
                 .format(", ")
         );
     }

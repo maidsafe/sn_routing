@@ -147,24 +147,12 @@ pub(crate) struct State {
 
 impl State {
     fn update_elders(&mut self, elders_info: Proven<EldersInfo>, key_proof: Proof) -> bool {
-        if self.section.update_elders(elders_info, key_proof) {
-            self.network.prune_neighbours(self.section.prefix());
-            true
-        } else {
-            false
-        }
+        self.section.update_elders(elders_info, key_proof)
     }
 
     fn update_sibling_info(&mut self, elders_info: Proven<EldersInfo>, key_proof: Proof) -> bool {
-        if self
-            .network
-            .update_neighbour_info(elders_info, Some(key_proof), self.section.chain())
-        {
-            self.network.prune_neighbours(self.section.prefix());
-            true
-        } else {
-            false
-        }
+        self.network
+            .update_section(elders_info, Some(key_proof), self.section.chain())
     }
 
     fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {

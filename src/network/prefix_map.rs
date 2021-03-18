@@ -64,11 +64,6 @@ where
         old.map(|entry| entry.0)
     }
 
-    /// Removes the entry at `prefix` and returns it, if any.
-    pub fn remove(&mut self, prefix: &Prefix) -> Option<T> {
-        self.0.take(prefix).map(|entry| entry.0)
-    }
-
     /// Get the entry at `prefix`, if any.
     pub fn get(&self, prefix: &Prefix) -> Option<&T> {
         self.0.get(prefix).map(|entry| &entry.0)
@@ -104,11 +99,6 @@ where
     /// Returns an iterator over the entries, in order by prefixes.
     pub fn iter(&self) -> impl Iterator<Item = &T> + Clone {
         self.0.iter().map(|entry| &entry.0)
-    }
-
-    /// Returns an iterator over the prefixes
-    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix> + Clone {
-        self.0.iter().map(|entry| entry.prefix())
     }
 
     /// Returns an iterator over all entries whose prefixes are descendants (extensions) of

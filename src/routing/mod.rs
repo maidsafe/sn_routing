@@ -273,8 +273,8 @@ impl Routing {
             .clone()
     }
 
-    /// Returns the info about our neighbour sections.
-    pub async fn neighbour_sections(&self) -> Vec<EldersInfo> {
+    /// Returns the info about other sections in the network known to us.
+    pub async fn other_sections(&self) -> Vec<EldersInfo> {
         self.stage
             .state
             .lock()

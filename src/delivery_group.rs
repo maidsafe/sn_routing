@@ -84,11 +84,8 @@ fn section_candidates(
         .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .unwrap_or_else(|| section.elders_info());
 
-    if info.prefix == *section.prefix() || info.prefix.is_neighbour(section.prefix()) {
+    if info.prefix == *section.prefix() {
         // Exclude our name since we don't need to send to ourself
-
-        // FIXME: only doing this for now to match RT.
-        // should confirm if needed esp after msg_relay changes.
         let section: Vec<_> = info
             .peers()
             .filter(|node| node.name() != our_name)

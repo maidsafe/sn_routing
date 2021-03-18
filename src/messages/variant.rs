@@ -29,12 +29,12 @@ use std::{
 #[allow(clippy::large_enum_variant)]
 /// Message variant
 pub(crate) enum Variant {
-    /// Inform neighbours about our new section.
-    NeighbourInfo {
+    /// Inform other sections about our section or vice-versa.
+    OtherSection {
         /// `EldersInfo` of the sender's section, with the proof chain.
         elders_info: Proven<EldersInfo>,
         /// Nonce that is derived from the incoming message that triggered sending this
-        /// `NeighbourInfo`. It's purpose is to make sure that `NeighbourInfo`s that are identical
+        /// message. It's purpose is to make sure that `OtherSection`s that are identical
         /// but triggered by different messages are not filtered out.
         nonce: MessageHash,
     },
@@ -141,7 +141,7 @@ impl Variant {
                 proof_chain
             }
             Self::Sync { section, .. } => section.chain(),
-            Self::NeighbourInfo { elders_info, .. } => {
+            Self::OtherSection { elders_info, .. } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
                 if !elders_info.verify(proof_chain) {
@@ -164,8 +164,8 @@ impl Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::NeighbourInfo { elders_info, nonce } => f
-                .debug_struct("NeighbourInfo")
+            Self::OtherSection { elders_info, nonce } => f
+                .debug_struct("OtherSection")
                 .field("elders_info", elders_info)
                 .field("nonce", nonce)
                 .finish(),
