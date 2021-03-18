@@ -1922,14 +1922,17 @@ impl Approved {
             .knowledge_by_name(&details.destination)
             .unwrap_or_else(|| self.section.chain().root_key());
 
+        let src = details.pub_id;
         let dst = DstLocation::Node(details.pub_id);
         let variant = Variant::Relocate(details);
 
-        trace!("Send {:?} -> {:?}", variant, dst);
-
-        // Vote accumulated at destination.
-        let vote = self.create_send_message_vote(dst, variant, Some(known_key))?;
-        self.send_vote(slice::from_ref(recipient), vote)
+        self.send_message_for_dst_accumulation(
+            src,
+            dst,
+            variant,
+            Some(known_key),
+            slice::from_ref(recipient),
+        )
     }
 
     fn send_relocate_promise(
@@ -2012,6 +2015,7 @@ impl Approved {
             self.section.prefix().name(),
             DstLocation::Direct,
             variant,
+            None,
             recipients,
         )
     }
@@ -2151,9 +2155,10 @@ impl Approved {
         src: XorName,
         dst: DstLocation,
         variant: Variant,
+        proof_chain_first_key: Option<&bls::PublicKey>,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let proof_chain = self.create_proof_chain(&dst, None)?;
+        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2164,7 +2169,7 @@ impl Approved {
 
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
             trace!(
-                "Can't create message {:?} for accumulation at {:?}: {}",
+                "Can't create message {:?} for accumulation at dst {:?}: {}",
                 variant,
                 dst,
                 err

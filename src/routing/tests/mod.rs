@@ -586,19 +586,7 @@ async fn handle_online_command(
                 assert_eq!(recipients, [*peer.addr()]);
                 status.node_approval_sent = true;
             }
-            Variant::Vote { content, .. } => {
-                let message = if let Vote::SendMessage { message, .. } = content {
-                    message
-                } else {
-                    continue;
-                };
-
-                let details = if let Variant::Relocate(details) = &message.variant {
-                    details
-                } else {
-                    continue;
-                };
-
+            Variant::Relocate(details) => {
                 if details.pub_id != *peer.name() {
                     continue;
                 }
@@ -1517,18 +1505,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         if recipients != [*relocated_peer.addr()] {
             continue;
         }
-
-        let message = match message.variant() {
-            Variant::Vote {
-                content: Vote::SendMessage { message, .. },
-                ..
-            } => message,
-            _ => continue,
-        };
-
         match relocated_peer_role {
             RelocatedPeerRole::NonElder => {
-                let details = match &message.variant {
+                let details = match message.variant() {
                     Variant::Relocate(details) => details,
                     _ => continue,
                 };
@@ -1537,7 +1516,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
                 assert_eq!(details.age, relocated_peer.age() + 1);
             }
             RelocatedPeerRole::Elder => {
-                let promise = match &message.variant {
+                let promise = match message.variant() {
                     Variant::RelocatePromise(promise) => promise,
                     _ => continue,
                 };
