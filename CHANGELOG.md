@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.51.0](https://github.com/maidsafe/sn_routing/compare/v0.50.0...v0.51.0) (2021-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Routing::match_section` renamed to `Routing::matching_section`
+
+### Features
+
+* support dst accumulation with any message variant ([cc2f413](https://github.com/maidsafe/sn_routing/commit/cc2f41361162a9ab0b2eab3d144de6cfb8152fe3))
+* use src from itinerary for dst accumulated user message ([31838e9](https://github.com/maidsafe/sn_routing/commit/31838e99772cf8e2cc3cc901ba3ce47466270d11))
+* use XorName instead of Prefix for section message src ([d2347ee](https://github.com/maidsafe/sn_routing/commit/d2347eee21a3d5e86ae0c76e133e00cc1a850eeb))
+
 ## [0.50.0](https://github.com/maidsafe/sn_routing/compare/v0.49.1...v0.50.0) (2021-03-16)
 
 
