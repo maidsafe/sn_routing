@@ -382,10 +382,10 @@ impl Approved {
                 self.handle_their_knowledge_event(prefix, key, proof);
                 Ok(vec![])
             }
-            Vote::SendMessage {
+            Vote::AccumulateAtSrc {
                 message,
                 proof_chain,
-            } => Ok(vec![self.handle_send_message_event(
+            } => Ok(vec![self.handle_accumulate_at_src_event(
                 *message,
                 proof_chain,
                 proof,
@@ -1676,7 +1676,7 @@ impl Approved {
         self.network.update_knowledge(knowledge)
     }
 
-    fn handle_send_message_event(
+    fn handle_accumulate_at_src_event(
         &self,
         message: PlainMessage,
         proof_chain: SectionChain,
@@ -2123,7 +2123,7 @@ impl Approved {
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
-            let vote = self.create_send_message_vote(itinerary.dst, variant, None)?;
+            let vote = self.create_accumulate_at_src_vote(itinerary.dst, variant, None)?;
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
                 self.section.elders_info().peers().copied(),
@@ -2228,7 +2228,7 @@ impl Approved {
         commands
     }
 
-    fn create_send_message_vote(
+    fn create_accumulate_at_src_vote(
         &self,
         dst: DstLocation,
         variant: Variant,
@@ -2251,7 +2251,7 @@ impl Approved {
             variant,
         };
 
-        let vote = Vote::SendMessage {
+        let vote = Vote::AccumulateAtSrc {
             message: Box::new(message),
             proof_chain,
         };
