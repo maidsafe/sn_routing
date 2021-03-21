@@ -268,7 +268,6 @@ impl Stage {
             .map(|(message, sender)| Command::HandleMessage {
                 message,
                 sender: Some(sender),
-                hdr_info: None,
             })
             .collect();
         Ok(commands)
