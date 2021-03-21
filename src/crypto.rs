@@ -40,7 +40,7 @@ pub fn pub_key(name: &XorName) -> Result<PublicKey, ed25519_dalek::SignatureErro
 }
 
 pub fn name(public_key: &sn_data_types::PublicKey) -> XorName {
-    XorName(public_key.to_bytes().into())
+    XorName::from(*public_key)
 }
 
 #[cfg(test)]

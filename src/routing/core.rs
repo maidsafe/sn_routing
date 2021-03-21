@@ -45,7 +45,7 @@ use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
-use sn_data_types::PublicKey as EndUserPK;
+use sn_data_types::{PublicKey as EndUserPK, PublicKey};
 use sn_messaging::{
     client::Message as ClientMessage,
     node::NodeMessage,
@@ -248,7 +248,9 @@ impl Core {
         if !in_dst_location || msg.dst().is_section() {
             // Relay closer to the destination or
             // broadcast to the rest of our section.
-            commands.extend(self.relay_message(&msg)?);
+            if let Some(cmds) = self.relay_message(&msg)? {
+                commands.push(cmds);
+            }
         }
         if !in_dst_location {
             // Message not for us.
@@ -321,7 +323,11 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.elders_info());
-                    let addrs = section.peers().map(Peer::addr).copied().collect();
+                    let addrs = section
+                        .peers()
+                        .cloned()
+                        .map(|peer| (*peer.name(), *peer.addr()))
+                        .collect_vec();
                     GetSectionResponse::Redirect(addrs)
                 };
 
@@ -329,7 +335,7 @@ impl Core {
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
-                    recipients: vec![sender],
+                    recipients: vec![(sender, name)],
                     delivery_group_size: 1,
                     message: MessageType::SectionInfo {
                         msg: response,
@@ -356,8 +362,9 @@ impl Core {
                     ));
                 debug!("Sending {:?} to {}", response, sender);
 
+                let name = crypto::name(&end_user);
                 vec![Command::SendMessage {
-                    recipients: vec![sender],
+                    recipients: vec![(sender, name)],
                     delivery_group_size: 1,
                     message: MessageType::SectionInfo {
                         msg: response,
@@ -394,7 +401,7 @@ impl Core {
     pub fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
         self.dkg_voter
             .handle_timeout(&self.node.keypair, token)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     // Insert the proposal into the proposal aggregator and handle it if aggregated.
@@ -467,6 +474,20 @@ impl Core {
         }
 
         if !self.is_elder() {
+        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
+            trace!("Lost connection to {}", peer);
+            // Try to send a "ping" message to probe the peer connection. If it succeeds, the
+            // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
+            // it offline.
+            Some(Command::SendMessage {
+                recipients: vec![(addr, *peer.name())],
+                delivery_group_size: 1,
+                message: MessageType::Ping(HeaderInfo {
+                    dest: *peer.name(),
+                    dest_section_pk: *self.section.chain().last_key(),
+                }),
+            })
+        } else {
             return None;
         }
     }
@@ -601,14 +622,21 @@ impl Core {
             content: proposal,
             proof_share,
         };
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+
+        let message = Message::single_src(
+            &self.node,
+            DstLocation::Direct,
+            variant,
+            None,
+            Some(*self.section.chain().last_key()),
+        )?;
 
         Ok(self.send_or_handle(message, recipients))
     }
 
     fn check_lagging(
         &self,
-        peer: &SocketAddr,
+        peer: (SocketAddr, XorName),
         proof_share: &ProofShare,
     ) -> Result<Option<Command>> {
         let public_key = proof_share.public_key_set.public_key();
@@ -625,6 +653,7 @@ impl Core {
                     section: self.section.clone(),
                     network: self.network.clone(),
                 },
+                proof_share.public_key_set.public_key(),
             )?))
         } else {
             Ok(None)
@@ -742,6 +771,7 @@ impl Core {
         } else {
             return Ok(vec![]);
         };
+        let src_name = msg.src().name();
 
         match msg.variant() {
             Variant::OtherSection { elders_info, .. } => {
@@ -805,7 +835,7 @@ impl Core {
                 let result = self.handle_proposal(content.clone(), proof_share.clone());
 
                 if let Some(addr) = sender {
-                    commands.extend(self.check_lagging(&addr, proof_share)?);
+                    commands.extend(self.check_lagging((addr, src_name), proof_share)?);
                 }
 
                 commands.extend(result?);
@@ -822,10 +852,19 @@ impl Core {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
                         let node_msg = NodeMessage::new(msg.to_bytes());
                         let _ = message_tx
-                            .send((MessageType::NodeMessage(node_msg), sender))
+                            .send((
+                                MessageType::NodeMessage {
+                                    msg: node_msg,
+                                    hdr_info: HeaderInfo {
+                                        dest: src_name,
+                                        dest_section_pk: *self.section.chain().last_key(),
+                                    },
+                                },
+                                sender,
+                            ))
                             .await;
                     } else {
-                        error!("Missig sender of {:?}", msg);
+                        error!("Missing sender of {:?}", msg);
                     }
                 }
 
@@ -931,6 +970,7 @@ impl Core {
         msg: Message,
     ) -> Result<Command> {
         let src_name = msg.src().name();
+
         let bounce_dst_key = *self.section_key_by_name(&src_name);
         let bounce_msg = Message::single_src(
             &self.node,
@@ -946,7 +986,11 @@ impl Core {
                 dest: src_name,
                 dest_section_pk: bounce_dst_key,
             };
-            Ok(Command::send_message_to_node(&sender, bounce_msg, hdr_info))
+            Ok(Command::send_message_to_node(
+                (sender, src_name),
+                bounce_msg,
+                hdr_info,
+            ))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -988,7 +1032,11 @@ impl Core {
         };
 
         if let Some(sender) = our_elder_sender {
-            Ok(Command::send_message_to_node(&sender, bounce_msg, hdr_info))
+            Ok(Command::send_message_to_node(
+                (sender, self.section.prefix().name()),
+                bounce_msg,
+                hdr_info,
+            ))
         } else {
             Ok(self.send_message_to_our_elders(bounce_msg))
         }
@@ -1042,12 +1090,13 @@ impl Core {
 
         let hdr_info = HeaderInfo {
             dest: sender.name().clone(),
-            dest_section_pk: None,
+            dest_section_pk: dst_key,
         };
         trace!("resending with extended proof");
         Ok(Command::send_message_to_node(
-            sender.addr(),
+            (*sender.addr(), *sender.name()),
             resend_msg.to_bytes(),
+            hdr_info,
         ))
     }
 
@@ -1082,13 +1131,21 @@ impl Core {
         // be able to handle the resent message. If not, the peer will bounce the message again.
         Ok(vec![
             self.send_direct_message(
-                sender.addr(),
+                (*sender.addr(), *sender.name()),
                 Variant::Sync {
                     section: self.section.clone(),
                     network: self.network.clone(),
                 },
+                *self.section.chain().last_key(),
             )?,
-            Command::send_message_to_node(sender.addr(), bounced_msg_bytes),
+            Command::send_message_to_node(
+                (*sender.addr(), *sender.name()),
+                bounced_msg_bytes,
+                HeaderInfo {
+                    dest: *sender.name(),
+                    dest_section_pk: *sender_last_key,
+                },
+            ),
         ])
     }
 
@@ -1121,13 +1178,16 @@ impl Core {
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(end_user) = msg.dst() {
+            let name = crypto::name(end_user.id());
             let recipients = match end_user {
-                EndUser::AllClients(public_key) => {
-                    self.get_all_socket_addr(public_key).copied().collect()
-                }
+                EndUser::AllClients(public_key) => self
+                    .get_all_socket_addr(public_key)
+                    .copied()
+                    .map(|addr| (addr, name))
+                    .collect_vec(),
                 EndUser::Client { socket_id, .. } => {
                     if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
-                        vec![socket_addr]
+                        vec![(socket_addr, name)]
                     } else {
                         vec![]
                     }
@@ -1141,7 +1201,13 @@ impl Core {
             return Ok(vec![Command::SendMessage {
                 recipients,
                 delivery_group_size: 1,
-                message: MessageType::ClientMessage(ClientMessage::from(content)?),
+                message: MessageType::ClientMessage {
+                    msg: ClientMessage::from(content)?,
+                    hdr_info: HeaderInfo {
+                        dest: name,
+                        dest_section_pk: *self.section.chain().last_key(),
+                    },
+                },
             }]);
         }
 
@@ -1318,7 +1384,11 @@ impl Core {
                 section_key: *self.section.chain().last_key(),
             };
             trace!("Sending {:?} to {}", variant, peer);
-            return Ok(vec![self.send_direct_message(peer.addr(), variant)?]);
+            return Ok(vec![self.send_direct_message(
+                (*peer.addr(), *peer.name()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
         }
 
         if self.section.members().is_joined(peer.name()) {
@@ -1471,7 +1541,11 @@ impl Core {
             nonce_signature: crypto::sign(&serialized, &self.node.keypair),
         };
 
-        self.send_direct_message(peer.addr(), response)
+        self.send_direct_message(
+            (*peer.addr(), *peer.name()),
+            response,
+            *self.section.chain().last_key(),
+        )
     }
 
     fn handle_dkg_start(
@@ -1482,7 +1556,7 @@ impl Core {
         trace!("Received DkgStart for {}", new_elders_info);
         self.dkg_voter
             .start(&self.node.keypair, dkg_key, new_elders_info)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     fn handle_dkg_message(
@@ -1495,7 +1569,7 @@ impl Core {
 
         self.dkg_voter
             .process_message(&self.node.keypair, &dkg_key, message)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     fn handle_dkg_failure_observation(
@@ -1506,7 +1580,7 @@ impl Core {
     ) -> Result<Vec<Command>> {
         self.dkg_voter
             .process_failure(&dkg_key, non_participants, proof)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     fn handle_dkg_failure_agreement(
@@ -2030,6 +2104,7 @@ impl Core {
         );
 
         let addr = *member_info.value.peer.addr();
+        let name = *member_info.value.peer.name();
 
         // Attach proof chain that includes the key the approved node knows (if any), the key its
         // `MemberInfo` is signed with and the last key of our section chain.
@@ -2053,21 +2128,31 @@ impl Core {
             None,
         )?;
 
-        Ok(Command::send_message_to_node(&addr, message.to_bytes()))
+        Ok(Command::send_message_to_node(
+            (addr, name),
+            message.to_bytes(),
+            HeaderInfo {
+                dest: name,
+                dest_section_pk: *self.section.chain().last_key(),
+            },
+        ))
     }
 
     fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
-        let send = |variant, recipients: Vec<_>| -> Result<_> {
+        let send = |variant, recipients: Vec<(SocketAddr, XorName)>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
             let message =
                 Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-            let recipients: Vec<_> = recipients.iter().map(Peer::addr).copied().collect();
-
+            let hdr_info = HeaderInfo {
+                dest: XorName::random(),
+                dest_section_pk: *self.section.chain().last_key(),
+            };
             Ok(Command::send_message_to_nodes(
-                &recipients,
+                recipients.clone(),
                 recipients.len(),
                 message.to_bytes(),
+                hdr_info,
             ))
         };
 
@@ -2076,8 +2161,8 @@ impl Core {
         let (elders, non_elders): (Vec<_>, _) = section
             .active_members()
             .filter(|peer| peer.name() != &self.node.name())
-            .copied()
-            .partition(|peer| section.is_elder(peer.name()));
+            .map(|peer| (peer.addr().clone(), peer.name().clone()))
+            .partition(|peer| section.is_elder(&peer.1));
 
         // Send the trimmed state to non-elders. The trimmed state contains only the knowledge of
         // own section.
@@ -2205,7 +2290,7 @@ impl Core {
 
     // Send message over the network.
     pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
-        let (targets, dg_size) = delivery_group::delivery_targets(
+        let (targets, dg_size, dest_pk) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
             &self.section,
@@ -2229,8 +2314,19 @@ impl Core {
             msg.proof_chain().ok()
         );
 
-        let targets: Vec<_> = targets.into_iter().map(|node| *node.addr()).collect();
-        let command = Command::send_message_to_nodes(&targets, dg_size, msg.to_bytes());
+        let targets: Vec<_> = targets
+            .into_iter()
+            .map(|node| (*node.addr(), *node.name()))
+            .collect();
+        let command = Command::send_message_to_nodes(
+            targets,
+            dg_size,
+            msg.to_bytes(),
+            HeaderInfo {
+                dest: XorName::random(),
+                dest_section_pk: dest_pk,
+            },
+        );
 
         Ok(Some(command))
     }
@@ -2512,9 +2608,21 @@ impl Core {
             .minimize(iter::once(&last_key).chain(additional_key))?)
     }
 
-    fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
+    fn send_direct_message(
+        &self,
+        recipient: (SocketAddr, XorName),
+        variant: Variant,
+        dst_pk: bls::PublicKey,
+    ) -> Result<Command> {
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-        Ok(Command::send_message_to_node(recipient, message.to_bytes()))
+        Ok(Command::send_message_to_node(
+            recipient,
+            message.to_bytes(),
+            HeaderInfo {
+                dest: recipient.1,
+                dest_section_pk: dst_pk,
+            },
+        ))
     }
 
     // TODO: consider changing this so it sends only to a subset of the elders
@@ -2524,8 +2632,7 @@ impl Core {
             .section
             .elders_info()
             .peers()
-            .map(Peer::addr)
-            .copied()
+            .map(|peer| (peer.addr().clone(), peer.name().clone()))
             .collect();
 
         let dest_section_pk = self.section_chain().last_key().clone();
@@ -2535,7 +2642,7 @@ impl Core {
             dest_section_pk,
         };
 
-        Command::send_message_to_nodes(&targets, targets.len(), msg, hdr_info)
+        Command::send_message_to_nodes(targets.clone(), targets.len(), msg, hdr_info)
     }
 
     ////////////////////////////////////////////////////////////////////////////

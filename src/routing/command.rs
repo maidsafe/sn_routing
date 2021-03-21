@@ -23,7 +23,6 @@ use sn_messaging::{
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
-    slice,
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
@@ -65,7 +64,7 @@ pub(crate) enum Command {
     HandleDkgFailure(DkgFailureProofSet),
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
-        recipients: Vec<SocketAddr>,
+        recipients: Vec<(SocketAddr, XorName)>,
         delivery_group_size: usize,
         message: MessageType,
     },
@@ -104,23 +103,23 @@ pub(crate) enum Command {
 impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
     pub fn send_message_to_node(
-        recipient: (&SocketAddr, XorName),
+        recipient: (SocketAddr, XorName),
         message_bytes: Bytes,
-        hdr_info: Option<HeaderInfo>,
+        hdr_info: HeaderInfo,
     ) -> Self {
-        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message_bytes, hdr_info)
+        Self::send_message_to_nodes(vec![recipient], 1, message_bytes, hdr_info)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
-        recipients: [(&SocketAddr, XorName)],
+        recipients: Vec<(SocketAddr, XorName)>,
         delivery_group_size: usize,
         message_bytes: Bytes,
         hdr_info: HeaderInfo,
     ) -> Self {
         let msg = NodeMessage::new(message_bytes);
         Self::SendMessage {
-            recipients: recipients.to_vec(),
+            recipients,
             delivery_group_size,
             message: MessageType::NodeMessage { hdr_info, msg },
         }

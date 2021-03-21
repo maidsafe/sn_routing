@@ -7,9 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Comm, Command, Core};
-use crate::routing::comm::SendStatus;
-use crate::{error::Result, event::Event, relocation::SignedRelocateDetails, Error};
-use sn_messaging::MessageType;
+use crate::{routing::comm::SendStatus, error::Result, event::Event, relocation::SignedRelocateDetails, Error};
+use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -189,7 +188,7 @@ impl Dispatcher {
 
     async fn send_message(
         &self,
-        recipients: &[SocketAddr],
+        recipients: &[(SocketAddr, XorName)],
         delivery_group_size: usize,
         message: MessageType,
     ) -> Result<Vec<Command>> {
@@ -217,7 +216,7 @@ impl Dispatcher {
                 for recipient in recipients {
                     if self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await
                         .is_err()
                     {
@@ -226,7 +225,7 @@ impl Dispatcher {
                             recipient,
                             message
                         );
-                        self.send_event(Event::ClientLost(*recipient)).await;
+                        self.send_event(Event::ClientLost(recipient.0)).await;
                     }
                 }
                 vec![]
@@ -235,7 +234,7 @@ impl Dispatcher {
                 for recipient in recipients {
                     let _ = self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await;
                 }
                 vec![]

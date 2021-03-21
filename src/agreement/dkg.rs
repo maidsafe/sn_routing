@@ -20,7 +20,7 @@ use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use sn_messaging::DstLocation;
+use sn_messaging::{DstLocation, HeaderInfo};
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},
     fmt::{self, Debug, Formatter},
@@ -115,7 +115,7 @@ impl DkgVoter {
             return vec![];
         }
 
-        let name = crypto::name(&keypair.public);
+        let name = crypto::name(&sn_data_types::PublicKey::from(keypair.public));
         let participant_index = if let Some(index) = elders_info.position(&name) {
             index
         } else {
@@ -270,13 +270,12 @@ impl Session {
         commands
     }
 
-    fn recipients(&self) -> Vec<SocketAddr> {
+    fn recipients(&self) -> Vec<(SocketAddr, XorName)> {
         self.elders_info
             .peers()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| peer.addr())
-            .copied()
+            .map(|(_, peer)| (peer.addr().clone(), peer.name().clone()))
             .collect()
     }
 
@@ -431,7 +430,9 @@ impl Session {
         if !self
             .elders_info
             .elders
-            .contains_key(&crypto::name(&proof.public_key))
+            .contains_key(&crypto::name(&sn_data_types::PublicKey::from(
+                proof.public_key,
+            )))
         {
             return None;
         }
@@ -530,7 +531,9 @@ impl DkgFailureProofSet {
             .filter(|proof| {
                 elders_info
                     .elders
-                    .contains_key(&crypto::name(&proof.public_key))
+                    .contains_key(&crypto::name(&sn_data_types::PublicKey::from(
+                        proof.public_key,
+                    )))
             })
             .filter(|proof| proof.public_key.verify(&hash, &proof.signature).is_ok())
             .count();
@@ -602,7 +605,7 @@ impl Backlog {
 #[derive(Debug)]
 pub(crate) enum DkgCommand {
     SendMessage {
-        recipients: Vec<SocketAddr>,
+        recipients: Vec<(SocketAddr, XorName)>,
         dkg_key: DkgKey,
         message: DkgMessage,
     },
@@ -615,7 +618,7 @@ pub(crate) enum DkgCommand {
         outcome: SectionKeyShare,
     },
     SendFailureObservation {
-        recipients: Vec<SocketAddr>,
+        recipients: Vec<(SocketAddr, XorName)>,
         dkg_key: DkgKey,
         proof: DkgFailureProof,
         non_participants: BTreeSet<XorName>,
@@ -624,7 +627,7 @@ pub(crate) enum DkgCommand {
 }
 
 impl DkgCommand {
-    fn into_command(self, node: &Node) -> Result<Command> {
+    fn into_command(self, node: &Node, key: bls::PublicKey) -> Result<Command> {
         match self {
             Self::SendMessage {
                 recipients,
@@ -635,9 +638,13 @@ impl DkgCommand {
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_nodes(
-                    &recipients,
+                    recipients.clone(),
                     recipients.len(),
                     message.to_bytes(),
+                    HeaderInfo {
+                        dest: XorName::random(),
+                        dest_section_pk: key,
+                    },
                 ))
             }
             Self::ScheduleTimeout { duration, token } => {
@@ -664,9 +671,13 @@ impl DkgCommand {
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_nodes(
-                    &recipients,
+                    recipients.clone(),
                     recipients.len(),
                     message.to_bytes(),
+                    HeaderInfo {
+                        dest: XorName::random(),
+                        dest_section_pk: key,
+                    },
                 ))
             }
             Self::HandleFailureAgreement(proofs) => Ok(Command::HandleDkgFailure(proofs)),
@@ -675,21 +686,21 @@ impl DkgCommand {
 }
 
 pub(crate) trait DkgCommands {
-    fn into_commands(self, node: &Node) -> Result<Vec<Command>>;
+    fn into_commands(self, node: &Node, key: bls::PublicKey) -> Result<Vec<Command>>;
 }
 
 impl DkgCommands for Vec<DkgCommand> {
-    fn into_commands(self, node: &Node) -> Result<Vec<Command>> {
+    fn into_commands(self, node: &Node, key: bls::PublicKey) -> Result<Vec<Command>> {
         self.into_iter()
-            .map(|command| command.into_command(node))
+            .map(|command| command.into_command(node, key))
             .collect()
     }
 }
 
 impl DkgCommands for Option<DkgCommand> {
-    fn into_commands(self, node: &Node) -> Result<Vec<Command>> {
+    fn into_commands(self, node: &Node, key: bls::PublicKey) -> Result<Vec<Command>> {
         self.into_iter()
-            .map(|command| command.into_command(node))
+            .map(|command| command.into_command(node, key))
             .collect()
     }
 }

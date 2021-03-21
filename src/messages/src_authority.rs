@@ -51,9 +51,13 @@ pub enum SrcAuthority {
 impl SrcAuthority {
     pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
-            Self::Node { public_key, .. } => SrcLocation::Node(name(public_key)),
-            Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
-            Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
+            Self::Node { public_key, .. } => {
+                SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
+            }
+            Self::BlsShare { public_key, .. } => {
+                SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
+            }
+            Self::Section { prefix, .. } => SrcLocation::Section(prefix.name()),
         }
     }
 
