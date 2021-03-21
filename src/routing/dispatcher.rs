@@ -285,7 +285,6 @@ impl Dispatcher {
             .map(|(message, sender)| Command::HandleMessage {
                 message,
                 sender: Some(sender),
-                hdr_info: None,
             })
             .collect();
         Ok(commands)

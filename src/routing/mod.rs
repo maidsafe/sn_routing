@@ -144,7 +144,6 @@ impl Routing {
                 .handle_commands(Command::HandleMessage {
                     message,
                     sender: Some(sender),
-                    hdr_info: None,
                 })
                 .await?;
         }
@@ -493,14 +492,13 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
         MessageType::NodeMessage {
-            hdr_info,
             msg: NodeMessage(msg_bytes),
+            ..
         } => match Message::from_bytes(Bytes::from(msg_bytes)) {
             Ok(message) => {
                 let command = Command::HandleMessage {
                     message,
                     sender: Some(sender),
-                    hdr_info: Some(hdr_info),
                 };
                 let _ = task::spawn(dispatcher.handle_commands(command));
             }

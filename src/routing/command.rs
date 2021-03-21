@@ -38,7 +38,6 @@ pub(crate) enum Command {
     HandleMessage {
         sender: Option<SocketAddr>,
         message: Message,
-        hdr_info: Option<HeaderInfo>,
     },
     /// Handle network info message.
     HandleSectionInfoMsg {
