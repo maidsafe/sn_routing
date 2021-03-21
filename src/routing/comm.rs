@@ -7,10 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
+use crate::XorName;
 use bytes::Bytes;
 use futures::stream::{FuturesUnordered, StreamExt};
 use hex_fmt::HexFmt;
 use qp2p::{Endpoint, QuicP2p};
+use sn_messaging::MessageType;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -109,16 +111,15 @@ impl Comm {
     /// Sends a message on an existing connection. If no such connection exists, returns an error.
     pub async fn send_on_existing_connection(
         &self,
-        recipient: &SocketAddr,
-        msg: Bytes,
-    ) -> Result<(), SendError> {
+        recipient: (SocketAddr, XorName),
+        mut msg: MessageType,
+    ) -> Result<(), Error> {
+        msg.update_header(None, Some(recipient.1));
+        let bytes = msg.serialize()?;
         self.endpoint
-            .send_message(msg, recipient)
+            .send_message(bytes, &recipient.0)
             .await
-            .map_err(|err| {
-                error!("{}", err);
-                SendError
-            })
+            .map_err(|e| Error::Network(e))
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
@@ -131,17 +132,10 @@ impl Comm {
     /// by the caller to identify lost peers.
     pub async fn send(
         &self,
-        recipients: &[SocketAddr],
+        recipients: &[(SocketAddr, XorName)],
         delivery_group_size: usize,
-        msg: Bytes,
+        msg: MessageType,
     ) -> (Result<(), SendError>, Vec<SocketAddr>) {
-        trace!(
-            "Sending message ({} bytes) to {} of {:?}",
-            msg.len(),
-            delivery_group_size,
-            recipients
-        );
-
         if recipients.len() < delivery_group_size {
             warn!(
                 "Less than delivery_group_size valid recipients - delivery_group_size: {}, recipients: {:?}",
@@ -155,11 +149,29 @@ impl Comm {
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
-        let send = |recipient, msg| async move { (self.send_to(recipient, msg).await, recipient) };
-
+        let send = |recipient: (SocketAddr, XorName), mut msg: MessageType| async move {
+            msg.update_header(None, Some(recipient.1));
+            match msg.serialize() {
+                Ok(bytes) => {
+                    trace!(
+                        "Sending message ({} bytes) to {} of {:?}",
+                        bytes.len(),
+                        delivery_group_size,
+                        recipient.0
+                    );
+                    (
+                        self.send_to(&recipient.0, bytes)
+                            .await
+                            .map_err(|e| Error::Network(e)),
+                        recipient.0,
+                    )
+                }
+                Err(e) => (Err(Error::Messaging(e)), recipient.0),
+            }
+        };
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|recipient| send(recipient, msg.clone()))
+            .map(|(recipient, name)| send((recipient.clone(), name.clone()), msg.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -169,16 +181,18 @@ impl Comm {
         while let Some((result, addr)) = tasks.next().await {
             match result {
                 Ok(()) => successes += 1,
-                Err(qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)) => {
+                Err(Error::Network(qp2p::Error::Connection(
+                    qp2p::ConnectionError::LocallyClosed,
+                ))) => {
                     // The connection was closed by us which means we are terminating so let's cut
                     // this short.
                     return (Err(SendError), vec![]);
                 }
                 Err(_) => {
-                    failed_recipients.push(*addr);
+                    failed_recipients.push(addr.clone());
 
                     if next < recipients.len() {
-                        tasks.push(send(&recipients[next], msg.clone()));
+                        tasks.push(send(recipients[next], msg.clone()));
                         next += 1;
                     }
                 }
@@ -186,8 +200,8 @@ impl Comm {
         }
 
         trace!(
-            "Sending message ({} bytes) finished to {}/{} recipients (failed: {:?})",
-            msg.len(),
+            "Sending message ({:?} bytes) finished to {}/{} recipients (failed: {:?})",
+            msg,
             successes,
             delivery_group_size,
             failed_recipients
@@ -278,6 +292,7 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::future;
     use qp2p::Config;
+    use sn_messaging::{HeaderInfo, WireMsg};
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
@@ -290,18 +305,38 @@ mod tests {
 
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
+        let dest_section_pk = bls::SecretKey::random().public_key();
 
         let message = Bytes::from_static(b"hello world");
-        comm.send(&[peer0.addr, peer1.addr], 2, message.clone())
-            .await
-            .0?;
+        let message = MessageType::Ping(HeaderInfo {
+            dest: XorName::random(),
+            dest_section_pk,
+        });
 
-        assert_eq!(peer0.rx.recv().await, Some(message.clone()));
-        assert_eq!(peer1.rx.recv().await, Some(message));
+        comm.send(
+            &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+            2,
+            message,
+        )
+        .await
+        .0?;
+
+        if let Some(message) = peer0.rx.recv().await {
+            let mut received_msg = WireMsg::deserialize(bytes)?;
+            received_msg.update_header(None, Some(peer0._name));
+            assert_eq!(received_msg, message);
+        }
+
+        if let Some(message) = peer1.rx.recv().await {
+            let mut received_msg = WireMsg::deserialize(bytes)?;
+            received_msg.update_header(None, Some(peer1._name));
+            assert_eq!(received_msg, message);
+        }
 
         Ok(())
     }
 
+    /*
     #[tokio::test]
     async fn successful_send_to_subset() -> Result<()> {
         let (tx, _rx) = mpsc::channel(1);
@@ -470,6 +505,7 @@ mod tests {
 
         Ok(())
     }
+     */
 
     fn transport_config() -> Config {
         Config {
@@ -482,6 +518,7 @@ mod tests {
         addr: SocketAddr,
         _incoming_connections: qp2p::IncomingConnections,
         _disconnections: qp2p::DisconnectionEvents,
+        _name: XorName,
         rx: mpsc::Receiver<Bytes>,
     }
 
@@ -506,6 +543,7 @@ mod tests {
                 rx,
                 _incoming_connections: incoming_connections,
                 _disconnections: disconnections,
+                _name: XorName::random(),
             })
         }
     }

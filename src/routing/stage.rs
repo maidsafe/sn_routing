@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Approved, Comm, Command};
-use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
+use crate::{error::Result, event::Event, relocation::SignedRelocateDetails, XorName};
 use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -114,7 +114,7 @@ impl Stage {
                 .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
             Command::HandleConsensus { vote, proof } => {
-                self.state.lock().await.handle_consensus(vote, proof)
+                self.state.lock().await.handle_consensus(vote, proof).await
             }
             Command::HandleConnectionLost(addr) => Ok(self
                 .state
@@ -187,16 +187,14 @@ impl Stage {
 
     async fn send_message(
         &self,
-        recipients: &[SocketAddr],
+        recipients: &[(SocketAddr, XorName)],
         delivery_group_size: usize,
         message: MessageType,
     ) -> Result<Vec<Command>> {
-        let msg_bytes = message.serialize()?;
-
-        let cmds = match message {
+        let cmds = match &message {
             MessageType::Ping(_) | MessageType::NodeMessage { .. } => self
                 .comm
-                .send(recipients, delivery_group_size, msg_bytes)
+                .send(recipients, delivery_group_size, message)
                 .await
                 .1
                 .into_iter()
@@ -206,11 +204,11 @@ impl Stage {
                 for recipient in recipients {
                     if self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await
                         .is_err()
                     {
-                        self.send_event(Event::ClientLost(*recipient)).await;
+                        self.send_event(Event::ClientLost(recipient.0)).await;
                     }
                 }
                 vec![]
@@ -219,7 +217,7 @@ impl Stage {
                 for recipient in recipients {
                     let _ = self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await;
                 }
                 vec![]
