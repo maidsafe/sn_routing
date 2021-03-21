@@ -8,6 +8,7 @@
 
 use crate::{crypto, peer::Peer};
 use ed25519_dalek::Keypair;
+use sn_data_types::PublicKey;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
@@ -38,7 +39,7 @@ impl Node {
     }
 
     pub fn name(&self) -> XorName {
-        crypto::name(&self.keypair.public)
+        crypto::name(&PublicKey::from(self.keypair.public))
     }
 
     // Last byte of the name represents the age.

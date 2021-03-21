@@ -42,7 +42,7 @@ use itertools::Itertools;
 use sn_messaging::{
     client::Message as ClientMessage,
     node::NodeMessage,
-    section_info::{Error as TargetSectionError, ErrorResponse, Message as SectionInfoMsg},
+    section_info::{ErrorResponse, Message as SectionInfoMsg},
     DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -95,7 +95,7 @@ impl Routing {
         let keypair = config.keypair.unwrap_or_else(|| {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
         });
-        let node_name = crypto::name(&keypair.public);
+        let node_name = crypto::name(&sn_data_types::PublicKey::from(keypair.public));
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
@@ -144,6 +144,7 @@ impl Routing {
                 .handle_commands(Command::HandleMessage {
                     message,
                     sender: Some(sender),
+                    hdr_info: None,
                 })
                 .await?;
         }
@@ -387,10 +388,7 @@ impl Routing {
         let end_user_pk = match end_user {
             Some(end_user) => match end_user {
                 EndUser::AllClients(pk) => pk,
-                EndUser::Client {
-                    public_key,
-                    socket_id,
-                } => pk,
+                EndUser::Client { public_key, .. } => public_key,
             },
             None => {
                 error!("No client end user known of to send ");
@@ -401,7 +399,7 @@ impl Routing {
         let (target_section_pk, _) = self.match_section(&user_xor_name).await;
         if let Some(section_pk) = target_section_pk {
             let command = Command::SendMessage {
-                recipients: vec![recipient],
+                recipients: vec![(recipient, user_xor_name)],
                 delivery_group_size: 1,
                 message: MessageType::ClientMessage {
                     msg: message,
@@ -502,7 +500,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 let command = Command::HandleMessage {
                     message,
                     sender: Some(sender),
-                    hdr_info,
+                    hdr_info: Some(hdr_info),
                 };
                 let _ = task::spawn(dispatcher.handle_commands(command));
             }
@@ -550,7 +548,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             if let Err(error) = stage.check_key_status(&client_pk).await {
                 let correlation_id = msg.id();
                 let command = Command::SendMessage {
-                    recipients: vec![sender],
+                    recipients: vec![(sender, dest)],
                     delivery_group_size: 1,
                     message: MessageType::SectionInfo {
                         msg: SectionInfoMsg::SectionInfoUpdate(ErrorResponse {
