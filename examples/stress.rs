@@ -300,8 +300,6 @@ impl Network {
             }
             Event::Routing { id, event } => match event {
                 RoutingEvent::EldersChanged {
-                    // prefix: new_prefix,
-                    // key,
                     elders,
                     self_status_change,
                     ..
