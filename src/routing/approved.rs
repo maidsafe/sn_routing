@@ -1789,11 +1789,11 @@ impl Approved {
             }
 
             let sibling_elders = if new_prefix != old_prefix {
-                if let Some(sibling_key) = self.section_key(&new_prefix.sibling()).copied() {
-                    if let Some(info) = self.network.get(&new_prefix.sibling()).cloned() {
+                if let Some(sibling_key) = self.section_key(&new_prefix.sibling()) {
+                    if let Some(info) = self.network.get(&new_prefix.sibling()) {
                         Some(Elders {
                             prefix: new_prefix.sibling(),
-                            key: sibling_key,
+                            key: *sibling_key,
                             elders: info.elders.keys().copied().collect(),
                         })
                     } else {
@@ -2161,7 +2161,7 @@ impl Approved {
         };
         let mut commands = vec![];
 
-        // consider removing this, we are getting duplciate msgs by it
+        // TODO: consider removing this, we are getting duplciate msgs by it
         if itinerary
             .dst
             .contains(&self.node.name(), self.section.prefix())
