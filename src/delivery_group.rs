@@ -10,7 +10,6 @@
 
 use crate::{
     error::{Error, Result},
-    //majority,
     network::Network,
     peer::Peer,
     section::Section,
@@ -115,7 +114,7 @@ fn candidates(
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
-    let mut dg_size = ELDER_SIZE; //majority(ELDER_SIZE);
+    let mut dg_size = ELDER_SIZE;
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
@@ -123,11 +122,9 @@ fn candidates(
         // up to majority of Elders
         dg_size = cmp::min(len, dg_size);
         if len < ELDER_SIZE {
-            //majority(ELDER_SIZE) {
             warn!(
                 "Delivery group only {:?} when it should be {:?}",
-                len,
-                ELDER_SIZE //majority(ELDER_SIZE)
+                len, ELDER_SIZE
             )
         }
 
@@ -179,6 +176,6 @@ where
         .into_iter()
         .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
         .collect();
-    list.truncate(cmp::min(list.len(), ELDER_SIZE)); // majority(ELDER_SIZE)
+    list.truncate(cmp::min(list.len(), ELDER_SIZE));
     list
 }

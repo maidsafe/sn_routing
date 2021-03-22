@@ -103,7 +103,6 @@ impl Routing {
             let comm = Comm::new(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info()).with_age(MIN_AGE + 1);
             let state = Approved::first_node(node, event_tx)?;
-            //let section = state.section();
 
             state.send_event(Event::Genesis);
 
