@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.52.0](https://github.com/maidsafe/sn_routing/compare/v0.51.0...v0.52.0) (2021-03-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* DT update. Naming and message structs for splits
+
+### Features
+
+* **chain:** expose SectionChain via API ([1590414](https://github.com/maidsafe/sn_routing/commit/15904147c279bbdd628fd3048d00d706e81061ea))
+* **event:** add separate genesis event ([681d2c7](https://github.com/maidsafe/sn_routing/commit/681d2c7c4d244f0ebf9016169c5b23c406b9f723))
+* **event:** expose previous key in elderschanged ([0718e0c](https://github.com/maidsafe/sn_routing/commit/0718e0ca7d11fb3cd4b0d3571909f3318514ec0c))
+* **event:** update elders_changed event ([af37d06](https://github.com/maidsafe/sn_routing/commit/af37d065b3eb3171ec9f68e4e665ad89ef01da81))
+
+
+### Bug Fixes
+
+* enable relocation again ([f9fde30](https://github.com/maidsafe/sn_routing/commit/f9fde30572e19e2ef50cb3f75a47714f8670332a))
+* no split in first section ([81a716f](https://github.com/maidsafe/sn_routing/commit/81a716fce20da6a2521c0a41f2133d6704568d28))
+
+
+* DT dep update ([7fb8a4a](https://github.com/maidsafe/sn_routing/commit/7fb8a4a6ebed7e1990de4acdd38feca89cb52d1a))
+
 ## [0.51.0](https://github.com/maidsafe/sn_routing/compare/v0.50.0...v0.51.0) (2021-03-18)
 
 
