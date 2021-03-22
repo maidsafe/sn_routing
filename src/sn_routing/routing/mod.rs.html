@@ -488,8 +488,6 @@
 <span id="487">487</span>
 <span id="488">488</span>
 <span id="489">489</span>
-<span id="490">490</span>
-<span id="491">491</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -522,7 +520,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">event</span>::{<span class="ident">Event</span>, <span class="ident">NodeElderChange</span>},
+    <span class="ident">event</span>::<span class="ident">Event</span>,
     <span class="ident">messages</span>::<span class="ident">Message</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
@@ -592,19 +590,12 @@
         <span class="kw">let</span> (<span class="ident">connection_event_tx</span>, <span class="kw-2">mut</span> <span class="ident">connection_event_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
         <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">backlog</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
-            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the seed node.&quot;</span>, <span class="ident">node_name</span>);
+            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the genesis node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>()).<span class="ident">with_age</span>(<span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>);
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">section</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">section</span>();
 
-            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">EldersChanged</span> {
-                <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">prefix</span>(),
-                <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
-                <span class="ident">sibling_key</span>: <span class="prelude-val">None</span>,
-                <span class="ident">elders</span>: <span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">copied</span>().<span class="ident">collect</span>(),
-                <span class="ident">self_status_change</span>: <span class="ident">NodeElderChange</span>::<span class="ident">Promoted</span>,
-            });
+            <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Genesis</span>);
 
             (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="macro">vec</span><span class="macro">!</span>[])
         } <span class="kw">else</span> {
@@ -696,6 +687,11 @@
     <span class="doccomment">/// Returns connection info of this node.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SocketAddr</span> {
         <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
+    }
+
+    <span class="doccomment">/// Returns the Section Proof Chain</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_chain</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
+        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section_chain</span>()
     }
 
     <span class="doccomment">/// Prefix of our section</span>
