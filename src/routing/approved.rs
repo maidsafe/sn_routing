@@ -1252,6 +1252,15 @@ impl Approved {
                 (MIN_AGE + 1, None, None)
             };
 
+        // Requires the node name matches the age.
+        if age != peer.age() {
+            debug!(
+                "Ignoring JoinRequest from {} - required age {:?} not presented.",
+                peer, age,
+            );
+            return Ok(vec![]);
+        }
+
         // Require resource proof only if joining as a new node.
         if previous_name.is_none() {
             if let Some(response) = join_request.resource_proof_response {
@@ -1268,7 +1277,7 @@ impl Approved {
         }
 
         self.vote(Vote::Online {
-            member_info: MemberInfo::joined(peer.with_age(age)),
+            member_info: MemberInfo::joined(peer),
             previous_name,
             their_knowledge,
         })

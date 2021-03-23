@@ -14,7 +14,7 @@ pub use ed25519_dalek::{
 
 use ed25519_dalek::ExpandedSecretKey;
 use std::ops::RangeInclusive;
-use xor_name::XorName;
+use xor_name::{XorName, XOR_NAME_LEN};
 
 /// SHA3-256 hash digest.
 pub type Digest256 = [u8; 32];
@@ -43,18 +43,26 @@ pub fn name(public_key: &PublicKey) -> XorName {
     XorName(public_key.to_bytes())
 }
 
-/// Construct a random `Keypair`
-pub fn gen_keypair() -> Keypair {
-    Keypair::generate(&mut rand::thread_rng())
+#[cfg(test)]
+/// Construct a random `XorName` whose last byte represents the targeted age.
+pub fn gen_name_with_age(age: u8) -> XorName {
+    loop {
+        let name = XorName::random();
+        if age == name[XOR_NAME_LEN - 1] {
+            return name;
+        }
+    }
 }
 
 /// Construct a `Keypair` whose name is in the interval [start, end] (both endpoints inclusive).
-pub fn gen_keypair_within_range(range: &RangeInclusive<XorName>) -> Keypair {
+/// And the last byte equals to the targeted age.
+pub fn gen_keypair(range: &RangeInclusive<XorName>, age: u8) -> Keypair {
     let mut rng = rand::thread_rng();
 
     loop {
         let keypair = Keypair::generate(&mut rng);
-        if range.contains(&name(&keypair.public)) {
+        let new_name = name(&keypair.public);
+        if range.contains(&new_name) && age == new_name[XOR_NAME_LEN - 1] {
             return keypair;
         }
     }

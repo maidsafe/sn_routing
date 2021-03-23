@@ -12,7 +12,7 @@ use std::{
     hash::Hash,
     net::SocketAddr,
 };
-use xor_name::XorName;
+use xor_name::{XorName, XOR_NAME_LEN};
 
 /// Network p2p peer identity.
 /// When a node knows another p2p_node as a `Peer` it's implicitly connected to it. This is separate
@@ -21,13 +21,12 @@ use xor_name::XorName;
 pub struct Peer {
     name: XorName,
     addr: SocketAddr,
-    age: u8,
 }
 
 impl Peer {
-    /// Creates a new `Peer` given `Name`, `SocketAddr` and `age`.
-    pub fn new(name: XorName, addr: SocketAddr, age: u8) -> Self {
-        Self { name, addr, age }
+    /// Creates a new `Peer` given `Name`, `SocketAddr`.
+    pub fn new(name: XorName, addr: SocketAddr) -> Self {
+        Self { name, addr }
     }
 
     /// Returns the `XorName` of the peer.
@@ -42,20 +41,7 @@ impl Peer {
 
     /// Returns the age.
     pub fn age(&self) -> u8 {
-        self.age
-    }
-
-    // Converts this info into one with the input age.
-    pub fn with_age(self, age: u8) -> Self {
-        Self { age, ..self }
-    }
-
-    // Converts this info into one with the age increased by one.
-    pub fn increment_age(self) -> Self {
-        Self {
-            age: self.age.saturating_add(1),
-            ..self
-        }
+        self.name[XOR_NAME_LEN - 1]
     }
 }
 
@@ -78,14 +64,14 @@ pub(crate) mod test_utils {
     // Generate Vec<Peer> where no two peers have the same name.
     pub(crate) fn arbitrary_unique_peers(
         count: impl Into<SizeRange>,
-        age: impl Strategy<Value = u8>,
     ) -> impl Strategy<Value = Vec<Peer>> {
-        proptest::collection::btree_map(arbitrary_xor_name(), (any::<SocketAddr>(), age), count)
-            .prop_map(|peers| {
+        proptest::collection::btree_map(arbitrary_xor_name(), any::<SocketAddr>(), count).prop_map(
+            |peers| {
                 peers
                     .into_iter()
-                    .map(|(name, (addr, age))| Peer::new(name, addr, age))
+                    .map(|(name, addr)| Peer::new(name, addr))
                     .collect()
-            })
+            },
+        )
     }
 }

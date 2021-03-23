@@ -654,8 +654,8 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        node::test_utils::arbitrary_unique_nodes, section::test_utils::gen_addr, ELDER_SIZE,
-        MIN_AGE,
+        crypto, node::test_utils::arbitrary_unique_nodes, section::test_utils::gen_addr,
+        ELDER_SIZE, MIN_AGE,
     };
     use assert_matches::assert_matches;
     use proptest::prelude::*;
@@ -664,29 +664,15 @@ mod tests {
     use xor_name::Prefix;
 
     #[test]
-    fn dkg_key_is_affected_by_ages() {
-        let name = rand::random();
-        let addr = gen_addr();
-
-        let peer0 = Peer::new(name, addr, MIN_AGE);
-        let peer1 = Peer::new(name, addr, MIN_AGE + 1);
-
-        let elders_info0 = EldersInfo::new(iter::once(peer0), Prefix::default());
-        let elders_info1 = EldersInfo::new(iter::once(peer1), Prefix::default());
-
-        let key0 = DkgKey::new(&elders_info0, 0);
-        let key1 = DkgKey::new(&elders_info1, 0);
-
-        assert_ne!(key0, key1);
-    }
-
-    #[test]
     fn single_participant() {
         // If there is only one participant, the DKG should complete immediately.
 
         let mut voter = DkgVoter::default();
 
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
         let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());
         let dkg_key = DkgKey::new(&elders_info, 0);
 
@@ -802,6 +788,6 @@ mod tests {
     }
 
     fn arbitrary_elder_nodes() -> impl Strategy<Value = Vec<Node>> {
-        arbitrary_unique_nodes(2..=ELDER_SIZE, MIN_AGE..)
+        arbitrary_unique_nodes(2..=ELDER_SIZE)
     }
 }

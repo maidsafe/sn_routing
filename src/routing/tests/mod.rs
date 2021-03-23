@@ -48,11 +48,14 @@ use xor_name::{Prefix, XorName};
 
 #[tokio::test]
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm().await?);
 
-    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let new_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        gen_addr(),
+    );
 
     let message = SectionInfoMsg::GetSectionQuery(new_node.name());
 
@@ -92,7 +95,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let elders_addrs: Vec<_> = elders_info.peers().map(Peer::addr).copied().collect();
     let (section, _) = create_section(&sk_set, &elders_info)?;
 
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
     let stage = Stage::new(state, create_comm().await?);
 
@@ -134,11 +137,14 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
 #[tokio::test]
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm().await?);
 
-    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let new_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        gen_addr(),
+    );
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
@@ -176,11 +182,14 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
 #[tokio::test]
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm().await?);
 
-    let new_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let new_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        gen_addr(),
+    );
     let section_key = *stage.state.lock().await.section().chain().last_key();
 
     let nonce: [u8; 32] = rand::random();
@@ -259,15 +268,19 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     );
     let stage = Stage::new(state, create_comm().await?);
 
-    let relocated_node_old_keypair = crypto::gen_keypair();
+    let relocated_node_old_keypair =
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1);
     let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
-    let relocated_node = Node::new(crypto::gen_keypair(), gen_addr()).with_age(MIN_AGE + 2);
+    let relocated_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
+        gen_addr(),
+    );
 
     let relocate_details = RelocateDetails {
         pub_id: relocated_node_old_name,
         destination: rand::random(),
         destination_key: section_key,
-        age: relocated_node.age,
+        age: relocated_node.age(),
     };
 
     let relocate_message = PlainMessage {
@@ -353,7 +366,7 @@ async fn accumulate_votes() -> Result<()> {
     );
     let stage = Stage::new(state, create_comm().await?);
 
-    let new_peer = create_peer();
+    let new_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(new_peer);
     let vote = Vote::Online {
         member_info,
@@ -429,7 +442,7 @@ async fn handle_consensus_on_online() -> Result<()> {
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
     let stage = Stage::new(state, create_comm().await?);
 
-    let new_peer = create_peer();
+    let new_peer = create_peer(MIN_AGE);
 
     let status = handle_online_command(&new_peer, &sk_set, &stage, &elders_info).await?;
     assert!(status.node_approval_sent);
@@ -447,22 +460,14 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let chain = SectionChain::new(sk_set.secret_key().public_key());
 
-    // Creates nodes where everybody has age 6 except the last one who has 5.
-    let mut nodes: Vec<_> = gen_sorted_nodes(&Prefix::default(), ELDER_SIZE)
-        .into_iter()
-        .enumerate()
-        .map(|(index, node)| {
-            if index < ELDER_SIZE - 1 {
-                node.with_age(MIN_AGE + 2)
-            } else {
-                node.with_age(MIN_AGE + 1)
-            }
-        })
-        .collect();
+    // Creates nodes where everybody has age 6 except one has 5.
+    let mut nodes: Vec<_> = gen_sorted_nodes(&Prefix::default(), ELDER_SIZE, true);
 
     let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
     let proven_elders_info = proven(sk_set.secret_key(), elders_info.clone())?;
+
     let mut section = Section::new(*chain.root_key(), chain, proven_elders_info)?;
+    let mut expected_new_elders = BTreeSet::new();
 
     for peer in elders_info.elders.values() {
         let member_info = MemberInfo::joined(*peer);
@@ -471,6 +476,9 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
             value: member_info,
             proof,
         });
+        if peer.age() == MIN_AGE + 2 {
+            let _ = expected_new_elders.insert(*peer);
+        }
     }
 
     let node = nodes.remove(0);
@@ -486,7 +494,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
     // Handle the consensus on Online of a peer that is older than the youngest
     // current elder - that means this peer is going to be promoted.
-    let new_peer = create_peer().with_age(MIN_AGE + 2);
+    let new_peer = create_peer(MIN_AGE + 2);
     let member_info = MemberInfo::joined(new_peer);
     let vote = Vote::Online {
         member_info,
@@ -501,6 +509,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
 
     // Verify we sent a `DKGStart` message with the expected participants.
     let mut dkg_start_sent = false;
+    let _ = expected_new_elders.insert(new_peer);
 
     for command in commands {
         let (recipients, message) = match command {
@@ -516,14 +525,6 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
             Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
-
-        let expected_new_elders: BTreeSet<_> = elders_info
-            .elders
-            .values()
-            .take(elders_info.elders.len() - 1)
-            .copied()
-            .chain(iter::once(new_peer))
-            .collect();
         itertools::assert_equal(actual_elders_info.elders.values(), &expected_new_elders);
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
@@ -621,7 +622,7 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
     // Make a left peer.
-    let peer = create_peer().with_age(age);
+    let peer = create_peer(age);
     let member_info = MemberInfo {
         peer,
         state: PeerState::Left,
@@ -681,7 +682,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 
     let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
-    let existing_peer = create_peer();
+    let existing_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(existing_peer);
     let member_info = proven(sk_set.secret_key(), member_info)?;
     let _ = section.update_member(member_info);
@@ -717,7 +718,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
 
     let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
-    let existing_peer = create_peer();
+    let existing_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(existing_peer);
     let member_info = proven(sk_set.secret_key(), member_info)?;
     let _ = section.update_member(member_info);
@@ -837,7 +838,10 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
             // When the unknown message is sent from a peer that is not our elder (including peers
             // from other sections), bounce it to our elders.
             (
-                Node::new(crypto::gen_keypair(), gen_addr()),
+                Node::new(
+                    crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+                    gen_addr(),
+                ),
                 elders_info
                     .elders
                     .values()
@@ -854,7 +858,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let proven_elders_info = proven(&sk, elders_info)?;
     let section = Section::new(*chain.root_key(), chain, proven_elders_info)?;
 
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
     let stage = Stage::new(state, create_comm().await?);
 
@@ -962,7 +966,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(pk0, chain.clone(), proven_elders_info)?;
 
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let node_name = node.name();
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
     let stage = Stage::new(state, create_comm().await?);
@@ -1038,7 +1042,10 @@ async fn handle_bounced_unknown_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
-    let other_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let other_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        gen_addr(),
+    );
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = Message::single_src(
         &node,
@@ -1131,7 +1138,10 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
-    let other_node = Node::new(crypto::gen_keypair(), gen_addr());
+    let other_node = Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        gen_addr(),
+    );
 
     let original_message_content = Bytes::from_static(b"unknown message");
     let original_message = PlainMessage {
@@ -1232,7 +1242,7 @@ async fn handle_sync() -> Result<()> {
     let old_node = nodes.remove(0);
 
     // Create the new `EldersInfo` by replacing the last peer with a new one.
-    let new_peer = create_peer();
+    let new_peer = create_peer(MIN_AGE);
     let new_elders_info = EldersInfo::new(
         old_elders_info
             .elders
@@ -1304,11 +1314,11 @@ async fn handle_untrusted_sync() -> Result<()> {
     let new_section = Section::new(pk0, chain.truncate(2), proven_new_elders_info)?;
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, old_section, None, event_tx);
     let stage = Stage::new(state, create_comm().await?);
 
-    let sender = create_node();
+    let sender = create_node(MIN_AGE + 1);
     let orig_message = Message::single_src(
         &sender,
         DstLocation::Direct,
@@ -1402,7 +1412,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         None,
     )?;
 
-    let sender = create_node();
+    let sender = create_node(MIN_AGE + 1);
     let bounced_message = Message::single_src(
         &sender,
         DstLocation::Node(node.name()),
@@ -1465,7 +1475,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     let (elders_info, mut nodes) = gen_elders_info(prefix, ELDER_SIZE);
     let (mut section, section_key_share) = create_section(&sk_set, &elders_info)?;
 
-    let non_elder_peer = create_peer();
+    let non_elder_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(non_elder_peer);
     let member_info = proven(sk_set.secret_key(), member_info)?;
     assert!(section.update_member(member_info));
@@ -1548,7 +1558,7 @@ enum MessageDst {
 }
 
 async fn message_to_self(dst: MessageDst) -> Result<()> {
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
     let peer = node.peer();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
     let stage = Stage::new(state, create_comm().await?);
@@ -1589,12 +1599,12 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
 async fn handle_elders_update() -> Result<()> {
     // Start with section that has `ELDER_SIZE` elders with age 6, 1 non-elder with age 5 and one
     // to-be-elder with age 7:
-    let node = create_node().with_age(MIN_AGE + 2);
-    let mut other_elder_peers: Vec<_> = iter::repeat_with(|| create_peer().with_age(MIN_AGE + 2))
+    let node = create_node(MIN_AGE + 2);
+    let mut other_elder_peers: Vec<_> = iter::repeat_with(|| create_peer(MIN_AGE + 2))
         .take(ELDER_SIZE - 1)
         .collect();
-    let adult_peer = create_peer().with_age(MIN_AGE + 1);
-    let promoted_peer = create_peer().with_age(MIN_AGE + 3);
+    let adult_peer = create_peer(MIN_AGE + 1);
+    let promoted_peer = create_peer(MIN_AGE + 3);
 
     let sk_set0 = SecretKeySet::random();
     let pk0 = sk_set0.secret_key().public_key();
@@ -1697,22 +1707,22 @@ async fn handle_elders_update() -> Result<()> {
 // Test that demoted node still sends `Sync` messages to both sub-sections on split.
 #[tokio::test]
 async fn handle_demote_during_split() -> Result<()> {
-    let node = create_node();
+    let node = create_node(MIN_AGE + 1);
 
     let prefix0 = Prefix::default().pushed(false);
     let prefix1 = Prefix::default().pushed(true);
 
     // These peers together with `node` are pre-split elders.
     // These peers together with `peer_c` are prefix-0 post-split elders.
-    let peers_a: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix0))
+    let peers_a: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix0, MIN_AGE + 1))
         .take(ELDER_SIZE - 1)
         .collect();
     // These peers are prefix-1 post-split elders.
-    let peers_b: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix1))
+    let peers_b: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix1, MIN_AGE + 1))
         .take(ELDER_SIZE)
         .collect();
     // This peer is a prefix-0 post-split elder.
-    let peer_c = create_peer_in_prefix(&prefix0);
+    let peer_c = create_peer_in_prefix(&prefix0, MIN_AGE + 1);
 
     // Create the pre-split section
     let sk_set_v0 = SecretKeySet::random();
@@ -1843,16 +1853,21 @@ fn init_log() {
         .init()
 }
 
-fn create_peer() -> Peer {
-    Peer::new(rand::random(), gen_addr(), MIN_AGE)
+fn create_peer(age: u8) -> Peer {
+    let name = crypto::gen_name_with_age(age);
+    Peer::new(name, gen_addr())
 }
 
-fn create_peer_in_prefix(prefix: &Prefix) -> Peer {
-    Peer::new(prefix.substituted_in(rand::random()), gen_addr(), MIN_AGE)
+fn create_peer_in_prefix(prefix: &Prefix, age: u8) -> Peer {
+    let name = crypto::gen_name_with_age(age);
+    Peer::new(prefix.substituted_in(name), gen_addr())
 }
 
-fn create_node() -> Node {
-    Node::new(crypto::gen_keypair(), gen_addr())
+fn create_node(age: u8) -> Node {
+    Node::new(
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), age),
+        gen_addr(),
+    )
 }
 
 async fn create_comm() -> Result<Comm> {
@@ -1907,7 +1922,7 @@ fn create_section(
 fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proof)> {
     loop {
         let vote = Vote::Online {
-            member_info: MemberInfo::joined(create_peer().with_age(MIN_AGE + 1)),
+            member_info: MemberInfo::joined(create_peer(MIN_AGE + 1)),
             previous_name: Some(rand::random()),
             their_knowledge: None,
         };

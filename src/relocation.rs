@@ -314,7 +314,7 @@ mod tests {
     proptest! {
         #[test]
         fn proptest_actions(
-            peers in arbitrary_unique_peers(2..ELDER_SIZE + 1, MIN_AGE..MAX_AGE),
+            peers in arbitrary_unique_peers(2..ELDER_SIZE + 1),
             signature_trailing_zeros in 0..MAX_AGE,
             seed in any::<u64>().no_shrink())
         {

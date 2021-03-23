@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, peer::Peer, MIN_AGE};
+use crate::{crypto, peer::Peer};
 use ed25519_dalek::Keypair;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
 };
-use xor_name::XorName;
+use xor_name::{XorName, XOR_NAME_LEN};
 
 /// Information and state of our node
 #[derive(Clone)]
@@ -23,7 +23,6 @@ pub(crate) struct Node {
     // TODO: find a way to not require `Clone`.
     pub keypair: Arc<Keypair>,
     pub addr: SocketAddr,
-    pub age: u8,
 }
 
 impl Node {
@@ -31,20 +30,20 @@ impl Node {
         Self {
             keypair: Arc::new(keypair),
             addr,
-            age: MIN_AGE,
         }
     }
 
-    pub fn with_age(self, age: u8) -> Self {
-        Self { age, ..self }
-    }
-
     pub fn peer(&self) -> Peer {
-        Peer::new(self.name(), self.addr, self.age)
+        Peer::new(self.name(), self.addr)
     }
 
     pub fn name(&self) -> XorName {
         crypto::name(&self.keypair.public)
+    }
+
+    // Last byte of the name represents the age.
+    pub fn age(&self) -> u8 {
+        self.name()[XOR_NAME_LEN - 1]
     }
 }
 
@@ -59,7 +58,7 @@ impl Debug for Node {
         f.debug_struct("Node")
             .field("name", &self.name())
             .field("addr", &self.addr)
-            .field("age", &self.age)
+            .field("age", &self.age())
             .finish()
     }
 }
@@ -70,29 +69,21 @@ pub(crate) mod test_utils {
     use itertools::Itertools;
     use proptest::{collection::SizeRange, prelude::*};
 
-    pub(crate) fn arbitrary_node(age: impl Strategy<Value = u8>) -> impl Strategy<Value = Node> {
-        (
-            crypto::test_utils::arbitrary_keypair(),
-            any::<SocketAddr>(),
-            age,
-        )
-            .prop_map(|(keypair, addr, age)| Node::new(keypair, addr).with_age(age))
+    pub(crate) fn arbitrary_node() -> impl Strategy<Value = Node> {
+        (crypto::test_utils::arbitrary_keypair(), any::<SocketAddr>())
+            .prop_map(|(keypair, addr)| Node::new(keypair, addr))
     }
 
     // Generate Vec<Node> where no two nodes have the same name.
     pub(crate) fn arbitrary_unique_nodes(
         count: impl Into<SizeRange>,
-        age: impl Strategy<Value = u8>,
     ) -> impl Strategy<Value = Vec<Node>> {
-        proptest::collection::vec(arbitrary_node(age), count).prop_filter(
-            "non-unique keys",
-            |nodes| {
-                nodes
-                    .iter()
-                    .unique_by(|node| node.keypair.secret.as_bytes())
-                    .count()
-                    == nodes.len()
-            },
-        )
+        proptest::collection::vec(arbitrary_node(), count).prop_filter("non-unique keys", |nodes| {
+            nodes
+                .iter()
+                .unique_by(|node| node.keypair.secret.as_bytes())
+                .count()
+                == nodes.len()
+        })
     }
 }
