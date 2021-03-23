@@ -67,7 +67,7 @@ impl Stage {
                 "handle_command",
                 name = %state.node().name(),
                 prefix = format_args!("({:b})", state.section().prefix()),
-                age = state.node().age,
+                age = state.node().age(),
                 elder = state.is_elder(),
             )
         };

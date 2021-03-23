@@ -266,14 +266,14 @@ impl<'a> State<'a> {
             *relocate_details.destination(),
         );
 
-        let new_keypair = crypto::gen_keypair_within_range(&name_prefix.range_inclusive());
-        let new_name = crypto::name(&new_keypair.public);
         let age = relocate_details.relocate_details().age;
+        let new_keypair = crypto::gen_keypair(&name_prefix.range_inclusive(), age);
+        let new_name = crypto::name(&new_keypair.public);
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 
         info!("Changing name to {}", new_name);
-        self.node = Node::new(new_keypair, self.node.addr).with_age(age);
+        self.node = Node::new(new_keypair, self.node.addr);
 
         relocate_payload
     }
@@ -304,12 +304,11 @@ impl<'a> State<'a> {
             match response {
                 JoinResponse::Approval {
                     elders_info,
-                    age,
                     genesis_key,
                     section_chain,
                 } => {
                     return Ok((
-                        self.node.with_age(age),
+                        self.node,
                         Section::new(genesis_key, section_chain, elders_info)?,
                         self.backlog.into_iter().collect(),
                     ));
@@ -483,7 +482,6 @@ impl<'a> State<'a> {
                     return Ok((
                         JoinResponse::Approval {
                             elders_info: elders_info.clone(),
-                            age: member_info.value.peer.age(),
                             genesis_key: *genesis_key,
                             section_chain,
                         },
@@ -528,7 +526,6 @@ impl<'a> State<'a> {
 enum JoinResponse {
     Approval {
         elders_info: Proven<EldersInfo>,
-        age: u8,
         genesis_key: bls::PublicKey,
         section_chain: SectionChain,
     },
@@ -621,7 +618,10 @@ mod tests {
         let sk = sk_set.secret_key();
         let pk = sk.public_key();
 
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
         let peer = node.peer();
         let state = State::new(node, send_tx, recv_rx);
 
@@ -676,7 +676,7 @@ mod tests {
 
             // Send NodeApproval
             let elders_info = proven(sk, elders_info.clone())?;
-            let member_info = proven(sk, MemberInfo::joined(peer.with_age(MIN_AGE + 1)))?;
+            let member_info = proven(sk, MemberInfo::joined(peer))?;
             let proof_chain = SectionChain::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
@@ -703,7 +703,7 @@ mod tests {
 
         assert_eq!(*section.elders_info(), elders_info);
         assert_eq!(*section.chain().last_key(), pk);
-        assert_eq!(node.age, MIN_AGE + 1);
+        assert_eq!(node.age(), MIN_AGE + 1);
 
         Ok(())
     }
@@ -714,9 +714,15 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
+        let bootstrap_node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
 
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
@@ -772,9 +778,15 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
+        let bootstrap_node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
 
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
@@ -828,8 +840,14 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let bootstrap_node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);
@@ -902,8 +920,14 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let bootstrap_node = Node::new(crypto::gen_keypair(), gen_addr());
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let bootstrap_node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);

@@ -74,9 +74,7 @@ impl SrcAuthority {
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
     pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Node {
-                public_key, age, ..
-            } => Ok(Peer::new(name(public_key), addr, *age)),
+            Self::Node { public_key, .. } => Ok(Peer::new(name(public_key), addr)),
             Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
         }
     }

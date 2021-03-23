@@ -182,6 +182,7 @@ mod tests {
     use super::*;
     use crate::{
         consensus::test_utils::proven,
+        crypto,
         section::{
             test_utils::{gen_addr, gen_elders_info},
             EldersInfo, MemberInfo, SectionChain, MIN_AGE,
@@ -217,8 +218,9 @@ mod tests {
     fn delivery_targets_elder_to_our_adult() -> Result<()> {
         let (our_name, mut section, network, sk) = setup_elder()?;
 
-        let dst_name = section.prefix().substituted_in(rand::random());
-        let peer = Peer::new(dst_name, gen_addr(), MIN_AGE + 1);
+        let name = crypto::gen_name_with_age(MIN_AGE + 1);
+        let dst_name = section.prefix().substituted_in(name);
+        let peer = Peer::new(dst_name, gen_addr());
         let member_info = MemberInfo::joined(peer);
         let member_info = proven(&sk, member_info)?;
         assert!(section.update_member(member_info));

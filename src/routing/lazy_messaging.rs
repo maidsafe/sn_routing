@@ -139,7 +139,7 @@ mod tests {
             test_utils::{gen_addr, gen_elders_info},
             SectionChain,
         },
-        ELDER_SIZE,
+        ELDER_SIZE, MIN_AGE,
     };
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
@@ -350,7 +350,7 @@ mod tests {
             dst_key: bls::PublicKey,
         ) -> Result<Message> {
             let sender = Node::new(
-                crypto::gen_keypair_within_range(&src_section.range_inclusive()),
+                crypto::gen_keypair(&src_section.range_inclusive(), MIN_AGE + 1),
                 gen_addr(),
             );
 

@@ -189,6 +189,7 @@ mod tests {
     use super::*;
     use crate::{
         consensus::test_utils::{prove, proven},
+        crypto,
         peer::Peer,
         section::{test_utils::gen_addr, MemberInfo},
         SectionChain, ELDER_SIZE, MIN_AGE, RECOMMENDED_SECTION_SIZE,
@@ -358,10 +359,8 @@ mod tests {
     }
 
     fn gen_peer(rng: &mut impl Rng, prefix: &Prefix) -> Peer {
-        Peer::new(
-            prefix.substituted_in(rng.gen()),
-            gen_addr(),
-            rng.gen_range(MIN_AGE, MIN_AGE + 5),
-        )
+        let age = rng.gen_range(MIN_AGE, MIN_AGE + 5);
+        let name = crypto::gen_name_with_age(age);
+        Peer::new(prefix.substituted_in(name), gen_addr())
     }
 }

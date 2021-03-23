@@ -233,7 +233,7 @@ impl Message {
         let signature = crypto::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
             public_key: node.keypair.public,
-            age: node.age,
+            age: node.age(),
             signature,
         };
 
@@ -503,10 +503,14 @@ mod tests {
     };
     use anyhow::Result;
     use std::iter;
+    use xor_name::Prefix;
 
     #[test]
     fn extend_proof_chain() -> Result<()> {
-        let node = Node::new(crypto::gen_keypair(), gen_addr());
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            gen_addr(),
+        );
 
         let sk0 = bls::SecretKey::random();
         let pk0 = sk0.public_key();
@@ -521,7 +525,7 @@ mod tests {
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
         let elders_info = consensus::test_utils::proven(&sk1, elders_info)?;
 
-        let peer = Peer::new(rand::random(), gen_addr(), MIN_AGE);
+        let peer = Peer::new(rand::random(), gen_addr());
         let member_info = MemberInfo::joined(peer);
         let member_info = consensus::test_utils::proven(&sk1, member_info)?;
 
