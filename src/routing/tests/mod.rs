@@ -46,6 +46,7 @@ use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration};
 use xor_name::{Prefix, XorName};
 
+/*
 #[tokio::test]
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node();
@@ -1953,3 +1954,4 @@ impl Deref for SecretKeySet {
         &self.set
     }
 }
+*/

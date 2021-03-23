@@ -296,6 +296,7 @@ mod tests {
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
+    #[allow(unused)]
     const TIMEOUT: Duration = Duration::from_secs(1);
 
     #[tokio::test]
@@ -305,38 +306,30 @@ mod tests {
 
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
-        let dest_section_pk = bls::SecretKey::random().public_key();
 
-        let message = Bytes::from_static(b"hello world");
-        let message = MessageType::Ping(HeaderInfo {
-            dest: XorName::random(),
-            dest_section_pk,
-        });
+        let mut original_message = new_ping_message();
 
         comm.send(
             &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
             2,
-            message,
+            original_message.clone(),
         )
         .await
         .0?;
 
-        if let Some(message) = peer0.rx.recv().await {
-            let mut received_msg = WireMsg::deserialize(bytes)?;
-            received_msg.update_header(None, Some(peer0._name));
-            assert_eq!(received_msg, message);
+        if let Some(bytes) = peer0.rx.recv().await {
+            original_message.update_header(None, Some(peer0._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message.clone());
         }
 
-        if let Some(message) = peer1.rx.recv().await {
-            let mut received_msg = WireMsg::deserialize(bytes)?;
-            received_msg.update_header(None, Some(peer1._name));
-            assert_eq!(received_msg, message);
+        if let Some(bytes) = peer1.rx.recv().await {
+            original_message.update_header(None, Some(peer1._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message);
         }
 
         Ok(())
     }
 
-    /*
     #[tokio::test]
     async fn successful_send_to_subset() -> Result<()> {
         let (tx, _rx) = mpsc::channel(1);
@@ -345,12 +338,19 @@ mod tests {
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
 
-        let message = Bytes::from_static(b"hello world");
-        comm.send(&[peer0.addr, peer1.addr], 1, message.clone())
-            .await
-            .0?;
+        let mut original_message = new_ping_message();
+        comm.send(
+            &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+            1,
+            original_message.clone(),
+        )
+        .await
+        .0?;
 
-        assert_eq!(peer0.rx.recv().await, Some(message));
+        if let Some(bytes) = peer0.rx.recv().await {
+            original_message.update_header(None, Some(peer0._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message);
+        }
 
         assert!(time::timeout(TIMEOUT, peer1.rx.recv())
             .await
@@ -374,8 +374,9 @@ mod tests {
         .await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
-        let (result, failed_recipients) = comm.send(&[invalid_addr], 1, message.clone()).await;
+        let (result, failed_recipients) = comm
+            .send(&[(invalid_addr, XorName::random())], 1, new_ping_message())
+            .await;
         assert!(result.is_err());
         assert_eq!(failed_recipients, [invalid_addr]);
 
@@ -396,13 +397,19 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
-        comm.send(&[invalid_addr, peer.addr], 1, message.clone())
-            .await
-            .0?;
+        let mut message = new_ping_message();
+        comm.send(
+            &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+            1,
+            message.clone(),
+        )
+        .await
+        .0?;
 
-        assert_eq!(peer.rx.recv().await, Some(message));
-
+        if let Some(bytes) = peer.rx.recv().await {
+            message.update_header(None, Some(peer._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, message);
+        }
         Ok(())
     }
 
@@ -420,15 +427,21 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
+        let mut message = new_ping_message();
         let (result, failed_recipients) = comm
-            .send(&[invalid_addr, peer.addr], 2, message.clone())
+            .send(
+                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                2,
+                message.clone(),
+            )
             .await;
 
         assert!(result.is_err());
         assert_eq!(failed_recipients, [invalid_addr]);
-        assert_eq!(peer.rx.recv().await, Some(message));
-
+        if let Some(bytes) = peer.rx.recv().await {
+            message.update_header(None, Some(peer._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, message);
+        }
         Ok(())
     }
 
@@ -440,11 +453,16 @@ mod tests {
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
         let (recv_endpoint, _, mut incoming_msgs, _) = recv_transport.new_endpoint().await?;
         let recv_addr = recv_endpoint.socket_addr();
+        let name = XorName::random();
 
         // Send the first message.
-        let msg0 = Bytes::from_static(b"zero");
+        let key0 = bls::SecretKey::random().public_key();
+        let msg0 = MessageType::Ping(HeaderInfo {
+            dest: name,
+            dest_section_pk: key0,
+        });
         send_comm
-            .send(slice::from_ref(&recv_addr), 1, msg0.clone())
+            .send(slice::from_ref(&(recv_addr, name)), 1, msg0.clone())
             .await
             .0?;
 
@@ -453,7 +471,7 @@ mod tests {
         // Receive one message and disconnect from the peer
         {
             if let Some((src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-                assert_eq!(msg, msg0);
+                assert_eq!(WireMsg::deserialize(msg)?, msg0);
                 msg0_received = true;
                 recv_endpoint.disconnect_from(&src)?;
             }
@@ -461,16 +479,21 @@ mod tests {
         }
 
         // Send the second message.
-        let msg1 = Bytes::from_static(b"one");
+        // Send the first message.
+        let key1 = bls::SecretKey::random().public_key();
+        let msg1 = MessageType::Ping(HeaderInfo {
+            dest: name,
+            dest_section_pk: key1,
+        });
         send_comm
-            .send(slice::from_ref(&recv_addr), 1, msg1.clone())
+            .send(slice::from_ref(&(recv_addr, name)), 1, msg1.clone())
             .await
             .0?;
 
         let mut msg1_received = false;
 
         if let Some((_src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-            assert_eq!(msg, msg1);
+            assert_eq!(WireMsg::deserialize(msg)?, msg1);
             msg1_received = true;
         }
 
@@ -491,7 +514,11 @@ mod tests {
 
         // Send a message to establish the connection
         comm1
-            .send(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
+            .send(
+                slice::from_ref(&(addr0, XorName::random())),
+                1,
+                new_ping_message(),
+            )
             .await
             .0?;
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));
@@ -505,13 +532,19 @@ mod tests {
 
         Ok(())
     }
-     */
 
     fn transport_config() -> Config {
         Config {
             local_ip: Some(Ipv4Addr::LOCALHOST.into()),
             ..Default::default()
         }
+    }
+
+    fn new_ping_message() -> MessageType {
+        MessageType::Ping(HeaderInfo {
+            dest: XorName::random(),
+            dest_section_pk: bls::SecretKey::random().public_key(),
+        })
     }
 
     struct Peer {
@@ -548,6 +581,7 @@ mod tests {
         }
     }
 
+    #[allow(unused)]
     async fn get_invalid_addr() -> Result<SocketAddr> {
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let addr = socket.local_addr()?;
