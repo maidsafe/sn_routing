@@ -92,6 +92,7 @@ impl Proposal {
     }
 
     #[cfg(test)]
+    #[allow(unused)]
     pub fn as_signable(&self) -> SignableView {
         SignableView(self)
     }
