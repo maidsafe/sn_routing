@@ -448,7 +448,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let chain = SectionChain::new(sk_set.secret_key().public_key());
 
     // Creates nodes where everybody has age 6 except the last one who has 5.
-    let mut nodes: Vec<_> = gen_sorted_nodes(ELDER_SIZE)
+    let mut nodes: Vec<_> = gen_sorted_nodes(&Prefix::default(), ELDER_SIZE)
         .into_iter()
         .enumerate()
         .map(|(index, node)| {

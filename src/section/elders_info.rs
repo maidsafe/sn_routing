@@ -103,16 +103,22 @@ pub(crate) mod test_utils {
     }
 
     // Create `count` Nodes sorted by their names.
-    pub(crate) fn gen_sorted_nodes(count: usize) -> Vec<Node> {
+    pub(crate) fn gen_sorted_nodes(prefix: &Prefix, count: usize) -> Vec<Node> {
         (0..count)
-            .map(|_| Node::new(crypto::gen_keypair(), gen_addr()).with_age(MIN_AGE + 1))
+            .map(|_| {
+                Node::new(
+                    crypto::gen_keypair_within_range(&prefix.range_inclusive()),
+                    gen_addr(),
+                )
+                .with_age(MIN_AGE + 1)
+            })
             .sorted_by_key(|node| node.name())
             .collect()
     }
 
     // Generate random `EldersInfo` for testing purposes.
     pub(crate) fn gen_elders_info(prefix: Prefix, count: usize) -> (EldersInfo, Vec<Node>) {
-        let nodes = gen_sorted_nodes(count);
+        let nodes = gen_sorted_nodes(&prefix, count);
         let elders = nodes
             .iter()
             .map(Node::peer)
