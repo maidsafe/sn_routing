@@ -12,6 +12,7 @@ use anyhow::{format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_data_types::Keypair;
+use sn_messaging::client::ProcessMsg;
 use sn_messaging::{
     client::{Message, Query, TransferQuery},
     location::{Aggregation, Itinerary},
@@ -20,8 +21,8 @@ use sn_messaging::{
 use sn_routing::{Config, Error, Event, NodeElderChange};
 use std::net::{IpAddr, Ipv4Addr};
 use utils::*;
+use xor_name::XorName;
 
-/*
 #[tokio::test]
 async fn test_messages_client_node() -> Result<()> {
     let (node, mut event_stream) = create_node(Config {
@@ -45,6 +46,7 @@ async fn test_messages_client_node() -> Result<()> {
     config.local_ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let node_addr = node.our_connection_info();
+    let section_key = node.section_chain().await.last_key().clone();
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
@@ -56,19 +58,20 @@ async fn test_messages_client_node() -> Result<()> {
         end_user: pk,
         socketaddr_sig,
     };
-    let registration_bytes = WireMsg::serialize_sectioninfo_msg(&registration)?;
+    let registration_bytes =
+        WireMsg::serialize_sectioninfo_msg(&registration, XorName::from(pk), section_key.clone())?;
 
     client_endpoint
         .send_message(registration_bytes, &node_addr)
         .await?;
 
-    let query = Message::Query {
+    let query = Message::Process(ProcessMsg::Query {
         query: Query::Transfer(TransferQuery::GetBalance(pk)),
         id,
-        target_section_pk: None,
-    };
+    });
     let query_clone = query.clone();
-    let client_msg_bytes = WireMsg::serialize_client_msg(&query)?;
+    let client_msg_bytes =
+        WireMsg::serialize_client_msg(&query, XorName::from(pk), section_key.clone())?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -82,8 +85,9 @@ async fn test_messages_client_node() -> Result<()> {
                             dst: DstLocation::EndUser(user),
                             aggregation: Aggregation::None,
                         },
-                        query_clone.clone().serialize()?,
-                        None,
+                        query_clone
+                            .clone()
+                            .serialize(XorName::from(pk), section_key.clone())?,
                     )
                     .await?;
                     break;
@@ -102,7 +106,7 @@ async fn test_messages_client_node() -> Result<()> {
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let expected_bytes = query.serialize()?;
+        let expected_bytes = query.serialize(XorName::from(pk), section_key.clone())?;
         assert_eq!(resp, expected_bytes);
     }
 
@@ -199,4 +203,3 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     Err(format_err!("message not received"))
 }
- */

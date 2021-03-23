@@ -6,45 +6,85 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
-    Comm, Command, Core, Dispatcher,
-};
-use crate::{
-    agreement::{test_utils::*, Proposal, Proven},
-    crypto,
-    event::Event,
-    messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
-    network::Network,
-    node::Node,
-    peer::Peer,
-    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
-    section::{
-        test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
-        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
-    },
-    supermajority, ELDER_SIZE,
-};
-use anyhow::Result;
-use assert_matches::assert_matches;
-use bls_signature_aggregator::Proof;
-use bytes::Bytes;
-use resource_proof::ResourceProof;
-use sn_messaging::{
-    location::{Aggregation, Itinerary},
-    node::NodeMessage,
-    section_info::{GetSectionResponse, Message as SectionInfoMsg},
-    DstLocation, MessageType, SrcLocation,
-};
-use std::{
-    collections::{BTreeSet, HashSet},
-    iter,
-    net::Ipv4Addr,
-    ops::Deref,
-};
-use tokio::sync::mpsc;
-use tokio::time::{timeout, Duration};
-use xor_name::{Prefix, XorName};
+// use super::{
+//     approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
+//     Approved, Comm, Command, Stage,
+// };
+// use crate::{
+//     consensus::{test_utils::*, Proven, Vote},
+//     crypto,
+//     event::Event,
+//     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
+//     network::Network,
+//     node::Node,
+//     peer::Peer,
+//     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
+//     section::{
+//         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
+//         MIN_AGE,
+//     },
+//     supermajority, ELDER_SIZE,
+// };
+// use anyhow::Result;
+// use assert_matches::assert_matches;
+// use bls_signature_aggregator::Proof;
+// use bytes::Bytes;
+// use resource_proof::ResourceProof;
+// use sn_messaging::{
+//     location::{Aggregation, Itinerary},
+//     node::NodeMessage,
+//     section_info::{GetSectionResponse, Message as SectionInfoMsg},
+//     DstLocation, MessageType, SrcLocation,
+// };
+// use std::{
+//     collections::{BTreeSet, HashSet},
+//     iter,
+//     net::Ipv4Addr,
+//     ops::Deref,
+// };
+// use tokio::sync::mpsc;
+// use tokio::time::{timeout, Duration};
+// use xor_name::{Prefix, XorName};
+// use super::{
+//     approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
+//     Approved, Comm, Command, Stage,
+// };
+// use crate::{
+//     consensus::{test_utils::*, Proven, Vote},
+//     crypto,
+//     event::Event,
+//     majority,
+//     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
+//     network::Network,
+//     node::Node,
+//     peer::Peer,
+//     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
+//     section::{
+//         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
+//         MIN_AGE,
+//     },
+//     ELDER_SIZE,
+// };
+// use anyhow::Result;
+// use assert_matches::assert_matches;
+// use bls_signature_aggregator::Proof;
+// use bytes::Bytes;
+// use resource_proof::ResourceProof;
+// use sn_messaging::{
+//     location::{Aggregation, Itinerary},
+//     node::NodeMessage,
+//     section_info::{GetSectionResponse, Message as SectionInfoMsg},
+//     DstLocation, MessageType, SrcLocation,
+// };
+// use std::{
+//     collections::{BTreeSet, HashSet},
+//     iter,
+//     net::Ipv4Addr,
+//     ops::Deref,
+// };
+// use tokio::sync::mpsc;
+// use tokio::time::{timeout, Duration};
+// use xor_name::{Prefix, XorName};
 
 /*
 #[tokio::test]
