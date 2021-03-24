@@ -14,7 +14,6 @@ use crate::{
     consensus::{test_utils::*, Proven, Vote},
     crypto,
     event::Event,
-    majority,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
     network::Network,
     node::Node,
@@ -24,7 +23,7 @@ use crate::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
         MIN_AGE,
     },
-    ELDER_SIZE,
+    supermajority, ELDER_SIZE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -1451,7 +1450,7 @@ async fn relocation_of_non_elder() -> Result<()> {
     relocation(RelocatedPeerRole::NonElder).await
 }
 
-const THRESHOLD: usize = majority(ELDER_SIZE) - 1;
+const THRESHOLD: usize = supermajority(ELDER_SIZE) - 1;
 
 #[allow(dead_code)]
 enum RelocatedPeerRole {

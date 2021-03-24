@@ -107,23 +107,38 @@ pub const RECOMMENDED_SECTION_SIZE: usize = 2 * ELDER_SIZE;
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
 
-/// Number of votes required to agree
-/// with a strict majority (i.e. > 50%)
+/// Number of votes required to agree with a supermajority (i.e. > 2/3)
 #[inline]
-pub(crate) const fn majority(num_possible_voters: usize) -> usize {
-    1 + (num_possible_voters / 2)
+pub(crate) const fn supermajority(num_possible_voters: usize) -> usize {
+    1 + num_possible_voters * 2 / 3
 }
+
 #[cfg(test)]
 mod tests {
-    use super::majority;
+    use super::supermajority;
     use proptest::prelude::*;
+
+    #[test]
+    fn supermajority_of_small_group() {
+        assert_eq!(supermajority(0), 1);
+        assert_eq!(supermajority(1), 1);
+        assert_eq!(supermajority(2), 2);
+        assert_eq!(supermajority(3), 3);
+        assert_eq!(supermajority(4), 3);
+        assert_eq!(supermajority(5), 4);
+        assert_eq!(supermajority(6), 5);
+        assert_eq!(supermajority(7), 5);
+        assert_eq!(supermajority(8), 6);
+        assert_eq!(supermajority(9), 7);
+    }
 
     proptest! {
         #[test]
-        fn proptest_strict_majority(a in any::<usize>()) {
-            let maj = majority(a);
-            let maj_double = maj * 2;
-            assert!(maj_double == a + 1 || maj_double == a + 2);
+        fn proptest_supermajority(a in 0usize..10000) {
+            let n = 3 * a;
+            assert_eq!(supermajority(n),     2 * a + 1);
+            assert_eq!(supermajority(n + 1), 2 * a + 1);
+            assert_eq!(supermajority(n + 2), 2 * a + 2);
         }
     }
 }

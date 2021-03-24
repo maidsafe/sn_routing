@@ -218,7 +218,7 @@ impl Section {
 
         if expected_names == current_names {
             vec![]
-        } else if expected_names.len() < crate::majority(current_names.len()) {
+        } else if expected_names.len() < crate::supermajority(current_names.len()) {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
