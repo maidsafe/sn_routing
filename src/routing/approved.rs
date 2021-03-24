@@ -8,7 +8,7 @@
 
 use super::{
     enduser_registry::{EndUserRegistry, SocketId},
-    Command, SplitBarrier,
+    lazy_messaging, Command, SplitBarrier,
 };
 use crate::{
     consensus::{
@@ -51,12 +51,7 @@ use sn_messaging::{
     },
     Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
-use std::{
-    cmp::{self, Ordering},
-    iter,
-    net::SocketAddr,
-    slice,
-};
+use std::{cmp, iter, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -700,7 +695,7 @@ impl Approved {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
                     msg.src().peer(sender)?,
-                    *msg.dst_key(),
+                    msg.dst_key().copied(),
                     *message.clone(),
                 )?])
             }
@@ -1981,37 +1976,6 @@ impl Approved {
         }
     }
 
-    fn send_other_section(
-        &mut self,
-        dst: XorName,
-        nonce: MessageHash,
-        dst_key: Option<bls::PublicKey>,
-    ) -> Result<Option<Command>> {
-        let dst_knowledge = self
-            .network
-            .knowledge_by_name(&dst)
-            .unwrap_or_else(|| self.section.chain().root_key());
-        let proof_chain = self
-            .section
-            .chain()
-            .minimize(vec![self.section.chain().last_key(), dst_knowledge])?;
-
-        let variant = Variant::OtherSection {
-            elders_info: self.section.proven_elders_info().clone(),
-            nonce,
-        };
-        trace!("sending {:?}", variant);
-        let msg = Message::single_src(
-            &self.node,
-            DstLocation::Section(dst),
-            variant,
-            Some(proof_chain),
-            dst_key,
-        )?;
-
-        self.relay_message(&msg)
-    }
-
     fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
         // Send to all participants.
         let recipients: Vec<_> = elders_info.elders.values().copied().collect();
@@ -2331,50 +2295,15 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        let src_name = msg.src().name();
-        let src_prefix = self
-            .matching_section(&src_name)
-            .1
-            .map(|elders_info| &elders_info.prefix);
-        let src_key = msg.proof_chain_last_key();
+        let actions = lazy_messaging::process(&self.node, &self.section, &self.network, msg)?;
+        let mut commands = vec![];
 
-        let mut commands = Vec::new();
-        let mut send_other_section = false;
-
-        if let Some(src_prefix) = src_prefix {
-            if !src_prefix.matches(&self.node.name())
-                && !src_key
-                    .map(|src_key| self.network.has_key(src_key))
-                    .unwrap_or(false)
-            {
-                send_other_section = true;
-            }
+        for msg in actions.send {
+            commands.extend(self.relay_message(&msg)?);
         }
 
-        if let Some(new) = msg.dst_key() {
-            if let Some(src_prefix) = src_prefix {
-                let old = self
-                    .network
-                    .knowledge_by_name(&src_name)
-                    .unwrap_or_else(|| self.section.chain().root_key());
-
-                if self.section.chain().cmp_by_position(new, old) == Ordering::Greater {
-                    commands.extend(self.vote(Vote::TheirKnowledge {
-                        prefix: *src_prefix,
-                        key: *new,
-                    })?);
-                }
-            }
-
-            if new != self.section.chain().last_key() {
-                send_other_section = true;
-            }
-        }
-
-        if send_other_section {
-            // TODO: if src has split, consider sending to all child prefixes.
-            let dst_key = self.network.key_by_name(&src_name).cloned();
-            commands.extend(self.send_other_section(src_name, *msg.hash(), dst_key)?)
+        for vote in actions.vote {
+            commands.extend(self.vote(vote)?);
         }
 
         Ok(commands)

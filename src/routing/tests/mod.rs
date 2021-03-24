@@ -1004,7 +1004,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         if let Variant::BouncedUntrustedMessage(bounced_message) = message.variant() {
             assert_eq!(recipients, expected_recipients);
             assert_eq!(**bounced_message, original_message);
-            assert_eq!(*message.dst_key(), Some(pk0));
+            assert_eq!(message.dst_key(), Some(&pk0));
 
             bounce_sent = true;
         }

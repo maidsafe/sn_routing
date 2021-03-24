@@ -342,8 +342,8 @@ impl Message {
     }
 
     /// Getter
-    pub fn dst_key(&self) -> &Option<bls::PublicKey> {
-        &self.dst_key
+    pub fn dst_key(&self) -> Option<&bls::PublicKey> {
+        self.dst_key.as_ref()
     }
     /// Getter
     pub fn hash(&self) -> &MessageHash {

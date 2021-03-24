@@ -13,6 +13,7 @@ mod bootstrap;
 mod comm;
 mod enduser_registry;
 mod event_stream;
+mod lazy_messaging;
 mod split_barrier;
 mod stage;
 #[cfg(test)]
