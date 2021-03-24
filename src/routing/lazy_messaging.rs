@@ -26,38 +26,36 @@ pub(crate) fn process(
     network: &Network,
     msg: &Message,
 ) -> Result<Actions> {
-    let src_name = msg.src().name();
-    let src_prefix = if section.prefix().matches(&src_name) {
-        Some(section.prefix())
-    } else {
-        network
-            .section_by_name(&src_name)
-            .1
-            .map(|info| &info.prefix)
-    };
-    let src_key = msg.proof_chain_last_key();
-
     let mut actions = Actions::default();
     let mut send_other_section = false;
 
-    if let Some(src_prefix) = src_prefix {
-        if !src_prefix.matches(&node.name())
-            && !src_key
-                .map(|src_key| network.has_key(src_key))
-                .unwrap_or(false)
-        {
-            send_other_section = true;
-        }
+    let src_name = msg.src().name();
+    if section.prefix().matches(&src_name) {
+        // This message is from our section. We update our members via the `Sync` message which is
+        // done elsewhere.
+        return Ok(actions);
+    }
+
+    let src_key = msg.proof_chain_last_key();
+    if !src_key
+        .map(|src_key| network.has_key(src_key))
+        .unwrap_or(false)
+    {
+        send_other_section = true;
     }
 
     if let Some(new) = msg.dst_key() {
+        let src_prefix = network
+            .section_by_name(&src_name)
+            .1
+            .map(|info| &info.prefix);
         if let Some(src_prefix) = src_prefix {
             let old = network
                 .knowledge_by_name(&src_name)
                 .unwrap_or_else(|| section.chain().root_key());
 
             if section.chain().cmp_by_position(new, old) == Ordering::Greater {
-                actions.vote.push(Vote::TheirKnowledge {
+                actions.vote = Some(Vote::TheirKnowledge {
                     prefix: *src_prefix,
                     key: *new,
                 });
@@ -70,9 +68,8 @@ pub(crate) fn process(
     }
 
     if send_other_section {
-        // TODO: if src has split, consider sending to all child prefixes.
         let dst_key = network.key_by_name(&src_name).cloned();
-        actions.send.push(create_other_section_message(
+        actions.send = Some(create_other_section_message(
             node,
             section,
             network,
@@ -116,10 +113,10 @@ fn create_other_section_message(
 
 #[derive(Default)]
 pub(crate) struct Actions {
-    // Messages to send.
-    pub send: Vec<Message>,
-    // Votes to cast.
-    pub vote: Vec<Vote>,
+    // Message to send.
+    pub send: Option<Message>,
+    // Vote to cast.
+    pub vote: Option<Vote>,
 }
 
 #[cfg(test)]
@@ -151,23 +148,23 @@ mod tests {
         )?;
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
-        assert_eq!(actions.send, []);
-        assert_eq!(actions.vote, []);
+        assert_eq!(actions.send, None);
+        assert_eq!(actions.vote, None);
 
         Ok(())
     }
 
     #[test]
-    fn unknown_src_key() -> Result<()> {
+    fn new_src_key_from_other_section() -> Result<()> {
         let env = Env::new(1)?;
 
-        let their_pk_old = env.their_sk.public_key();
-        let their_pk_new = bls::SecretKey::random().public_key();
-        let mut proof_chain = SectionChain::new(env.their_sk.public_key());
+        let their_old_pk = env.their_sk.public_key();
+        let their_new_pk = bls::SecretKey::random().public_key();
+        let mut proof_chain = SectionChain::new(their_old_pk);
         proof_chain.insert(
-            &their_pk_old,
-            their_pk_new,
-            env.their_sk.sign(&bincode::serialize(&their_pk_new)?),
+            &their_old_pk,
+            their_new_pk,
+            env.their_sk.sign(&bincode::serialize(&their_new_pk)?),
         )?;
 
         let msg = env.create_message(
@@ -178,20 +175,44 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.vote, []);
-        assert_matches!(&actions.send[..], &[ref message] => {
+        assert_eq!(actions.vote, None);
+        assert_matches!(&actions.send, Some(message) => {
             assert_matches!(
                 message.variant(),
                 Variant::OtherSection { elders_info, .. } => {
                     assert_eq!(&elders_info.value, env.section.elders_info())
                 }
             );
-            assert_eq!(message.dst_key(), Some(&their_pk_old));
+            assert_eq!(message.dst_key(), Some(&their_old_pk));
             assert_matches!(message.proof_chain(), Ok(chain) => {
                 assert_eq!(chain.len(), 1);
                 assert_eq!(chain.last_key(), env.section.chain().last_key());
             });
         });
+
+        Ok(())
+    }
+
+    #[test]
+    fn new_src_key_from_our_section() -> Result<()> {
+        let env = Env::new(1)?;
+
+        let our_old_pk = env.our_sk.public_key();
+        let our_new_sk = bls::SecretKey::random();
+        let our_new_pk = our_new_sk.public_key();
+        let mut proof_chain = SectionChain::new(our_old_pk);
+        proof_chain.insert(
+            &our_old_pk,
+            our_new_pk,
+            env.our_sk.sign(&bincode::serialize(&our_new_pk)?),
+        )?;
+
+        let msg = env.create_message(env.section.prefix(), proof_chain, our_new_pk)?;
+
+        let actions = process(&env.node, &env.section, &env.network, &msg)?;
+
+        assert_eq!(actions.send, None);
+        assert_eq!(actions.vote, None);
 
         Ok(())
     }
@@ -209,8 +230,8 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.vote, []);
-        assert_matches!(&actions.send[..], &[ref message] => {
+        assert_eq!(actions.vote, None);
+        assert_matches!(&actions.send, Some(message) => {
             assert_matches!(message.variant(), Variant::OtherSection { .. });
             assert_matches!(message.proof_chain(), Ok(chain) => {
                 assert_eq!(chain, env.section.chain());
@@ -221,7 +242,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn outdated_dst_key_from_our_section() -> Result<()> {
         let env = Env::new(2)?;
 
@@ -234,8 +254,8 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.send, []);
-        assert_eq!(actions.vote, []);
+        assert_eq!(actions.send, None);
+        assert_eq!(actions.vote, None);
 
         Ok(())
     }
@@ -259,10 +279,10 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.send, []);
-        assert_matches!(&actions.vote[..], &[Vote::TheirKnowledge { prefix, key }] => {
-            assert_eq!(prefix, env.their_prefix);
-            assert_eq!(key, *env.section.chain().last_key());
+        assert_eq!(actions.send, None);
+        assert_matches!(&actions.vote, Some(Vote::TheirKnowledge { prefix, key }) => {
+            assert_eq!(prefix, &env.their_prefix);
+            assert_eq!(key, env.section.chain().last_key());
         });
 
         Ok(())

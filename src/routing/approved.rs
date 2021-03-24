@@ -2298,11 +2298,11 @@ impl Approved {
         let actions = lazy_messaging::process(&self.node, &self.section, &self.network, msg)?;
         let mut commands = vec![];
 
-        for msg in actions.send {
+        if let Some(msg) = actions.send {
             commands.extend(self.relay_message(&msg)?);
         }
 
-        for vote in actions.vote {
+        if let Some(vote) = actions.vote {
             commands.extend(self.vote(vote)?);
         }
 
