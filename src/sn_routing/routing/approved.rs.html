@@ -2321,101 +2321,6 @@
 <span id="2320">2320</span>
 <span id="2321">2321</span>
 <span id="2322">2322</span>
-<span id="2323">2323</span>
-<span id="2324">2324</span>
-<span id="2325">2325</span>
-<span id="2326">2326</span>
-<span id="2327">2327</span>
-<span id="2328">2328</span>
-<span id="2329">2329</span>
-<span id="2330">2330</span>
-<span id="2331">2331</span>
-<span id="2332">2332</span>
-<span id="2333">2333</span>
-<span id="2334">2334</span>
-<span id="2335">2335</span>
-<span id="2336">2336</span>
-<span id="2337">2337</span>
-<span id="2338">2338</span>
-<span id="2339">2339</span>
-<span id="2340">2340</span>
-<span id="2341">2341</span>
-<span id="2342">2342</span>
-<span id="2343">2343</span>
-<span id="2344">2344</span>
-<span id="2345">2345</span>
-<span id="2346">2346</span>
-<span id="2347">2347</span>
-<span id="2348">2348</span>
-<span id="2349">2349</span>
-<span id="2350">2350</span>
-<span id="2351">2351</span>
-<span id="2352">2352</span>
-<span id="2353">2353</span>
-<span id="2354">2354</span>
-<span id="2355">2355</span>
-<span id="2356">2356</span>
-<span id="2357">2357</span>
-<span id="2358">2358</span>
-<span id="2359">2359</span>
-<span id="2360">2360</span>
-<span id="2361">2361</span>
-<span id="2362">2362</span>
-<span id="2363">2363</span>
-<span id="2364">2364</span>
-<span id="2365">2365</span>
-<span id="2366">2366</span>
-<span id="2367">2367</span>
-<span id="2368">2368</span>
-<span id="2369">2369</span>
-<span id="2370">2370</span>
-<span id="2371">2371</span>
-<span id="2372">2372</span>
-<span id="2373">2373</span>
-<span id="2374">2374</span>
-<span id="2375">2375</span>
-<span id="2376">2376</span>
-<span id="2377">2377</span>
-<span id="2378">2378</span>
-<span id="2379">2379</span>
-<span id="2380">2380</span>
-<span id="2381">2381</span>
-<span id="2382">2382</span>
-<span id="2383">2383</span>
-<span id="2384">2384</span>
-<span id="2385">2385</span>
-<span id="2386">2386</span>
-<span id="2387">2387</span>
-<span id="2388">2388</span>
-<span id="2389">2389</span>
-<span id="2390">2390</span>
-<span id="2391">2391</span>
-<span id="2392">2392</span>
-<span id="2393">2393</span>
-<span id="2394">2394</span>
-<span id="2395">2395</span>
-<span id="2396">2396</span>
-<span id="2397">2397</span>
-<span id="2398">2398</span>
-<span id="2399">2399</span>
-<span id="2400">2400</span>
-<span id="2401">2401</span>
-<span id="2402">2402</span>
-<span id="2403">2403</span>
-<span id="2404">2404</span>
-<span id="2405">2405</span>
-<span id="2406">2406</span>
-<span id="2407">2407</span>
-<span id="2408">2408</span>
-<span id="2409">2409</span>
-<span id="2410">2410</span>
-<span id="2411">2411</span>
-<span id="2412">2412</span>
-<span id="2413">2413</span>
-<span id="2414">2414</span>
-<span id="2415">2415</span>
-<span id="2416">2416</span>
-<span id="2417">2417</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2427,7 +2332,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{
     <span class="ident">enduser_registry</span>::{<span class="ident">EndUserRegistry</span>, <span class="ident">SocketId</span>},
-    <span class="ident">Command</span>, <span class="ident">SplitBarrier</span>,
+    <span class="ident">lazy_messaging</span>, <span class="ident">Command</span>, <span class="ident">SplitBarrier</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">consensus</span>::{
@@ -2470,12 +2375,7 @@
     },
     <span class="ident">Aggregation</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">SrcLocation</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">cmp</span>::{<span class="self">self</span>, <span class="ident">Ordering</span>},
-    <span class="ident">iter</span>,
-    <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
-    <span class="ident">slice</span>,
-};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cmp</span>, <span class="ident">iter</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">slice</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
 
@@ -2938,13 +2838,7 @@
             <span class="ident">content</span>: <span class="ident">vote</span>,
             <span class="ident">proof_share</span>,
         };
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-            <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
-            <span class="ident">variant</span>,
-            <span class="prelude-val">None</span>,
-            <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()),
-        )<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">send_or_handle</span>(<span class="ident">message</span>, <span class="ident">recipients</span>))
     }
@@ -2980,7 +2874,7 @@
 
     <span class="kw">fn</span> <span class="ident">decide_message_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">MessageStatus</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
-            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">OtherSection</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Unknown</span>);
                 }
@@ -3086,9 +2980,9 @@
         };
 
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
-            <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="ident">msg</span>.<span class="ident">dst</span>().<span class="ident">is_section</span>() {
-                    <span class="self">self</span>.<span class="ident">handle_neighbour_info</span>(
+                    <span class="self">self</span>.<span class="ident">handle_other_section</span>(
                         <span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">clone</span>(),
                         <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>()<span class="question-mark">?</span>,
                     )
@@ -3119,7 +3013,7 @@
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">handle_bounced_untrusted_message</span>(
                     <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>,
-                    <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">dst_key</span>(),
+                    <span class="ident">msg</span>.<span class="ident">dst_key</span>().<span class="ident">copied</span>(),
                     <span class="kw-2">*</span><span class="ident">message</span>.<span class="ident">clone</span>(),
                 )<span class="question-mark">?</span>])
             }
@@ -3425,7 +3319,7 @@
         ])
     }
 
-    <span class="kw">fn</span> <span class="ident">handle_neighbour_info</span>(
+    <span class="kw">fn</span> <span class="ident">handle_other_section</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
         <span class="ident">src_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
@@ -3446,9 +3340,7 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
-        <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span>.<span class="ident">is_neighbour</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) {
-            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>))<span class="question-mark">?</span>);
-        }
+        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>))<span class="question-mark">?</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
@@ -4044,12 +3936,10 @@
 
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">OurElders</span>(<span class="ident">elders_info</span>))<span class="question-mark">?</span>);
             }
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="self">self</span>
-            .<span class="ident">network</span>
-            .<span class="ident">update_neighbour_info</span>(<span class="ident">elders_info</span>, <span class="prelude-val">None</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>())
-        {
-            <span class="comment">// Other section</span>
-            <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">prune_neighbours</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
+        } <span class="kw">else</span> {
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
+                .<span class="ident">network</span>
+                .<span class="ident">update_section</span>(<span class="ident">elders_info</span>, <span class="prelude-val">None</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>());
         }
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
@@ -4404,37 +4294,6 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">send_neighbour_info</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">dst</span>: <span class="ident">XorName</span>,
-        <span class="ident">nonce</span>: <span class="ident">MessageHash</span>,
-        <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">dst_knowledge</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">network</span>
-            .<span class="ident">knowledge_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>)
-            .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">root_key</span>());
-        <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">chain</span>()
-            .<span class="ident">minimize</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(), <span class="ident">dst_knowledge</span>])<span class="question-mark">?</span>;
-
-        <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">NeighbourInfo</span> {
-            <span class="ident">elders_info</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_elders_info</span>().<span class="ident">clone</span>(),
-            <span class="ident">nonce</span>,
-        };
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;sending NeighbourInfo {:?}&quot;</span>, <span class="ident">variant</span>);
-        <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-            <span class="ident">DstLocation</span>::<span class="ident">Section</span>(<span class="ident">dst</span>),
-            <span class="ident">variant</span>,
-            <span class="prelude-val">Some</span>(<span class="ident">proof_chain</span>),
-            <span class="ident">dst_key</span>,
-        )<span class="question-mark">?</span>;
-
-        <span class="self">self</span>.<span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)
-    }
-
     <span class="kw">fn</span> <span class="ident">send_dkg_start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// Send to all participants.</span>
         <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">values</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
@@ -4448,6 +4307,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Send DKGStart for {} to {:?}&quot;</span>, <span class="ident">elders_info</span>, <span class="ident">recipients</span>);
 
+        <span class="kw">let</span> <span class="ident">src_prefix</span> <span class="op">=</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span>;
         <span class="kw">let</span> <span class="ident">generation</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">main_branch_len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="kw">let</span> <span class="ident">dkg_key</span> <span class="op">=</span> <span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>, <span class="ident">generation</span>);
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DKGStart</span> {
@@ -4456,7 +4316,7 @@
         };
 
         <span class="self">self</span>.<span class="ident">send_message_for_dst_accumulation</span>(
-            <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">name</span>(),
+            <span class="ident">src_prefix</span>.<span class="ident">name</span>(),
             <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
             <span class="ident">variant</span>,
             <span class="prelude-val">None</span>,
@@ -4754,65 +4614,15 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
-        <span class="kw">let</span> <span class="ident">src_name</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">name</span>();
-        <span class="kw">let</span> <span class="ident">src_prefix</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">matching_section</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>)
-            .<span class="number">1</span>
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">elders_info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">elders_info</span>.<span class="ident">prefix</span>);
+        <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">lazy_messaging</span>::<span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>, <span class="ident">msg</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">let</span> <span class="ident">src_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">key</span>) <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>() {
-            <span class="ident">key</span>
-        } <span class="kw">else</span> {
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-        };
-
-        <span class="kw">let</span> <span class="ident">is_neighbour</span> <span class="op">=</span> <span class="ident">src_prefix</span>
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">src_prefix</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_neighbour</span>(<span class="ident">src_prefix</span>))
-            .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>);
-
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">vote_send_neighbour_info</span> <span class="op">=</span> <span class="bool-val">false</span>;
-
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">src_prefix</span>) <span class="op">=</span> <span class="ident">src_prefix</span> {
-            <span class="kw">if</span> <span class="op">!</span><span class="ident">src_prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">network</span>.<span class="ident">has_key</span>(<span class="ident">src_key</span>) {
-                <span class="comment">// Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys</span>
-                <span class="comment">// via `NeighbourInfo`.</span>
-                <span class="kw">if</span> <span class="ident">is_neighbour</span> {
-                    <span class="ident">vote_send_neighbour_info</span> <span class="op">=</span> <span class="bool-val">true</span>;
-                } <span class="kw">else</span> {
-                    <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">TheirKey</span> {
-                        <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="ident">src_prefix</span>,
-                        <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">src_key</span>,
-                    })<span class="question-mark">?</span>);
-                }
-            }
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="ident">actions</span>.<span class="ident">send</span> {
+            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">relay_message</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>);
         }
 
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">new</span>) <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">dst_key</span>() {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">src_prefix</span>) <span class="op">=</span> <span class="ident">src_prefix</span> {
-                <span class="kw">let</span> <span class="ident">old</span> <span class="op">=</span> <span class="self">self</span>
-                    .<span class="ident">network</span>
-                    .<span class="ident">knowledge_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>)
-                    .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">root_key</span>());
-
-                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">cmp_by_position</span>(<span class="ident">new</span>, <span class="ident">old</span>) <span class="op">=</span><span class="op">=</span> <span class="ident">Ordering</span>::<span class="ident">Greater</span> {
-                    <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> {
-                        <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="ident">src_prefix</span>,
-                        <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">new</span>,
-                    })<span class="question-mark">?</span>);
-                }
-            }
-
-            <span class="kw">if</span> <span class="ident">is_neighbour</span> <span class="op">&amp;&amp;</span> <span class="ident">new</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>() {
-                <span class="ident">vote_send_neighbour_info</span> <span class="op">=</span> <span class="bool-val">true</span>;
-            }
-        }
-
-        <span class="kw">if</span> <span class="ident">vote_send_neighbour_info</span> {
-            <span class="comment">// TODO: if src has split, consider sending to all child prefixes that are still our</span>
-            <span class="comment">// neighbours.</span>
-            <span class="kw">let</span> <span class="ident">dst_key</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>).<span class="ident">cloned</span>();
-            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_neighbour_info</span>(<span class="ident">src_name</span>, <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">hash</span>(), <span class="ident">dst_key</span>)<span class="question-mark">?</span>)
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">vote</span>) <span class="op">=</span> <span class="ident">actions</span>.<span class="ident">vote</span> {
+            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">vote</span>(<span class="ident">vote</span>)<span class="question-mark">?</span>);
         }
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)

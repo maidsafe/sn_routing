@@ -324,12 +324,12 @@
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="doccomment">/// Message variant</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Variant</span> {
-    <span class="doccomment">/// Inform neighbours about our new section.</span>
-    <span class="ident">NeighbourInfo</span> {
+    <span class="doccomment">/// Inform other sections about our section or vice-versa.</span>
+    <span class="ident">OtherSection</span> {
         <span class="doccomment">/// `EldersInfo` of the sender&#39;s section, with the proof chain.</span>
         <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Nonce that is derived from the incoming message that triggered sending this</span>
-        <span class="doccomment">/// `NeighbourInfo`. It&#39;s purpose is to make sure that `NeighbourInfo`s that are identical</span>
+        <span class="doccomment">/// message. It&#39;s purpose is to make sure that `OtherSection`s that are identical</span>
         <span class="doccomment">/// but triggered by different messages are not filtered out.</span>
         <span class="ident">nonce</span>: <span class="ident">MessageHash</span>,
     },
@@ -436,7 +436,7 @@
                 <span class="ident">proof_chain</span>
             }
             <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">section</span>.<span class="ident">chain</span>(),
-            <span class="self">Self</span>::<span class="ident">NeighbourInfo</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">proof_chain</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
 
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
@@ -459,8 +459,8 @@
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Variant</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">NeighbourInfo</span> { <span class="ident">elders_info</span>, <span class="ident">nonce</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;NeighbourInfo&quot;</span>)
+            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, <span class="ident">nonce</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;OtherSection&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;nonce&quot;</span>, <span class="ident">nonce</span>)
                 .<span class="ident">finish</span>(),

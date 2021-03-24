@@ -488,6 +488,7 @@
 <span id="487">487</span>
 <span id="488">488</span>
 <span id="489">489</span>
+<span id="490">490</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -504,6 +505,7 @@
 <span class="kw">mod</span> <span class="ident">comm</span>;
 <span class="kw">mod</span> <span class="ident">enduser_registry</span>;
 <span class="kw">mod</span> <span class="ident">event_stream</span>;
+<span class="kw">mod</span> <span class="ident">lazy_messaging</span>;
 <span class="kw">mod</span> <span class="ident">split_barrier</span>;
 <span class="kw">mod</span> <span class="ident">stage</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -764,8 +766,8 @@
             .<span class="ident">clone</span>()
     }
 
-    <span class="doccomment">/// Returns the info about our neighbour sections.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">neighbour_sections</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Returns the info about other sections in the network known to us.</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">other_sections</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">stage</span>
             .<span class="ident">state</span>
             .<span class="ident">lock</span>()

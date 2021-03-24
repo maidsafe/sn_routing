@@ -366,18 +366,6 @@
 <span id="365">365</span>
 <span id="366">366</span>
 <span id="367">367</span>
-<span id="368">368</span>
-<span id="369">369</span>
-<span id="370">370</span>
-<span id="371">371</span>
-<span id="372">372</span>
-<span id="373">373</span>
-<span id="374">374</span>
-<span id="375">375</span>
-<span id="376">376</span>
-<span id="377">377</span>
-<span id="378">378</span>
-<span id="379">379</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -528,24 +516,12 @@
 
 <span class="kw">impl</span> <span class="ident">State</span> {
     <span class="kw">fn</span> <span class="ident">update_elders</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>, <span class="ident">key_proof</span>: <span class="ident">Proof</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_elders</span>(<span class="ident">elders_info</span>, <span class="ident">key_proof</span>) {
-            <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">prune_neighbours</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-            <span class="bool-val">true</span>
-        } <span class="kw">else</span> {
-            <span class="bool-val">false</span>
-        }
+        <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_elders</span>(<span class="ident">elders_info</span>, <span class="ident">key_proof</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">update_sibling_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>, <span class="ident">key_proof</span>: <span class="ident">Proof</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">if</span> <span class="self">self</span>
-            .<span class="ident">network</span>
-            .<span class="ident">update_neighbour_info</span>(<span class="ident">elders_info</span>, <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>), <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>())
-        {
-            <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">prune_neighbours</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-            <span class="bool-val">true</span>
-        } <span class="kw">else</span> {
-            <span class="bool-val">false</span>
-        }
+        <span class="self">self</span>.<span class="ident">network</span>
+            .<span class="ident">update_section</span>(<span class="ident">elders_info</span>, <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>), <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>())
     }
 
     <span class="kw">fn</span> <span class="ident">update_their_key</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
