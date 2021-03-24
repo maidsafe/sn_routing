@@ -84,11 +84,8 @@ fn section_candidates(
         .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .unwrap_or_else(|| section.elders_info());
 
-    if info.prefix == *section.prefix() || info.prefix.is_neighbour(section.prefix()) {
+    if info.prefix == *section.prefix() {
         // Exclude our name since we don't need to send to ourself
-
-        // FIXME: only doing this for now to match RT.
-        // should confirm if needed esp after msg_relay changes.
         let section: Vec<_> = info
             .peers()
             .filter(|node| node.name() != our_name)
@@ -178,4 +175,279 @@ where
         .collect();
     list.truncate(cmp::min(list.len(), ELDER_SIZE));
     list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        consensus::test_utils::proven,
+        section::{
+            test_utils::{gen_addr, gen_elders_info},
+            EldersInfo, MemberInfo, SectionChain, MIN_AGE,
+        },
+    };
+    use anyhow::{Context, Result};
+    use rand::seq::IteratorRandom;
+    use xor_name::Prefix;
+
+    #[test]
+    fn delivery_targets_elder_to_our_elder() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let dst_name = *section
+            .elders_info()
+            .elders
+            .keys()
+            .filter(|&&name| name != our_name)
+            .choose(&mut rand::thread_rng())
+            .context("too few elders")?;
+
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send only to the dst node.
+        assert_eq!(dg_size, 1);
+        assert_eq!(recipients[0].name(), &dst_name);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_elder_to_our_adult() -> Result<()> {
+        let (our_name, mut section, network, sk) = setup_elder()?;
+
+        let dst_name = section.prefix().substituted_in(rand::random());
+        let peer = Peer::new(dst_name, gen_addr(), MIN_AGE + 1);
+        let member_info = MemberInfo::joined(peer);
+        let member_info = proven(&sk, member_info)?;
+        assert!(section.update_member(member_info));
+
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send only to the dst node.
+        assert_eq!(dg_size, 1);
+        assert_eq!(recipients[0].name(), &dst_name);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_elder_to_our_section() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let dst_name = section.prefix().substituted_in(rand::random());
+        let dst = DstLocation::Section(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all our elders except us.
+        let expected_recipients = section
+            .elders_info()
+            .peers()
+            .filter(|peer| peer.name() != &our_name);
+        assert_eq!(dg_size, expected_recipients.clone().count());
+        itertools::assert_equal(&recipients, expected_recipients);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_elder_to_known_remote_peer() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let elders_info1 = network
+            .get(&Prefix::default().pushed(true))
+            .context("unknown section")?;
+
+        let dst_name = choose_elder_name(elders_info1)?;
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send only to the dst node.
+        assert_eq!(dg_size, 1);
+        assert_eq!(recipients[0].name(), &dst_name);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_elder_to_unknown_remote_peer() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let elders_info1 = network
+            .get(&Prefix::default().pushed(true))
+            .context("unknown section")?;
+
+        let dst_name = elders_info1.prefix.substituted_in(rand::random());
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders in the dst section
+        let expected_recipients = elders_info1
+            .peers()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        assert_eq!(dg_size, elders_info1.elders.len());
+        itertools::assert_equal(&recipients, expected_recipients);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_elder_to_remote_section() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let elders_info1 = network
+            .get(&Prefix::default().pushed(true))
+            .context("unknown section")?;
+
+        let dst_name = elders_info1.prefix.substituted_in(rand::random());
+        let dst = DstLocation::Section(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders in the dst section
+        let expected_recipients = elders_info1
+            .peers()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        assert_eq!(dg_size, elders_info1.elders.len());
+        itertools::assert_equal(&recipients, expected_recipients);
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_adult_to_our_elder() -> Result<()> {
+        let (our_name, section, network) = setup_adult()?;
+
+        let dst_name = choose_elder_name(section.elders_info())?;
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders
+        assert_eq!(dg_size, section.elders_info().elders.len());
+        itertools::assert_equal(&recipients, section.elders_info().peers());
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_adult_to_our_adult() -> Result<()> {
+        let (our_name, section, network) = setup_adult()?;
+
+        let dst_name = section.prefix().substituted_in(rand::random());
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders
+        assert_eq!(dg_size, section.elders_info().elders.len());
+        itertools::assert_equal(&recipients, section.elders_info().peers());
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_adult_to_our_section() -> Result<()> {
+        let (our_name, section, network) = setup_adult()?;
+
+        let dst_name = section.prefix().substituted_in(rand::random());
+        let dst = DstLocation::Section(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders
+        assert_eq!(dg_size, section.elders_info().elders.len());
+        itertools::assert_equal(&recipients, section.elders_info().peers());
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_adult_to_remote_peer() -> Result<()> {
+        let (our_name, section, network) = setup_adult()?;
+
+        let dst_name = Prefix::default()
+            .pushed(true)
+            .substituted_in(rand::random());
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders
+        assert_eq!(dg_size, section.elders_info().elders.len());
+        itertools::assert_equal(&recipients, section.elders_info().peers());
+
+        Ok(())
+    }
+
+    #[test]
+    fn delivery_targets_adult_to_remote_section() -> Result<()> {
+        let (our_name, section, network) = setup_adult()?;
+
+        let dst_name = Prefix::default()
+            .pushed(true)
+            .substituted_in(rand::random());
+        let dst = DstLocation::Section(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders
+        assert_eq!(dg_size, section.elders_info().elders.len());
+        itertools::assert_equal(&recipients, section.elders_info().peers());
+
+        Ok(())
+    }
+
+    fn setup_elder() -> Result<(XorName, Section, Network, bls::SecretKey)> {
+        let prefix0 = Prefix::default().pushed(false);
+        let prefix1 = Prefix::default().pushed(true);
+
+        let sk = bls::SecretKey::random();
+        let pk = sk.public_key();
+        let chain = SectionChain::new(pk);
+
+        let (elders_info0, _) = gen_elders_info(prefix0, ELDER_SIZE);
+        let elders0: Vec<_> = elders_info0.peers().copied().collect();
+        let elders_info0 = proven(&sk, elders_info0)?;
+
+        let mut section = Section::new(chain, elders_info0)?;
+
+        for peer in elders0 {
+            let member_info = MemberInfo::joined(peer);
+            let member_info = proven(&sk, member_info)?;
+            assert!(section.update_member(member_info));
+        }
+
+        let mut network = Network::new();
+
+        let (elders_info1, _) = gen_elders_info(prefix1, ELDER_SIZE);
+        let elders_info1 = proven(&sk, elders_info1)?;
+        assert!(network.update_section(elders_info1, None, section.chain()));
+
+        let our_name = choose_elder_name(section.elders_info())?;
+
+        Ok((our_name, section, network, sk))
+    }
+
+    fn setup_adult() -> Result<(XorName, Section, Network)> {
+        let prefix0 = Prefix::default().pushed(false);
+
+        let sk = bls::SecretKey::random();
+        let pk = sk.public_key();
+        let chain = SectionChain::new(pk);
+
+        let (elders_info, _) = gen_elders_info(prefix0, ELDER_SIZE);
+        let elders_info = proven(&sk, elders_info)?;
+        let section = Section::new(chain, elders_info)?;
+
+        let network = Network::new();
+        let our_name = section.prefix().substituted_in(rand::random());
+
+        Ok((our_name, section, network))
+    }
+
+    fn choose_elder_name(elders_info: &EldersInfo) -> Result<XorName> {
+        elders_info
+            .elders
+            .keys()
+            .choose(&mut rand::thread_rng())
+            .copied()
+            .context("no elders")
+    }
 }

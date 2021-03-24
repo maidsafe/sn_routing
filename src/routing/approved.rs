@@ -8,7 +8,7 @@
 
 use super::{
     enduser_registry::{EndUserRegistry, SocketId},
-    Command, SplitBarrier,
+    lazy_messaging, Command, SplitBarrier,
 };
 use crate::{
     consensus::{
@@ -51,12 +51,7 @@ use sn_messaging::{
     },
     Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
-use std::{
-    cmp::{self, Ordering},
-    iter,
-    net::SocketAddr,
-    slice,
-};
+use std::{cmp, iter, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -519,13 +514,7 @@ impl Approved {
             content: vote,
             proof_share,
         };
-        let message = Message::single_src(
-            &self.node,
-            DstLocation::Direct,
-            variant,
-            None,
-            Some(*self.section.chain().last_key()),
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }
@@ -561,7 +550,7 @@ impl Approved {
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant() {
-            Variant::NeighbourInfo { .. } => {
+            Variant::OtherSection { .. } => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Unknown);
                 }
@@ -667,9 +656,9 @@ impl Approved {
         };
 
         match msg.variant() {
-            Variant::NeighbourInfo { elders_info, .. } => {
+            Variant::OtherSection { elders_info, .. } => {
                 if msg.dst().is_section() {
-                    self.handle_neighbour_info(
+                    self.handle_other_section(
                         elders_info.value.clone(),
                         *msg.proof_chain_last_key()?,
                     )
@@ -700,7 +689,7 @@ impl Approved {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
                     msg.src().peer(sender)?,
-                    *msg.dst_key(),
+                    msg.dst_key().copied(),
                     *message.clone(),
                 )?])
             }
@@ -1006,7 +995,7 @@ impl Approved {
         ])
     }
 
-    fn handle_neighbour_info(
+    fn handle_other_section(
         &self,
         elders_info: EldersInfo,
         src_key: bls::PublicKey,
@@ -1027,9 +1016,7 @@ impl Approved {
             return Ok(commands);
         }
 
-        if elders_info.prefix.is_neighbour(self.section.prefix()) {
-            commands.extend(self.vote(Vote::SectionInfo(elders_info))?);
-        }
+        commands.extend(self.vote(Vote::SectionInfo(elders_info))?);
 
         Ok(commands)
     }
@@ -1625,12 +1612,10 @@ impl Approved {
 
                 commands.extend(self.vote(Vote::OurElders(elders_info))?);
             }
-        } else if self
-            .network
-            .update_neighbour_info(elders_info, None, self.section.chain())
-        {
-            // Other section
-            self.network.prune_neighbours(self.section.prefix());
+        } else {
+            let _ = self
+                .network
+                .update_section(elders_info, None, self.section.chain());
         }
 
         Ok(commands)
@@ -1985,37 +1970,6 @@ impl Approved {
         }
     }
 
-    fn send_neighbour_info(
-        &mut self,
-        dst: XorName,
-        nonce: MessageHash,
-        dst_key: Option<bls::PublicKey>,
-    ) -> Result<Option<Command>> {
-        let dst_knowledge = self
-            .network
-            .knowledge_by_name(&dst)
-            .unwrap_or_else(|| self.section.chain().root_key());
-        let proof_chain = self
-            .section
-            .chain()
-            .minimize(vec![self.section.chain().last_key(), dst_knowledge])?;
-
-        let variant = Variant::NeighbourInfo {
-            elders_info: self.section.proven_elders_info().clone(),
-            nonce,
-        };
-        trace!("sending NeighbourInfo {:?}", variant);
-        let msg = Message::single_src(
-            &self.node,
-            DstLocation::Section(dst),
-            variant,
-            Some(proof_chain),
-            dst_key,
-        )?;
-
-        self.relay_message(&msg)
-    }
-
     fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
         // Send to all participants.
         let recipients: Vec<_> = elders_info.elders.values().copied().collect();
@@ -2029,6 +1983,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
 
+        let src_prefix = elders_info.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
         let dkg_key = DkgKey::new(&elders_info, generation);
         let variant = Variant::DKGStart {
@@ -2037,7 +1992,7 @@ impl Approved {
         };
 
         self.send_message_for_dst_accumulation(
-            self.section.prefix().name(),
+            src_prefix.name(),
             DstLocation::Direct,
             variant,
             None,
@@ -2335,65 +2290,15 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        let src_name = msg.src().name();
-        let src_prefix = self
-            .matching_section(&src_name)
-            .1
-            .map(|elders_info| &elders_info.prefix);
+        let actions = lazy_messaging::process(&self.node, &self.section, &self.network, msg)?;
+        let mut commands = vec![];
 
-        let src_key = if let Ok(key) = msg.proof_chain_last_key() {
-            key
-        } else {
-            return Ok(vec![]);
-        };
-
-        let is_neighbour = src_prefix
-            .map(|src_prefix| self.section.prefix().is_neighbour(src_prefix))
-            .unwrap_or(false);
-
-        let mut commands = Vec::new();
-        let mut vote_send_neighbour_info = false;
-
-        if let Some(src_prefix) = src_prefix {
-            if !src_prefix.matches(&self.node.name()) && !self.network.has_key(src_key) {
-                // Only vote `TheirKeyInfo` for non-neighbours. For neighbours, we update the keys
-                // via `NeighbourInfo`.
-                if is_neighbour {
-                    vote_send_neighbour_info = true;
-                } else {
-                    commands.extend(self.vote(Vote::TheirKey {
-                        prefix: *src_prefix,
-                        key: *src_key,
-                    })?);
-                }
-            }
+        if let Some(msg) = actions.send {
+            commands.extend(self.relay_message(&msg)?);
         }
 
-        if let Some(new) = msg.dst_key() {
-            if let Some(src_prefix) = src_prefix {
-                let old = self
-                    .network
-                    .knowledge_by_name(&src_name)
-                    .unwrap_or_else(|| self.section.chain().root_key());
-
-                if self.section.chain().cmp_by_position(new, old) == Ordering::Greater {
-                    commands.extend(self.vote(Vote::TheirKnowledge {
-                        prefix: *src_prefix,
-                        key: *new,
-                    })?);
-                }
-            }
-
-            if is_neighbour && new != self.section.chain().last_key() {
-                vote_send_neighbour_info = true;
-            }
-        }
-
-        if vote_send_neighbour_info {
-            // TODO: if src has split, consider sending to all child prefixes that are still our
-            // neighbours.
-            let dst_key = self.network.key_by_name(&src_name).cloned();
-            commands.extend(self.send_neighbour_info(src_name, *msg.hash(), dst_key)?)
+        if let Some(vote) = actions.vote {
+            commands.extend(self.vote(vote)?);
         }
 
         Ok(commands)

@@ -262,18 +262,7 @@ pub(crate) fn check(age: u8, churn_signature: &bls::Signature) -> bool {
 // Compute the destination for the node with `relocating_name` to be relocated to. `churn_name` is
 // the name of the joined/left node that triggered the relocation.
 fn destination(relocating_name: &XorName, churn_name: &XorName) -> XorName {
-    let combined_name = xor(relocating_name, churn_name);
-    XorName(crypto::sha3_256(&combined_name.0))
-}
-
-// TODO: move this to the xor-name crate as `BitXor` impl.
-fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
-    let mut output = XorName::default();
-    for (o, (l, r)) in output.0.iter_mut().zip(lhs.0.iter().zip(rhs.0.iter())) {
-        *o = l ^ r;
-    }
-
-    output
+    XorName::from_content(&[&relocating_name.0, &churn_name.0])
 }
 
 // Returns the number of trailing zero bits of the byte slice.

@@ -17,14 +17,14 @@ use crate::{
 };
 
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, collections::HashSet, iter};
+use std::{borrow::Borrow, iter};
 use xor_name::{Prefix, XorName};
 
 /// Container for storing information about other sections in the network.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Network {
-    // Neighbour sections: maps section prefixes to their latest signed elders infos.
-    neighbours: PrefixMap<NeighbourInfo>,
+    // Other sections: maps section prefixes to their latest signed elders infos.
+    sections: PrefixMap<OtherSection>,
     // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
     // Our section keys that are trusted by other sections.
@@ -34,7 +34,7 @@ pub struct Network {
 impl Network {
     pub fn new() -> Self {
         Self {
-            neighbours: Default::default(),
+            sections: Default::default(),
             keys: Default::default(),
             knowledge: Default::default(),
         }
@@ -49,12 +49,12 @@ impl Network {
 
     /// Returns iterator over all known sections.
     pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        self.neighbours.iter().map(|info| &info.elders_info.value)
+        self.sections.iter().map(|info| &info.elders_info.value)
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
-        self.neighbours
+        self.sections
             .get(prefix)
             .map(|info| &info.elders_info.value)
     }
@@ -71,7 +71,7 @@ impl Network {
 
     /// Returns a `Peer` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
-        self.neighbours
+        self.sections
             .get_matching(name)?
             .elders_info
             .value
@@ -85,9 +85,9 @@ impl Network {
     pub fn merge(&mut self, other: Self, section_chain: &SectionChain) {
         // FIXME: these operations are not commutative:
 
-        for entry in other.neighbours {
+        for entry in other.sections {
             if entry.verify(section_chain) {
-                let _ = self.neighbours.insert(entry);
+                let _ = self.sections.insert(entry);
             }
         }
 
@@ -104,7 +104,7 @@ impl Network {
         }
     }
 
-    /// Update the info about a neighbour section.
+    /// Update the info about a section.
     ///
     /// If this is for our sibling section, then `elders_info` is signed by them and so the signing
     /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
@@ -113,13 +113,13 @@ impl Network {
     /// If this is for a non-sibling section, then currently we require the info to be signed by our
     /// section (so we need to accumulate the signature for it first) and so `key_proof` is not
     /// needed in that case.
-    pub fn update_neighbour_info(
+    pub fn update_section(
         &mut self,
         elders_info: Proven<EldersInfo>,
         key_proof: Option<Proof>,
         section_chain: &SectionChain,
     ) -> bool {
-        let info = NeighbourInfo {
+        let info = OtherSection {
             elders_info: elders_info.clone(),
             key_proof,
         };
@@ -128,7 +128,7 @@ impl Network {
             return false;
         }
 
-        if let Some(old) = self.neighbours.insert(info) {
+        if let Some(old) = self.sections.insert(info) {
             if old.elders_info == elders_info {
                 return false;
             }
@@ -154,28 +154,6 @@ impl Network {
         }
 
         true
-    }
-
-    /// Remove sections that are no longer our neighbours.
-    pub fn prune_neighbours(&mut self, our_prefix: &Prefix) {
-        let to_remove: Vec<_> = self
-            .neighbours
-            .prefixes()
-            .filter(|prefix| {
-                can_prune_neighbour(
-                    our_prefix,
-                    prefix,
-                    self.neighbours
-                        .descendants(prefix)
-                        .map(|info| &info.elders_info.value.prefix),
-                )
-            })
-            .copied()
-            .collect();
-
-        for prefix in to_remove {
-            let _ = self.neighbours.remove(&prefix);
-        }
     }
 
     /// Returns the known section keys.
@@ -210,7 +188,7 @@ impl Network {
     ) -> (Option<&bls::PublicKey>, Option<&EldersInfo>) {
         (
             self.keys.get_matching(name).map(|entry| &entry.value.1),
-            self.neighbours
+            self.sections
                 .get_matching(name)
                 .map(|entry| &entry.elders_info.value),
         )
@@ -269,56 +247,8 @@ impl Network {
     }
 }
 
-// Check whether we can remove `other` from our neighbours given `our` prefix and all `known`
-// descendants of `other`.
-//
-// We can remove `other` if:
-// - it is not our neighbour anymore, or
-// - the intersection of the address space covered by `other` and our neighbourhood is fully
-//   covered by prefixes we know.
-//
-// Example:
-// - We are (00) and we know (1). Then we add (10). Now (10) covers the whole address space of (1)
-//   that is also in our neighbourhood (because (11) is not our neighbour) which means we can
-//   remove (1).
-// - We are (000) and we know (1). Then we add (100). None of (101), (110) and (111) is our
-//   neighbour which means that (100) again covers the whole address space of (1) that is in our
-//   neighbourhood so we can remove (1)
-// - We are (0) and we know (1). Then we add (10). We can't remove (1) yet because we don't know
-//   (11) which is also our neighbour.
-fn can_prune_neighbour<'a, I>(our: &Prefix, other: &Prefix, known: I) -> bool
-where
-    I: IntoIterator<Item = &'a Prefix>,
-{
-    let known: HashSet<_> = known
-        .into_iter()
-        .filter(|prefix| prefix.is_extension_of(other))
-        .collect();
-
-    fn check(our: &Prefix, other: &Prefix, known: &HashSet<&Prefix>) -> bool {
-        if !other.is_neighbour(our) && !other.is_extension_of(our) {
-            return true;
-        }
-
-        if known.contains(other) {
-            return true;
-        }
-
-        if other.bit_count() >= our.bit_count() {
-            return false;
-        }
-
-        let child0 = other.pushed(false);
-        let child1 = other.pushed(true);
-
-        check(our, &child0, known) && check(our, &child1, known)
-    }
-
-    check(our, other, &known)
-}
-
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
-struct NeighbourInfo {
+struct OtherSection {
     // If this is signed by our section, then `key_proof` is `None`. If this is signed by our
     // sibling section, then `key_proof` contains the proof of the signing key itself signed by our
     // section.
@@ -326,7 +256,7 @@ struct NeighbourInfo {
     key_proof: Option<Proof>,
 }
 
-impl NeighbourInfo {
+impl OtherSection {
     fn verify(&self, section_chain: &SectionChain) -> bool {
         if let Some(key_proof) = &self.key_proof {
             section_chain.has_key(&key_proof.public_key)
@@ -338,7 +268,7 @@ impl NeighbourInfo {
     }
 }
 
-impl Borrow<Prefix> for NeighbourInfo {
+impl Borrow<Prefix> for OtherSection {
     fn borrow(&self) -> &Prefix {
         &self.elders_info.value.prefix
     }
@@ -473,8 +403,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = Network::new();
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p01), None, &chain);
-        let _ = map.update_neighbour_info(gen_proven_elders_info(&sk, p10), None, &chain);
+        let _ = map.update_section(gen_proven_elders_info(&sk, p01), None, &chain);
+        let _ = map.update_section(gen_proven_elders_info(&sk, p10), None, &chain);
 
         let mut rng = rand::thread_rng();
         let n01 = p01.substituted_in(rng.gen());
@@ -484,32 +414,6 @@ mod tests {
         assert_eq!(map.closest(&n01).map(|i| &i.prefix), Some(&p01));
         assert_eq!(map.closest(&n10).map(|i| &i.prefix), Some(&p10));
         assert_eq!(map.closest(&n11).map(|i| &i.prefix), Some(&p10));
-    }
-
-    #[test]
-    fn prune_neighbours() {
-        let sk = bls::SecretKey::random();
-        let chain = SectionChain::new(sk.public_key());
-
-        let p00 = "00".parse().unwrap();
-        let mut map = Network::new();
-
-        let p1 = "1".parse().unwrap();
-        let section1 = gen_proven_elders_info(&sk, p1);
-        assert!(map.update_neighbour_info(section1, None, &chain));
-        map.prune_neighbours(&p00);
-
-        assert!(map.prefixes().any(|&prefix| prefix == p1));
-
-        // (10) is a neighbour of (00), but (11) is not. So by inserting (10),
-        // we no longer need (1)
-        let p10 = "10".parse().unwrap();
-        let section10 = gen_proven_elders_info(&sk, p10);
-        assert!(map.update_neighbour_info(section10, None, &chain));
-        map.prune_neighbours(&p00);
-
-        assert!(map.prefixes().any(|&prefix| prefix == p10));
-        assert!(map.prefixes().all(|&prefix| prefix != p1));
     }
 
     // Create a `Network` and apply a series of `update_keys` calls to it, then verify the stored
