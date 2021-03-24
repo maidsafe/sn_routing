@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.52.1](https://github.com/maidsafe/sn_routing/compare/v0.52.0...v0.52.1) (2021-03-24)
+
+
+### Features
+
+* use supermajority agreement + increase elder size to 7 ([b729a87](https://github.com/maidsafe/sn_routing/commit/b729a870b58ea1e99099a374e4d21da76109b7f5))
+
+
+### Bug Fixes
+
+* **test:** increase the number of nodes in the drop test from 3 to 4 ([9ce0ec7](https://github.com/maidsafe/sn_routing/commit/9ce0ec7da7483eacd9f5941bad470a4a821d0fd3))
+
 ## [0.52.0](https://github.com/maidsafe/sn_routing/compare/v0.51.0...v0.52.0) (2021-03-22)
 
 
