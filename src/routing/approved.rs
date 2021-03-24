@@ -514,13 +514,7 @@ impl Approved {
             content: vote,
             proof_share,
         };
-        let message = Message::single_src(
-            &self.node,
-            DstLocation::Direct,
-            variant,
-            None,
-            Some(*self.section.chain().last_key()),
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }
@@ -1989,6 +1983,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
 
+        let src_prefix = elders_info.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
         let dkg_key = DkgKey::new(&elders_info, generation);
         let variant = Variant::DKGStart {
@@ -1997,7 +1992,7 @@ impl Approved {
         };
 
         self.send_message_for_dst_accumulation(
-            self.section.prefix().name(),
+            src_prefix.name(),
             DstLocation::Direct,
             variant,
             None,

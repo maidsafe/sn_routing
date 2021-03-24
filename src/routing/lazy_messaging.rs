@@ -36,12 +36,11 @@ pub(crate) fn process(
         return Ok(actions);
     }
 
-    let src_key = msg.proof_chain_last_key();
-    if !src_key
-        .map(|src_key| network.has_key(src_key))
-        .unwrap_or(false)
-    {
-        send_other_section = true;
+    if let Ok(src_key) = msg.proof_chain_last_key() {
+        if !network.has_key(src_key) {
+            trace!("lazy messaging: src key unknown");
+            send_other_section = true;
+        }
     }
 
     if let Some(new) = msg.dst_key() {
@@ -55,6 +54,7 @@ pub(crate) fn process(
                 .unwrap_or_else(|| section.chain().root_key());
 
             if section.chain().cmp_by_position(new, old) == Ordering::Greater {
+                trace!("lazy messaging: dst key updated");
                 actions.vote = Some(Vote::TheirKnowledge {
                     prefix: *src_prefix,
                     key: *new,
@@ -63,6 +63,7 @@ pub(crate) fn process(
         }
 
         if new != section.chain().last_key() {
+            trace!("lazy messaging: dst key outdated");
             send_other_section = true;
         }
     }
