@@ -146,6 +146,19 @@
 <span id="145">145</span>
 <span id="146">146</span>
 <span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -156,10 +169,12 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">VecDeque</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
+    <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
+};
 
 <span class="doccomment">/// All the key material needed to sign or combine signature for our section key.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SectionKeyShare</span> {
     <span class="doccomment">/// Public key set to verify threshold signatures and combine shares.</span>
     <span class="kw">pub</span> <span class="ident">public_key_set</span>: <span class="ident">bls</span>::<span class="ident">PublicKeySet</span>,
@@ -167,6 +182,17 @@
     <span class="kw">pub</span> <span class="ident">index</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// Secret Key share.</span>
     <span class="kw">pub</span> <span class="ident">secret_key_share</span>: <span class="ident">bls</span>::<span class="ident">SecretKeyShare</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">SectionKeyShare</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+        <span class="macro">write</span><span class="macro">!</span>(
+            <span class="ident">f</span>,
+            <span class="string">&quot;SectionKeyShare {{ public_key: {:?}, index: {}, .. }}&quot;</span>,
+            <span class="self">self</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>(),
+            <span class="self">self</span>.<span class="ident">index</span>
+        )
+    }
 }
 
 <span class="doccomment">/// Struct that holds the current section keys and helps with new key generation.</span>

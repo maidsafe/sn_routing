@@ -567,7 +567,7 @@
 
         <span class="kw">if</span> <span class="ident">expected_names</span> <span class="op">=</span><span class="op">=</span> <span class="ident">current_names</span> {
             <span class="macro">vec</span><span class="macro">!</span>[]
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="kw">crate</span>::<span class="ident">majority</span>(<span class="ident">current_names</span>.<span class="ident">len</span>()) {
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">expected_names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="kw">crate</span>::<span class="ident">supermajority</span>(<span class="ident">current_names</span>.<span class="ident">len</span>()) {
             <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ignore attempt to reduce the number of elders too much&quot;</span>);
             <span class="macro">vec</span><span class="macro">!</span>[]
         } <span class="kw">else</span> {
