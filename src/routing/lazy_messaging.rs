@@ -38,6 +38,12 @@ pub(crate) fn process(
 
     if let Ok(src_key) = msg.proof_chain_last_key() {
         if !network.has_key(src_key) {
+            // We don't know the src key. Send them a `OtherSection` message whose `dst_key` is set
+            // to the latest key we know and when they receive it they would send us back a
+            // `OtherSection` with their latest info, including their latest key.
+            //
+            // NOTE: the reason why we update the key only after receiving their `OtherSection` and
+            // not right here is to keep their key and their elders info in sync.
             trace!("lazy messaging: src key unknown");
             send_other_section = true;
         }
@@ -54,6 +60,7 @@ pub(crate) fn process(
                 .unwrap_or_else(|| section.chain().root_key());
 
             if section.chain().cmp_by_position(new, old) == Ordering::Greater {
+                // Their knowledge of our section is newer than what we have stored - update it.
                 trace!("lazy messaging: dst key updated");
                 actions.vote = Some(Vote::TheirKnowledge {
                     prefix: *src_prefix,
@@ -63,6 +70,8 @@ pub(crate) fn process(
         }
 
         if new != section.chain().last_key() {
+            // Their knowledge of our section is out of date - send them a `OtherSection` message
+            // with the up-to-date info about our section including our latest key.
             trace!("lazy messaging: dst key outdated");
             send_other_section = true;
         }
