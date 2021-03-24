@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.53.0](https://github.com/maidsafe/sn_routing/compare/v0.52.1...v0.53.0) (2021-03-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Routing::neighbour_sections` renamed to `other_sections`.
+
+### Features
+
+* remove neighbour restriction ([269cff0](https://github.com/maidsafe/sn_routing/commit/269cff02f17da755996f8189d20d4c1b2d2f3101))
+
+
+### Bug Fixes
+
+* don't send OtherSection or vote TheirKnowledge to our section ([95f14d8](https://github.com/maidsafe/sn_routing/commit/95f14d8ef869d263cc782e7faf91e7bc160dcf16))
+* reduce unneeded lazy messages ([0498f24](https://github.com/maidsafe/sn_routing/commit/0498f2447cc7cee91b1a897b0227d806861782a3))
+
 ### [0.52.1](https://github.com/maidsafe/sn_routing/compare/v0.52.0...v0.52.1) (2021-03-24)
 
 
