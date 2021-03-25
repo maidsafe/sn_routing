@@ -35,9 +35,10 @@ use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Section {
-    members: SectionPeers,
-    elders_info: Proven<EldersInfo>,
+    genesis_key: bls::PublicKey,
     chain: SectionChain,
+    elders_info: Proven<EldersInfo>,
+    members: SectionPeers,
 }
 
 impl Section {
@@ -45,7 +46,11 @@ impl Section {
     /// (`elders_info`).
     ///
     /// Returns error if `elders_info` is not signed with the last key of `chain`.
-    pub fn new(chain: SectionChain, elders_info: Proven<EldersInfo>) -> Result<Self, Error> {
+    pub fn new(
+        genesis_key: bls::PublicKey,
+        chain: SectionChain,
+        elders_info: Proven<EldersInfo>,
+    ) -> Result<Self, Error> {
         if elders_info.proof.public_key != *chain.last_key() {
             error!("can't create section: elders_info signed with incorrect key");
             // TODO: consider more specific error here.
@@ -53,8 +58,9 @@ impl Section {
         }
 
         Ok(Self {
-            elders_info,
+            genesis_key,
             chain,
+            elders_info,
             members: SectionPeers::default(),
         })
     }
@@ -67,7 +73,11 @@ impl Section {
 
         let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
 
-        let mut section = Self::new(SectionChain::new(elders_info.proof.public_key), elders_info)?;
+        let mut section = Self::new(
+            elders_info.proof.public_key,
+            SectionChain::new(elders_info.proof.public_key),
+            elders_info,
+        )?;
 
         for peer in section.elders_info.value.peers() {
             let member_info = MemberInfo::joined(*peer);
@@ -85,6 +95,10 @@ impl Section {
         };
 
         Ok((section, section_key_share))
+    }
+
+    pub fn genesis_key(&self) -> &bls::PublicKey {
+        &self.genesis_key
     }
 
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
@@ -168,6 +182,7 @@ impl Section {
     // always contains the latest key). If `chain_len` is zero, it is silently replaced with one.
     pub fn trimmed(&self, chain_len: usize) -> Self {
         Self {
+            genesis_key: self.genesis_key,
             elders_info: self.elders_info.clone(),
             chain: self.chain.truncate(chain_len),
             members: SectionPeers::default(),
@@ -184,9 +199,18 @@ impl Section {
         trusted_key: &bls::PublicKey,
         full_chain: &SectionChain,
     ) -> Result<Self, SectionChainError> {
-        let chain = self.chain.extend(trusted_key, full_chain)?;
+        let chain = match self.chain.extend(trusted_key, full_chain) {
+            Ok(chain) => chain,
+            Err(SectionChainError::InvalidOperation) => {
+                // This means the tip of the chain is not reachable from `trusted_key`.
+                // Use the full chain instead as it is always trusted.
+                self.chain.clone()
+            }
+            Err(error) => return Err(error),
+        };
 
         Ok(Self {
+            genesis_key: self.genesis_key,
             elders_info: self.elders_info.clone(),
             chain,
             members: self.members.clone(),

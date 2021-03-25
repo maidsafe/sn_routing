@@ -824,7 +824,8 @@ impl Approved {
             .section
             .chain()
             .keys()
-            .chain(self.network.keys().map(|(_, key)| key));
+            .chain(self.network.keys().map(|(_, key)| key))
+            .chain(iter::once(self.section.genesis_key()));
 
         match msg.verify(known_keys) {
             Ok(VerifyStatus::Full) => Ok(true),
@@ -1836,6 +1837,7 @@ impl Approved {
         )?;
 
         let variant = Variant::NodeApproval {
+            genesis_key: *self.section.genesis_key(),
             elders_info: self.section.proven_elders_info().clone(),
             member_info,
         };

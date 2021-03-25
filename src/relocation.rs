@@ -345,7 +345,7 @@ mod tests {
         );
         let elders_info = proven(&sk, elders_info)?;
 
-        let mut section = Section::new(SectionChain::new(pk), elders_info)?;
+        let mut section = Section::new(pk, SectionChain::new(pk), elders_info)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);

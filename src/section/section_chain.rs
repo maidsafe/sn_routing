@@ -117,21 +117,21 @@ impl SectionChain {
     {
         // Note: the returned chain is not always strictly minimal. Consider this chain:
         //
-        //     0->1->2->3
+        //     0->1->3->4
         //        |
-        //        +->4
+        //        +->2
         //
-        // Then calling `minimize([1, 2])` currently returns
+        // Then calling `minimize([1, 3])` currently returns
         //
-        //     1->2
+        //     1->3
         //     |
-        //     +->4
+        //     +->2
         //
-        // Even though the truly minimal chain containing 1 and 2 is just
+        // Even though the truly minimal chain containing 1 and 3 is just
         //
-        //     1->2
+        //     1->3
         //
-        // This is because 4 lies between 1 and 2 in the underlying `tree` vector and so is
+        // This is because 2 lies between 1 and 3 in the underlying `tree` vector and so is
         // currently included.
         //
         // TODO: make this function return the truly minimal chain in all cases.
@@ -175,51 +175,30 @@ impl SectionChain {
     pub fn truncate(&self, count: usize) -> Self {
         let count = count.max(1);
 
-        // Indices of the blocks to include in the result, in reverse order.
-        let mut indices = Vec::with_capacity(count - 1);
+        let mut tree: Vec<_> = self.branch(self.tree.len()).take(count).cloned().collect();
 
-        // Index of the currently processed block.
-        let mut index = self.len() - 1;
-
-        // Walk the chain starting from the last key and following the parent links.
-        // Stop when count - 1 blocks are visited or we hit the root, whichever comes first.
-        for _ in 1..count {
-            if index == 0 {
-                break;
-            }
-
-            indices.push(index);
-            index = self.tree[index - 1].parent_index;
-        }
-
-        // Visit one more block - this will be the root block of the resulting chain.
-        let mut chain = Self::new(if index == 0 {
-            self.root
+        let root = if tree.len() >= count {
+            tree.pop().map(|block| block.key).unwrap_or(self.root)
         } else {
-            self.tree[index - 1].key
-        });
+            self.root
+        };
 
-        // Iterate the visited blocks in reverse order (as the indices are reversed, this results
-        // in the original order) and push them into the resulting chain, adjusting the parent
-        // indices.
-        while let Some(index) = indices.pop() {
-            let block = &self.tree[index - 1];
+        tree.reverse();
 
-            chain.tree.push(Block {
-                key: block.key,
-                signature: block.signature.clone(),
-                parent_index: chain.tree.len(),
-            });
+        // Fix the parent indices.
+        for (index, block) in tree.iter_mut().enumerate() {
+            block.parent_index = index;
         }
 
-        chain
+        Self { root, tree }
     }
 
     /// Returns the smallest super-chain of `self` that would be trusted by a peer that trust
-    /// `trusted_key`.
+    /// `trusted_key`. Ensures that the last key of the resuling chain is the same as the last key
+    /// of `self`.
     ///
-    /// Returns `Error::KeyNotFound` if either `trusted_key` or `self.last_key()` is not present in
-    /// `super_chain`.
+    /// Returns `Error::KeyNotFound` if any of `trusted_key`, `self.root_key()` or `self.last_key()`
+    /// is not present in `super_chain`.
     ///
     /// Returns `Error::InvalidOperation` if `trusted_key` is not reachable from `self.last_key()`.
     pub fn extend(&self, trusted_key: &bls::PublicKey, super_chain: &Self) -> Result<Self, Error> {
@@ -229,6 +208,10 @@ impl SectionChain {
         let last_key_index = super_chain
             .index_of(self.last_key())
             .ok_or(Error::KeyNotFound)?;
+
+        if !super_chain.has_key(self.root_key()) {
+            return Err(Error::KeyNotFound);
+        }
 
         if super_chain.is_ancestor(trusted_key_index, last_key_index) {
             super_chain.minimize(vec![trusted_key, self.last_key()])
@@ -303,7 +286,10 @@ impl SectionChain {
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         let trusted_keys: HashSet<_> = trusted_keys.into_iter().collect();
-        self.main_branch().any(|key| trusted_keys.contains(key))
+        self.branch(self.tree.len())
+            .map(|block| &block.key)
+            .chain(iter::once(&self.root))
+            .any(|key| trusted_keys.contains(key))
     }
 
     /// Compare the two keys by their position in the chain. The key that is higher (closer to the
@@ -329,7 +315,7 @@ impl SectionChain {
     ///
     /// NOTE: this is a `O(n)` operation.
     pub fn main_branch_len(&self) -> usize {
-        self.main_branch().count()
+        self.branch(self.tree.len()).count() + 1
     }
 
     fn insert_block(&mut self, new_block: Block) -> usize {
@@ -419,12 +405,10 @@ impl SectionChain {
         }
     }
 
-    // Iterator over the key on the main branch of the chain in reverse order.
-    fn main_branch(&self) -> Branch {
-        Branch {
-            chain: self,
-            index: Some(self.tree.len()),
-        }
+    // Iterator over the blocks on the branch that ends at `index` in reverse order.
+    // Does not include the root block.
+    fn branch(&self, index: usize) -> Branch {
+        Branch { chain: self, index }
     }
 }
 
@@ -476,25 +460,23 @@ impl PartialOrd for Block {
     }
 }
 
-// Iterator over the keys on a single branch of the chain in reverse order.
+// Iterator over the blocks on a single branch of the chain in reverse order.
+// Does not include the root block.
 struct Branch<'a> {
     chain: &'a SectionChain,
-    index: Option<usize>,
+    index: usize,
 }
 
 impl<'a> Iterator for Branch<'a> {
-    type Item = &'a bls::PublicKey;
+    type Item = &'a Block;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.index?;
-
-        if index == 0 {
-            self.index = None;
-            Some(&self.chain.root)
+        if self.index == 0 {
+            None
         } else {
-            let block = self.chain.tree.get(index - 1)?;
-            self.index = Some(block.parent_index);
-            Some(&block.key)
+            let block = self.chain.tree.get(self.index - 1)?;
+            self.index = block.parent_index;
+            Some(block)
         }
     }
 }
@@ -1047,6 +1029,15 @@ mod tests {
             chain.extend(&pk2, &main_chain),
             Err(Error::InvalidOperation)
         );
+
+        // in:      X->Y->2 (forged chain)
+        // trusted: 1
+        // out:     Error
+        let (skx, pkx) = gen_keypair();
+        let (sky, pky, sigy) = gen_signed_keypair(&skx);
+        let fake_sig2 = sign(&sky, &pk2);
+        let chain = make_chain(pkx, vec![(&pkx, pky, sigy), (&pky, pk2, fake_sig2)]);
+        assert_eq!(chain.extend(&pk1, &main_chain), Err(Error::KeyNotFound));
     }
 
     #[test]

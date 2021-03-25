@@ -406,7 +406,7 @@ mod tests {
         let elders0: Vec<_> = elders_info0.peers().copied().collect();
         let elders_info0 = proven(&sk, elders_info0)?;
 
-        let mut section = Section::new(chain, elders_info0)?;
+        let mut section = Section::new(pk, chain, elders_info0)?;
 
         for peer in elders0 {
             let member_info = MemberInfo::joined(peer);
@@ -434,7 +434,7 @@ mod tests {
 
         let (elders_info, _) = gen_elders_info(prefix0, ELDER_SIZE);
         let elders_info = proven(&sk, elders_info)?;
-        let section = Section::new(chain, elders_info)?;
+        let section = Section::new(pk, chain, elders_info)?;
 
         let network = Network::new();
         let our_name = section.prefix().substituted_in(rand::random());
