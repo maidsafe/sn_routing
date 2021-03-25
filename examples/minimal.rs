@@ -226,6 +226,9 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
         Event::Genesis => {
             info!("Node #{} is Genesis", index);
         }
+        Event::PromotedToAdult => {
+            info!("Node #{} promoted to Adult", index);
+        }
         Event::MemberJoined {
             name,
             previous_name,
