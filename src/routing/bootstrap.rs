@@ -238,7 +238,7 @@ impl<'a> State<'a> {
         // Group up with our XorName as we do not know their name yet.
         let recipients = recipients
             .iter()
-            .map(|addr| (addr.clone(), dest_xorname))
+            .map(|addr| (*addr, dest_xorname))
             .collect();
 
         let hdr_info = HeaderInfo {
@@ -399,7 +399,7 @@ impl<'a> State<'a> {
                             .cloned()
                             .map(|peer| (*peer.addr(), *peer.name()))
                             .collect();
-                        self.send_join_requests(join_request, recipients, section_key.clone())
+                        self.send_join_requests(join_request, recipients, section_key)
                             .await?;
                     } else {
                         warn!(
@@ -430,7 +430,7 @@ impl<'a> State<'a> {
                         }),
                     };
                     let recipients = vec![(sender, hdr_info.dest)];
-                    self.send_join_requests(join_request, recipients, section_key.clone())
+                    self.send_join_requests(join_request, recipients, section_key)
                         .await?;
                 }
             }

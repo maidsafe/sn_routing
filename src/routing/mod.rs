@@ -395,7 +395,7 @@ impl Routing {
             }
         };
         let user_xor_name = XorName::from(end_user_pk);
-        let (target_section_pk, _) = self.match_section(&user_xor_name).await;
+        let (target_section_pk, _) = self.matching_section(&user_xor_name).await;
         if let Some(section_pk) = target_section_pk {
             let command = Command::SendMessage {
                 recipients: vec![(recipient, user_xor_name)],

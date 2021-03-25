@@ -44,7 +44,7 @@ use bytes::Bytes;
 use ed25519_dalek::Verifier;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
-use sn_data_types::{PublicKey as EndUserPK, PublicKey};
+use sn_data_types::PublicKey as EndUserPK;
 use sn_messaging::{
     client::Message as ClientMessage,
     node::NodeMessage,
@@ -53,12 +53,7 @@ use sn_messaging::{
     },
     Aggregation, DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation,
 };
-use std::{
-    cmp::{self, Ordering},
-    iter,
-    net::SocketAddr,
-    slice,
-};
+use std::{cmp, iter, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -475,7 +470,7 @@ impl Core {
                 }),
             })
         } else {
-            return None;
+            None
         }
     }
 
@@ -952,7 +947,7 @@ impl Core {
         sender: Option<SocketAddr>,
         msg_bytes: Bytes,
     ) -> Result<Command> {
-        let src_key = self.section.chain().last_key().clone();
+        let src_key = *self.section.chain().last_key();
         let bounce_msg = Message::single_src(
             &self.node,
             DstLocation::Direct,
@@ -1037,7 +1032,7 @@ impl Core {
         };
 
         let hdr_info = HeaderInfo {
-            dest: sender.name().clone(),
+            dest: *sender.name(),
             dest_section_pk: dst_key,
         };
         trace!("resending with extended proof");
@@ -2001,7 +1996,7 @@ impl Core {
         let (elders, non_elders): (Vec<_>, _) = section
             .active_members()
             .filter(|peer| peer.name() != &self.node.name())
-            .map(|peer| (peer.addr().clone(), peer.name().clone()))
+            .map(|peer| (*peer.addr(), *peer.name()))
             .partition(|peer| section.is_elder(&peer.1));
 
         // Send the trimmed state to non-elders. The trimmed state contains only the latest
@@ -2184,23 +2179,6 @@ impl Core {
         Ok(commands)
     }
 
-    /// Returns the info about the section matches the name.
-    pub async fn match_section(
-        &self,
-        name: &XorName,
-    ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
-        let prefix = self.section.prefix();
-        if prefix.matches(name) {
-            let section = self.section();
-            (
-                Some(*section.chain().last_key()),
-                Some(section.elders_info().clone()),
-            )
-        } else {
-            self.network().section_by_name(name)
-        }
-    }
-
     pub async fn send_user_message(
         &mut self,
         itinerary: Itinerary,
@@ -2235,6 +2213,7 @@ impl Core {
             let proof_chain =
                 self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
             Message::for_dst_accumulation(
+                &self.node,
                 self.section_keys_provider.key_share()?,
                 itinerary.src.name(),
                 itinerary.dst,
@@ -2290,6 +2269,7 @@ impl Core {
             err
         })?;
         let message = Message::for_dst_accumulation(
+            &self.node,
             key_share,
             src,
             dst,
@@ -2320,15 +2300,21 @@ impl Core {
             if recipient.name() == &self.node.name() {
                 handle = true;
             } else {
-                others.push(*recipient.addr());
+                others.push((*recipient.addr(), *recipient.name()));
             }
         }
 
         if !others.is_empty() {
+            let hdr_info = HeaderInfo {
+                dest: XorName::random(),
+                dest_section_pk: *self.section.chain().last_key(),
+            };
+            let count = others.len();
             commands.push(Command::send_message_to_nodes(
-                &others,
-                others.len(),
+                others,
+                count,
                 message.to_bytes(),
+                hdr_info,
             ));
         }
 
@@ -2393,10 +2379,10 @@ impl Core {
             .section
             .elders_info()
             .peers()
-            .map(|peer| (peer.addr().clone(), peer.name().clone()))
+            .map(|peer| (*peer.addr(), *peer.name()))
             .collect();
 
-        let dest_section_pk = self.section_chain().last_key().clone();
+        let dest_section_pk = *self.section_chain().last_key();
 
         let hdr_info = HeaderInfo {
             dest: self.section.prefix().name(),
