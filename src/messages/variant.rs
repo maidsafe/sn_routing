@@ -79,27 +79,27 @@ pub(crate) enum Variant {
         message: Bytes,
     },
     /// Sent to the new elder candidates to start the DKG process.
-    DKGStart {
+    DkgStart {
         /// The identifier of the DKG session to start.
         dkg_key: DkgKey,
         /// The DKG particpants.
         elders_info: EldersInfo,
     },
     /// Message exchanged for DKG process.
-    DKGMessage {
+    DkgMessage {
         /// The identifier of the DKG session this message is for.
         dkg_key: DkgKey,
         /// The DKG message.
         message: DkgMessage,
     },
     /// Broadcasted to the other DKG participants when a DKG failure is observed.
-    DKGFailureObservation {
+    DkgFailureObservation {
         dkg_key: DkgKey,
         proof: DkgFailureProof,
     },
     /// Sent to the current elders by the DKG participants when at least majority of them observe
     /// a DKG failure.
-    DKGFailureAgreement(DkgFailureProofSet),
+    DkgFailureAgreement(DkgFailureProofSet),
     /// Message containing a single `Vote` to be accumulated in the vote accumulator.
     Vote {
         content: Vote,
@@ -207,26 +207,26 @@ impl Debug for Variant {
                 .field("src_key", src_key)
                 .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
-            Self::DKGStart {
+            Self::DkgStart {
                 dkg_key,
                 elders_info,
             } => f
-                .debug_struct("DKGStart")
+                .debug_struct("DkgStart")
                 .field("dkg_key", dkg_key)
                 .field("elders_info", elders_info)
                 .finish(),
-            Self::DKGMessage { dkg_key, message } => f
-                .debug_struct("DKGMessage")
+            Self::DkgMessage { dkg_key, message } => f
+                .debug_struct("DkgMessage")
                 .field("dkg_key", &dkg_key)
                 .field("message", message)
                 .finish(),
-            Self::DKGFailureObservation { dkg_key, proof } => f
-                .debug_struct("DKGFailureObservation")
+            Self::DkgFailureObservation { dkg_key, proof } => f
+                .debug_struct("DkgFailureObservation")
                 .field("dkg_key", dkg_key)
                 .field("proof", proof)
                 .finish(),
-            Self::DKGFailureAgreement(proofs) => {
-                f.debug_tuple("DKGFailureAgreement").field(proofs).finish()
+            Self::DkgFailureAgreement(proofs) => {
+                f.debug_tuple("DkgFailureAgreement").field(proofs).finish()
             }
             Self::Vote {
                 content,
