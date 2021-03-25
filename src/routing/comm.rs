@@ -119,7 +119,7 @@ impl Comm {
         self.endpoint
             .send_message(bytes, &recipient.0)
             .await
-            .map_err(|e| Error::Network(e))
+            .map_err(Error::Network)
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
@@ -162,7 +162,7 @@ impl Comm {
                     (
                         self.send_to(&recipient.0, bytes)
                             .await
-                            .map_err(|e| Error::Network(e)),
+                            .map_err(Error::Network),
                         recipient.0,
                     )
                 }
@@ -171,7 +171,7 @@ impl Comm {
         };
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|(recipient, name)| send((recipient.clone(), name.clone()), msg.clone()))
+            .map(|(recipient, name)| send((*recipient, *name), msg.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -189,7 +189,7 @@ impl Comm {
                     return (Err(SendError), vec![]);
                 }
                 Err(_) => {
-                    failed_recipients.push(addr.clone());
+                    failed_recipients.push(addr);
 
                     if next < recipients.len() {
                         tasks.push(send(recipients[next], msg.clone()));

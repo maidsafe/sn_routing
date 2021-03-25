@@ -36,14 +36,18 @@ pub enum SrcAuthority {
     },
     /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
     BlsShare {
-        /// Name in the source section
+        /// Name of the source section
         src_name: XorName,
+        /// Public key of the source peer.
+        public_key: PublicKey,
+        /// Age of the source peer.
+        age: u8,
         /// Proof Share signed by the peer's BLS KeyShare
         proof_share: ProofShare,
     },
     /// Authority of a whole section.
     Section {
-        /// Name in the source section.
+        /// Name of the source section.
         src_name: XorName,
         /// BLS signature of the message corresponding to the source section public key.
         signature: bls::Signature,
@@ -59,7 +63,7 @@ impl SrcAuthority {
             Self::BlsShare { public_key, .. } => {
                 SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
             }
-            Self::Section { prefix, .. } => SrcLocation::Section(prefix.name()),
+            Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }
 
@@ -69,7 +73,7 @@ impl SrcAuthority {
 
     pub(crate) fn name(&self) -> XorName {
         match self {
-            Self::Node { public_key, .. } => name(public_key),
+            Self::Node { public_key, .. } => name(&sn_data_types::PublicKey::from(*public_key)),
             Self::BlsShare { src_name, .. } => *src_name,
             Self::Section { src_name, .. } => *src_name,
         }
@@ -80,8 +84,15 @@ impl SrcAuthority {
         match self {
             Self::Node {
                 public_key, age, ..
-            } => Ok(Peer::new(name(public_key), addr, *age)),
-            Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
+            }
+            | Self::BlsShare {
+                public_key, age, ..
+            } => Ok(Peer::new(
+                name(&sn_data_types::PublicKey::from(*public_key)),
+                addr,
+                *age,
+            )),
+            Self::Section { .. } => Err(Error::InvalidSrcLocation),
         }
     }
 }

@@ -297,7 +297,8 @@ impl Routing {
         name: &XorName,
     ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
         let state = self.stage.state.lock().await;
-        state.match_section(name).await
+        let (key, elders_info) = state.matching_section(name);
+        (key.copied(), elders_info.cloned())
     }
 
     /// Send a message.
@@ -359,7 +360,7 @@ impl Routing {
             }
         };
         let user_xor_name = XorName::from(end_user_pk);
-        let (target_section_pk, _) = self.match_section(&user_xor_name).await;
+        let (target_section_pk, _) = self.matching_section(&user_xor_name).await;
         if let Some(section_pk) = target_section_pk {
             let command = Command::SendMessage {
                 recipients: vec![(recipient, user_xor_name)],

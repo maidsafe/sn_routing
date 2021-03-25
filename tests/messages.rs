@@ -46,7 +46,7 @@ async fn test_messages_client_node() -> Result<()> {
     config.local_ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let node_addr = node.our_connection_info();
-    let section_key = node.section_chain().await.last_key().clone();
+    let section_key = *node.section_chain().await.last_key();
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
     let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
@@ -59,7 +59,7 @@ async fn test_messages_client_node() -> Result<()> {
         socketaddr_sig,
     };
     let registration_bytes =
-        WireMsg::serialize_sectioninfo_msg(&registration, XorName::from(pk), section_key.clone())?;
+        WireMsg::serialize_sectioninfo_msg(&registration, XorName::from(pk), section_key)?;
 
     client_endpoint
         .send_message(registration_bytes, &node_addr)
@@ -70,8 +70,7 @@ async fn test_messages_client_node() -> Result<()> {
         id,
     });
     let query_clone = query.clone();
-    let client_msg_bytes =
-        WireMsg::serialize_client_msg(&query, XorName::from(pk), section_key.clone())?;
+    let client_msg_bytes = WireMsg::serialize_client_msg(&query, XorName::from(pk), section_key)?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -87,7 +86,7 @@ async fn test_messages_client_node() -> Result<()> {
                         },
                         query_clone
                             .clone()
-                            .serialize(XorName::from(pk), section_key.clone())?,
+                            .serialize(XorName::from(pk), section_key)?,
                     )
                     .await?;
                     break;
@@ -106,7 +105,7 @@ async fn test_messages_client_node() -> Result<()> {
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let expected_bytes = query.serialize(XorName::from(pk), section_key.clone())?;
+        let expected_bytes = query.serialize(XorName::from(pk), section_key)?;
         assert_eq!(resp, expected_bytes);
     }
 
