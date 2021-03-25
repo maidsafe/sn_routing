@@ -68,6 +68,7 @@ pub(crate) enum Command {
     SendUserMessage {
         itinerary: Itinerary,
         content: Bytes,
+        additional_proof_chain_key: Option<bls::PublicKey>,
     },
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
     /// command is raised. The token is used to identify the timeout.
@@ -150,10 +151,15 @@ impl Debug for Command {
                 .field("delivery_group_size", delivery_group_size)
                 .field("message", message)
                 .finish(),
-            Self::SendUserMessage { itinerary, content } => f
+            Self::SendUserMessage {
+                itinerary,
+                content,
+                additional_proof_chain_key,
+            } => f
                 .debug_struct("SendUserMessage")
                 .field("itinerary", itinerary)
                 .field("content", &format_args!("{:10}", HexFmt(content)))
+                .field("additional_proof_chain_key", additional_proof_chain_key)
                 .finish(),
             Self::ScheduleTimeout { duration, token } => f
                 .debug_struct("ScheduleTimeout")

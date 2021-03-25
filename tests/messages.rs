@@ -82,6 +82,7 @@ async fn test_messages_client_node() -> Result<()> {
                             aggregation: Aggregation::None,
                         },
                         query_clone.clone().serialize()?,
+                        None,
                     )
                     .await?;
                     break;
@@ -160,7 +161,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     };
 
     node2
-        .send_message(itinerary, Bytes::from_static(msg))
+        .send_message(itinerary, Bytes::from_static(msg), None)
         .await?;
 
     println!("msg sent");
@@ -178,7 +179,7 @@ async fn test_messages_between_nodes() -> Result<()> {
 
     // send response from node1 to node2
     node1
-        .send_message(itinerary, Bytes::from_static(response))
+        .send_message(itinerary, Bytes::from_static(response), None)
         .await?;
 
     println!("checking response received..");

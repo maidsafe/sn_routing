@@ -249,7 +249,9 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
                 index, elders.prefix, elders.key, sibling_elders, elders.elders, self_status_change
             );
         }
-        Event::MessageReceived { content, src, dst } => info!(
+        Event::MessageReceived {
+            content, src, dst, ..
+        } => info!(
             "Node #{} received message - src: {:?}, dst: {:?}, content: {}",
             index,
             src,

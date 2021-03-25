@@ -1568,6 +1568,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
                 aggregation: Aggregation::None,
             },
             content: content.clone(),
+            additional_proof_chain_key: None,
         })
         .await?;
 

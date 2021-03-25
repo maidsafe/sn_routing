@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::section::SectionChain;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
@@ -78,6 +79,8 @@ pub enum Event {
         src: SrcLocation,
         /// The destination location that receives the message.
         dst: DstLocation,
+        /// The proof chain for the message.
+        proof_chain: SectionChain,
     },
     /// A new peer joined our section.
     MemberJoined {
@@ -136,7 +139,9 @@ impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
             Self::Genesis => write!(formatter, "Genesis"),
-            Self::MessageReceived { content, src, dst } => write!(
+            Self::MessageReceived {
+                content, src, dst, ..
+            } => write!(
                 formatter,
                 "MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
                 HexFmt(content),
