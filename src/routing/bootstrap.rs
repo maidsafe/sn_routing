@@ -202,8 +202,8 @@ impl<'a> State<'a> {
                         bootstrap_addrs = new_bootstrap_addrs
                             .iter()
                             .map(|(_, addr)| addr)
-                            .copied()
-                            .collect_vec();
+                            .cloned()
+                            .collect();
                     }
                 }
                 GetSectionResponse::SectionInfoUpdate(error) => {
@@ -233,7 +233,7 @@ impl<'a> State<'a> {
             })
             .unwrap_or_else(|| (PublicKey::from(self.node.keypair.public), self.node.name()));
 
-        let message = SectionInfoMsg::GetSectionQuery(dest_pk);
+        let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(self.node.keypair.public));
 
         // Group up with our XorName as we do not know their name yet.
         let recipients = recipients
@@ -455,6 +455,7 @@ impl<'a> State<'a> {
                 MessageType::NodeMessage {
                     msg: node_msg,
                     hdr_info: HeaderInfo {
+                        // Will be overridden while sending to multiple elders
                         dest: XorName::random(),
                         dest_section_pk: section_key,
                     },
@@ -674,7 +675,6 @@ async fn send_messages(
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -732,9 +732,11 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message, MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(name)) => {
-                assert_eq!(name, *peer.name());
+            let bootstrap_addrs: Vec<SocketAddr> =
+                recipients.iter().map(|(addr, _name)| *addr).collect();
+            assert_eq!(bootstrap_addrs, [bootstrap_addr]);
+            assert_matches!(message, MessageType::SectionInfo{ msg: SectionInfoMsg::GetSectionQuery(name), .. } => {
+                assert_eq!(XorName::from(name), *peer.name());
             });
 
             let infrastructure_info = SectionInfo {
@@ -750,17 +752,30 @@ mod tests {
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: *peer.name(),
+                        dest_section_pk: pk,
+                    },
+                },
+                bootstrap_addr,
+            ))?;
 
             // Receive JoinRequest
             let (message, recipients) = send_rx
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
-                Message::from_bytes(Bytes::from(bytes))?);
+            let (message, hdr_info) = assert_matches!(message, MessageType::NodeMessage { msg: NodeMessage(bytes), hdr_info } =>
+                (Message::from_bytes(Bytes::from(bytes))?, hdr_info));
 
-            itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
+            assert_eq!(hdr_info.dest_section_pk, pk);
+            itertools::assert_equal(
+                recipients,
+                elders_info.peers().map(|peer| (*peer.addr(), *peer.name())),
+            );
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());
@@ -783,7 +798,13 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::NodeMessage {
+                    msg: NodeMessage::new(message.to_bytes()),
+                    hdr_info: HeaderInfo {
+                        dest: *peer.name(),
+                        dest_section_pk: pk,
+                    },
+                },
                 bootstrap_addr,
             ))?;
 
@@ -815,29 +836,50 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let name = node.name();
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
-        let test_task = async {
+        let test_task = async move {
             // Receive GetSectionQuery
             let (message, recipients) = send_rx
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, vec![bootstrap_node.addr]);
+            assert_eq!(
+                recipients
+                    .into_iter()
+                    .map(|peer| peer.0)
+                    .collect::<Vec<_>>(),
+                vec![bootstrap_node.addr]
+            );
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             // Send GetSectionResponse::Redirect
-            let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+            let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE)
+                .map(|_| (XorName::random(), gen_addr()))
+                .collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(
                 new_bootstrap_addrs.clone(),
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             // Receive new GetSectionQuery
@@ -846,10 +888,22 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, new_bootstrap_addrs);
+            assert_eq!(
+                recipients
+                    .into_iter()
+                    .map(|peer| peer.0)
+                    .collect::<Vec<_>>(),
+                new_bootstrap_addrs
+                    .into_iter()
+                    .map(|(_, addr)| addr)
+                    .collect::<Vec<_>>()
+            );
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             Ok(())
@@ -879,6 +933,7 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
@@ -890,18 +945,41 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
-            let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+            let addrs = (0..ELDER_SIZE)
+                .map(|_| (XorName::random(), gen_addr()))
+                .collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             let (message, _) = send_rx
@@ -911,7 +989,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             Ok(())
@@ -1003,12 +1084,13 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);
             let p1 = Prefix::default().pushed(true);
 
-            if node.name().bit(0) {
+            if node_name.bit(0) {
                 (p1, p0)
             } else {
                 (p0, p1)
@@ -1029,7 +1111,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let infrastructure_info = SectionInfo {
@@ -1045,7 +1130,16 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             let infrastructure_info = SectionInfo {
@@ -1061,7 +1155,16 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
 
             Ok(())
         };
@@ -1085,6 +1188,7 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);
@@ -1111,7 +1215,7 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::NodeMessage{ msg: NodeMessage(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
@@ -1127,7 +1231,13 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::NodeMessage {
+                    msg: NodeMessage::new(message.to_bytes()),
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: section_key,
+                    },
+                },
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
@@ -1145,7 +1255,13 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::NodeMessage {
+                    msg: NodeMessage::new(message.to_bytes()),
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: section_key,
+                    },
+                },
                 bootstrap_node.addr,
             ))?;
 
@@ -1154,7 +1270,7 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::NodeMessage{ msg: NodeMessage(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())
@@ -1169,4 +1285,3 @@ mod tests {
         }
     }
 }
- */

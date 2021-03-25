@@ -1494,9 +1494,10 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 async fn relocation_of_non_elder() -> Result<()> {
     relocation(RelocatedPeerRole::NonElder).await
 }
-
+*/
 const THRESHOLD: usize = supermajority(ELDER_SIZE) - 1;
 
+/*
 #[allow(dead_code)]
 enum RelocatedPeerRole {
     NonElder,
@@ -1841,9 +1842,14 @@ async fn handle_demote_during_split() -> Result<()> {
 
     Ok(())
 }
+ */
 
 // TODO: add more tests here
 
+use crate::{supermajority, ELDER_SIZE};
+use std::ops::Deref;
+
+/*
 #[allow(unused)]
 fn init_log() {
     tracing_subscriber::fmt()
@@ -1945,7 +1951,7 @@ fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Proposal, 
         }
     }
 }
-
+*/
 // Wrapper for `bls::SecretKeySet` that also allows to retrieve the corresponding `bls::SecretKey`.
 // Note: `bls::SecretKeySet` does have a `secret_key` method, but it's test-only and not available
 // for the consumers of the crate.
@@ -1975,4 +1981,3 @@ impl Deref for SecretKeySet {
         &self.set
     }
 }
-*/
