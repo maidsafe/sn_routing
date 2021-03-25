@@ -34,14 +34,18 @@ pub enum SrcAuthority {
     },
     /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
     BlsShare {
-        /// Name in the source section
+        /// Name of the source section
         src_name: XorName,
+        /// Public key of the source peer.
+        public_key: PublicKey,
+        /// Age of the source peer.
+        age: u8,
         /// Proof Share signed by the peer's BLS KeyShare
         proof_share: ProofShare,
     },
     /// Authority of a whole section.
     Section {
-        /// Name in the source section.
+        /// Name of the source section.
         src_name: XorName,
         /// BLS proof of the message corresponding to the source section.
         proof: Proof,
@@ -57,7 +61,7 @@ impl SrcAuthority {
             Self::BlsShare { public_key, .. } => {
                 SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
             }
-            Self::Section { prefix, .. } => SrcLocation::Section(prefix.name()),
+            Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }
 
@@ -67,7 +71,7 @@ impl SrcAuthority {
 
     pub(crate) fn name(&self) -> XorName {
         match self {
-            Self::Node { public_key, .. } => name(public_key),
+            Self::Node { public_key, .. } => name(&sn_data_types::PublicKey::from(*public_key)),
             Self::BlsShare { src_name, .. } => *src_name,
             Self::Section { src_name, .. } => *src_name,
         }
@@ -76,7 +80,10 @@ impl SrcAuthority {
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
     pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Node { public_key, .. } => Ok(Peer::new(name(public_key), addr)),
+            Self::Node { public_key, .. } => Ok(Peer::new(
+                name(&sn_data_types::PublicKey::from(*public_key)),
+                addr,
+            )),
             Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
         }
     }

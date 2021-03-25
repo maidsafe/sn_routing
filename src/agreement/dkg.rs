@@ -275,7 +275,7 @@ impl Session {
             .peers()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| (peer.addr().clone(), peer.name().clone()))
+            .map(|(_, peer)| (*peer.addr(), *peer.name()))
             .collect()
     }
 
