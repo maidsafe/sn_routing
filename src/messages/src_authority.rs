@@ -29,8 +29,6 @@ pub enum SrcAuthority {
     Node {
         /// Public key of the source peer.
         public_key: PublicKey,
-        /// Age of the source peer.
-        age: u8,
         /// ed-25519 signature of the message corresponding to the public key of the source peer.
         signature: SimpleSignature,
     },
