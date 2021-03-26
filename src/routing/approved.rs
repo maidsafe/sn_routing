@@ -69,7 +69,7 @@ pub(crate) struct Approved {
     message_accumulator: SignatureAggregator,
     vote_accumulator: VoteAccumulator,
     split_barrier: SplitBarrier,
-    // Voter for DKG
+    // Voter for Dkg
     dkg_voter: DkgVoter,
     relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,

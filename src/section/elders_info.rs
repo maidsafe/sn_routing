@@ -103,6 +103,9 @@ pub(crate) mod test_utils {
     }
 
     // Create `count` Nodes sorted by their names.
+    // The `age_diff` flag is used to trigger nodes being generated with different age pattern.
+    // The test of `handle_consensus_on_online_of_elder_candidate` requires most nodes to be with
+    // age of MIN_AGE + 2 and one node with age of MIN_AGE + 1.
     pub(crate) fn gen_sorted_nodes(prefix: &Prefix, count: usize, age_diff: bool) -> Vec<Node> {
         (0..count)
             .map(|index| {

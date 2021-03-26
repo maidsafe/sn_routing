@@ -507,7 +507,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         .handle_command(Command::HandleConsensus { vote, proof })
         .await?;
 
-    // Verify we sent a `DKGStart` message with the expected participants.
+    // Verify we sent a `DkgStart` message with the expected participants.
     let mut dkg_start_sent = false;
     let _ = expected_new_elders.insert(new_peer);
 
@@ -525,7 +525,10 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
             Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
-        itertools::assert_equal(actual_elders_info.elders.values(), &expected_new_elders);
+        itertools::assert_equal(
+            actual_elders_info.elders.values().cloned(),
+            expected_new_elders.clone(),
+        );
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
@@ -751,7 +754,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         .handle_command(Command::HandleConsensus { vote, proof })
         .await?;
 
-    // Verify we sent a `DKGStart` message with the expected participants.
+    // Verify we sent a `DkgStart` message with the expected participants.
     let mut dkg_start_sent = false;
 
     for command in commands {

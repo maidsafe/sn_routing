@@ -57,21 +57,25 @@ pub(crate) mod test_utils {
     use proptest::{collection::SizeRange, prelude::*};
     use xor_name::XOR_NAME_LEN;
 
-    pub(crate) fn arbitrary_xor_name() -> impl Strategy<Value = XorName> {
-        any::<[u8; XOR_NAME_LEN]>().prop_map(XorName)
+    pub(crate) fn arbitrary_bytes() -> impl Strategy<Value = [u8; XOR_NAME_LEN]> {
+        any::<[u8; XOR_NAME_LEN]>()
     }
 
     // Generate Vec<Peer> where no two peers have the same name.
     pub(crate) fn arbitrary_unique_peers(
         count: impl Into<SizeRange>,
+        age: impl Strategy<Value = u8>,
     ) -> impl Strategy<Value = Vec<Peer>> {
-        proptest::collection::btree_map(arbitrary_xor_name(), any::<SocketAddr>(), count).prop_map(
-            |peers| {
+        proptest::collection::btree_map(arbitrary_bytes(), (any::<SocketAddr>(), age), count)
+            .prop_map(|peers| {
                 peers
                     .into_iter()
-                    .map(|(name, addr)| Peer::new(name, addr))
+                    .map(|(mut bytes, (addr, age))| {
+                        bytes[XOR_NAME_LEN - 1] = age;
+                        let name = XorName(bytes);
+                        Peer::new(name, addr)
+                    })
                     .collect()
-            },
-        )
+            })
     }
 }

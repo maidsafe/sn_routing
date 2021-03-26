@@ -233,7 +233,6 @@ impl Message {
         let signature = crypto::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
             public_key: node.keypair.public,
-            age: node.age(),
             signature,
         };
 
