@@ -26,10 +26,9 @@ thiserror = "1.0.23"
 tokio = "1.3.0"
 xor_name = "1.1.0"
 resource_proof = "0.8.0"
-sn_messaging = { git = "https://github.com/yoga07/sn_messaging", branch = "Lazy" }
+sn_messaging = { git = "https://github.com/joshuef/sn_messaging", branch = "Lazy" }
 #sn_messaging = { path = "../sn_messaging" }
-sn_data_types = { git = "https://github.com/joshuef/sn_data_types", branch = "Lazy" }
-# sn_data_types = "~0.15.3"
+sn_data_types = "~0.17.0"
 
   [dependencies.bls]
   package = "threshold_crypto"
