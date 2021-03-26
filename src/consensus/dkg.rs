@@ -596,7 +596,7 @@ impl DkgCommand {
                 dkg_key,
                 message,
             } => {
-                let variant = Variant::DKGMessage { dkg_key, message };
+                let variant = Variant::DkgMessage { dkg_key, message };
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_nodes(
@@ -624,7 +624,7 @@ impl DkgCommand {
                 dkg_key,
                 proof,
             } => {
-                let variant = Variant::DKGFailureObservation { dkg_key, proof };
+                let variant = Variant::DkgFailureObservation { dkg_key, proof };
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_nodes(
