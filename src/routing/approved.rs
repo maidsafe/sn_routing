@@ -1579,14 +1579,49 @@ impl Approved {
         let elders_info = Proven::new(elders_info, proof);
 
         if equal_or_extension {
-            if self
-                .section
-                .promote_and_demote_elders(&self.node.name())
-                .contains(&elders_info.value)
-            {
-                commands.extend(self.vote(Vote::OurElders(elders_info))?);
+            // Our section of sub-section
+
+            let infos = self.section.promote_and_demote_elders(&self.node.name());
+            if !infos.contains(&elders_info.value) {
+                // SectionInfo out of date, ignore.
+                return Ok(commands);
             }
+
+            // Send a `Sync` message to all the to-be-promoted members so they have the full
+            // section and network data.
+            let sync_recipients: Vec<_> = infos
+                .iter()
+                .flat_map(|info| info.peers())
+                .filter(|peer| !self.section.is_elder(peer.name()))
+                .map(Peer::addr)
+                .copied()
+                .collect();
+            let sync_message = Message::single_src(
+                &self.node,
+                DstLocation::Direct,
+                Variant::Sync {
+                    section: self.section.clone(),
+                    network: self.network.clone(),
+                },
+                None,
+                None,
+            )?;
+            commands.push(Command::send_message_to_nodes(
+                &sync_recipients,
+                sync_recipients.len(),
+                sync_message.to_bytes(),
+            ));
+
+            // Send the `OurElder` vote to all of the to-be-elders so it's accumulated by them.
+            let our_elders_recipients: Vec<_> = infos
+                .iter()
+                .flat_map(|info| info.peers())
+                .copied()
+                .collect();
+            commands.extend(self.send_vote(&our_elders_recipients, Vote::OurElders(elders_info))?);
         } else {
+            // Other section
+
             let _ = self
                 .network
                 .update_section(elders_info, None, self.section.chain());
@@ -1607,7 +1642,25 @@ impl Approved {
             elders_info,
             key_proof,
         );
-        self.try_update_state()
+
+        let mut commands = vec![];
+
+        let (our, sibling) = self.split_barrier.take(self.section.prefix());
+
+        if let Some(our) = our {
+            trace!("update our section: {:?}", our.section.elders_info());
+            commands.extend(self.update_state(our.section, our.network)?);
+        }
+
+        if let Some(sibling) = sibling {
+            trace!(
+                "update sibling section: {:?}",
+                sibling.section.elders_info()
+            );
+            commands.extend(self.send_sync(sibling.section, sibling.network)?);
+        }
+
+        Ok(commands)
     }
 
     fn handle_their_key_event(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
@@ -1637,27 +1690,6 @@ impl Approved {
             message,
             sender: None,
         })
-    }
-
-    fn try_update_state(&mut self) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-
-        let (our, sibling) = self.split_barrier.take(self.section.prefix());
-
-        if let Some(our) = our {
-            trace!("update our section: {:?}", our.section.elders_info());
-            commands.extend(self.update_state(our.section, our.network)?);
-        }
-
-        if let Some(sibling) = sibling {
-            trace!(
-                "update sibling section: {:?}",
-                sibling.section.elders_info()
-            );
-            commands.extend(self.send_sync(sibling.section, sibling.network)?);
-        }
-
-        Ok(commands)
     }
 
     fn update_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
