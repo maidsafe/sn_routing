@@ -245,11 +245,21 @@ impl Stage {
         details: SignedRelocateDetails,
         message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     ) -> Result<Vec<Command>> {
-        let node = self.state.lock().await.node().clone();
+        let (genesis_key, node) = {
+            let state = self.state.lock().await;
+            (*state.section().genesis_key(), state.node().clone())
+        };
         let previous_name = node.name();
 
-        let (node, section, backlog) =
-            bootstrap::relocate(node, &self.comm, message_rx, bootstrap_addrs, details).await?;
+        let (node, section, backlog) = bootstrap::relocate(
+            node,
+            &self.comm,
+            message_rx,
+            bootstrap_addrs,
+            genesis_key,
+            details,
+        )
+        .await?;
 
         let mut state = self.state.lock().await;
         let event_tx = state.event_tx.clone();

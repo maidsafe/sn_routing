@@ -319,7 +319,8 @@ mod tests {
             let node = nodes.remove(0);
 
             let elders_info0 = proven(&our_sk, elders_info0)?;
-            let section = Section::new(chain, elders_info0).context("failed to create section")?;
+            let section = Section::new(*chain.root_key(), chain, elders_info0)
+                .context("failed to create section")?;
 
             let (elders_info1, _) = gen_elders_info(prefix1, ELDER_SIZE);
             let elders_info1 = proven(&our_sk, elders_info1)?;

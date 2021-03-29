@@ -234,7 +234,7 @@ mod tests {
         let elders_info = EldersInfo::new(elders, Prefix::default());
         let elders_info = proven(&sk, elders_info)?;
 
-        let mut section = Section::new(chain, elders_info)?;
+        let mut section = Section::new(pk, chain, elders_info)?;
 
         for peer in members0.iter().chain(&members1).copied() {
             let info = MemberInfo::joined(peer);

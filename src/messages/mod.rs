@@ -379,11 +379,21 @@ impl Message {
         new_first_key: &bls::PublicKey,
         full_chain: &SectionChain,
     ) -> Result<Self, ExtendProofChainError> {
-        if let Some(proof_chain) = &mut self.proof_chain {
-            *proof_chain = proof_chain.extend(new_first_key, full_chain)?
-        } else {
-            return Err(ExtendProofChainError::NoProofChain);
-        }
+        let proof_chain = self
+            .proof_chain
+            .as_mut()
+            .ok_or(ExtendProofChainError::NoProofChain)?;
+
+        *proof_chain = match proof_chain.extend(new_first_key, full_chain) {
+            Ok(chain) => chain,
+            Err(SectionChainError::InvalidOperation) => {
+                // This means the tip of the proof chain is not reachable from `new_first_key`.
+                // Extend it from the root key of the full chain instead as that should be the
+                // genesis key which is implicitly trusted.
+                proof_chain.extend(full_chain.root_key(), full_chain)?
+            }
+            Err(error) => return Err(error.into()),
+        };
 
         Ok(Self::new_signed(
             self.src,
@@ -516,6 +526,7 @@ mod tests {
         let member_info = consensus::test_utils::proven(&sk1, member_info)?;
 
         let variant = Variant::NodeApproval {
+            genesis_key: pk0,
             elders_info,
             member_info,
         };

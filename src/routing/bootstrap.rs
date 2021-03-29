@@ -55,7 +55,7 @@ pub(crate) async fn initial(
     let state = State::new(node, send_tx, recv_rx);
 
     future::join(
-        state.run(vec![bootstrap_addr], None),
+        state.run(vec![bootstrap_addr], None, None),
         send_messages(send_rx, comm),
     )
     .instrument(span)
@@ -73,6 +73,7 @@ pub(crate) async fn relocate(
     comm: &Comm,
     recv_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     bootstrap_addrs: Vec<SocketAddr>,
+    genesis_key: bls::PublicKey,
     relocate_details: SignedRelocateDetails,
 ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
@@ -81,7 +82,7 @@ pub(crate) async fn relocate(
     let state = State::new(node, send_tx, recv_rx);
 
     future::join(
-        state.run(bootstrap_addrs, Some(relocate_details)),
+        state.run(bootstrap_addrs, Some(genesis_key), Some(relocate_details)),
         send_messages(send_rx, comm),
     )
     .await
@@ -115,6 +116,7 @@ impl<'a> State<'a> {
     async fn run(
         mut self,
         bootstrap_addrs: Vec<SocketAddr>,
+        genesis_key: Option<bls::PublicKey>,
         relocate_details: Option<SignedRelocateDetails>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
         let (prefix, section_key, elders) = self
@@ -127,7 +129,8 @@ impl<'a> State<'a> {
             None
         };
 
-        self.join(section_key, elders, relocate_payload).await
+        self.join(section_key, elders, genesis_key, relocate_payload)
+            .await
     }
 
     // Send a `GetSectionQuery` and waits for the response. If the response is `Redirect`,
@@ -282,6 +285,7 @@ impl<'a> State<'a> {
         mut self,
         mut section_key: bls::PublicKey,
         elders: BTreeMap<XorName, SocketAddr>,
+        genesis_key: Option<bls::PublicKey>,
         relocate_payload: Option<RelocatePayload>,
     ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
         let join_request = JoinRequest {
@@ -294,18 +298,19 @@ impl<'a> State<'a> {
 
         loop {
             let (response, sender) = self
-                .receive_join_response(relocate_payload.as_ref())
+                .receive_join_response(genesis_key.as_ref(), relocate_payload.as_ref())
                 .await?;
 
             match response {
                 JoinResponse::Approval {
                     elders_info,
                     age,
+                    genesis_key,
                     section_chain,
                 } => {
                     return Ok((
                         self.node.with_age(age),
-                        Section::new(section_chain, elders_info)?,
+                        Section::new(genesis_key, section_chain, elders_info)?,
                         self.backlog.into_iter().collect(),
                     ));
                 }
@@ -386,6 +391,7 @@ impl<'a> State<'a> {
 
     async fn receive_join_response(
         &mut self,
+        expected_genesis_key: Option<&bls::PublicKey>,
         relocate_payload: Option<&RelocatePayload>,
     ) -> Result<(JoinResponse, SocketAddr)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
@@ -441,12 +447,20 @@ impl<'a> State<'a> {
                     ));
                 }
                 Variant::NodeApproval {
+                    genesis_key,
                     elders_info,
                     member_info,
                 } => {
                     if member_info.value.peer.name() != &self.node.name() {
                         trace!("Ignore NodeApproval not for us");
                         continue;
+                    }
+
+                    if let Some(expected_genesis_key) = expected_genesis_key {
+                        if expected_genesis_key != genesis_key {
+                            error!("Unexpected Genesis key");
+                            continue;
+                        }
                     }
 
                     let trusted_key = if let Some(payload) = relocate_payload {
@@ -459,7 +473,6 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    // Transition from Joining to Approved
                     let section_chain = message.proof_chain()?.clone();
 
                     info!(
@@ -471,6 +484,7 @@ impl<'a> State<'a> {
                         JoinResponse::Approval {
                             elders_info: elders_info.clone(),
                             age: member_info.value.peer.age(),
+                            genesis_key: *genesis_key,
                             section_chain,
                         },
                         sender,
@@ -515,6 +529,7 @@ enum JoinResponse {
     Approval {
         elders_info: Proven<EldersInfo>,
         age: u8,
+        genesis_key: bls::PublicKey,
         section_chain: SectionChain,
     },
     Retry {
@@ -613,7 +628,7 @@ mod tests {
         // Create the bootstrap task, but don't run it yet.
         let bootstrap = async move {
             state
-                .run(vec![bootstrap_addr], None)
+                .run(vec![bootstrap_addr], None, None)
                 .await
                 .map_err(Error::from)
         };
@@ -667,6 +682,7 @@ mod tests {
                 &bootstrap_node,
                 DstLocation::Direct,
                 Variant::NodeApproval {
+                    genesis_key: pk,
                     elders_info,
                     member_info,
                 },
@@ -906,7 +922,7 @@ mod tests {
         let elders = (0..ELDER_SIZE)
             .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
             .collect();
-        let join_task = state.join(section_key, elders, None);
+        let join_task = state.join(section_key, elders, None, None);
 
         let test_task = async {
             let (message, _) = send_rx

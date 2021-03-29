@@ -43,6 +43,7 @@ pub(crate) enum Variant {
     /// Message sent to newly joined node containing the necessary info to become a member of our
     /// section.
     NodeApproval {
+        genesis_key: bls::PublicKey,
         elders_info: Proven<EldersInfo>,
         member_info: Proven<MemberInfo>,
     },
@@ -127,6 +128,7 @@ impl Variant {
             Self::NodeApproval {
                 elders_info,
                 member_info,
+                ..
             } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
@@ -171,10 +173,12 @@ impl Debug for Variant {
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval {
+                genesis_key,
                 elders_info,
                 member_info,
             } => f
                 .debug_struct("NodeApproval")
+                .field("genesis_key", genesis_key)
                 .field("elders_info", elders_info)
                 .field("member_info", member_info)
                 .finish(),
