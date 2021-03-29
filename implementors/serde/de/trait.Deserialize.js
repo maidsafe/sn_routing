@@ -1,3 +1,3 @@
 (function() {var implementors = {};
-implementors["sn_routing"] = [{"text":"impl&lt;'de&gt; Deserialize&lt;'de&gt; for SectionChain","synthetic":false,"types":[]}];
+implementors["sn_routing"] = [{"text":"impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde/1.0.125/serde/de/trait.Deserialize.html\" title=\"trait serde::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"struct\" href=\"sn_routing/struct.SectionChain.html\" title=\"struct sn_routing::SectionChain\">SectionChain</a>","synthetic":false,"types":["sn_routing::section::section_chain::SectionChain"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

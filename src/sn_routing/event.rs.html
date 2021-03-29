@@ -191,6 +191,11 @@
 <span id="190">190</span>
 <span id="191">191</span>
 <span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -200,6 +205,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">section</span>::<span class="ident">SectionChain</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
@@ -272,6 +278,8 @@
         <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
         <span class="doccomment">/// The destination location that receives the message.</span>
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
+        <span class="doccomment">/// The proof chain for the message.</span>
+        <span class="ident">proof_chain</span>: <span class="ident">SectionChain</span>,
     },
     <span class="doccomment">/// A new peer joined our section.</span>
     <span class="ident">MemberJoined</span> {
@@ -330,7 +338,9 @@
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">Genesis</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Genesis&quot;</span>),
-            <span class="self">Self</span>::<span class="ident">MessageReceived</span> { <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
+            <span class="self">Self</span>::<span class="ident">MessageReceived</span> {
+                <span class="ident">content</span>, <span class="ident">src</span>, <span class="ident">dst</span>, ..
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(
                 <span class="ident">formatter</span>,
                 <span class="string">&quot;MessageReceived {{ content: \&quot;{:&lt;8}\&quot;, src: {:?}, dst: {:?} }}&quot;</span>,
                 <span class="ident">HexFmt</span>(<span class="ident">content</span>),
@@ -385,4 +395,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "sn_routing";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="sn_routing"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

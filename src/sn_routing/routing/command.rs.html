@@ -183,6 +183,12 @@
 <span id="182">182</span>
 <span id="183">183</span>
 <span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -254,6 +260,7 @@
     <span class="ident">SendUserMessage</span> {
         <span class="ident">itinerary</span>: <span class="ident">Itinerary</span>,
         <span class="ident">content</span>: <span class="ident">Bytes</span>,
+        <span class="ident">additional_proof_chain_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`</span>
     <span class="doccomment">/// command is raised. The token is used to identify the timeout.</span>
@@ -336,10 +343,15 @@
                 .<span class="ident">field</span>(<span class="string">&quot;delivery_group_size&quot;</span>, <span class="ident">delivery_group_size</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">SendUserMessage</span> { <span class="ident">itinerary</span>, <span class="ident">content</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+            <span class="self">Self</span>::<span class="ident">SendUserMessage</span> {
+                <span class="ident">itinerary</span>,
+                <span class="ident">content</span>,
+                <span class="ident">additional_proof_chain_key</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;SendUserMessage&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;itinerary&quot;</span>, <span class="ident">itinerary</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;content&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format_args</span><span class="macro">!</span>(<span class="string">&quot;{:10}&quot;</span>, <span class="ident">HexFmt</span>(<span class="ident">content</span>)))
+                .<span class="ident">field</span>(<span class="string">&quot;additional_proof_chain_key&quot;</span>, <span class="ident">additional_proof_chain_key</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;ScheduleTimeout&quot;</span>)
@@ -369,4 +381,5 @@
     <span class="ident">NEXT</span>.<span class="ident">fetch_add</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">Relaxed</span>)
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "sn_routing";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

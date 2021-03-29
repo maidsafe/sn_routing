@@ -1,3 +1,3 @@
 (function() {var implementors = {};
-implementors["sn_routing"] = [{"text":"impl Drop for Routing","synthetic":false,"types":[]}];
+implementors["sn_routing"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html\" title=\"trait core::ops::drop::Drop\">Drop</a> for <a class=\"struct\" href=\"sn_routing/struct.Routing.html\" title=\"struct sn_routing::Routing\">Routing</a>","synthetic":false,"types":["sn_routing::routing::Routing"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
