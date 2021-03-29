@@ -152,7 +152,6 @@ impl Message {
 
     /// Creates a message signed using a BLS KeyShare for destination accumulation
     pub(crate) fn for_dst_accumulation(
-        node: &Node,
         key_share: &SectionKeyShare,
         src_name: XorName,
         dst: DstLocation,
@@ -175,8 +174,6 @@ impl Message {
         let src = SrcAuthority::BlsShare {
             src_name,
             proof_share,
-            public_key: node.keypair.public,
-            age: node.age,
         };
 
         Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)
@@ -188,7 +185,6 @@ impl Message {
         let (proof_share, src_name) = if let SrcAuthority::BlsShare {
             proof_share,
             src_name,
-            ..
         } = &self.src
         {
             (proof_share.clone(), *src_name)
