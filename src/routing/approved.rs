@@ -8,7 +8,9 @@
 
 use super::{
     enduser_registry::{EndUserRegistry, SocketId},
-    lazy_messaging, Command, SplitBarrier,
+    lazy_messaging,
+    split_barrier::SplitBarrier,
+    Command,
 };
 use crate::{
     consensus::{
@@ -110,8 +112,8 @@ impl Approved {
             network: Network::new(),
             section_keys_provider,
             vote_accumulator: Default::default(),
+            split_barrier: SplitBarrier::new(),
             message_accumulator: Default::default(),
-            split_barrier: Default::default(),
             dkg_voter: Default::default(),
             relocate_state: None,
             msg_filter: MessageFilter::new(),
@@ -505,7 +507,7 @@ impl Approved {
         key_share: &SectionKeyShare,
     ) -> Result<Vec<Command>> {
         trace!(
-            "Vote for {:?}, key_share: {:?}, voters: {:?}",
+            "Vote for {:?}, key_share: {:?}, aggregators: {:?}",
             vote,
             key_share,
             recipients,
@@ -971,24 +973,26 @@ impl Approved {
         bounced_msg_bytes: Bytes,
         sender_last_key: &bls::PublicKey,
     ) -> Result<Vec<Command>> {
-        if !self.section.chain().has_key(sender_last_key)
-            || sender_last_key == self.section.chain().last_key()
-        {
-            trace!(
-                "Received BouncedUnknownMessage({:?}) from {:?} \
-                 - peer is up to date or ahead of us, discarding",
-                MessageHash::from_bytes(&bounced_msg_bytes),
-                sender
-            );
+        let span = trace_span!(
+            "Received BouncedUnknownMessage",
+            bounced_msg_hash=?MessageHash::from_bytes(&bounced_msg_bytes),
+            %sender
+        );
+        let _span_guard = span.enter();
+
+        if !self.section.prefix().matches(sender.name()) {
+            trace!("peer is not from our section, discarding");
             return Ok(vec![]);
         }
 
-        trace!(
-            "Received BouncedUnknownMessage({:?}) from {:?} \
-             - peer is lagging behind, resending with Sync",
-            MessageHash::from_bytes(&bounced_msg_bytes),
-            sender,
-        );
+        if !self.section.chain().has_key(sender_last_key)
+            || sender_last_key == self.section.chain().last_key()
+        {
+            trace!("peer is up to date or ahead of us, discarding");
+            return Ok(vec![]);
+        }
+
+        trace!("peer is lagging behind, resending with Sync",);
         // First send Sync to update the peer, then resend the message itself. If the messages
         // arrive in the same order they were sent, the Sync should update the peer so it will then
         // be able to handle the resent message. If not, the peer will bounce the message again.
@@ -1069,7 +1073,10 @@ impl Approved {
             return Ok(vec![]);
         }
 
-        self.update_state(section, network)
+        let snapshot = self.state_snapshot();
+        self.section.merge(section)?;
+        self.network.merge(network, self.section.chain());
+        self.update_state(snapshot)
     }
 
     fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Option<Command> {
@@ -1596,21 +1603,23 @@ impl Approved {
                 .map(Peer::addr)
                 .copied()
                 .collect();
-            let sync_message = Message::single_src(
-                &self.node,
-                DstLocation::Direct,
-                Variant::Sync {
-                    section: self.section.clone(),
-                    network: self.network.clone(),
-                },
-                None,
-                None,
-            )?;
-            commands.push(Command::send_message_to_nodes(
-                &sync_recipients,
-                sync_recipients.len(),
-                sync_message.to_bytes(),
-            ));
+            if !sync_recipients.is_empty() {
+                let sync_message = Message::single_src(
+                    &self.node,
+                    DstLocation::Direct,
+                    Variant::Sync {
+                        section: self.section.clone(),
+                        network: self.network.clone(),
+                    },
+                    None,
+                    None,
+                )?;
+                commands.push(Command::send_message_to_nodes(
+                    &sync_recipients,
+                    sync_recipients.len(),
+                    sync_message.to_bytes(),
+                ));
+            }
 
             // Send the `OurElder` vote to all of the to-be-elders so it's accumulated by them.
             let our_elders_recipients: Vec<_> = infos
@@ -1635,32 +1644,26 @@ impl Approved {
         elders_info: Proven<EldersInfo>,
         key_proof: Proof,
     ) -> Result<Vec<Command>> {
-        self.split_barrier.handle_our_elders(
-            &self.node.name(),
-            &self.section,
-            &self.network,
-            elders_info,
-            key_proof,
-        );
-
-        let mut commands = vec![];
-
-        let (our, sibling) = self.split_barrier.take(self.section.prefix());
-
-        if let Some(our) = our {
-            trace!("update our section: {:?}", our.section.elders_info());
-            commands.extend(self.update_state(our.section, our.network)?);
+        let updates = self
+            .split_barrier
+            .process(self.section.prefix(), elders_info, key_proof);
+        if updates.is_empty() {
+            return Ok(vec![]);
         }
 
-        if let Some(sibling) = sibling {
-            trace!(
-                "update sibling section: {:?}",
-                sibling.section.elders_info()
-            );
-            commands.extend(self.send_sync(sibling.section, sibling.network)?);
+        let snapshot = self.state_snapshot();
+
+        for (elders_info, key_proof) in updates {
+            if elders_info.value.prefix.matches(&self.node.name()) {
+                let _ = self.section.update_elders(elders_info, key_proof);
+            } else {
+                let _ =
+                    self.network
+                        .update_section(elders_info, Some(key_proof), self.section.chain());
+            }
         }
 
-        Ok(commands)
+        self.update_state(snapshot)
     }
 
     fn handle_their_key_event(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
@@ -1692,35 +1695,33 @@ impl Approved {
         })
     }
 
-    fn update_state(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
+    fn state_snapshot(&self) -> StateSnapshot {
+        StateSnapshot {
+            is_elder: self.is_elder(),
+            last_key: *self.section.chain().last_key(),
+            prefix: *self.section.prefix(),
+        }
+    }
+
+    fn update_state(&mut self, old: StateSnapshot) -> Result<Vec<Command>> {
         let mut commands = vec![];
-
-        let old_is_elder = self.is_elder();
-        let old_last_key = *self.section.chain().last_key();
-        let old_prefix = *self.section.prefix();
-
-        self.section.merge(section)?;
-        self.network.merge(network, self.section.chain());
+        let new = self.state_snapshot();
 
         self.section_keys_provider
             .finalise_dkg(self.section.chain().last_key());
 
-        let new_is_elder = self.is_elder();
-        let new_last_key = *self.section.chain().last_key();
-        let new_prefix = *self.section.prefix();
-
-        if new_prefix != old_prefix {
+        if new.prefix != old.prefix {
             info!("Split");
         }
 
-        if new_last_key != old_last_key {
+        if new.last_key != old.last_key {
             self.msg_filter.reset();
 
-            if new_is_elder {
+            if new.is_elder {
                 info!(
                     "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
-                    new_prefix,
-                    new_last_key,
+                    new.prefix,
+                    new.last_key,
                     self.section.elders_info().peers().format(", ")
                 );
 
@@ -1733,15 +1734,15 @@ impl Approved {
                 self.print_network_stats();
             }
 
-            if new_is_elder || old_is_elder {
+            if new.is_elder || old.is_elder {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            let sibling_elders = if new_prefix != old_prefix {
-                if let Some(sibling_key) = self.section_key(&new_prefix.sibling()) {
-                    if let Some(info) = self.network.get(&new_prefix.sibling()) {
+            let sibling_elders = if new.prefix != old.prefix {
+                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
+                    if let Some(info) = self.network.get(&new.prefix.sibling()) {
                         Some(Elders {
-                            prefix: new_prefix.sibling(),
+                            prefix: new.prefix.sibling(),
                             key: *sibling_key,
                             elders: info.elders.keys().copied().collect(),
                         })
@@ -1755,10 +1756,10 @@ impl Approved {
                 None
             };
 
-            let self_status_change = if !old_is_elder && new_is_elder {
+            let self_status_change = if !old.is_elder && new.is_elder {
                 info!("Promoted to elder");
                 NodeElderChange::Promoted
-            } else if old_is_elder && !new_is_elder {
+            } else if old.is_elder && !new.is_elder {
                 info!("Demoted");
                 self.section = self.section.trimmed(1);
                 self.network = Network::new();
@@ -1769,8 +1770,8 @@ impl Approved {
             };
 
             let elders = Elders {
-                prefix: new_prefix,
-                key: new_last_key,
+                prefix: new.prefix,
+                key: new.last_key,
                 elders: self.section.elders_info().elders.keys().copied().collect(),
             };
 
@@ -1781,7 +1782,7 @@ impl Approved {
             });
         }
 
-        if !new_is_elder {
+        if !new.is_elder {
             commands.extend(self.return_relocate_promise());
         }
 
@@ -1946,11 +1947,17 @@ impl Approved {
         elders_info: EldersInfo,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        trace!("Send DkgStart for {} to {:?}", elders_info, recipients);
-
         let src_prefix = elders_info.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
         let dkg_key = DkgKey::new(&elders_info, generation);
+
+        trace!(
+            "Send DkgStart for {} with {:?} to {:?}",
+            elders_info,
+            dkg_key,
+            recipients
+        );
+
         let variant = Variant::DkgStart {
             dkg_key,
             elders_info,
@@ -1983,7 +1990,12 @@ impl Approved {
             return Ok(None);
         }
 
-        trace!("relay {:?} to {:?}", msg, targets);
+        trace!(
+            "relay {:?} to {:?} (proof_chain: {:?})",
+            msg,
+            targets,
+            msg.proof_chain().ok()
+        );
 
         let targets: Vec<_> = targets.into_iter().map(|node| *node.addr()).collect();
         let command = Command::send_message_to_nodes(&targets, dg_size, msg.to_bytes());
@@ -2301,4 +2313,10 @@ impl Approved {
             .network_stats(self.section.elders_info())
             .print()
     }
+}
+
+struct StateSnapshot {
+    is_elder: bool,
+    last_key: bls::PublicKey,
+    prefix: Prefix,
 }

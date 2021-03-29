@@ -24,7 +24,6 @@ use self::{
     approved::Approved,
     comm::{Comm, ConnectionEvent},
     command::Command,
-    split_barrier::SplitBarrier,
     stage::Stage,
 };
 use crate::{
