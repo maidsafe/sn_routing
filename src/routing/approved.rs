@@ -470,7 +470,7 @@ impl Approved {
     }
 
     pub fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
-        let variant = Variant::DKGFailureAgreement(proofs);
+        let variant = Variant::DkgFailureAgreement(proofs);
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
@@ -570,7 +570,7 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DKGStart { elders_info, .. } => {
+            Variant::DkgStart { elders_info, .. } => {
                 if !elders_info.elders.contains_key(&self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
@@ -604,9 +604,9 @@ impl Approved {
             Variant::Relocate(_)
             | Variant::BouncedUntrustedMessage(_)
             | Variant::BouncedUnknownMessage { .. }
-            | Variant::DKGMessage { .. }
-            | Variant::DKGFailureObservation { .. }
-            | Variant::DKGFailureAgreement { .. }
+            | Variant::DkgMessage { .. }
+            | Variant::DkgFailureObservation { .. }
+            | Variant::DkgFailureAgreement { .. }
             | Variant::ResourceChallenge { .. } => {}
         }
 
@@ -701,17 +701,17 @@ impl Approved {
                     src_key,
                 )
             }
-            Variant::DKGStart {
+            Variant::DkgStart {
                 dkg_key,
                 elders_info,
             } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
-            Variant::DKGMessage { dkg_key, message } => {
+            Variant::DkgMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
             }
-            Variant::DKGFailureObservation { dkg_key, proof } => {
+            Variant::DkgFailureObservation { dkg_key, proof } => {
                 self.handle_dkg_failure_observation(*dkg_key, *proof)
             }
-            Variant::DKGFailureAgreement(proofs) => {
+            Variant::DkgFailureAgreement(proofs) => {
                 self.handle_dkg_failure_agreement(&msg.src().name(), proofs)
             }
             Variant::Vote {
@@ -1022,9 +1022,7 @@ impl Approved {
     }
 
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
-        let src = msg.src().clone();
-        let dst = *msg.dst();
-        if let DstLocation::EndUser(end_user) = &dst {
+        if let DstLocation::EndUser(end_user) = msg.dst() {
             let recipients = match end_user {
                 EndUser::AllClients(public_key) => {
                     self.get_all_socket_addr(public_key).copied().collect()
@@ -1046,45 +1044,12 @@ impl Approved {
                 message: MessageType::ClientMessage(ClientMessage::from(content)?),
             }]);
         }
-        if let SrcAuthority::BlsShare {
-            proof_share,
-            src_name,
-            ..
-        } = &src
-        {
-            let signed_bytes = bincode::serialize(&msg.signable_view())?;
-            match self
-                .message_accumulator
-                .add(&signed_bytes, proof_share.clone())
-            {
-                Ok(proof) => {
-                    trace!("Successfully aggregated signatures for message: {:?}", msg);
-                    let key = msg.proof_chain_last_key()?;
-                    if key.verify(&proof.signature, signed_bytes) {
-                        self.send_event(Event::MessageReceived {
-                            content,
-                            src: SrcLocation::Section(*src_name),
-                            dst,
-                        });
-                    } else {
-                        trace!(
-                            "Aggregated signature is invalid. Handling message {:?} skipped",
-                            msg
-                        );
-                    }
-                }
-                Err(AggregatorError::NotEnoughShares) => {}
-                Err(err) => {
-                    trace!("Error accumulating message at destination: {:?}", err);
-                }
-            }
-            return Ok(vec![]);
-        }
 
         self.send_event(Event::MessageReceived {
             content,
-            src: src.src_location(),
-            dst,
+            src: msg.src().src_location(),
+            dst: *msg.dst(),
+            proof_chain: msg.proof_chain()?.clone(),
         });
         Ok(vec![])
     }
@@ -1351,7 +1316,7 @@ impl Approved {
         dkg_key: DkgKey,
         new_elders_info: EldersInfo,
     ) -> Result<Vec<Command>> {
-        trace!("Received DKGStart for {}", new_elders_info);
+        trace!("Received DkgStart for {}", new_elders_info);
         self.dkg_voter
             .start(&self.node.keypair, dkg_key, new_elders_info)
             .into_commands(&self.node)
@@ -1981,12 +1946,12 @@ impl Approved {
         elders_info: EldersInfo,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        trace!("Send DKGStart for {} to {:?}", elders_info, recipients);
+        trace!("Send DkgStart for {} to {:?}", elders_info, recipients);
 
         let src_prefix = elders_info.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
         let dkg_key = DkgKey::new(&elders_info, generation);
-        let variant = Variant::DKGStart {
+        let variant = Variant::DkgStart {
             dkg_key,
             elders_info,
         };
@@ -2070,6 +2035,7 @@ impl Approved {
         &mut self,
         itinerary: Itinerary,
         content: Bytes,
+        additional_proof_chain_key: Option<&bls::PublicKey>,
     ) -> Result<Vec<Command>> {
         let are_we_src = itinerary.src.equals(&self.node.name())
             || itinerary.src.equals(&self.section().prefix().name());
@@ -2092,6 +2058,7 @@ impl Approved {
         }
 
         let variant = Variant::UserMessage(content);
+        let proof_chain = self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
 
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
@@ -2101,18 +2068,18 @@ impl Approved {
                 itinerary.src.name(),
                 itinerary.dst,
                 variant,
-                self.create_proof_chain(&itinerary.dst, None)?,
+                proof_chain,
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
-            let vote = self.create_accumulate_at_src_vote(itinerary.dst, variant, None)?;
+            let vote = self.create_accumulate_at_src_vote(itinerary.dst, variant, proof_chain);
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
                 self.section.elders_info().peers().copied(),
             );
             return self.send_vote(&recipients, vote);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, None, None)?
+            Message::single_src(&self.node, itinerary.dst, variant, Some(proof_chain), None)?
         };
         let mut commands = vec![];
 
@@ -2137,10 +2104,10 @@ impl Approved {
         src: XorName,
         dst: DstLocation,
         variant: Variant,
-        proof_chain_first_key: Option<&bls::PublicKey>,
+        additional_proof_chain_key: Option<&bls::PublicKey>,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
+        let proof_chain = self.create_proof_chain(&dst, additional_proof_chain_key)?;
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2215,9 +2182,8 @@ impl Approved {
         &self,
         dst: DstLocation,
         variant: Variant,
-        proof_chain_first_key: Option<&bls::PublicKey>,
-    ) -> Result<Vote> {
-        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
+        proof_chain: SectionChain,
+    ) -> Vote {
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2241,7 +2207,7 @@ impl Approved {
 
         trace!("Create {:?}", vote);
 
-        Ok(vote)
+        vote
     }
 
     fn create_proof_chain(

@@ -304,7 +304,16 @@ impl Routing {
     /// Send a message.
     /// Messages sent here, either section to section or node to node are signed
     /// and validated upon receipt by routing itself.
-    pub async fn send_message(&self, itinerary: Itinerary, content: Bytes) -> Result<()> {
+    ///
+    /// `additional_proof_chain_key` is a key to be included in the proof chain attached to the
+    /// message. This is useful when the message contains some data that is signed with a different
+    /// key than the whole message is so that the recipient can verify such key.
+    pub async fn send_message(
+        &self,
+        itinerary: Itinerary,
+        content: Bytes,
+        additional_proof_chain_key: Option<bls::PublicKey>,
+    ) -> Result<()> {
         if let DstLocation::EndUser(EndUser::Client {
             socket_id,
             public_key,
@@ -330,7 +339,11 @@ impl Routing {
                 debug!("Sending user message instead.. (Command::SendUserMessage)");
             }
         }
-        let command = Command::SendUserMessage { itinerary, content };
+        let command = Command::SendUserMessage {
+            itinerary,
+            content,
+            additional_proof_chain_key,
+        };
         self.stage.clone().handle_commands(command).await
     }
 

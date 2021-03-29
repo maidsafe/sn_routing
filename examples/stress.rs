@@ -470,7 +470,7 @@ impl Network {
             aggregation: Aggregation::None,
         };
 
-        match node.send_message(itinerary, bytes).await {
+        match node.send_message(itinerary, bytes, None).await {
             Ok(()) => Ok(true),
             Err(RoutingError::InvalidSrcLocation) => Ok(false), // node name changed
             Err(error) => {

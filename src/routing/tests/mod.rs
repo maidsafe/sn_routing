@@ -513,7 +513,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
         };
 
         let actual_elders_info = match message.variant() {
-            Variant::DKGStart { elders_info, .. } => elders_info,
+            Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
 
@@ -764,7 +764,7 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
         };
 
         let actual_elders_info = match message.variant() {
-            Variant::DKGStart { elders_info, .. } => elders_info,
+            Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
 
@@ -1568,6 +1568,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
                 aggregation: Aggregation::None,
             },
             content: content.clone(),
+            additional_proof_chain_key: None,
         })
         .await?;
 
