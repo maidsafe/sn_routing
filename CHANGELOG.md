@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.54.2](https://github.com/maidsafe/sn_routing/compare/v0.54.1...v0.54.2) (2021-03-29)
+
+
+### Features
+
+* last byte of node's name represents its age ([69cef7a](https://github.com/maidsafe/sn_routing/commit/69cef7aa7564b7ce86374de22314431c88073470))
+
 ### [0.54.1](https://github.com/maidsafe/sn_routing/compare/v0.54.0...v0.54.1) (2021-03-29)
 
 
