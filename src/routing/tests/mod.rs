@@ -1777,29 +1777,6 @@ async fn handle_demote_during_split() -> Result<()> {
     let elders_info = EldersInfo::new(peers_b.iter().copied(), prefix1);
     let command = create_our_elders_command(sk_set_v1_p1.secret_key(), elders_info)?;
     let commands = stage.handle_command(command).await?;
-    assert_matches!(&commands[..], &[]);
-
-    // Create consensus on `TheirKey` for both sub-sections
-    let create_their_key_command = |prefix, key| -> Result<_> {
-        let vote = Vote::TheirKey { prefix, key };
-        let signature = sk_set_v0
-            .secret_key()
-            .sign(&bincode::serialize(&vote.as_signable())?);
-        let proof = Proof {
-            signature,
-            public_key: sk_set_v0.secret_key().public_key(),
-        };
-        Ok(Command::HandleConsensus { vote, proof })
-    };
-
-    // Handle consensus on `TheirKey` for prefix-0
-    let command = create_their_key_command(prefix0, pk_v1_p0)?;
-    let commands = stage.handle_command(command).await?;
-    assert_matches!(&commands[..], &[]);
-
-    // Handle consensus on `TheirKey` for prefix-1
-    let command = create_their_key_command(prefix1, pk_v1_p1)?;
-    let commands = stage.handle_command(command).await?;
 
     let mut sync_recipients_p0 = HashSet::new();
     let mut sync_recipients_p1 = HashSet::new();

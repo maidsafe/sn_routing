@@ -51,7 +51,12 @@ use sn_messaging::{
     },
     Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
-use std::{cmp, iter, net::SocketAddr, slice};
+use std::{
+    cmp::{self, Ordering},
+    iter,
+    net::SocketAddr,
+    slice,
+};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -376,7 +381,10 @@ impl Approved {
             Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
             Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
             Vote::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
-            Vote::TheirKey { prefix, key } => self.handle_their_key_event(prefix, key, proof),
+            Vote::TheirKey { prefix, key } => {
+                self.handle_their_key_event(prefix, key, proof);
+                Ok(vec![])
+            }
             Vote::TheirKnowledge { prefix, key } => {
                 self.handle_their_knowledge_event(prefix, key, proof);
                 Ok(vec![])
@@ -1566,25 +1574,16 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let prefix_is_equal = elders_info.prefix == *self.section.prefix();
-        let prefix_is_extension = elders_info.prefix.is_extension_of(self.section.prefix());
-
+        let equal_or_extension = elders_info.prefix == *self.section.prefix()
+            || elders_info.prefix.is_extension_of(self.section.prefix());
         let elders_info = Proven::new(elders_info, proof);
 
-        if prefix_is_equal || prefix_is_extension {
-            // Our section
+        if equal_or_extension {
             if self
                 .section
                 .promote_and_demote_elders(&self.node.name())
                 .contains(&elders_info.value)
             {
-                if prefix_is_extension {
-                    commands.extend(self.vote(Vote::TheirKey {
-                        prefix: elders_info.value.prefix,
-                        key: elders_info.proof.public_key,
-                    })?);
-                }
-
                 commands.extend(self.vote(Vote::OurElders(elders_info))?);
             }
         } else {
@@ -1611,29 +1610,9 @@ impl Approved {
         self.try_update_state()
     }
 
-    fn handle_their_key_event(
-        &mut self,
-        prefix: Prefix,
-        key: bls::PublicKey,
-        proof: Proof,
-    ) -> Result<Vec<Command>> {
+    fn handle_their_key_event(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
         let key = Proven::new((prefix, key), proof);
-
-        if key.value.0.is_extension_of(self.section.prefix()) {
-            self.split_barrier.handle_their_key(
-                &self.node.name(),
-                &self.section,
-                &self.network,
-                key,
-            );
-            self.try_update_state()
-        } else if key.value.0 != *self.section.prefix() {
-            let _ = self.network.update_their_key(key);
-            Ok(vec![])
-        } else {
-            // Ignore our key. Should be updated using `OurKey` instead.
-            Err(Error::InvalidVote)
-        }
+        let _ = self.network.update_their_key(key);
     }
 
     fn handle_their_knowledge_event(
@@ -1675,18 +1654,6 @@ impl Approved {
                 "update sibling section: {:?}",
                 sibling.section.elders_info()
             );
-
-            // FIXME: this is duplicated in `update_state`. Do we need it here as well?
-            if self.section_keys_provider.has_key_share() {
-                // We can update the sibling knowledge already because we know they also reached
-                // consensus on our `OurKey` so they know our latest key. Need to vote for it first
-                // though, to accumulate the signatures.
-                commands.extend(self.vote(Vote::TheirKnowledge {
-                    prefix: *sibling.section.prefix(),
-                    key: *self.section.chain().last_key(),
-                })?);
-            }
-
             commands.extend(self.send_sync(sibling.section, sibling.network)?);
         }
 
@@ -1712,16 +1679,6 @@ impl Approved {
 
         if new_prefix != old_prefix {
             info!("Split");
-
-            if new_is_elder && self.section_keys_provider.has_key_share() {
-                // We can update the sibling knowledge already because we know they also reached
-                // consensus on our `OurKey` so they know our latest key. Need to vote for it first
-                // though, to accumulate the signatures.
-                commands.extend(self.vote(Vote::TheirKnowledge {
-                    prefix: new_prefix.sibling(),
-                    key: *self.section.chain().last_key(),
-                })?);
-            }
         }
 
         if new_last_key != old_last_key {
@@ -2224,19 +2181,28 @@ impl Approved {
     fn create_proof_chain(
         &self,
         dst: &DstLocation,
-        first_key: Option<&bls::PublicKey>,
+        additional_key: Option<&bls::PublicKey>,
     ) -> Result<SectionChain> {
-        let first_key = first_key
-            .or_else(|| self.network.knowledge_by_name(&dst.name()?))
-            .unwrap_or_else(|| self.section.chain().root_key());
-
+        // The last key of the proof chain is the last section key for which we also have the
+        // secret key share. Ideally this is our current section key unless we haven't observed the
+        // DKG completion yet.
         let last_key = self
             .section_keys_provider
             .key_share()?
             .public_key_set
             .public_key();
 
-        Ok(self.section.chain().minimize(vec![first_key, &last_key])?)
+        // Only include `additional_key` if it is older than `last_key` because `last_key` must be
+        // the actual last key of the resulting proof chain because it's the key that will be used
+        // to sign the message.
+        let additional_key = additional_key
+            .or_else(|| self.network.knowledge_by_name(&dst.name()?))
+            .filter(|key| self.section.chain().cmp_by_position(key, &last_key) == Ordering::Less);
+
+        Ok(self
+            .section
+            .chain()
+            .minimize(iter::once(&last_key).chain(additional_key))?)
     }
 
     fn send_direct_message(&self, recipient: &SocketAddr, variant: Variant) -> Result<Command> {
@@ -2284,10 +2250,17 @@ impl Approved {
     fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
         if self.section.prefix().matches(name) {
             self.section.chain().last_key()
+        } else if let Some(key) = self.network.key_by_name(name) {
+            key
+        } else if self.section.prefix().sibling().matches(name) {
+            // For sibling with unknown key, use the previous key in our chain under the assumption
+            // that it's the last key before the split and therefore the last key of theirs we know.
+            // In case this assumption is not correct (because we already progressed more than one
+            // key since the split) then this key would be unknown to them and they would send
+            // us back their whole section chain. However, this situation should be rare.
+            self.section.chain().prev_key()
         } else {
-            self.network
-                .key_by_name(name)
-                .unwrap_or_else(|| self.section.chain().root_key())
+            self.section.chain().root_key()
         }
     }
 

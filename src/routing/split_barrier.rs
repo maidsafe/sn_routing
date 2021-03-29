@@ -71,27 +71,6 @@ impl SplitBarrier {
         }
     }
 
-    pub fn handle_their_key(
-        &mut self,
-        our_name: &XorName,
-        current_section: &Section,
-        current_network: &Network,
-        key: Proven<(Prefix, bls::PublicKey)>,
-    ) {
-        if key.value.0.matches(our_name) {
-            update(
-                &mut self.sibling,
-                current_section,
-                current_network,
-                |state| state.update_their_key(key),
-            )
-        } else {
-            update(&mut self.our, current_section, current_network, |state| {
-                state.update_their_key(key)
-            })
-        }
-    }
-
     // Takes out the `State` diffs to be applied to our (and siblings, in case of a split)
     // `Section` and `Network` if the invariants described above are met.
     // Returns `(our_state, sibling_state)`.
@@ -118,15 +97,7 @@ impl SplitBarrier {
             return (None, None);
         };
 
-        if !our.network.has_key(sibling.section.chain().last_key()) {
-            return (None, None);
-        }
-
         if our.network.get(sibling.section.prefix()) != Some(sibling.section.elders_info()) {
-            return (None, None);
-        }
-
-        if !sibling.network.has_key(our.section.chain().last_key()) {
             return (None, None);
         }
 
@@ -153,15 +124,6 @@ impl State {
     fn update_sibling_info(&mut self, elders_info: Proven<EldersInfo>, key_proof: Proof) -> bool {
         self.network
             .update_section(elders_info, Some(key_proof), self.section.chain())
-    }
-
-    fn update_their_key(&mut self, key: Proven<(Prefix, bls::PublicKey)>) -> bool {
-        if key.value.0 == *self.section.prefix() {
-            // Ignore our keys. Use `update_elders` for that.
-            return false;
-        }
-
-        self.network.update_their_key(key)
     }
 }
 
@@ -246,9 +208,9 @@ mod tests {
         let network = Network::new();
 
         // Create the ops to trigger the split.
-        let (op0, op1) = gen_ops(&mut rng, &sk, prefix0, &members0)?;
-        let (op2, op3) = gen_ops(&mut rng, &sk, prefix1, &members1)?;
-        let ops = [op0, op1, op2, op3];
+        let op0 = gen_ops(&mut rng, &sk, prefix0, &members0)?;
+        let op1 = gen_ops(&mut rng, &sk, prefix1, &members1)?;
+        let ops = [op0, op1];
 
         // Apply the ops in every possible order
         for op_sequence in ops.iter().permutations(ops.len()) {
@@ -273,9 +235,6 @@ mod tests {
                         elders_info.clone(),
                         key_proof.clone(),
                     ),
-                    Op::TheirKey(key) => {
-                        barrier.handle_their_key(our_name, &section, &network, key.clone())
-                    }
                 }
 
                 match barrier.take(section.prefix()) {
@@ -306,9 +265,6 @@ mod tests {
                 sibling.section.chain().last_key()
             );
 
-            assert!(our.network.has_key(sibling.section.chain().last_key()));
-            assert!(sibling.network.has_key(our.section.chain().last_key()));
-
             assert_eq!(
                 our.network.get(sibling.section.prefix()),
                 Some(sibling.section.elders_info())
@@ -327,7 +283,6 @@ mod tests {
             elders_info: Proven<EldersInfo>,
             key_proof: Proof,
         },
-        TheirKey(Proven<(Prefix, bls::PublicKey)>),
     }
 
     fn gen_ops(
@@ -335,7 +290,7 @@ mod tests {
         sk: &bls::SecretKey,
         prefix: Prefix,
         members: &[Peer],
-    ) -> Result<(Op, Op)> {
+    ) -> Result<Op> {
         let new_sk: bls::SecretKey = rng.gen();
         let new_pk = new_sk.public_key();
 
@@ -347,15 +302,11 @@ mod tests {
         let elders_info = EldersInfo::new(elders, prefix);
         let elders_info = proven(&new_sk, elders_info)?;
         let key_proof = prove(sk, &new_pk)?;
-        let their_key = proven(sk, (prefix, new_pk))?;
 
-        Ok((
-            Op::OurElders {
-                elders_info,
-                key_proof,
-            },
-            Op::TheirKey(their_key),
-        ))
+        Ok(Op::OurElders {
+            elders_info,
+            key_proof,
+        })
     }
 
     fn gen_peer(rng: &mut impl Rng, prefix: &Prefix) -> Peer {
