@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.54.1](https://github.com/maidsafe/sn_routing/compare/v0.54.0...v0.54.1) (2021-03-29)
+
+
+### Features
+
+* keep the genesis key and use it for fallback proofs ([99fb5ca](https://github.com/maidsafe/sn_routing/commit/99fb5cacb4bd0782e3cbea3065b01c47ab1ee840))
+
 ## [0.54.0](https://github.com/maidsafe/sn_routing/compare/v0.53.0...v0.54.0) (2021-03-29)
 
 
