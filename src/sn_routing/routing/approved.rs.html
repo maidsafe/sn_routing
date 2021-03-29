@@ -2287,6 +2287,8 @@
 <span id="2286">2286</span>
 <span id="2287">2287</span>
 <span id="2288">2288</span>
+<span id="2289">2289</span>
+<span id="2290">2290</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -3114,7 +3116,8 @@
             .<span class="ident">section</span>
             .<span class="ident">chain</span>()
             .<span class="ident">keys</span>()
-            .<span class="ident">chain</span>(<span class="self">self</span>.<span class="ident">network</span>.<span class="ident">keys</span>().<span class="ident">map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">key</span>)<span class="op">|</span> <span class="ident">key</span>));
+            .<span class="ident">chain</span>(<span class="self">self</span>.<span class="ident">network</span>.<span class="ident">keys</span>().<span class="ident">map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">key</span>)<span class="op">|</span> <span class="ident">key</span>))
+            .<span class="ident">chain</span>(<span class="ident">iter</span>::<span class="ident">once</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">genesis_key</span>()));
 
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">verify</span>(<span class="ident">known_keys</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>),
@@ -4126,6 +4129,7 @@
         )<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
+            <span class="ident">genesis_key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">genesis_key</span>(),
             <span class="ident">elders_info</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_elders_info</span>().<span class="ident">clone</span>(),
             <span class="ident">member_info</span>,
         };

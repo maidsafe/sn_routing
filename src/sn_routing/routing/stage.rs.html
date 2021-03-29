@@ -272,6 +272,16 @@
 <span id="271">271</span>
 <span id="272">272</span>
 <span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -520,11 +530,21 @@
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
         <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">clone</span>();
+        <span class="kw">let</span> (<span class="ident">genesis_key</span>, <span class="ident">node</span>) <span class="op">=</span> {
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+            (<span class="kw-2">*</span><span class="ident">state</span>.<span class="ident">section</span>().<span class="ident">genesis_key</span>(), <span class="ident">state</span>.<span class="ident">node</span>().<span class="ident">clone</span>())
+        };
         <span class="kw">let</span> <span class="ident">previous_name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
 
-        <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span>
-            <span class="ident">bootstrap</span>::<span class="ident">relocate</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">comm</span>, <span class="ident">message_rx</span>, <span class="ident">bootstrap_addrs</span>, <span class="ident">details</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span> <span class="ident">bootstrap</span>::<span class="ident">relocate</span>(
+            <span class="ident">node</span>,
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">comm</span>,
+            <span class="ident">message_rx</span>,
+            <span class="ident">bootstrap_addrs</span>,
+            <span class="ident">genesis_key</span>,
+            <span class="ident">details</span>,
+        )
+        .<span class="kw">await</span><span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">event_tx</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">event_tx</span>.<span class="ident">clone</span>();

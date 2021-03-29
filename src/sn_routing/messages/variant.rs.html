@@ -292,6 +292,10 @@
 <span id="291">291</span>
 <span id="292">292</span>
 <span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -338,6 +342,7 @@
     <span class="doccomment">/// Message sent to newly joined node containing the necessary info to become a member of our</span>
     <span class="doccomment">/// section.</span>
     <span class="ident">NodeApproval</span> {
+        <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
         <span class="ident">member_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span>,
     },
@@ -422,6 +427,7 @@
             <span class="self">Self</span>::<span class="ident">NodeApproval</span> {
                 <span class="ident">elders_info</span>,
                 <span class="ident">member_info</span>,
+                ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">proof_chain</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
 
@@ -466,10 +472,12 @@
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">UserMessage</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;UserMessage({:10})&quot;</span>, <span class="ident">HexFmt</span>(<span class="ident">payload</span>)),
             <span class="self">Self</span>::<span class="ident">NodeApproval</span> {
+                <span class="ident">genesis_key</span>,
                 <span class="ident">elders_info</span>,
                 <span class="ident">member_info</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;NodeApproval&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;genesis_key&quot;</span>, <span class="ident">genesis_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;member_info&quot;</span>, <span class="ident">member_info</span>)
                 .<span class="ident">finish</span>(),

@@ -973,6 +973,22 @@
 <span id="972">972</span>
 <span id="973">973</span>
 <span id="974">974</span>
+<span id="975">975</span>
+<span id="976">976</span>
+<span id="977">977</span>
+<span id="978">978</span>
+<span id="979">979</span>
+<span id="980">980</span>
+<span id="981">981</span>
+<span id="982">982</span>
+<span id="983">983</span>
+<span id="984">984</span>
+<span id="985">985</span>
+<span id="986">986</span>
+<span id="987">987</span>
+<span id="988">988</span>
+<span id="989">989</span>
+<span id="990">990</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1031,7 +1047,7 @@
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>);
 
     <span class="ident">future</span>::<span class="ident">join</span>(
-        <span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>),
+        <span class="ident">state</span>.<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>, <span class="prelude-val">None</span>),
         <span class="ident">send_messages</span>(<span class="ident">send_rx</span>, <span class="ident">comm</span>),
     )
     .<span class="ident">instrument</span>(<span class="ident">span</span>)
@@ -1049,6 +1065,7 @@
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>,
     <span class="ident">recv_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
+    <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     <span class="ident">relocate_details</span>: <span class="ident">SignedRelocateDetails</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
@@ -1057,7 +1074,7 @@
     <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>);
 
     <span class="ident">future</span>::<span class="ident">join</span>(
-        <span class="ident">state</span>.<span class="ident">run</span>(<span class="ident">bootstrap_addrs</span>, <span class="prelude-val">Some</span>(<span class="ident">relocate_details</span>)),
+        <span class="ident">state</span>.<span class="ident">run</span>(<span class="ident">bootstrap_addrs</span>, <span class="prelude-val">Some</span>(<span class="ident">genesis_key</span>), <span class="prelude-val">Some</span>(<span class="ident">relocate_details</span>)),
         <span class="ident">send_messages</span>(<span class="ident">send_rx</span>, <span class="ident">comm</span>),
     )
     .<span class="kw">await</span>
@@ -1091,6 +1108,7 @@
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">run</span>(
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
+        <span class="ident">genesis_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">relocate_details</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SignedRelocateDetails</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">prefix</span>, <span class="ident">section_key</span>, <span class="ident">elders</span>) <span class="op">=</span> <span class="self">self</span>
@@ -1103,7 +1121,8 @@
             <span class="prelude-val">None</span>
         };
 
-        <span class="self">self</span>.<span class="ident">join</span>(<span class="ident">section_key</span>, <span class="ident">elders</span>, <span class="ident">relocate_payload</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">join</span>(<span class="ident">section_key</span>, <span class="ident">elders</span>, <span class="ident">genesis_key</span>, <span class="ident">relocate_payload</span>)
+            .<span class="kw">await</span>
     }
 
     <span class="comment">// Send a `GetSectionQuery` and waits for the response. If the response is `Redirect`,</span>
@@ -1258,6 +1277,7 @@
         <span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="kw-2">mut</span> <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">SocketAddr</span><span class="op">&gt;</span>,
+        <span class="ident">genesis_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">join_request</span> <span class="op">=</span> <span class="ident">JoinRequest</span> {
@@ -1270,18 +1290,19 @@
 
         <span class="kw">loop</span> {
             <span class="kw">let</span> (<span class="ident">response</span>, <span class="ident">sender</span>) <span class="op">=</span> <span class="self">self</span>
-                .<span class="ident">receive_join_response</span>(<span class="ident">relocate_payload</span>.<span class="ident">as_ref</span>())
+                .<span class="ident">receive_join_response</span>(<span class="ident">genesis_key</span>.<span class="ident">as_ref</span>(), <span class="ident">relocate_payload</span>.<span class="ident">as_ref</span>())
                 .<span class="kw">await</span><span class="question-mark">?</span>;
 
             <span class="kw">match</span> <span class="ident">response</span> {
                 <span class="ident">JoinResponse</span>::<span class="ident">Approval</span> {
                     <span class="ident">elders_info</span>,
                     <span class="ident">age</span>,
+                    <span class="ident">genesis_key</span>,
                     <span class="ident">section_chain</span>,
                 } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>((
                         <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">with_age</span>(<span class="ident">age</span>),
-                        <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">section_chain</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>,
+                        <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">genesis_key</span>, <span class="ident">section_chain</span>, <span class="ident">elders_info</span>)<span class="question-mark">?</span>,
                         <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">into_iter</span>().<span class="ident">collect</span>(),
                     ));
                 }
@@ -1362,6 +1383,7 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">receive_join_response</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">expected_genesis_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">JoinResponse</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">message</span>, <span class="ident">sender</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">recv_rx</span>.<span class="ident">next</span>().<span class="kw">await</span> {
@@ -1417,12 +1439,20 @@
                     ));
                 }
                 <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
+                    <span class="ident">genesis_key</span>,
                     <span class="ident">elders_info</span>,
                     <span class="ident">member_info</span>,
                 } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">if</span> <span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
                         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore NodeApproval not for us&quot;</span>);
                         <span class="kw">continue</span>;
+                    }
+
+                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">expected_genesis_key</span>) <span class="op">=</span> <span class="ident">expected_genesis_key</span> {
+                        <span class="kw">if</span> <span class="ident">expected_genesis_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">genesis_key</span> {
+                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Unexpected Genesis key&quot;</span>);
+                            <span class="kw">continue</span>;
+                        }
                     }
 
                     <span class="kw">let</span> <span class="ident">trusted_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">payload</span>) <span class="op">=</span> <span class="ident">relocate_payload</span> {
@@ -1435,7 +1465,6 @@
                         <span class="kw">continue</span>;
                     }
 
-                    <span class="comment">// Transition from Joining to Approved</span>
                     <span class="kw">let</span> <span class="ident">section_chain</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">proof_chain</span>()<span class="question-mark">?</span>.<span class="ident">clone</span>();
 
                     <span class="macro">info</span><span class="macro">!</span>(
@@ -1447,6 +1476,7 @@
                         <span class="ident">JoinResponse</span>::<span class="ident">Approval</span> {
                             <span class="ident">elders_info</span>: <span class="ident">elders_info</span>.<span class="ident">clone</span>(),
                             <span class="ident">age</span>: <span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">age</span>(),
+                            <span class="ident">genesis_key</span>: <span class="kw-2">*</span><span class="ident">genesis_key</span>,
                             <span class="ident">section_chain</span>,
                         },
                         <span class="ident">sender</span>,
@@ -1491,6 +1521,7 @@
     <span class="ident">Approval</span> {
         <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
         <span class="ident">age</span>: <span class="ident">u8</span>,
+        <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
         <span class="ident">section_chain</span>: <span class="ident">SectionChain</span>,
     },
     <span class="ident">Retry</span> {
@@ -1589,7 +1620,7 @@
         <span class="comment">// Create the bootstrap task, but don&#39;t run it yet.</span>
         <span class="kw">let</span> <span class="ident">bootstrap</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
             <span class="ident">state</span>
-                .<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>)
+                .<span class="ident">run</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)
                 .<span class="kw">await</span>
                 .<span class="ident">map_err</span>(<span class="ident">Error</span>::<span class="ident">from</span>)
         };
@@ -1643,6 +1674,7 @@
                 <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
                 <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
+                    <span class="ident">genesis_key</span>: <span class="ident">pk</span>,
                     <span class="ident">elders_info</span>,
                     <span class="ident">member_info</span>,
                 },
@@ -1882,7 +1914,7 @@
         <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> (<span class="ident">good_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>()), <span class="ident">gen_addr</span>()))
             .<span class="ident">collect</span>();
-        <span class="kw">let</span> <span class="ident">join_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">join</span>(<span class="ident">section_key</span>, <span class="ident">elders</span>, <span class="prelude-val">None</span>);
+        <span class="kw">let</span> <span class="ident">join_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">join</span>(<span class="ident">section_key</span>, <span class="ident">elders</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
 
         <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
