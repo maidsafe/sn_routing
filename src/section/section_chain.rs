@@ -241,7 +241,10 @@ impl SectionChain {
 
     /// Returns the parent key of the last key or the root key if this chain has only one key.
     pub fn prev_key(&self) -> &bls::PublicKey {
-        self.main_branch().nth(1).unwrap_or(&self.root)
+        self.branch(self.tree.len())
+            .nth(1)
+            .map(|block| &block.key)
+            .unwrap_or(&self.root)
     }
 
     /// Returns whether `key` is present in this chain.

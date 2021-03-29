@@ -1707,10 +1707,11 @@ async fn handle_elders_update() -> Result<()> {
     Ok(())
 }
 
-// Test that demoted node still sends `Sync` messages to both sub-sections on split.
+// Test that demoted node still sends `Sync` messages on split.
 #[tokio::test]
 async fn handle_demote_during_split() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
+    let node_name = node.name();
 
     let prefix0 = Prefix::default().pushed(false);
     let prefix1 = Prefix::default().pushed(true);
@@ -1747,10 +1748,7 @@ async fn handle_demote_during_split() -> Result<()> {
     let stage = Stage::new(state, create_comm().await?);
 
     let sk_set_v1_p0 = SecretKeySet::random();
-    let pk_v1_p0 = sk_set_v1_p0.secret_key().public_key();
-
     let sk_set_v1_p1 = SecretKeySet::random();
-    let pk_v1_p1 = sk_set_v1_p1.secret_key().public_key();
 
     // Create consensus on `OurElder` for both sub-sections
     let create_our_elders_command = |sk, elders_info| -> Result<_> {
@@ -1778,8 +1776,7 @@ async fn handle_demote_during_split() -> Result<()> {
     let command = create_our_elders_command(sk_set_v1_p1.secret_key(), elders_info)?;
     let commands = stage.handle_command(command).await?;
 
-    let mut sync_recipients_p0 = HashSet::new();
-    let mut sync_recipients_p1 = HashSet::new();
+    let mut sync_recipients = HashSet::new();
 
     for command in commands {
         let (recipients, message) = match command {
@@ -1791,33 +1788,24 @@ async fn handle_demote_during_split() -> Result<()> {
             _ => continue,
         };
 
-        let section = match message.variant() {
-            Variant::Sync { section, .. } => section,
-            _ => continue,
-        };
-
-        match section.chain().last_key() {
-            key if key == &pk_v1_p0 => sync_recipients_p0.extend(recipients),
-            key if key == &pk_v1_p1 => sync_recipients_p1.extend(recipients),
-            key => {
-                panic!(
-                    "unexpected section key: {:?} (expecting {:?} or {:?})",
-                    key, pk_v1_p0, pk_v1_p1
-                );
-            }
+        if matches!(message.variant(), Variant::Sync { .. }) {
+            sync_recipients.extend(recipients);
         }
     }
 
-    let expected_recipients_p0 = peers_a
-        .iter()
-        .map(Peer::addr)
-        .chain(iter::once(peer_c.addr()))
-        .copied()
-        .collect();
-    let expected_recipients_p1 = peers_b.iter().map(Peer::addr).copied().collect();
+    let expected_sync_recipients = if prefix0.matches(&node_name) {
+        peers_a
+            .iter()
+            .map(Peer::addr)
+            .chain(iter::once(peer_c.addr()))
+            .copied()
+            .collect()
+    } else {
+        // prefix1
+        peers_b.iter().map(Peer::addr).copied().collect()
+    };
 
-    assert_eq!(sync_recipients_p0, expected_recipients_p0);
-    assert_eq!(sync_recipients_p1, expected_recipients_p1);
+    assert_eq!(sync_recipients, expected_sync_recipients);
 
     Ok(())
 }

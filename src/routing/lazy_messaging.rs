@@ -37,7 +37,7 @@ pub(crate) fn process(
     }
 
     if let Ok(src_key) = msg.proof_chain_last_key() {
-        if !network.has_key(src_key) {
+        if !network.has_key(src_key) && !section.chain().has_key(src_key) {
             // We don't know the src key. Send them a `OtherSection` message whose `dst_key` is set
             // to the latest key we know and when they receive it they would send us back a
             // `OtherSection` with their latest info, including their latest key.
