@@ -34,12 +34,8 @@ pub enum SrcAuthority {
     },
     /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
     BlsShare {
-        /// Name of the source section
+        /// Name in the source section
         src_name: XorName,
-        /// Public key of the source peer.
-        public_key: PublicKey,
-        /// Age of the source peer.
-        age: u8,
         /// Proof Share signed by the peer's BLS KeyShare
         proof_share: ProofShare,
     },
@@ -58,9 +54,7 @@ impl SrcAuthority {
             Self::Node { public_key, .. } => {
                 SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
             }
-            Self::BlsShare { public_key, .. } => {
-                SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
-            }
+            Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
             Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }

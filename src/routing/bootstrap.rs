@@ -326,7 +326,7 @@ impl<'a> State<'a> {
 
         let age = relocate_details.relocate_details()?.age;
         let new_keypair = crypto::gen_keypair(&name_prefix.range_inclusive(), age);
-        let new_name = crypto::name(&new_keypair.public);
+        let new_name = crypto::name(&PublicKey::from(new_keypair.public));
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 

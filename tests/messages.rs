@@ -87,6 +87,7 @@ async fn test_messages_client_node() -> Result<()> {
                         query_clone
                             .clone()
                             .serialize(XorName::from(pk), section_key)?,
+                        None,
                     )
                     .await?;
                     break;
