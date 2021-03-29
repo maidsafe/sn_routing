@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.54.0](https://github.com/maidsafe/sn_routing/compare/v0.53.0...v0.54.0) (2021-03-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* Added `additional_proof_chain_key` parameter to  `Routing::send_message`, added `proof_chain` field to `Event::MessageReceived`.
+
+### Features
+
+* support adding additional proof chain keys to user messages ([2275730](https://github.com/maidsafe/sn_routing/commit/2275730e276a5296dfe3a6b8c95fb6f516787aba))
+
 ## [0.53.0](https://github.com/maidsafe/sn_routing/compare/v0.52.1...v0.53.0) (2021-03-24)
 
 
