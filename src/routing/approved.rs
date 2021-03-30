@@ -51,7 +51,7 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    Aggregation, DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
+    DstLocation, EndUser, Itinerary, MessageType, SrcLocation,
 };
 use std::{
     cmp::{self, Ordering},
@@ -667,14 +667,7 @@ impl Approved {
 
         match msg.variant() {
             Variant::OtherSection { elders_info, .. } => {
-                if msg.dst().is_section() {
-                    self.handle_other_section(
-                        elders_info.value.clone(),
-                        *msg.proof_chain_last_key()?,
-                    )
-                } else {
-                    Err(Error::InvalidDstLocation)
-                }
+                self.handle_other_section(elders_info.value.clone(), *msg.proof_chain_last_key()?)
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
@@ -856,15 +849,9 @@ impl Approved {
     ) -> Result<Command> {
         let src_name = msg.src().name();
         let bounce_dst_key = *self.section_key_by_name(&src_name);
-        let bounce_dst = if matches!(msg.aggregation(), Aggregation::AtSource) {
-            DstLocation::Section(src_name)
-        } else {
-            DstLocation::Node(src_name)
-        };
-
         let bounce_msg = Message::single_src(
             &self.node,
-            bounce_dst,
+            DstLocation::Direct,
             Variant::BouncedUntrustedMessage(Box::new(msg)),
             None,
             Some(bounce_dst_key),

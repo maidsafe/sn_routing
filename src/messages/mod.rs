@@ -349,16 +349,6 @@ impl Message {
         &self.hash
     }
 
-    /// Elders will aggregate a group sig before
-    /// they all send one copy of it each to dst.
-    pub fn aggregation(&self) -> Aggregation {
-        match self.src {
-            SrcAuthority::Section { .. } => Aggregation::AtSource,
-            SrcAuthority::BlsShare { .. } => Aggregation::AtDestination,
-            SrcAuthority::Node { .. } => Aggregation::None,
-        }
-    }
-
     /// Returns the attached proof chain, if any.
     pub(crate) fn proof_chain(&self) -> Result<&SectionChain> {
         self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
