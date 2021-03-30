@@ -16,7 +16,6 @@ use crate::{
 };
 use sn_messaging::DstLocation;
 use std::cmp::Ordering;
-use xor_name::XorName;
 
 /// On reception of an incoming message, determine the actions that need to be taken in order to
 /// bring ours and the senders knowledge about each other up to date.
@@ -83,7 +82,7 @@ pub(crate) fn process(
             node,
             section,
             network,
-            src_name,
+            msg.src().src_location().to_dst(),
             *msg.hash(),
             dst_key,
         )?);
@@ -96,12 +95,13 @@ fn create_other_section_message(
     node: &Node,
     section: &Section,
     network: &Network,
-    dst: XorName,
+    dst: DstLocation,
     nonce: MessageHash,
     dst_key: Option<bls::PublicKey>,
 ) -> Result<Message> {
-    let dst_knowledge = network
-        .knowledge_by_name(&dst)
+    let dst_knowledge = dst
+        .name()
+        .and_then(|dst| network.knowledge_by_name(&dst))
         .unwrap_or_else(|| section.chain().root_key());
     let proof_chain = section
         .chain()
@@ -114,7 +114,7 @@ fn create_other_section_message(
 
     Ok(Message::single_src(
         node,
-        DstLocation::Section(dst),
+        dst,
         variant,
         Some(proof_chain),
         dst_key,
