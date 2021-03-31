@@ -8,7 +8,7 @@
 
 use super::{
     approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
-    Approved, Comm, Command, Stage,
+    Approved, Comm, Command, Dispatcher,
 };
 use crate::{
     agreement::{test_utils::*, Proposal, Proven},
@@ -50,7 +50,7 @@ use xor_name::{Prefix, XorName};
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
@@ -59,7 +59,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     let message = SectionInfoMsg::GetSectionQuery(new_node.name());
 
-    let mut commands = stage
+    let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node.addr,
             message,
@@ -97,14 +97,14 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
     let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node_name = bad_prefix.substituted_in(rand::random());
     let new_node_addr = gen_addr();
 
     let message = SectionInfoMsg::GetSectionQuery(new_node_name);
 
-    let mut commands = stage
+    let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node_addr,
             message,
@@ -139,13 +139,13 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
         gen_addr(),
     );
-    let section_key = *stage.state.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.state.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
         &new_node,
@@ -158,7 +158,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
         None,
         None,
     )?;
-    let mut commands = stage
+    let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
@@ -184,17 +184,17 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
         gen_addr(),
     );
-    let section_key = *stage.state.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.state.lock().await.section().chain().last_key();
 
     let nonce: [u8; 32] = rand::random();
     let serialized = bincode::serialize(&(new_node.name(), nonce))?;
-    let nonce_signature = crypto::sign(&serialized, &stage.state.lock().await.node().keypair);
+    let nonce_signature = crypto::sign(&serialized, &dispatcher.state.lock().await.node().keypair);
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
     let data = rp.create_proof_data(&nonce);
@@ -218,7 +218,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         None,
     )?;
 
-    let mut commands = stage
+    let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
@@ -266,7 +266,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let relocated_node_old_keypair =
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1);
@@ -313,7 +313,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         None,
     )?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(relocated_node.addr),
             message: join_request,
@@ -364,7 +364,7 @@ async fn aggregate_proposals() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(new_peer);
@@ -387,7 +387,7 @@ async fn aggregate_proposals() -> Result<()> {
             None,
         )?;
 
-        let commands = stage
+        let commands = dispatcher
             .handle_command(Command::HandleMessage {
                 message,
                 sender: Some(nodes[0].addr),
@@ -411,7 +411,7 @@ async fn aggregate_proposals() -> Result<()> {
         None,
         None,
     )?;
-    let mut commands = stage
+    let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
             message,
             sender: Some(nodes[THRESHOLD].addr),
@@ -440,11 +440,11 @@ async fn handle_agreement_on_online() -> Result<()> {
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_peer = create_peer(MIN_AGE);
 
-    let status = handle_online_command(&new_peer, &sk_set, &stage, &elders_info).await?;
+    let status = handle_online_command(&new_peer, &sk_set, &dispatcher, &elders_info).await?;
     assert!(status.node_approval_sent);
 
     assert_matches!(event_rx.recv().await, Some(Event::MemberJoined { name, age, .. }) => {
@@ -490,7 +490,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Handle agreement on Online of a peer that is older than the youngest
     // current elder - that means this peer is going to be promoted.
@@ -503,7 +503,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     };
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -550,7 +550,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
 async fn handle_online_command(
     peer: &Peer,
     sk_set: &SecretKeySet,
-    stage: &Stage,
+    dispatcher: &Dispatcher,
     elders_info: &EldersInfo,
 ) -> Result<HandleOnlineStatus> {
     let member_info = MemberInfo::joined(*peer);
@@ -561,7 +561,7 @@ async fn handle_online_command(
     };
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -637,10 +637,10 @@ async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Simulate peer with the same name is rejoin and verify resulted behaviours.
-    let status = handle_online_command(&peer, &sk_set, &stage, &elders_info).await?;
+    let status = handle_online_command(&peer, &sk_set, &dispatcher, &elders_info).await?;
 
     // A rejoin node with low age will be rejected.
     if age / 2 <= MIN_AGE {
@@ -693,7 +693,7 @@ async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let member_info = MemberInfo {
         peer: existing_peer,
@@ -702,7 +702,7 @@ async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
     let proposal = Proposal::Offline(member_info);
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
-    let _ = stage
+    let _ = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -744,13 +744,13 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let node = nodes.remove(0);
     let node_name = node.name();
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Handle agreement on the Offline proposal
     let proposal = Proposal::Offline(remove_member_info);
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -799,7 +799,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     });
 
     // The removed peer is still our elder because we haven't yet processed the section update.
-    assert!(stage
+    assert!(dispatcher
         .state
         .lock()
         .await
@@ -863,7 +863,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
 
     let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // non-elders can't handle messages addressed to sections.
     let original_message = Message::single_src(
@@ -875,7 +875,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     )?;
     let original_message_bytes = original_message.to_bytes();
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: original_message,
             sender: Some(sender_node.addr),
@@ -972,7 +972,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let node = create_node(MIN_AGE + 1);
     let node_name = node.name();
     let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk1 = bls::SecretKey::random();
     let pk1 = sk1.public_key();
@@ -987,7 +987,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
     let original_message = Message::section_src(message, signature, SectionChain::new(pk1))?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: original_message.clone(),
             sender,
@@ -1064,7 +1064,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let bounced_message = Message::single_src(
         &other_node,
@@ -1077,7 +1077,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         None,
     )?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: bounced_message,
             sender: Some(other_node.addr),
@@ -1166,7 +1166,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Create the bounced message, indicating the last key the peer knows is `pk0`
     let bounced_message = Message::single_src(
@@ -1177,7 +1177,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         Some(pk0),
     )?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: bounced_message,
             sender: Some(other_node.addr),
@@ -1234,7 +1234,7 @@ async fn handle_sync() -> Result<()> {
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = nodes.remove(0);
     let state = Approved::new(node, old_section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Create new `Section` as a successor to the previous one.
     let sk2 = bls::SecretKey::random();
@@ -1272,7 +1272,7 @@ async fn handle_sync() -> Result<()> {
     )?;
 
     // Handle the message.
-    let _ = stage
+    let _ = dispatcher
         .handle_command(Command::HandleMessage {
             message,
             sender: Some(old_node.addr),
@@ -1319,7 +1319,7 @@ async fn handle_untrusted_sync() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node(MIN_AGE + 1);
     let state = Approved::new(node, old_section, None, event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sender = create_node(MIN_AGE + 1);
     let orig_message = Message::single_src(
@@ -1333,7 +1333,7 @@ async fn handle_untrusted_sync() -> Result<()> {
         None,
     )?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: orig_message.clone(),
             sender: Some(sender.addr),
@@ -1402,7 +1402,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         Some(section_key_share),
         event_tx,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let orig_message = Message::single_src(
         &node,
@@ -1424,7 +1424,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         Some(pk0),
     )?;
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: bounced_message,
             sender: Some(sender.addr),
@@ -1490,7 +1490,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let relocated_peer = match relocated_peer_role {
         RelocatedPeerRole::Elder => elders_info.peers().nth(1).expect("too few elders"),
@@ -1498,7 +1498,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     };
 
     let (proposal, proof) = create_relocation_trigger(sk_set.secret_key(), relocated_peer.age())?;
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -1564,7 +1564,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     let node = create_node(MIN_AGE + 1);
     let peer = node.peer();
     let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let src = SrcLocation::Node(*peer.name());
     let dst = match dst {
@@ -1573,7 +1573,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     };
     let content = Bytes::from_static(b"hello");
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::SendUserMessage {
             itinerary: Itinerary {
                 src,
@@ -1652,9 +1652,9 @@ async fn handle_elders_update() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let state = Approved::new(node, section0.clone(), Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
-    let commands = stage
+    let commands = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
@@ -1745,7 +1745,7 @@ async fn handle_demote_during_split() -> Result<()> {
 
     let (event_tx, _) = mpsc::unbounded_channel();
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
-    let stage = Stage::new(state, create_comm().await?);
+    let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk_set_v1_p0 = SecretKeySet::random();
     let sk_set_v1_p1 = SecretKeySet::random();
@@ -1768,13 +1768,13 @@ async fn handle_demote_during_split() -> Result<()> {
     // Handle agreement on `OurElders` for prefix-0.
     let elders_info = EldersInfo::new(peers_a.iter().copied().chain(iter::once(peer_c)), prefix0);
     let command = create_our_elders_command(sk_set_v1_p0.secret_key(), elders_info)?;
-    let commands = stage.handle_command(command).await?;
+    let commands = dispatcher.handle_command(command).await?;
     assert_matches!(&commands[..], &[]);
 
     // Handle agreement on `OurElders` for prefix-1.
     let elders_info = EldersInfo::new(peers_b.iter().copied(), prefix1);
     let command = create_our_elders_command(sk_set_v1_p1.secret_key(), elders_info)?;
-    let commands = stage.handle_command(command).await?;
+    let commands = dispatcher.handle_command(command).await?;
 
     let mut sync_recipients = HashSet::new();
 

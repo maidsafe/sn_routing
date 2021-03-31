@@ -11,11 +11,11 @@ pub(crate) mod command;
 mod approved;
 mod bootstrap;
 mod comm;
+mod dispatcher;
 mod enduser_registry;
 mod event_stream;
 mod lazy_messaging;
 mod split_barrier;
-mod stage;
 #[cfg(test)]
 mod tests;
 
@@ -24,7 +24,7 @@ use self::{
     approved::Approved,
     comm::{Comm, ConnectionEvent},
     command::Command,
-    stage::Stage,
+    dispatcher::Dispatcher,
 };
 use crate::{
     crypto,
@@ -78,7 +78,7 @@ impl Default for Config {
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be `sn_messaging::SrcLocation::Node` or `sn_messaging::SrcLocation::Section`.
 pub struct Routing {
-    stage: Arc<Stage>,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl Routing {
@@ -121,12 +121,12 @@ impl Routing {
             (state, comm, backlog)
         };
 
-        let stage = Arc::new(Stage::new(state, comm));
+        let dispatcher = Arc::new(Dispatcher::new(state, comm));
         let event_stream = EventStream::new(event_rx);
 
         // Process message backlog
         for (message, sender) in backlog {
-            stage
+            dispatcher
                 .clone()
                 .handle_commands(Command::HandleMessage {
                     message,
@@ -136,9 +136,12 @@ impl Routing {
         }
 
         // Start listening to incoming connections.
-        let _ = task::spawn(handle_connection_events(stage.clone(), connection_event_rx));
+        let _ = task::spawn(handle_connection_events(
+            dispatcher.clone(),
+            connection_event_rx,
+        ));
 
-        let routing = Self { stage };
+        let routing = Self { dispatcher };
 
         Ok((routing, event_stream))
     }
@@ -146,22 +149,22 @@ impl Routing {
     /// Sets the JoinsAllowed flag.
     pub async fn set_joins_allowed(&self, joins_allowed: bool) -> Result<()> {
         let command = Command::SetJoinsAllowed(joins_allowed);
-        self.stage.clone().handle_commands(command).await
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Returns the current age of this node.
     pub async fn age(&self) -> u8 {
-        self.stage.state.lock().await.node().age()
+        self.dispatcher.state.lock().await.node().age()
     }
 
     /// Returns the ed25519 public key of this node.
     pub async fn public_key(&self) -> PublicKey {
-        self.stage.state.lock().await.node().keypair.public
+        self.dispatcher.state.lock().await.node().keypair.public
     }
 
     /// Signs `data` with the ed25519 key of this node.
     pub async fn sign_as_node(&self, data: &[u8]) -> Signature {
-        self.stage.state.lock().await.node().keypair.sign(data)
+        self.dispatcher.state.lock().await.node().keypair.sign(data)
     }
 
     /// Signs `data` with the BLS secret key share of this node, if it has any. Returns
@@ -171,7 +174,7 @@ impl Routing {
         data: &[u8],
         public_key: &bls::PublicKey,
     ) -> Result<bls::SignatureShare> {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -180,7 +183,7 @@ impl Routing {
 
     /// Verifies `signature` on `data` with the ed25519 public key of this node.
     pub async fn verify(&self, data: &[u8], signature: &Signature) -> bool {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -192,22 +195,22 @@ impl Routing {
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        self.stage.state.lock().await.node().name()
+        self.dispatcher.state.lock().await.node().name()
     }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&self) -> SocketAddr {
-        self.stage.comm.our_connection_info()
+        self.dispatcher.comm.our_connection_info()
     }
 
     /// Returns the Section Proof Chain
     pub async fn section_chain(&self) -> SectionChain {
-        self.stage.state.lock().await.section_chain()
+        self.dispatcher.state.lock().await.section_chain()
     }
 
     /// Prefix of our section
     pub async fn our_prefix(&self) -> Prefix {
-        *self.stage.state.lock().await.section().prefix()
+        *self.dispatcher.state.lock().await.section().prefix()
     }
 
     /// Finds out if the given XorName matches our prefix.
@@ -217,12 +220,12 @@ impl Routing {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.stage.state.lock().await.is_elder()
+        self.dispatcher.state.lock().await.is_elder()
     }
 
     /// Returns the information of all the current section elders.
     pub async fn our_elders(&self) -> Vec<Peer> {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -244,7 +247,7 @@ impl Routing {
 
     /// Returns the information of all the current section adults.
     pub async fn our_adults(&self) -> Vec<Peer> {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -266,7 +269,7 @@ impl Routing {
 
     /// Returns the info about our section or `None` if we are not joined yet.
     pub async fn our_section(&self) -> EldersInfo {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -277,7 +280,7 @@ impl Routing {
 
     /// Returns the info about other sections in the network known to us.
     pub async fn other_sections(&self) -> Vec<EldersInfo> {
-        self.stage
+        self.dispatcher
             .state
             .lock()
             .await
@@ -289,7 +292,12 @@ impl Routing {
 
     /// Returns the last known public key of the section with `prefix`.
     pub async fn section_key(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
-        self.stage.state.lock().await.section_key(prefix).copied()
+        self.dispatcher
+            .state
+            .lock()
+            .await
+            .section_key(prefix)
+            .copied()
     }
 
     /// Returns the info about the section matching the name.
@@ -297,7 +305,7 @@ impl Routing {
         &self,
         name: &XorName,
     ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
-        let state = self.stage.state.lock().await;
+        let state = self.dispatcher.state.lock().await;
         let (key, elders_info) = state.matching_section(name);
         (key.copied(), elders_info.cloned())
     }
@@ -321,7 +329,7 @@ impl Routing {
         }) = itinerary.dst
         {
             let socket_addr = self
-                .stage
+                .dispatcher
                 .state
                 .lock()
                 .await
@@ -345,7 +353,7 @@ impl Routing {
             content,
             additional_proof_chain_key,
         };
-        self.stage.clone().handle_commands(command).await
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Send a message to a client peer.
@@ -361,47 +369,47 @@ impl Routing {
             delivery_group_size: 1,
             message: MessageType::ClientMessage(message),
         };
-        self.stage.clone().handle_commands(command).await
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Returns the current BLS public key set if this node has one, or
     /// `Error::InvalidState` otherwise.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.stage.state.lock().await.public_key_set()
+        self.dispatcher.state.lock().await.public_key_set()
     }
 
     /// Returns our section proof chain.
     pub async fn our_history(&self) -> SectionChain {
-        self.stage.state.lock().await.section().chain().clone()
+        self.dispatcher.state.lock().await.section().chain().clone()
     }
 
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn our_index(&self) -> Result<usize> {
-        self.stage.state.lock().await.our_index()
+        self.dispatcher.state.lock().await.our_index()
     }
 }
 
 impl Drop for Routing {
     fn drop(&mut self) {
-        self.stage.terminate()
+        self.dispatcher.terminate()
     }
 }
 
 // Listen for incoming connection events and handle them.
 async fn handle_connection_events(
-    stage: Arc<Stage>,
+    dispatcher: Arc<Dispatcher>,
     mut incoming_conns: mpsc::Receiver<ConnectionEvent>,
 ) {
     while let Some(event) = incoming_conns.recv().await {
         match event {
             ConnectionEvent::Received((src, bytes)) => {
                 trace!("New message ({} bytes) received from: {}", bytes.len(), src);
-                handle_message(stage.clone(), bytes, src).await;
+                handle_message(dispatcher.clone(), bytes, src).await;
             }
             ConnectionEvent::Disconnected(addr) => {
                 trace!("Lost connection to {:?}", addr);
-                let _ = stage
+                let _ = dispatcher
                     .clone()
                     .handle_commands(Command::HandleConnectionLost(addr))
                     .await;
@@ -410,9 +418,9 @@ async fn handle_connection_events(
     }
 }
 
-async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
+async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: SocketAddr) {
     let span = {
-        let state = stage.state.lock().await;
+        let state = dispatcher.state.lock().await;
         trace_span!("handle_message", name = %state.node().name(), %sender)
     };
     let _span_guard = span.enter();
@@ -431,7 +439,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
         }
         MessageType::SectionInfo(message) => {
             let command = Command::HandleSectionInfoMsg { sender, message };
-            let _ = task::spawn(stage.handle_commands(command));
+            let _ = task::spawn(dispatcher.handle_commands(command));
         }
         MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
             match Message::from_bytes(Bytes::from(msg_bytes)) {
@@ -440,7 +448,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                         message,
                         sender: Some(sender),
                     };
-                    let _ = task::spawn(stage.handle_commands(command));
+                    let _ = task::spawn(dispatcher.handle_commands(command));
                 }
                 Err(error) => {
                     error!("Failed to deserialize node message: {}", error);
@@ -448,7 +456,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
             }
         }
         MessageType::ClientMessage(message) => {
-            let end_user = stage
+            let end_user = dispatcher
                 .state
                 .lock()
                 .await
@@ -468,14 +476,14 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                             )),
                         )),
                     };
-                    let _ = task::spawn(stage.handle_commands(command));
+                    let _ = task::spawn(dispatcher.handle_commands(command));
                     return;
                 }
             };
 
             if let Some(client_pk) = message.target_section_pk() {
                 if let Some(bls_pk) = client_pk.bls() {
-                    if let Err(error) = stage.check_key_status(&bls_pk).await {
+                    if let Err(error) = dispatcher.check_key_status(&bls_pk).await {
                         let correlation_id = message.id();
                         let command = Command::SendMessage {
                             recipients: vec![sender],
@@ -487,7 +495,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                                 },
                             )),
                         };
-                        let _ = task::spawn(stage.handle_commands(command));
+                        let _ = task::spawn(dispatcher.handle_commands(command));
                         return;
                     }
                 }
@@ -498,7 +506,7 @@ async fn handle_message(stage: Arc<Stage>, bytes: Bytes, sender: SocketAddr) {
                 user: end_user,
             };
 
-            stage.send_event(event).await;
+            dispatcher.send_event(event).await;
         }
     }
 }
