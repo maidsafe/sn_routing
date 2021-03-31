@@ -8,7 +8,7 @@
 
 use super::{Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proven, Vote},
+    consensus::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, Proven},
     crypto::Signature,
     error::{Error, Result},
     network::Network,
@@ -101,9 +101,9 @@ pub(crate) enum Variant {
     /// Sent to the current elders by the DKG participants when at least majority of them observe
     /// a DKG failure.
     DkgFailureAgreement(DkgFailureProofSet),
-    /// Message containing a single `Vote` to be accumulated in the vote accumulator.
-    Vote {
-        content: Vote,
+    /// Message containing a single `Proposal` to be aggregated in the proposal aggregator.
+    Propose {
+        content: Proposal,
         proof_share: ProofShare,
     },
     /// Challenge sent from existing elder nodes to the joining peer for resource proofing.
@@ -232,11 +232,11 @@ impl Debug for Variant {
             Self::DkgFailureAgreement(proofs) => {
                 f.debug_tuple("DkgFailureAgreement").field(proofs).finish()
             }
-            Self::Vote {
+            Self::Propose {
                 content,
                 proof_share,
             } => f
-                .debug_struct("Vote")
+                .debug_struct("Propose")
                 .field("content", content)
                 .field("proof_share", proof_share)
                 .finish(),

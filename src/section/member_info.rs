@@ -36,7 +36,8 @@ impl MemberInfo {
     }
 
     pub fn leave(self) -> Result<Self, Error> {
-        // Do not vote Offline when already relocated, to avoid rejoining with the same name.
+        // Do not allow switching to `Left` when already relocated, to avoid rejoining with the
+        // same name.
         if let PeerState::Relocated(_) = self.state {
             return Err(Error::InvalidState);
         }

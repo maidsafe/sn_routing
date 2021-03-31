@@ -25,12 +25,12 @@ impl SplitBarrier {
         Self(Vec::new())
     }
 
-    // Pass an aggreed-on vote for `OurElders` through this function. If there is no split, it
+    // Pass an aggreed-on proposal for `OurElders` through this function. If there is no split, it
     // returns it unchanged. If there is a split and we've seen the aggreement for only one
-    // subsection so far, it caches it and returns nothing. Otherwise it returns both votes.
+    // subsection so far, it caches it and returns nothing. Otherwise it returns both proposals.
     //
-    // Note: in case of a fork, it can return more than two votes. In that case one of the votes
-    // will be for one subsection and all the others for the other subsection.
+    // Note: in case of a fork, it can return more than two proposals. In that case one of the
+    // proposals will be for one subsection and all the others for the other subsection.
     pub fn process(
         &mut self,
         our_prefix: &Prefix,

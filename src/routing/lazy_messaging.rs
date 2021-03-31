@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::Vote,
+    consensus::Proposal,
     error::Result,
     messages::{Message, MessageHash, Variant},
     network::Network,
@@ -61,7 +61,7 @@ pub(crate) fn process(
             if section.chain().cmp_by_position(new, old) == Ordering::Greater {
                 // Their knowledge of our section is newer than what we have stored - update it.
                 trace!("lazy messaging: dst key updated");
-                actions.vote = Some(Vote::TheirKnowledge {
+                actions.propose = Some(Proposal::TheirKnowledge {
                     prefix: *src_prefix,
                     key: *new,
                 });
@@ -125,8 +125,8 @@ fn create_other_section_message(
 pub(crate) struct Actions {
     // Message to send.
     pub send: Option<Message>,
-    // Vote to cast.
-    pub vote: Option<Vote>,
+    // Proposal to cast.
+    pub propose: Option<Proposal>,
 }
 
 #[cfg(test)]
@@ -159,7 +159,7 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
         assert_eq!(actions.send, None);
-        assert_eq!(actions.vote, None);
+        assert_eq!(actions.propose, None);
 
         Ok(())
     }
@@ -185,7 +185,7 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.vote, None);
+        assert_eq!(actions.propose, None);
         assert_matches!(&actions.send, Some(message) => {
             assert_matches!(
                 message.variant(),
@@ -222,7 +222,7 @@ mod tests {
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
         assert_eq!(actions.send, None);
-        assert_eq!(actions.vote, None);
+        assert_eq!(actions.propose, None);
 
         Ok(())
     }
@@ -240,7 +240,7 @@ mod tests {
 
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
-        assert_eq!(actions.vote, None);
+        assert_eq!(actions.propose, None);
         assert_matches!(&actions.send, Some(message) => {
             assert_matches!(message.variant(), Variant::OtherSection { .. });
             assert_matches!(message.proof_chain(), Ok(chain) => {
@@ -265,7 +265,7 @@ mod tests {
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
         assert_eq!(actions.send, None);
-        assert_eq!(actions.vote, None);
+        assert_eq!(actions.propose, None);
 
         Ok(())
     }
@@ -290,7 +290,7 @@ mod tests {
         let actions = process(&env.node, &env.section, &env.network, &msg)?;
 
         assert_eq!(actions.send, None);
-        assert_matches!(&actions.vote, Some(Vote::TheirKnowledge { prefix, key }) => {
+        assert_matches!(&actions.propose, Some(Proposal::TheirKnowledge { prefix, key }) => {
             assert_eq!(prefix, &env.their_prefix);
             assert_eq!(key, env.section.chain().last_key());
         });

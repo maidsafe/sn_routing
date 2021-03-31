@@ -11,7 +11,7 @@ use super::{
     Approved, Comm, Command, Stage,
 };
 use crate::{
-    consensus::{test_utils::*, Proven, Vote},
+    consensus::{test_utils::*, Proposal, Proven},
     crypto,
     event::Event,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
@@ -230,14 +230,14 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         commands.next(),
         Some(Command::HandleMessage { message, .. }) => message
     );
-    let vote = assert_matches!(
+    let proposal = assert_matches!(
         message.variant(),
-        Variant::Vote { content, .. } => content
+        Variant::Propose { content, .. } => content
     );
 
     assert_matches!(
-        vote,
-        Vote::Online { member_info, previous_name, their_knowledge } => {
+        proposal,
+        Proposal::Online { member_info, previous_name, their_knowledge } => {
             assert_eq!(*member_info.peer.name(), new_node.name());
             assert_eq!(*member_info.peer.addr(), new_node.addr);
             assert_eq!(member_info.peer.age(), MIN_AGE + 1);
@@ -320,40 +320,40 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         })
         .await?;
 
-    let mut online_voted = false;
+    let mut online_proposed = false;
 
     for command in commands {
         let message = match command {
             Command::HandleMessage { message, .. } => message,
             _ => continue,
         };
-        let vote = match message.variant() {
-            Variant::Vote { content, .. } => content,
+        let proposal = match message.variant() {
+            Variant::Propose { content, .. } => content,
             _ => continue,
         };
 
-        if let Vote::Online {
+        if let Proposal::Online {
             member_info,
             previous_name,
             their_knowledge,
-        } = vote
+        } = proposal
         {
             assert_eq!(member_info.peer, relocated_node.peer());
             assert_eq!(member_info.state, PeerState::Joined);
             assert_eq!(*previous_name, Some(relocated_node_old_name));
             assert_eq!(*their_knowledge, Some(section_key));
 
-            online_voted = true;
+            online_proposed = true;
         }
     }
 
-    assert!(online_voted);
+    assert!(online_proposed);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn accumulate_votes() -> Result<()> {
+async fn aggregate_proposals() -> Result<()> {
     let (elders_info, nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
@@ -368,19 +368,19 @@ async fn accumulate_votes() -> Result<()> {
 
     let new_peer = create_peer(MIN_AGE);
     let member_info = MemberInfo::joined(new_peer);
-    let vote = Vote::Online {
+    let proposal = Proposal::Online {
         member_info,
         previous_name: None,
         their_knowledge: None,
     };
 
     for index in 0..THRESHOLD {
-        let proof_share = vote.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
+        let proof_share = proposal.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
         let message = Message::single_src(
             &nodes[index],
             DstLocation::Direct,
-            Variant::Vote {
-                content: vote.clone(),
+            Variant::Propose {
+                content: proposal.clone(),
                 proof_share,
             },
             None,
@@ -396,7 +396,7 @@ async fn accumulate_votes() -> Result<()> {
         assert!(commands.is_empty());
     }
 
-    let proof_share = vote.prove(
+    let proof_share = proposal.prove(
         pk_set.clone(),
         THRESHOLD,
         &sk_set.secret_key_share(THRESHOLD),
@@ -404,8 +404,8 @@ async fn accumulate_votes() -> Result<()> {
     let message = Message::single_src(
         &nodes[THRESHOLD],
         DstLocation::Direct,
-        Variant::Vote {
-            content: vote.clone(),
+        Variant::Propose {
+            content: proposal.clone(),
             proof_share,
         },
         None,
@@ -421,8 +421,8 @@ async fn accumulate_votes() -> Result<()> {
 
     assert_matches!(
         commands.next(),
-        Some(Command::HandleConsensus { vote: consensus, .. }) => {
-            assert_eq!(consensus, vote);
+        Some(Command::HandleConsensus { proposal: consensus, .. }) => {
+            assert_eq!(consensus, proposal);
         }
     );
 
@@ -496,15 +496,15 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     // current elder - that means this peer is going to be promoted.
     let new_peer = create_peer(MIN_AGE + 2);
     let member_info = MemberInfo::joined(new_peer);
-    let vote = Vote::Online {
+    let proposal = Proposal::Online {
         member_info,
         previous_name: Some(XorName::random()),
         their_knowledge: Some(sk_set.secret_key().public_key()),
     };
-    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     // Verify we sent a `DkgStart` message with the expected participants.
@@ -546,7 +546,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     Ok(())
 }
 
-// Handles a concensused Online vote.
+// Handles a concensused Online proposal.
 async fn handle_online_command(
     peer: &Peer,
     sk_set: &SecretKeySet,
@@ -554,15 +554,15 @@ async fn handle_online_command(
     elders_info: &EldersInfo,
 ) -> Result<HandleOnlineStatus> {
     let member_info = MemberInfo::joined(*peer);
-    let vote = Vote::Online {
+    let proposal = Proposal::Online {
         member_info,
         previous_name: None,
         their_knowledge: None,
     };
-    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     let mut status = HandleOnlineStatus {
@@ -699,11 +699,11 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
         peer: existing_peer,
         state: PeerState::Left,
     };
-    let vote = Vote::Offline(member_info);
-    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    let proposal = Proposal::Offline(member_info);
+    let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let _ = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, age, }) => {
@@ -746,12 +746,12 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
     let stage = Stage::new(state, create_comm().await?);
 
-    // Handle the consensus on the Offline vote
-    let vote = Vote::Offline(remove_member_info);
-    let proof = prove(sk_set.secret_key(), &vote.as_signable())?;
+    // Handle the consensus on the Offline proposal
+    let proposal = Proposal::Offline(remove_member_info);
+    let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     // Verify we sent a `DkgStart` message with the expected participants.
@@ -1497,9 +1497,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         RelocatedPeerRole::NonElder => &non_elder_peer,
     };
 
-    let (vote, proof) = create_relocation_trigger(sk_set.secret_key(), relocated_peer.age())?;
+    let (proposal, proof) = create_relocation_trigger(sk_set.secret_key(), relocated_peer.age())?;
     let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     let mut relocate_sent = false;
@@ -1627,7 +1627,7 @@ async fn handle_elders_update() -> Result<()> {
 
     let demoted_peer = other_elder_peers.remove(0);
 
-    // Create `HandleConsensus` command for an `OurElders` vote. This will demote one of the
+    // Create `HandleConsensus` command for an `OurElders` proposal. This will demote one of the
     // current elders and promote the oldest peer.
     let elders_info1 = EldersInfo::new(
         iter::once(node.peer())
@@ -1641,10 +1641,10 @@ async fn handle_elders_update() -> Result<()> {
     let pk1 = sk_set1.secret_key().public_key();
 
     let proven_elders_info1 = proven(sk_set1.secret_key(), elders_info1)?;
-    let vote = Vote::OurElders(proven_elders_info1);
+    let proposal = Proposal::OurElders(proven_elders_info1);
     let signature = sk_set0
         .secret_key()
-        .sign(&bincode::serialize(&vote.as_signable())?);
+        .sign(&bincode::serialize(&proposal.as_signable())?);
     let proof = Proof {
         signature,
         public_key: pk0,
@@ -1655,7 +1655,7 @@ async fn handle_elders_update() -> Result<()> {
     let stage = Stage::new(state, create_comm().await?);
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { vote, proof })
+        .handle_command(Command::HandleConsensus { proposal, proof })
         .await?;
 
     let mut sync_actual_recipients = HashSet::new();
@@ -1753,16 +1753,16 @@ async fn handle_demote_during_split() -> Result<()> {
     // Create consensus on `OurElder` for both sub-sections
     let create_our_elders_command = |sk, elders_info| -> Result<_> {
         let proven_elders_info = proven(sk, elders_info)?;
-        let vote = Vote::OurElders(proven_elders_info);
+        let proposal = Proposal::OurElders(proven_elders_info);
         let signature = sk_set_v0
             .secret_key()
-            .sign(&bincode::serialize(&vote.as_signable())?);
+            .sign(&bincode::serialize(&proposal.as_signable())?);
         let proof = Proof {
             signature,
             public_key: sk_set_v0.secret_key().public_key(),
         };
 
-        Ok(Command::HandleConsensus { vote, proof })
+        Ok(Command::HandleConsensus { proposal, proof })
     };
 
     // Handle consensus on `OurElders` for prefix-0.
@@ -1883,19 +1883,20 @@ fn create_section(
     Ok((section, section_key_share))
 }
 
-// Create a `Vote::Online` whose consensus handling triggers relocation of a node with the given age.
+// Create a `Proposal::Online` whose consensus handling triggers relocation of a node with the
+// given age.
 // NOTE: recommended to call this with low `age` (4 or 5), otherwise it might take very long time
 // to complete because it needs to generate a signature with the number of trailing zeroes equal to
 // (or greater that) `age`.
-fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proof)> {
+fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Proposal, Proof)> {
     loop {
-        let vote = Vote::Online {
+        let proposal = Proposal::Online {
             member_info: MemberInfo::joined(create_peer(MIN_AGE + 1)),
             previous_name: Some(rand::random()),
             their_knowledge: None,
         };
 
-        let signature = sk.sign(&bincode::serialize(&vote.as_signable())?);
+        let signature = sk.sign(&bincode::serialize(&proposal.as_signable())?);
 
         if relocation::check(age, &signature) && !relocation::check(age + 1, &signature) {
             let proof = Proof {
@@ -1903,7 +1904,7 @@ fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Vote, Proo
                 signature,
             };
 
-            return Ok((vote, proof));
+            return Ok((proposal, proof));
         }
     }
 }

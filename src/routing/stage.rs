@@ -107,8 +107,8 @@ impl Stage {
                 .handle_section_info_msg(sender, message)
                 .await),
             Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
-            Command::HandleConsensus { vote, proof } => {
-                self.state.lock().await.handle_consensus(vote, proof)
+            Command::HandleConsensus { proposal, proof } => {
+                self.state.lock().await.handle_consensus(proposal, proof)
             }
             Command::HandleConnectionLost(addr) => Ok(self
                 .state

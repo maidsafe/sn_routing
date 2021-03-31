@@ -15,7 +15,7 @@ use super::{
 use crate::{
     consensus::{
         DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter, Proof, ProofShare,
-        Proven, Vote, VoteAccumulationError, VoteAccumulator,
+        Proposal, ProposalAggregationError, ProposalAggregator, Proven,
     },
     crypto, delivery_group,
     error::{Error, Result},
@@ -73,8 +73,8 @@ pub(crate) struct Approved {
     section: Section,
     network: Network,
     section_keys_provider: SectionKeysProvider,
-    message_accumulator: SignatureAggregator,
-    vote_accumulator: VoteAccumulator,
+    message_aggregator: SignatureAggregator,
+    proposal_aggregator: ProposalAggregator,
     split_barrier: SplitBarrier,
     // Voter for Dkg
     dkg_voter: DkgVoter,
@@ -111,9 +111,9 @@ impl Approved {
             section,
             network: Network::new(),
             section_keys_provider,
-            vote_accumulator: Default::default(),
+            proposal_aggregator: Default::default(),
             split_barrier: SplitBarrier::new(),
-            message_accumulator: Default::default(),
+            message_aggregator: Default::default(),
             dkg_voter: Default::default(),
             relocate_state: None,
             msg_filter: MessageFilter::new(),
@@ -357,41 +357,47 @@ impl Approved {
             .into_commands(&self.node)
     }
 
-    // Insert the vote into the vote accumulator and handle it if accumulated.
-    pub fn handle_vote(&mut self, vote: Vote, proof_share: ProofShare) -> Result<Vec<Command>> {
-        match self.vote_accumulator.add(vote, proof_share) {
-            Ok((vote, proof)) => Ok(vec![Command::HandleConsensus { vote, proof }]),
-            Err(VoteAccumulationError::Aggregation(
+    // Insert the proposal into the proposal aggregator and handle it if aggregated.
+    pub fn handle_proposal(
+        &mut self,
+        proposal: Proposal,
+        proof_share: ProofShare,
+    ) -> Result<Vec<Command>> {
+        match self.proposal_aggregator.add(proposal, proof_share) {
+            Ok((proposal, proof)) => Ok(vec![Command::HandleConsensus { proposal, proof }]),
+            Err(ProposalAggregationError::Aggregation(
                 bls_signature_aggregator::Error::NotEnoughShares,
             )) => Ok(vec![]),
             Err(error) => {
-                error!("Failed to add vote: {}", error);
+                error!("Failed to add proposal: {}", error);
                 Err(Error::InvalidSignatureShare)
             }
         }
     }
 
-    pub fn handle_consensus(&mut self, vote: Vote, proof: Proof) -> Result<Vec<Command>> {
-        debug!("handle consensus on {:?}", vote);
+    pub fn handle_consensus(&mut self, proposal: Proposal, proof: Proof) -> Result<Vec<Command>> {
+        debug!("handle consensus on {:?}", proposal);
 
-        match vote {
-            Vote::Online {
+        match proposal {
+            Proposal::Online {
                 member_info,
                 previous_name,
                 their_knowledge,
             } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
-            Vote::Offline(member_info) => self.handle_offline_event(member_info, proof),
-            Vote::SectionInfo(elders_info) => self.handle_section_info_event(elders_info, proof),
-            Vote::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
-            Vote::TheirKey { prefix, key } => {
+            Proposal::Offline(member_info) => self.handle_offline_event(member_info, proof),
+            Proposal::SectionInfo(elders_info) => {
+                self.handle_section_info_event(elders_info, proof)
+            }
+            Proposal::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
+            Proposal::TheirKey { prefix, key } => {
                 self.handle_their_key_event(prefix, key, proof);
                 Ok(vec![])
             }
-            Vote::TheirKnowledge { prefix, key } => {
+            Proposal::TheirKnowledge { prefix, key } => {
                 self.handle_their_knowledge_event(prefix, key, proof);
                 Ok(vec![])
             }
-            Vote::AccumulateAtSrc {
+            Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
             } => Ok(vec![self.handle_accumulate_at_src_event(
@@ -399,7 +405,7 @@ impl Approved {
                 proof_chain,
                 proof,
             )?]),
-            Vote::JoinsAllowed(joins_allowed) => {
+            Proposal::JoinsAllowed(joins_allowed) => {
                 self.joins_allowed = joins_allowed;
                 Ok(vec![])
             }
@@ -418,8 +424,8 @@ impl Approved {
         }
 
         // Try to send a "ping" message to probe the peer connection. If it succeeds, the
-        // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
-        // it offline.
+        // connection loss was just temporary. Otherwise the peer is assumed lost and we will
+        // propose it offline.
         Some(Command::SendMessage {
             recipients: vec![addr],
             delivery_group_size: 1,
@@ -443,8 +449,8 @@ impl Approved {
         if let Some(info) = self.section.members().get(&name) {
             let info = info.clone().leave()?;
 
-            // Don't send the `Offline` vote to the peer being lost as that send would fail,
-            // triggering a chain of further `Offline` votes.
+            // Don't send the `Offline` proposal to the peer being lost as that send would fail,
+            // triggering a chain of further `Offline` proposals.
             let elders: Vec<_> = self
                 .section
                 .elders_info()
@@ -453,7 +459,7 @@ impl Approved {
                 .copied()
                 .collect();
 
-            self.send_vote(&elders, Vote::Offline(info))
+            self.send_proposal(&elders, Proposal::Offline(info))
         } else {
             Ok(vec![])
         }
@@ -464,9 +470,9 @@ impl Approved {
         elders_info: EldersInfo,
         key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
-        let vote = Vote::SectionInfo(elders_info);
+        let proposal = Proposal::SectionInfo(elders_info);
         let recipients: Vec<_> = self.section.elders_info().peers().copied().collect();
-        let result = self.send_vote_with(&recipients, vote, &key_share);
+        let result = self.send_proposal_with(&recipients, proposal, &key_share);
 
         let public_key = key_share.public_key_set.public_key();
 
@@ -485,43 +491,43 @@ impl Approved {
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 
-    // Send vote to all our elders.
-    fn vote(&self, vote: Vote) -> Result<Vec<Command>> {
+    // Send proposal to all our elders.
+    fn propose(&self, proposal: Proposal) -> Result<Vec<Command>> {
         let elders: Vec<_> = self.section.elders_info().peers().copied().collect();
-        self.send_vote(&elders, vote)
+        self.send_proposal(&elders, proposal)
     }
 
-    // Send `vote` to `recipients`.
-    fn send_vote(&self, recipients: &[Peer], vote: Vote) -> Result<Vec<Command>> {
+    // Send `proposal` to `recipients`.
+    fn send_proposal(&self, recipients: &[Peer], proposal: Proposal) -> Result<Vec<Command>> {
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
-            trace!("Can't vote for {:?}: {}", vote, err);
+            trace!("Can't propose {:?}: {}", proposal, err);
             err
         })?;
-        self.send_vote_with(recipients, vote, key_share)
+        self.send_proposal_with(recipients, proposal, key_share)
     }
 
-    fn send_vote_with(
+    fn send_proposal_with(
         &self,
         recipients: &[Peer],
-        vote: Vote,
+        proposal: Proposal,
         key_share: &SectionKeyShare,
     ) -> Result<Vec<Command>> {
         trace!(
-            "Vote for {:?}, key_share: {:?}, aggregators: {:?}",
-            vote,
+            "Propose {:?}, key_share: {:?}, aggregators: {:?}",
+            proposal,
             key_share,
             recipients,
         );
 
-        let proof_share = vote.prove(
+        let proof_share = proposal.prove(
             key_share.public_key_set.clone(),
             key_share.index,
             &key_share.secret_key_share,
         )?;
 
-        // Broadcast the vote to the rest of the section elders.
-        let variant = Variant::Vote {
-            content: vote,
+        // Broadcast the proposal to the rest of the section elders.
+        let variant = Variant::Propose {
+            content: proposal,
             proof_share,
         };
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
@@ -595,13 +601,13 @@ impl Approved {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::Vote {
+            Variant::Propose {
                 content,
                 proof_share,
                 ..
             } => {
                 if let Some(status) =
-                    self.decide_vote_status(&msg.src().name(), content, proof_share)
+                    self.decide_propose_status(&msg.src().name(), content, proof_share)
                 {
                     return Ok(status);
                 }
@@ -637,7 +643,7 @@ impl Approved {
 
         let signed_bytes = bincode::serialize(&msg.signable_view())?;
         match self
-            .message_accumulator
+            .message_aggregator
             .add(&signed_bytes, proof_share.clone())
         {
             Ok(proof) => {
@@ -717,12 +723,12 @@ impl Approved {
             Variant::DkgFailureAgreement(proofs) => {
                 self.handle_dkg_failure_agreement(&msg.src().name(), proofs)
             }
-            Variant::Vote {
+            Variant::Propose {
                 content,
                 proof_share,
             } => {
                 let mut commands = vec![];
-                let result = self.handle_vote(content.clone(), proof_share.clone());
+                let result = self.handle_proposal(content.clone(), proof_share.clone());
 
                 if let Some(addr) = sender {
                     commands.extend(self.check_lagging(&addr, proof_share)?);
@@ -763,21 +769,21 @@ impl Approved {
         self.is_elder() || dst == &DstLocation::Node(self.node.name())
     }
 
-    // Decide how to handle a `Vote` message.
-    fn decide_vote_status(
+    // Decide how to handle a `Propose` message.
+    fn decide_propose_status(
         &self,
         sender: &XorName,
-        vote: &Vote,
+        proposal: &Proposal,
         proof_share: &ProofShare,
     ) -> Option<MessageStatus> {
-        match vote {
-            Vote::SectionInfo(elders_info)
+        match proposal {
+            Proposal::SectionInfo(elders_info)
                 if elders_info.prefix == *self.section.prefix()
                     || elders_info.prefix.is_extension_of(self.section.prefix()) =>
             {
-                // This `SectionInfo` is voted by the DKG participants and is signed by the new key
-                // created by the DKG so we don't know it yet. We only require the sender of the
-                // vote to be one of the DKG participants.
+                // This `SectionInfo` is proposed by the DKG participants and is signed by the new
+                // key created by the DKG so we don't know it yet. We only require the sender of the
+                // proposal to be one of the DKG participants.
                 if elders_info.elders.contains_key(sender) {
                     None
                 } else {
@@ -785,7 +791,7 @@ impl Approved {
                 }
             }
             _ => {
-                // Any other vote needs to be signed by a known key.
+                // Any other proposal needs to be signed by a known key.
                 if self
                     .section
                     .chain()
@@ -1003,7 +1009,7 @@ impl Approved {
         let mut commands = vec![];
 
         if !self.network.has_key(&src_key) {
-            commands.extend(self.vote(Vote::TheirKey {
+            commands.extend(self.propose(Proposal::TheirKey {
                 prefix: elders_info.prefix,
                 key: src_key,
             })?);
@@ -1016,7 +1022,7 @@ impl Approved {
             return Ok(commands);
         }
 
-        commands.extend(self.vote(Vote::SectionInfo(elders_info))?);
+        commands.extend(self.propose(Proposal::SectionInfo(elders_info))?);
 
         Ok(commands)
     }
@@ -1278,7 +1284,7 @@ impl Approved {
             }
         }
 
-        self.vote(Vote::Online {
+        self.propose(Proposal::Online {
             member_info: MemberInfo::joined(peer),
             previous_name,
             their_knowledge,
@@ -1390,8 +1396,8 @@ impl Approved {
         self.send_dkg_start_to(elders_info, slice::from_ref(sender))
     }
 
-    // Generate a new section info based on the current set of members and vote for it if it
-    // changed.
+    // Generate a new section info based on the current set of members and if it differs from the
+    // current elders, trigger a DKG.
     fn promote_and_demote_elders(&mut self) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -1438,7 +1444,7 @@ impl Approved {
                 churn_name
             );
 
-            commands.extend(self.vote(Vote::Offline(info.relocate(*action.destination())))?);
+            commands.extend(self.propose(Proposal::Offline(info.relocate(*action.destination())))?);
 
             match action {
                 RelocateAction::Instant(details) => {
@@ -1608,13 +1614,15 @@ impl Approved {
                 ));
             }
 
-            // Send the `OurElder` vote to all of the to-be-elders so it's accumulated by them.
+            // Send the `OurElder` proposal to all of the to-be-elders so it's aggregated by them.
             let our_elders_recipients: Vec<_> = infos
                 .iter()
                 .flat_map(|info| info.peers())
                 .copied()
                 .collect();
-            commands.extend(self.send_vote(&our_elders_recipients, Vote::OurElders(elders_info))?);
+            commands.extend(
+                self.send_proposal(&our_elders_recipients, Proposal::OurElders(elders_info))?,
+            );
         } else {
             // Other section
 
@@ -1714,8 +1722,9 @@ impl Approved {
 
                 if self.section_keys_provider.has_key_share() {
                     commands.extend(self.promote_and_demote_elders()?);
-                    // Whenever there is an elders change, casting a round of joins_allowed vote to sync.
-                    commands.extend(self.vote(Vote::JoinsAllowed(self.joins_allowed))?);
+                    // Whenever there is an elders change, casting a round of joins_allowed
+                    // proposals to sync.
+                    commands.extend(self.propose(Proposal::JoinsAllowed(self.joins_allowed))?);
                 }
 
                 self.print_network_stats();
@@ -2021,11 +2030,11 @@ impl Approved {
         Ok(())
     }
 
-    // Setting the JoinsAllowed triggers a round Vote::SetJoinsAllowed to update the flag.
+    // Setting the JoinsAllowed triggers a round Proposal::SetJoinsAllowed to update the flag.
     pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
-            commands.extend(self.vote(Vote::JoinsAllowed(joins_allowed))?);
+            commands.extend(self.propose(Proposal::JoinsAllowed(joins_allowed))?);
         }
         Ok(commands)
     }
@@ -2071,12 +2080,13 @@ impl Approved {
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
-            let vote = self.create_accumulate_at_src_vote(itinerary.dst, variant, proof_chain);
+            let proposal =
+                self.create_accumulate_at_src_proposal(itinerary.dst, variant, proof_chain);
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
                 self.section.elders_info().peers().copied(),
             );
-            return self.send_vote(&recipients, vote);
+            return self.send_proposal(&recipients, proposal);
         } else {
             Message::single_src(&self.node, itinerary.dst, variant, Some(proof_chain), None)?
         };
@@ -2177,12 +2187,12 @@ impl Approved {
         commands
     }
 
-    fn create_accumulate_at_src_vote(
+    fn create_accumulate_at_src_proposal(
         &self,
         dst: DstLocation,
         variant: Variant,
         proof_chain: SectionChain,
-    ) -> Vote {
+    ) -> Proposal {
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2199,14 +2209,14 @@ impl Approved {
             variant,
         };
 
-        let vote = Vote::AccumulateAtSrc {
+        let proposal = Proposal::AccumulateAtSrc {
             message: Box::new(message),
             proof_chain,
         };
 
-        trace!("Create {:?}", vote);
+        trace!("Create {:?}", proposal);
 
-        vote
+        proposal
     }
 
     fn create_proof_chain(
@@ -2271,8 +2281,8 @@ impl Approved {
             commands.extend(self.relay_message(&msg)?);
         }
 
-        if let Some(vote) = actions.vote {
-            commands.extend(self.vote(vote)?);
+        if let Some(proposal) = actions.propose {
+            commands.extend(self.propose(proposal)?);
         }
 
         Ok(commands)

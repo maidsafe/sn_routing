@@ -230,7 +230,7 @@ impl Section {
     }
 
     /// Generate a new section info(s) based on the current set of members.
-    /// Returns a set of EldersInfos to vote for.
+    /// Returns a set of candidate EldersInfos.
     pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<EldersInfo> {
         if let Some((our_info, other_info)) = self.try_split(our_name) {
             return vec![our_info, other_info];
