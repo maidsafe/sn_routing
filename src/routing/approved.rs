@@ -13,7 +13,7 @@ use super::{
     Command,
 };
 use crate::{
-    consensus::{
+    agreement::{
         DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter, Proof, ProofShare,
         Proposal, ProposalAggregationError, ProposalAggregator, Proven,
     },
@@ -364,7 +364,7 @@ impl Approved {
         proof_share: ProofShare,
     ) -> Result<Vec<Command>> {
         match self.proposal_aggregator.add(proposal, proof_share) {
-            Ok((proposal, proof)) => Ok(vec![Command::HandleConsensus { proposal, proof }]),
+            Ok((proposal, proof)) => Ok(vec![Command::HandleAgreement { proposal, proof }]),
             Err(ProposalAggregationError::Aggregation(
                 bls_signature_aggregator::Error::NotEnoughShares,
             )) => Ok(vec![]),
@@ -375,32 +375,34 @@ impl Approved {
         }
     }
 
-    pub fn handle_consensus(&mut self, proposal: Proposal, proof: Proof) -> Result<Vec<Command>> {
-        debug!("handle consensus on {:?}", proposal);
+    pub fn handle_agreement(&mut self, proposal: Proposal, proof: Proof) -> Result<Vec<Command>> {
+        debug!("handle agreement on {:?}", proposal);
 
         match proposal {
             Proposal::Online {
                 member_info,
                 previous_name,
                 their_knowledge,
-            } => self.handle_online_event(member_info, previous_name, their_knowledge, proof),
-            Proposal::Offline(member_info) => self.handle_offline_event(member_info, proof),
+            } => self.handle_online_agreement(member_info, previous_name, their_knowledge, proof),
+            Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
             Proposal::SectionInfo(elders_info) => {
-                self.handle_section_info_event(elders_info, proof)
+                self.handle_section_info_agreement(elders_info, proof)
             }
-            Proposal::OurElders(elders_info) => self.handle_our_elders_event(elders_info, proof),
+            Proposal::OurElders(elders_info) => {
+                self.handle_our_elders_agreement(elders_info, proof)
+            }
             Proposal::TheirKey { prefix, key } => {
-                self.handle_their_key_event(prefix, key, proof);
+                self.handle_their_key_agreement(prefix, key, proof);
                 Ok(vec![])
             }
             Proposal::TheirKnowledge { prefix, key } => {
-                self.handle_their_knowledge_event(prefix, key, proof);
+                self.handle_their_knowledge_agreement(prefix, key, proof);
                 Ok(vec![])
             }
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
-            } => Ok(vec![self.handle_accumulate_at_src_event(
+            } => Ok(vec![self.handle_accumulate_at_src_agreement(
                 *message,
                 proof_chain,
                 proof,
@@ -633,11 +635,11 @@ impl Approved {
         }
     }
 
-    fn accumulate_message(&mut self, msg: Message) -> Result<Option<Message>> {
+    fn aggregate_message(&mut self, msg: Message) -> Result<Option<Message>> {
         let proof_share = if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
             proof_share
         } else {
-            // Not an accumulating message, return unchanged.
+            // Not an aggregating message, return unchanged.
             return Ok(Some(msg));
         };
 
@@ -665,7 +667,7 @@ impl Approved {
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
 
-        let msg = if let Some(msg) = self.accumulate_message(msg)? {
+        let msg = if let Some(msg) = self.aggregate_message(msg)? {
             msg
         } else {
             return Ok(vec![]);
@@ -1473,7 +1475,7 @@ impl Approved {
         self.send_relocate(peer, details)
     }
 
-    fn handle_online_event(
+    fn handle_online_agreement(
         &mut self,
         new_info: MemberInfo,
         previous_name: Option<XorName>,
@@ -1535,7 +1537,7 @@ impl Approved {
         Ok(commands)
     }
 
-    fn handle_offline_event(
+    fn handle_offline_agreement(
         &mut self,
         member_info: MemberInfo,
         proof: Proof,
@@ -1567,7 +1569,7 @@ impl Approved {
         Ok(commands)
     }
 
-    fn handle_section_info_event(
+    fn handle_section_info_agreement(
         &mut self,
         elders_info: EldersInfo,
         proof: Proof,
@@ -1634,7 +1636,7 @@ impl Approved {
         Ok(commands)
     }
 
-    fn handle_our_elders_event(
+    fn handle_our_elders_agreement(
         &mut self,
         elders_info: Proven<EldersInfo>,
         key_proof: Proof,
@@ -1661,12 +1663,12 @@ impl Approved {
         self.update_state(snapshot)
     }
 
-    fn handle_their_key_event(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
+    fn handle_their_key_agreement(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
         let key = Proven::new((prefix, key), proof);
         let _ = self.network.update_their_key(key);
     }
 
-    fn handle_their_knowledge_event(
+    fn handle_their_knowledge_agreement(
         &mut self,
         prefix: Prefix,
         knowledge: bls::PublicKey,
@@ -1676,7 +1678,7 @@ impl Approved {
         self.network.update_knowledge(knowledge)
     }
 
-    fn handle_accumulate_at_src_event(
+    fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
         proof_chain: SectionChain,

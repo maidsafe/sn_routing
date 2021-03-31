@@ -8,7 +8,7 @@
 
 use super::{Message, MessageHash, VerifyStatus};
 use crate::{
-    consensus::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, Proven},
+    agreement::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, Proven},
     crypto::Signature,
     error::{Error, Result},
     network::Network,

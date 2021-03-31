@@ -181,7 +181,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::proven,
+        agreement::test_utils::proven,
         crypto,
         section::{
             test_utils::{gen_addr, gen_elders_info},

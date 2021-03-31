@@ -11,7 +11,7 @@ use super::{
     Approved, Comm, Command, Stage,
 };
 use crate::{
-    consensus::{test_utils::*, Proposal, Proven},
+    agreement::{test_utils::*, Proposal, Proven},
     crypto,
     event::Event,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
@@ -421,8 +421,8 @@ async fn aggregate_proposals() -> Result<()> {
 
     assert_matches!(
         commands.next(),
-        Some(Command::HandleConsensus { proposal: consensus, .. }) => {
-            assert_eq!(consensus, proposal);
+        Some(Command::HandleAgreement { proposal: agreement, .. }) => {
+            assert_eq!(agreement, proposal);
         }
     );
 
@@ -430,7 +430,7 @@ async fn aggregate_proposals() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online() -> Result<()> {
+async fn handle_agreement_on_online() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
     let prefix = Prefix::default();
@@ -456,7 +456,7 @@ async fn handle_consensus_on_online() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
+async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let chain = SectionChain::new(sk_set.secret_key().public_key());
 
@@ -492,7 +492,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     );
     let stage = Stage::new(state, create_comm().await?);
 
-    // Handle the consensus on Online of a peer that is older than the youngest
+    // Handle agreement on Online of a peer that is older than the youngest
     // current elder - that means this peer is going to be promoted.
     let new_peer = create_peer(MIN_AGE + 2);
     let member_info = MemberInfo::joined(new_peer);
@@ -504,7 +504,7 @@ async fn handle_consensus_on_online_of_elder_candidate() -> Result<()> {
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     // Verify we sent a `DkgStart` message with the expected participants.
@@ -562,7 +562,7 @@ async fn handle_online_command(
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     let mut status = HandleOnlineStatus {
@@ -615,7 +615,7 @@ enum NetworkPhase {
     Regular,
 }
 
-async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u8) -> Result<()> {
+async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u8) -> Result<()> {
     let prefix = match phase {
         NetworkPhase::Startup => Prefix::default(),
         NetworkPhase::Regular => "0".parse().unwrap(),
@@ -659,27 +659,27 @@ async fn handle_consensus_on_online_of_rejoined_node(phase: NetworkPhase, age: u
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_rejoined_node_with_high_age_in_startup() -> Result<()> {
-    handle_consensus_on_online_of_rejoined_node(NetworkPhase::Startup, 16).await
+async fn handle_agreement_on_online_of_rejoined_node_with_high_age_in_startup() -> Result<()> {
+    handle_agreement_on_online_of_rejoined_node(NetworkPhase::Startup, 16).await
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_rejoined_node_with_high_age_after_startup() -> Result<()> {
-    handle_consensus_on_online_of_rejoined_node(NetworkPhase::Regular, 16).await
+async fn handle_agreement_on_online_of_rejoined_node_with_high_age_after_startup() -> Result<()> {
+    handle_agreement_on_online_of_rejoined_node(NetworkPhase::Regular, 16).await
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_rejoined_node_with_low_age_in_startup() -> Result<()> {
-    handle_consensus_on_online_of_rejoined_node(NetworkPhase::Startup, 8).await
+async fn handle_agreement_on_online_of_rejoined_node_with_low_age_in_startup() -> Result<()> {
+    handle_agreement_on_online_of_rejoined_node(NetworkPhase::Startup, 8).await
 }
 
 #[tokio::test]
-async fn handle_consensus_on_online_of_rejoined_node_with_low_age_after_startup() -> Result<()> {
-    handle_consensus_on_online_of_rejoined_node(NetworkPhase::Regular, 8).await
+async fn handle_agreement_on_online_of_rejoined_node_with_low_age_after_startup() -> Result<()> {
+    handle_agreement_on_online_of_rejoined_node(NetworkPhase::Regular, 8).await
 }
 
 #[tokio::test]
-async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
+async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
@@ -703,7 +703,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let _ = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, age, }) => {
@@ -715,7 +715,7 @@ async fn handle_consensus_on_offline_of_non_elder() -> Result<()> {
 }
 
 #[tokio::test]
-async fn handle_consensus_on_offline_of_elder() -> Result<()> {
+async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let sk_set = SecretKeySet::random();
 
@@ -746,12 +746,12 @@ async fn handle_consensus_on_offline_of_elder() -> Result<()> {
     let state = Approved::new(node, section, Some(section_key_share), event_tx);
     let stage = Stage::new(state, create_comm().await?);
 
-    // Handle the consensus on the Offline proposal
+    // Handle agreement on the Offline proposal
     let proposal = Proposal::Offline(remove_member_info);
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     // Verify we sent a `DkgStart` message with the expected participants.
@@ -1499,7 +1499,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 
     let (proposal, proof) = create_relocation_trigger(sk_set.secret_key(), relocated_peer.age())?;
     let commands = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     let mut relocate_sent = false;
@@ -1627,7 +1627,7 @@ async fn handle_elders_update() -> Result<()> {
 
     let demoted_peer = other_elder_peers.remove(0);
 
-    // Create `HandleConsensus` command for an `OurElders` proposal. This will demote one of the
+    // Create `HandleAgreement` command for an `OurElders` proposal. This will demote one of the
     // current elders and promote the oldest peer.
     let elders_info1 = EldersInfo::new(
         iter::once(node.peer())
@@ -1655,7 +1655,7 @@ async fn handle_elders_update() -> Result<()> {
     let stage = Stage::new(state, create_comm().await?);
 
     let commands = stage
-        .handle_command(Command::HandleConsensus { proposal, proof })
+        .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
     let mut sync_actual_recipients = HashSet::new();
@@ -1750,7 +1750,7 @@ async fn handle_demote_during_split() -> Result<()> {
     let sk_set_v1_p0 = SecretKeySet::random();
     let sk_set_v1_p1 = SecretKeySet::random();
 
-    // Create consensus on `OurElder` for both sub-sections
+    // Create agreement on `OurElder` for both sub-sections
     let create_our_elders_command = |sk, elders_info| -> Result<_> {
         let proven_elders_info = proven(sk, elders_info)?;
         let proposal = Proposal::OurElders(proven_elders_info);
@@ -1762,16 +1762,16 @@ async fn handle_demote_during_split() -> Result<()> {
             public_key: sk_set_v0.secret_key().public_key(),
         };
 
-        Ok(Command::HandleConsensus { proposal, proof })
+        Ok(Command::HandleAgreement { proposal, proof })
     };
 
-    // Handle consensus on `OurElders` for prefix-0.
+    // Handle agreement on `OurElders` for prefix-0.
     let elders_info = EldersInfo::new(peers_a.iter().copied().chain(iter::once(peer_c)), prefix0);
     let command = create_our_elders_command(sk_set_v1_p0.secret_key(), elders_info)?;
     let commands = stage.handle_command(command).await?;
     assert_matches!(&commands[..], &[]);
 
-    // Handle consensus on `OurElders` for prefix-1.
+    // Handle agreement on `OurElders` for prefix-1.
     let elders_info = EldersInfo::new(peers_b.iter().copied(), prefix1);
     let command = create_our_elders_command(sk_set_v1_p1.secret_key(), elders_info)?;
     let commands = stage.handle_command(command).await?;
@@ -1883,7 +1883,7 @@ fn create_section(
     Ok((section, section_key_share))
 }
 
-// Create a `Proposal::Online` whose consensus handling triggers relocation of a node with the
+// Create a `Proposal::Online` whose agreement handling triggers relocation of a node with the
 // given age.
 // NOTE: recommended to call this with low `age` (4 or 5), otherwise it might take very long time
 // to complete because it needs to generate a signature with the number of trailing zeroes equal to

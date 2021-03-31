@@ -144,7 +144,7 @@ pub(crate) enum ProposalAggregationError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, section};
+    use crate::{agreement, section};
     use anyhow::Result;
     use rand::Rng;
     use std::fmt::Debug;
@@ -159,7 +159,7 @@ mod tests {
         // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
-        let proven_elders_info = consensus::test_utils::proven(&new_sk, elders_info)?;
+        let proven_elders_info = agreement::test_utils::proven(&new_sk, elders_info)?;
         let proposal = Proposal::OurElders(proven_elders_info);
         verify_serialize_for_signing(&proposal, &new_pk);
 

@@ -9,7 +9,7 @@
 use std::mem;
 
 use crate::{
-    consensus::{Proof, Proven},
+    agreement::{Proof, Proven},
     section::EldersInfo,
 };
 use xor_name::Prefix;
