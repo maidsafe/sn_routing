@@ -13,7 +13,6 @@ use crate::{
     error::{Error, Result},
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
-    peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::{
         Section, SectionAuthorityProvider, SectionChain, FIRST_SECTION_MAX_AGE,
@@ -359,7 +358,7 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        let recipients = section_auth.peers().map(Peer::addr).copied().collect();
+                        let recipients = section_auth.elders.values().copied().collect();
                         self.send_join_requests(join_request, recipients).await?;
                     } else {
                         warn!(
@@ -700,7 +699,7 @@ mod tests {
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
                 Message::from_bytes(Bytes::from(bytes))?);
 
-            itertools::assert_equal(&recipients, section_auth.peers().map(Peer::addr));
+            itertools::assert_equal(&recipients, section_auth.elders.values());
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());
@@ -872,7 +871,8 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (elders_info, mut nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let (section_auth, mut nodes) =
+            gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
@@ -902,9 +902,9 @@ mod tests {
             );
 
             let infrastructure_info = SectionInfo {
-                prefix: elders_info.prefix,
+                prefix: section_auth.prefix,
                 pk_set,
-                elders: elders_info
+                elders: section_auth
                     .peers()
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
