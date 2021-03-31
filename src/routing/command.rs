@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{DkgFailureProofSet, Vote},
+    consensus::{DkgFailureProofSet, Proposal},
     messages::Message,
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
@@ -32,7 +32,7 @@ use tokio::sync::mpsc;
 pub(crate) enum Command {
     /// Handle `message` from `sender`.
     /// Note: `sender` is `Some` if the message was received from someone else
-    /// and `None` if it came from an accumulated `Vote::SendMessage`
+    /// and `None` if it is an aggregated message.
     HandleMessage {
         sender: Option<SocketAddr>,
         message: Message,
@@ -48,8 +48,8 @@ pub(crate) enum Command {
     HandleConnectionLost(SocketAddr),
     /// Handle peer that's been detected as lost.
     HandlePeerLost(SocketAddr),
-    /// Handle consensus on a vote.
-    HandleConsensus { vote: Vote, proof: Proof },
+    /// Handle consensus on a proposal.
+    HandleConsensus { proposal: Proposal, proof: Proof },
     /// Handle the outcome of a DKG session where we are one of the participants (that is, one of
     /// the proposed new elders).
     HandleDkgOutcome {
@@ -125,9 +125,9 @@ impl Debug for Command {
                 f.debug_tuple("HandleConnectionLost").field(addr).finish()
             }
             Self::HandlePeerLost(addr) => f.debug_tuple("HandlePeerLost").field(addr).finish(),
-            Self::HandleConsensus { vote, proof } => f
+            Self::HandleConsensus { proposal, proof } => f
                 .debug_struct("HandleConsensus")
-                .field("vote", vote)
+                .field("proposal", proposal)
                 .field("proof.public_key", &proof.public_key)
                 .finish(),
             Self::HandleDkgOutcome {

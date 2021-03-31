@@ -107,10 +107,10 @@ pub const RECOMMENDED_SECTION_SIZE: usize = 2 * ELDER_SIZE;
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
 
-/// Number of votes required to agree with a supermajority (i.e. > 2/3)
+/// Supermajority of a given group (i.e. > 2/3)
 #[inline]
-pub(crate) const fn supermajority(num_possible_voters: usize) -> usize {
-    1 + num_possible_voters * 2 / 3
+pub(crate) const fn supermajority(group_size: usize) -> usize {
+    1 + group_size * 2 / 3
 }
 
 #[cfg(test)]

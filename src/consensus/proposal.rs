@@ -18,25 +18,30 @@ use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum Vote {
-    /// Voted for node that is about to join our section
+pub(crate) enum Proposal {
+    // Proposal to add a node to oursection
     Online {
         member_info: MemberInfo,
-        /// Previous name if relocated.
+        // Previous name if relocated.
         previous_name: Option<XorName>,
-        /// The key of the destination section that the joining node knows, if any.
+        // The key of the destination section that the joining node knows, if any.
         their_knowledge: Option<bls::PublicKey>,
     },
 
-    /// Voted for node we no longer consider online.
+    // Proposal to remove a node from our section
     Offline(MemberInfo),
 
-    // Voted to update the elders info of a section.
+    // Proposal to update info about a section. This has two purposes:
+    //
+    // 1. To signal the completion of a DKG by the elder candidates to the current elders.
+    //    This proposal is then signed by the newly generated section key.
+    // 2. To update information about other section in the network. In this case the proposal is
+    //    signed by an existing key from the chain.
     SectionInfo(EldersInfo),
 
-    // Voted to update the elders in our section.
-    // NOTE: the `EldersInfo` is already signed with the new key. This vote is only to signs the
-    // new key with the current key. That way, when it accumulates, we obtain all the following
+    // Proposal to change the elders (and possibly the prefix) of our section.
+    // NOTE: the `EldersInfo` is already signed with the new key. This proposal is only to signs the
+    // new key with the current key. That way, when it aggregates, we obtain all the following
     // pieces of information at the same time:
     //   1. the new elders info
     //   2. the new key
@@ -46,31 +51,32 @@ pub(crate) enum Vote {
     // a single atomic operation without needing to cache anything.
     OurElders(Proven<EldersInfo>),
 
-    // Voted to update their section key.
+    // Proposal to update other section key.
     TheirKey {
         prefix: Prefix,
         key: bls::PublicKey,
     },
 
-    // Voted to update their knowledge of our section.
+    // Proposal to update other section's knowledge of our section.
     TheirKnowledge {
         prefix: Prefix,
         key: bls::PublicKey,
     },
 
-    // Voted to accumulate the message at the source (that is, our section) and then send it to its
-    // destination.
+    // Proposal to accumulate the message at the source (that is, our section) and then send it to
+    // its destination.
+    // TODO: it seems we might not need this. Consider removing it.
     AccumulateAtSrc {
         message: Box<PlainMessage>,
         proof_chain: SectionChain,
     },
 
-    // Voted to concensus whether new node shall be allowed to join
+    // Proposal to change whether new nodes are allowed to join our section.
     JoinsAllowed(bool),
 }
 
-impl Vote {
-    /// Create ProofShare for this vote.
+impl Proposal {
+    /// Create ProofShare for this proposal.
     pub fn prove(
         &self,
         public_key_set: bls::PublicKeySet,
@@ -91,45 +97,47 @@ impl Vote {
     }
 }
 
-// View of a `Vote` that can be serialized for the purpose of signing.
-pub(crate) struct SignableView<'a>(&'a Vote);
+// View of a `Proposal` that can be serialized for the purpose of signing.
+pub(crate) struct SignableView<'a>(&'a Proposal);
 
 impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
-            Vote::Online { member_info, .. } => member_info.serialize(serializer),
-            Vote::Offline(member_info) => member_info.serialize(serializer),
-            Vote::SectionInfo(info) => info.serialize(serializer),
-            Vote::OurElders(info) => info.proof.public_key.serialize(serializer),
-            Vote::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
-            Vote::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
-            Vote::AccumulateAtSrc { message, .. } => message.as_signable().serialize(serializer),
-            Vote::JoinsAllowed(joins_allowed) => joins_allowed.serialize(serializer),
+            Proposal::Online { member_info, .. } => member_info.serialize(serializer),
+            Proposal::Offline(member_info) => member_info.serialize(serializer),
+            Proposal::SectionInfo(info) => info.serialize(serializer),
+            Proposal::OurElders(info) => info.proof.public_key.serialize(serializer),
+            Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
+            Proposal::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
+            Proposal::AccumulateAtSrc { message, .. } => {
+                message.as_signable().serialize(serializer)
+            }
+            Proposal::JoinsAllowed(joins_allowed) => joins_allowed.serialize(serializer),
         }
     }
 }
 
-// Accumulator of `Vote`s.
+// Aggregator of `Proposal`s.
 #[derive(Default)]
-pub(crate) struct VoteAccumulator(SignatureAggregator);
+pub(crate) struct ProposalAggregator(SignatureAggregator);
 
-impl VoteAccumulator {
+impl ProposalAggregator {
     pub fn add(
         &mut self,
-        vote: Vote,
+        proposal: Proposal,
         proof_share: ProofShare,
-    ) -> Result<(Vote, Proof), VoteAccumulationError> {
-        let bytes = bincode::serialize(&SignableView(&vote))?;
+    ) -> Result<(Proposal, Proof), ProposalAggregationError> {
+        let bytes = bincode::serialize(&SignableView(&proposal))?;
         let proof = self.0.add(&bytes, proof_share)?;
-        Ok((vote, proof))
+        Ok((proposal, proof))
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum VoteAccumulationError {
+pub(crate) enum ProposalAggregationError {
     #[error("failed to aggregate signature shares: {0}")]
     Aggregation(#[from] bls_signature_aggregator::Error),
-    #[error("failed to serialize vote: {0}")]
+    #[error("failed to serialize proposal: {0}")]
     Serialization(#[from] bincode::Error),
 }
 
@@ -143,45 +151,45 @@ mod tests {
 
     #[test]
     fn serialize_for_signing() -> Result<()> {
-        // Vote::SectionInfo
+        // Proposal::SectionInfo
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
-        let vote = Vote::SectionInfo(elders_info.clone());
-        verify_serialize_for_signing(&vote, &elders_info);
+        let proposal = Proposal::SectionInfo(elders_info.clone());
+        verify_serialize_for_signing(&proposal, &elders_info);
 
-        // Vote::OurElders
+        // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
         let proven_elders_info = consensus::test_utils::proven(&new_sk, elders_info)?;
-        let vote = Vote::OurElders(proven_elders_info);
-        verify_serialize_for_signing(&vote, &new_pk);
+        let proposal = Proposal::OurElders(proven_elders_info);
+        verify_serialize_for_signing(&proposal, &new_pk);
 
-        // Vote::TheirKey
+        // Proposal::TheirKey
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
-        let vote = Vote::TheirKey { prefix, key };
-        verify_serialize_for_signing(&vote, &(prefix, key));
+        let proposal = Proposal::TheirKey { prefix, key };
+        verify_serialize_for_signing(&proposal, &(prefix, key));
 
-        // Vote::TheirKnowledge
+        // Proposal::TheirKnowledge
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
-        let vote = Vote::TheirKnowledge { prefix, key };
-        verify_serialize_for_signing(&vote, &(prefix, key));
+        let proposal = Proposal::TheirKnowledge { prefix, key };
+        verify_serialize_for_signing(&proposal, &(prefix, key));
 
         Ok(())
     }
 
-    // Verify that `SignableView(vote)` serializes the same as `should_serialize_as`.
-    fn verify_serialize_for_signing<T>(vote: &Vote, should_serialize_as: &T)
+    // Verify that `SignableView(proposal)` serializes the same as `should_serialize_as`.
+    fn verify_serialize_for_signing<T>(proposal: &Proposal, should_serialize_as: &T)
     where
         T: Serialize + Debug,
     {
-        let actual = bincode::serialize(&SignableView(vote)).unwrap();
+        let actual = bincode::serialize(&SignableView(proposal)).unwrap();
         let expected = bincode::serialize(should_serialize_as).unwrap();
 
         assert_eq!(
             actual, expected,
             "expected SignableView({:?}) to serialize same as {:?}, but didn't",
-            vote, should_serialize_as
+            proposal, should_serialize_as
         )
     }
 

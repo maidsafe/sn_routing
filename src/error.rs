@@ -38,8 +38,6 @@ pub enum Error {
     MissingSecretKeyShare,
     #[error("Failed to send a message.")]
     FailedSend,
-    #[error("Invalid vote.")]
-    InvalidVote,
     #[error("Invalid section chain: {0}")]
     InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]
