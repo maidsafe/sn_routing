@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.54.3](https://github.com/maidsafe/sn_routing/compare/v0.54.2...v0.54.3) (2021-03-31)
+
+
+### Bug Fixes
+
+* bounce untrusted messages directly to the original sender ([1bed232](https://github.com/maidsafe/sn_routing/commit/1bed232ba085aa46fd71b3469366f5ab029aab8c))
+* send OtherSection to src of the original message, not src section ([cd3e382](https://github.com/maidsafe/sn_routing/commit/cd3e38226af242950ce06797ea2ebf308b9cea31))
+
 ### [0.54.2](https://github.com/maidsafe/sn_routing/compare/v0.54.1...v0.54.2) (2021-03-29)
 
 
