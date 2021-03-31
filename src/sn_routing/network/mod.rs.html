@@ -484,6 +484,7 @@
 <span id="483">483</span>
 <span id="484">484</span>
 <span id="485">485</span>
+<span id="486">486</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -540,6 +541,7 @@
     }
 
     <span class="doccomment">/// Get `EldersInfo` of a known section with the given prefix.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sections</span>
             .<span class="ident">get</span>(<span class="ident">prefix</span>)
