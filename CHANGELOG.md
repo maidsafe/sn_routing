@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.55.0](https://github.com/maidsafe/sn_routing/compare/v0.54.4...v0.55.0) (2021-03-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* The `proof_chain` field of `Event::MessageReceived` is now `Option`.
+
+### Bug Fixes
+
+* adults not able to send non-aggregated messages ([9248cd0](https://github.com/maidsafe/sn_routing/commit/9248cd071a7c5f2a7dd95ac201a40267c3ac3e6a))
+
 ### [0.54.4](https://github.com/maidsafe/sn_routing/compare/v0.54.3...v0.54.4) (2021-03-31)
 
 
