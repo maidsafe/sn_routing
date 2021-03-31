@@ -682,7 +682,7 @@ impl Core {
             Variant::Relocate(_) => {
                 if msg.src().is_section() {
                     let signed_relocate = SignedRelocateDetails::new(msg)?;
-                    Ok(self.handle_relocate(signed_relocate).into_iter().collect())
+                    Ok(self.handle_relocate(signed_relocate)?.into_iter().collect())
                 } else {
                     Err(Error::InvalidSrcLocation)
                 }
@@ -1073,22 +1073,22 @@ impl Core {
         self.update_state(snapshot)
     }
 
-    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Option<Command> {
-        if details.relocate_details().pub_id != self.node.name() {
+    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Result<Option<Command>> {
+        if details.relocate_details()?.pub_id != self.node.name() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
-            return None;
+            return Ok(None);
         }
 
         debug!(
             "Received Relocate message to join the section at {}",
-            details.relocate_details().destination
+            details.relocate_details()?.destination
         );
 
         match self.relocate_state {
             Some(RelocateState::InProgress(_)) => {
                 trace!("Ignore Relocate - relocation already in progress");
-                return None;
+                return Ok(None);
             }
             Some(RelocateState::Delayed(_)) => (),
             None => {
@@ -1109,11 +1109,11 @@ impl Core {
             .copied()
             .collect();
 
-        Some(Command::Relocate {
+        Ok(Some(Command::Relocate {
             bootstrap_addrs,
             details,
             message_rx,
-        })
+        }))
     }
 
     fn handle_relocate_promise(
@@ -1223,8 +1223,7 @@ impl Core {
                     return Ok(vec![]);
                 }
 
-                // FIXME: this might panic if the payload is malformed.
-                let details = payload.relocate_details();
+                let details = payload.relocate_details()?;
 
                 if !self.section.prefix().matches(&details.destination) {
                     debug!(

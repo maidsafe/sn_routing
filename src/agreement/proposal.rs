@@ -154,43 +154,45 @@ mod tests {
         // Proposal::SectionInfo
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
         let proposal = Proposal::SectionInfo(elders_info.clone());
-        verify_serialize_for_signing(&proposal, &elders_info);
+        verify_serialize_for_signing(&proposal, &elders_info)?;
 
         // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
         let proven_elders_info = agreement::test_utils::proven(&new_sk, elders_info)?;
         let proposal = Proposal::OurElders(proven_elders_info);
-        verify_serialize_for_signing(&proposal, &new_pk);
+        verify_serialize_for_signing(&proposal, &new_pk)?;
 
         // Proposal::TheirKey
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
         let proposal = Proposal::TheirKey { prefix, key };
-        verify_serialize_for_signing(&proposal, &(prefix, key));
+        verify_serialize_for_signing(&proposal, &(prefix, key))?;
 
         // Proposal::TheirKnowledge
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
         let proposal = Proposal::TheirKnowledge { prefix, key };
-        verify_serialize_for_signing(&proposal, &(prefix, key));
+        verify_serialize_for_signing(&proposal, &(prefix, key))?;
 
         Ok(())
     }
 
     // Verify that `SignableView(proposal)` serializes the same as `should_serialize_as`.
-    fn verify_serialize_for_signing<T>(proposal: &Proposal, should_serialize_as: &T)
+    fn verify_serialize_for_signing<T>(proposal: &Proposal, should_serialize_as: &T) -> Result<()>
     where
         T: Serialize + Debug,
     {
-        let actual = bincode::serialize(&SignableView(proposal)).unwrap();
-        let expected = bincode::serialize(should_serialize_as).unwrap();
+        let actual = bincode::serialize(&SignableView(proposal))?;
+        let expected = bincode::serialize(should_serialize_as)?;
 
         assert_eq!(
             actual, expected,
             "expected SignableView({:?}) to serialize same as {:?}, but didn't",
             proposal, should_serialize_as
-        )
+        );
+
+        Ok(())
     }
 
     fn gen_prefix() -> Prefix {
