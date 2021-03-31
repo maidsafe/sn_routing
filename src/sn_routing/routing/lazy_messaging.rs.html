@@ -402,7 +402,6 @@
 };
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">cmp</span>::<span class="ident">Ordering</span>;
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// On reception of an incoming message, determine the actions that need to be taken in order to</span>
 <span class="doccomment">/// bring ours and the senders knowledge about each other up to date.</span>
@@ -423,7 +422,7 @@
     }
 
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">src_key</span>) <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>() {
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">network</span>.<span class="ident">has_key</span>(<span class="ident">src_key</span>) {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">network</span>.<span class="ident">has_key</span>(<span class="ident">src_key</span>) <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="ident">src_key</span>) {
             <span class="comment">// We don&#39;t know the src key. Send them a `OtherSection` message whose `dst_key` is set</span>
             <span class="comment">// to the latest key we know and when they receive it they would send us back a</span>
             <span class="comment">// `OtherSection` with their latest info, including their latest key.</span>
@@ -469,7 +468,7 @@
             <span class="ident">node</span>,
             <span class="ident">section</span>,
             <span class="ident">network</span>,
-            <span class="ident">src_name</span>,
+            <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">src_location</span>().<span class="ident">to_dst</span>(),
             <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">hash</span>(),
             <span class="ident">dst_key</span>,
         )<span class="question-mark">?</span>);
@@ -482,12 +481,13 @@
     <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
     <span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>,
     <span class="ident">network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>,
-    <span class="ident">dst</span>: <span class="ident">XorName</span>,
+    <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
     <span class="ident">nonce</span>: <span class="ident">MessageHash</span>,
     <span class="ident">dst_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="ident">dst_knowledge</span> <span class="op">=</span> <span class="ident">network</span>
-        .<span class="ident">knowledge_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>)
+    <span class="kw">let</span> <span class="ident">dst_knowledge</span> <span class="op">=</span> <span class="ident">dst</span>
+        .<span class="ident">name</span>()
+        .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">dst</span><span class="op">|</span> <span class="ident">network</span>.<span class="ident">knowledge_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>))
         .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">root_key</span>());
     <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">section</span>
         .<span class="ident">chain</span>()
@@ -500,7 +500,7 @@
 
     <span class="prelude-val">Ok</span>(<span class="ident">Message</span>::<span class="ident">single_src</span>(
         <span class="ident">node</span>,
-        <span class="ident">DstLocation</span>::<span class="ident">Section</span>(<span class="ident">dst</span>),
+        <span class="ident">dst</span>,
         <span class="ident">variant</span>,
         <span class="prelude-val">Some</span>(<span class="ident">proof_chain</span>),
         <span class="ident">dst_key</span>,
