@@ -16,9 +16,8 @@ use tokio::{
 };
 use tracing::Instrument;
 
-// Node's current stage which is responsible
-// for accessing current info and trigger operations.
-pub(crate) struct Stage {
+// `Command` Dispatcher.
+pub(crate) struct Dispatcher {
     pub(super) state: Mutex<Approved>,
     pub(super) comm: Comm,
 
@@ -26,7 +25,7 @@ pub(crate) struct Stage {
     cancel_timer_rx: watch::Receiver<bool>,
 }
 
-impl Stage {
+impl Dispatcher {
     pub fn new(state: Approved, comm: Comm) -> Self {
         let (cancel_timer_tx, cancel_timer_rx) = watch::channel(false);
 
