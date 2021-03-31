@@ -33,7 +33,7 @@ use crate::{
     messages::Message,
     node::Node,
     peer::Peer,
-    section::{EldersInfo, SectionChain},
+    section::{SectionAuthorityProvider, SectionChain},
     TransportConfig, MIN_AGE,
 };
 use bytes::Bytes;
@@ -230,7 +230,7 @@ impl Routing {
             .lock()
             .await
             .section()
-            .elders_info()
+            .authority_provider()
             .peers()
             .copied()
             .collect()
@@ -268,18 +268,18 @@ impl Routing {
     }
 
     /// Returns the info about our section or `None` if we are not joined yet.
-    pub async fn our_section(&self) -> EldersInfo {
+    pub async fn our_section(&self) -> SectionAuthorityProvider {
         self.dispatcher
             .core
             .lock()
             .await
             .section()
-            .elders_info()
+            .authority_provider()
             .clone()
     }
 
     /// Returns the info about other sections in the network known to us.
-    pub async fn other_sections(&self) -> Vec<EldersInfo> {
+    pub async fn other_sections(&self) -> Vec<SectionAuthorityProvider> {
         self.dispatcher
             .core
             .lock()
@@ -304,10 +304,10 @@ impl Routing {
     pub async fn matching_section(
         &self,
         name: &XorName,
-    ) -> (Option<bls::PublicKey>, Option<EldersInfo>) {
+    ) -> (Option<bls::PublicKey>, Option<SectionAuthorityProvider>) {
         let state = self.dispatcher.core.lock().await;
-        let (key, elders_info) = state.matching_section(name);
-        (key.copied(), elders_info.cloned())
+        let (key, section_auth) = state.matching_section(name);
+        (key.copied(), section_auth.cloned())
     }
 
     /// Send a message.

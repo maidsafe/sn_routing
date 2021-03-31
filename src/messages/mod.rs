@@ -511,8 +511,9 @@ mod tests {
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
         let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 
-        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
-        let elders_info = agreement::test_utils::proven(&sk1, elders_info)?;
+        let (section_auth, _) =
+            section::test_utils::gen_section_authority_provider(Default::default(), 3);
+        let section_auth = agreement::test_utils::proven(&sk1, section_auth)?;
 
         let peer = Peer::new(rand::random(), gen_addr());
         let member_info = MemberInfo::joined(peer);
@@ -520,7 +521,7 @@ mod tests {
 
         let variant = Variant::NodeApproval {
             genesis_key: pk0,
-            elders_info,
+            section_auth,
             member_info,
         };
         let message = Message::single_src(

@@ -43,7 +43,7 @@ pub(crate) fn delivery_targets(
     if !section.is_elder(our_name) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
-        let targets: Vec<_> = section.elders_info().peers().copied().collect();
+        let targets: Vec<_> = section.authority_provider().peers().copied().collect();
         let dg_size = targets.len();
         return Ok((targets, dg_size));
     }
@@ -79,10 +79,10 @@ fn section_candidates(
     network: &Network,
 ) -> Result<(Vec<Peer>, usize)> {
     // Find closest section to `target_name` out of the ones we know (including our own)
-    let info = iter::once(section.elders_info())
+    let info = iter::once(section.authority_provider())
         .chain(network.all())
         .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
-        .unwrap_or_else(|| section.elders_info());
+        .unwrap_or_else(|| section.authority_provider());
 
     if info.prefix == *section.prefix() {
         // Exclude our name since we don't need to send to ourself
@@ -106,7 +106,7 @@ fn candidates(
     network: &Network,
 ) -> Result<(Vec<Peer>, usize)> {
     // All sections we know (including our own), sorted by distance to `target_name`.
-    let sections = iter::once(section.elders_info())
+    let sections = iter::once(section.authority_provider())
         .chain(network.all())
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
@@ -184,8 +184,8 @@ mod tests {
         agreement::test_utils::proven,
         crypto,
         section::{
-            test_utils::{gen_addr, gen_elders_info},
-            EldersInfo, MemberInfo, SectionChain, MIN_AGE,
+            test_utils::{gen_addr, gen_section_authority_provider},
+            MemberInfo, SectionAuthorityProvider, SectionChain, MIN_AGE,
         },
     };
     use anyhow::{Context, Result};
@@ -197,7 +197,7 @@ mod tests {
         let (our_name, section, network, _) = setup_elder()?;
 
         let dst_name = *section
-            .elders_info()
+            .authority_provider()
             .elders
             .keys()
             .filter(|&&name| name != our_name)
@@ -245,7 +245,7 @@ mod tests {
 
         // Send to all our elders except us.
         let expected_recipients = section
-            .elders_info()
+            .authority_provider()
             .peers()
             .filter(|peer| peer.name() != &our_name);
         assert_eq!(dg_size, expected_recipients.clone().count());
@@ -258,11 +258,11 @@ mod tests {
     fn delivery_targets_elder_to_known_remote_peer() -> Result<()> {
         let (our_name, section, network, _) = setup_elder()?;
 
-        let elders_info1 = network
+        let section_auth1 = network
             .get(&Prefix::default().pushed(true))
             .context("unknown section")?;
 
-        let dst_name = choose_elder_name(elders_info1)?;
+        let dst_name = choose_elder_name(section_auth1)?;
         let dst = DstLocation::Node(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
@@ -277,19 +277,19 @@ mod tests {
     fn delivery_targets_elder_to_unknown_remote_peer() -> Result<()> {
         let (our_name, section, network, _) = setup_elder()?;
 
-        let elders_info1 = network
+        let section_auth1 = network
             .get(&Prefix::default().pushed(true))
             .context("unknown section")?;
 
-        let dst_name = elders_info1.prefix.substituted_in(rand::random());
+        let dst_name = section_auth1.prefix.substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the dst section
-        let expected_recipients = elders_info1
+        let expected_recipients = section_auth1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, elders_info1.elders.len());
+        assert_eq!(dg_size, section_auth1.elders.len());
         itertools::assert_equal(&recipients, expected_recipients);
 
         Ok(())
@@ -299,19 +299,19 @@ mod tests {
     fn delivery_targets_elder_to_remote_section() -> Result<()> {
         let (our_name, section, network, _) = setup_elder()?;
 
-        let elders_info1 = network
+        let section_auth1 = network
             .get(&Prefix::default().pushed(true))
             .context("unknown section")?;
 
-        let dst_name = elders_info1.prefix.substituted_in(rand::random());
+        let dst_name = section_auth1.prefix.substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the dst section
-        let expected_recipients = elders_info1
+        let expected_recipients = section_auth1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, elders_info1.elders.len());
+        assert_eq!(dg_size, section_auth1.elders.len());
         itertools::assert_equal(&recipients, expected_recipients);
 
         Ok(())
@@ -321,13 +321,13 @@ mod tests {
     fn delivery_targets_adult_to_our_elder() -> Result<()> {
         let (our_name, section, network) = setup_adult()?;
 
-        let dst_name = choose_elder_name(section.elders_info())?;
+        let dst_name = choose_elder_name(section.authority_provider())?;
         let dst = DstLocation::Node(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.elders_info().elders.len());
-        itertools::assert_equal(&recipients, section.elders_info().peers());
+        assert_eq!(dg_size, section.authority_provider().elders.len());
+        itertools::assert_equal(&recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -341,8 +341,8 @@ mod tests {
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.elders_info().elders.len());
-        itertools::assert_equal(&recipients, section.elders_info().peers());
+        assert_eq!(dg_size, section.authority_provider().elders.len());
+        itertools::assert_equal(&recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -356,8 +356,8 @@ mod tests {
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.elders_info().elders.len());
-        itertools::assert_equal(&recipients, section.elders_info().peers());
+        assert_eq!(dg_size, section.authority_provider().elders.len());
+        itertools::assert_equal(&recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -373,8 +373,8 @@ mod tests {
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.elders_info().elders.len());
-        itertools::assert_equal(&recipients, section.elders_info().peers());
+        assert_eq!(dg_size, section.authority_provider().elders.len());
+        itertools::assert_equal(&recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -390,8 +390,8 @@ mod tests {
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.elders_info().elders.len());
-        itertools::assert_equal(&recipients, section.elders_info().peers());
+        assert_eq!(dg_size, section.authority_provider().elders.len());
+        itertools::assert_equal(&recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -404,11 +404,11 @@ mod tests {
         let pk = sk.public_key();
         let chain = SectionChain::new(pk);
 
-        let (elders_info0, _) = gen_elders_info(prefix0, ELDER_SIZE);
-        let elders0: Vec<_> = elders_info0.peers().copied().collect();
-        let elders_info0 = proven(&sk, elders_info0)?;
+        let (section_auth0, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
+        let elders0: Vec<_> = section_auth0.peers().copied().collect();
+        let section_auth0 = proven(&sk, section_auth0)?;
 
-        let mut section = Section::new(pk, chain, elders_info0)?;
+        let mut section = Section::new(pk, chain, section_auth0)?;
 
         for peer in elders0 {
             let member_info = MemberInfo::joined(peer);
@@ -418,11 +418,11 @@ mod tests {
 
         let mut network = Network::new();
 
-        let (elders_info1, _) = gen_elders_info(prefix1, ELDER_SIZE);
-        let elders_info1 = proven(&sk, elders_info1)?;
-        assert!(network.update_section(elders_info1, None, section.chain()));
+        let (section_auth1, _) = gen_section_authority_provider(prefix1, ELDER_SIZE);
+        let section_auth1 = proven(&sk, section_auth1)?;
+        assert!(network.update_section(section_auth1, None, section.chain()));
 
-        let our_name = choose_elder_name(section.elders_info())?;
+        let our_name = choose_elder_name(section.authority_provider())?;
 
         Ok((our_name, section, network, sk))
     }
@@ -434,9 +434,9 @@ mod tests {
         let pk = sk.public_key();
         let chain = SectionChain::new(pk);
 
-        let (elders_info, _) = gen_elders_info(prefix0, ELDER_SIZE);
-        let elders_info = proven(&sk, elders_info)?;
-        let section = Section::new(pk, chain, elders_info)?;
+        let (section_auth, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
+        let section_auth = proven(&sk, section_auth)?;
+        let section = Section::new(pk, chain, section_auth)?;
 
         let network = Network::new();
         let our_name = section.prefix().substituted_in(rand::random());
@@ -444,8 +444,8 @@ mod tests {
         Ok((our_name, section, network))
     }
 
-    fn choose_elder_name(elders_info: &EldersInfo) -> Result<XorName> {
-        elders_info
+    fn choose_elder_name(section_auth: &SectionAuthorityProvider) -> Result<XorName> {
+        section_auth
             .elders
             .keys()
             .choose(&mut rand::thread_rng())
