@@ -53,6 +53,7 @@ impl Network {
     }
 
     /// Get `EldersInfo` of a known section with the given prefix.
+    #[allow(unused)]
     pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
         self.sections
             .get(prefix)

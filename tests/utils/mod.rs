@@ -97,7 +97,7 @@ pub async fn create_connected_nodes(count: usize) -> Result<Vec<(Routing, EventS
         ..Default::default()
     })
     .await?;
-    assert_next_event!(event_stream, Event::Genesis);
+    assert_next_event!(event_stream, Event::EldersChanged { .. });
 
     let bootstrap_contact = node.our_connection_info();
 
