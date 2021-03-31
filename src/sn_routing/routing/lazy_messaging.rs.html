@@ -393,7 +393,7 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::<span class="ident">Vote</span>,
+    <span class="ident">agreement</span>::<span class="ident">Proposal</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">Variant</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
@@ -447,7 +447,7 @@
             <span class="kw">if</span> <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">cmp_by_position</span>(<span class="ident">new</span>, <span class="ident">old</span>) <span class="op">=</span><span class="op">=</span> <span class="ident">Ordering</span>::<span class="ident">Greater</span> {
                 <span class="comment">// Their knowledge of our section is newer than what we have stored - update it.</span>
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;lazy messaging: dst key updated&quot;</span>);
-                <span class="ident">actions</span>.<span class="ident">vote</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> {
+                <span class="ident">actions</span>.<span class="ident">propose</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">Proposal</span>::<span class="ident">TheirKnowledge</span> {
                     <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="ident">src_prefix</span>,
                     <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">new</span>,
                 });
@@ -511,15 +511,15 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Actions</span> {
     <span class="comment">// Message to send.</span>
     <span class="kw">pub</span> <span class="ident">send</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
-    <span class="comment">// Vote to cast.</span>
-    <span class="kw">pub</span> <span class="ident">vote</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Vote</span><span class="op">&gt;</span>,
+    <span class="comment">// Proposal to cast.</span>
+    <span class="kw">pub</span> <span class="ident">propose</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proposal</span><span class="op">&gt;</span>,
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>,
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>,
         <span class="ident">crypto</span>,
         <span class="ident">section</span>::{
             <span class="ident">test_utils</span>::{<span class="ident">gen_addr</span>, <span class="ident">gen_elders_info</span>},
@@ -545,7 +545,7 @@
 
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">None</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">None</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">None</span>);
 
         <span class="prelude-val">Ok</span>(())
     }
@@ -571,7 +571,7 @@
 
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
 
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">None</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">None</span>);
         <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>.<span class="ident">variant</span>(),
@@ -608,7 +608,7 @@
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">None</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">None</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">None</span>);
 
         <span class="prelude-val">Ok</span>(())
     }
@@ -626,7 +626,7 @@
 
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
 
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">None</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">None</span>);
         <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">Some</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">OtherSection</span> { .. });
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">proof_chain</span>(), <span class="prelude-val">Ok</span>(<span class="ident">chain</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -651,7 +651,7 @@
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">None</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">None</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">None</span>);
 
         <span class="prelude-val">Ok</span>(())
     }
@@ -676,7 +676,7 @@
         <span class="kw">let</span> <span class="ident">actions</span> <span class="op">=</span> <span class="ident">process</span>(<span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">section</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">network</span>, <span class="kw-2">&amp;</span><span class="ident">msg</span>)<span class="question-mark">?</span>;
 
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">actions</span>.<span class="ident">send</span>, <span class="prelude-val">None</span>);
-        <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">actions</span>.<span class="ident">vote</span>, <span class="prelude-val">Some</span>(<span class="ident">Vote</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key</span> }) <span class="op">=</span><span class="op">&gt;</span> {
+        <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">actions</span>.<span class="ident">propose</span>, <span class="prelude-val">Some</span>(<span class="ident">Proposal</span>::<span class="ident">TheirKnowledge</span> { <span class="ident">prefix</span>, <span class="ident">key</span> }) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">prefix</span>, <span class="kw-2">&amp;</span><span class="ident">env</span>.<span class="ident">their_prefix</span>);
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">key</span>, <span class="ident">env</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>());
         });

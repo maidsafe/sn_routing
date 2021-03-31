@@ -498,7 +498,7 @@
 
 <span class="kw">use</span> <span class="self">self</span>::{<span class="ident">prefix_map</span>::<span class="ident">PrefixMap</span>, <span class="ident">stats</span>::<span class="ident">NetworkStats</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::{<span class="ident">verify_proof</span>, <span class="ident">Proof</span>, <span class="ident">Proven</span>},
+    <span class="ident">agreement</span>::{<span class="ident">verify_proof</span>, <span class="ident">Proof</span>, <span class="ident">Proven</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionChain</span>},
 };
@@ -764,7 +764,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">consensus</span>, <span class="ident">section</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">agreement</span>, <span class="ident">section</span>};
     <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">Rng</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -920,7 +920,7 @@
 
         <span class="kw">for</span> (<span class="ident">prefix</span>, <span class="ident">key</span>) <span class="kw">in</span> <span class="ident">updates</span> {
             <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">prefix</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">proof</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">prove</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="kw-2">&amp;</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>, <span class="ident">key</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">proof</span> <span class="op">=</span> <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">prove</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="kw-2">&amp;</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>, <span class="ident">key</span>)).<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="ident">proven</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>((<span class="ident">prefix</span>, <span class="kw-2">*</span><span class="ident">key</span>), <span class="ident">proof</span>);
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_their_key</span>(<span class="ident">proven</span>);
         }
@@ -949,7 +949,7 @@
 
         <span class="kw">for</span> (<span class="ident">prefix_str</span>, <span class="ident">key</span>) <span class="kw">in</span> <span class="ident">updates</span> {
             <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">prefix_str</span>.<span class="ident">parse</span>().<span class="ident">unwrap</span>();
-            <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, (<span class="ident">prefix</span>, <span class="ident">key</span>)).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, (<span class="ident">prefix</span>, <span class="ident">key</span>)).<span class="ident">unwrap</span>();
             <span class="ident">map</span>.<span class="ident">update_knowledge</span>(<span class="ident">payload</span>);
         }
 
@@ -963,7 +963,7 @@
 
     <span class="kw">fn</span> <span class="ident">gen_proven_elders_info</span>(<span class="ident">sk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKey</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_elders_info</span>(<span class="ident">prefix</span>, <span class="number">5</span>);
-        <span class="ident">consensus</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">elders_info</span>).<span class="ident">unwrap</span>()
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">elders_info</span>).<span class="ident">unwrap</span>()
     }
 
     <span class="kw">fn</span> <span class="ident">gen_key</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span> {

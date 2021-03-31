@@ -307,7 +307,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">VerifyStatus</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::{<span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proven</span>, <span class="ident">Vote</span>},
+    <span class="ident">agreement</span>::{<span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proposal</span>, <span class="ident">Proven</span>},
     <span class="ident">crypto</span>::<span class="ident">Signature</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
@@ -400,9 +400,9 @@
     <span class="doccomment">/// Sent to the current elders by the DKG participants when at least majority of them observe</span>
     <span class="doccomment">/// a DKG failure.</span>
     <span class="ident">DkgFailureAgreement</span>(<span class="ident">DkgFailureProofSet</span>),
-    <span class="doccomment">/// Message containing a single `Vote` to be accumulated in the vote accumulator.</span>
-    <span class="ident">Vote</span> {
-        <span class="ident">content</span>: <span class="ident">Vote</span>,
+    <span class="doccomment">/// Message containing a single `Proposal` to be aggregated in the proposal aggregator.</span>
+    <span class="ident">Propose</span> {
+        <span class="ident">content</span>: <span class="ident">Proposal</span>,
         <span class="ident">proof_share</span>: <span class="ident">ProofShare</span>,
     },
     <span class="doccomment">/// Challenge sent from existing elder nodes to the joining peer for resource proofing.</span>
@@ -531,11 +531,11 @@
             <span class="self">Self</span>::<span class="ident">DkgFailureAgreement</span>(<span class="ident">proofs</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;DkgFailureAgreement&quot;</span>).<span class="ident">field</span>(<span class="ident">proofs</span>).<span class="ident">finish</span>()
             }
-            <span class="self">Self</span>::<span class="ident">Vote</span> {
+            <span class="self">Self</span>::<span class="ident">Propose</span> {
                 <span class="ident">content</span>,
                 <span class="ident">proof_share</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;Vote&quot;</span>)
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;Propose&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;content&quot;</span>, <span class="ident">content</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;proof_share&quot;</span>, <span class="ident">proof_share</span>)
                 .<span class="ident">finish</span>(),

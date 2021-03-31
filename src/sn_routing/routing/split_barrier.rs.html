@@ -75,7 +75,7 @@
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">mem</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::{<span class="ident">Proof</span>, <span class="ident">Proven</span>},
+    <span class="ident">agreement</span>::{<span class="ident">Proof</span>, <span class="ident">Proven</span>},
     <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
@@ -91,12 +91,12 @@
         <span class="self">Self</span>(<span class="ident">Vec</span>::<span class="ident">new</span>())
     }
 
-    <span class="comment">// Pass an aggreed-on vote for `OurElders` through this function. If there is no split, it</span>
+    <span class="comment">// Pass an aggreed-on proposal for `OurElders` through this function. If there is no split, it</span>
     <span class="comment">// returns it unchanged. If there is a split and we&#39;ve seen the aggreement for only one</span>
-    <span class="comment">// subsection so far, it caches it and returns nothing. Otherwise it returns both votes.</span>
+    <span class="comment">// subsection so far, it caches it and returns nothing. Otherwise it returns both proposals.</span>
     <span class="comment">//</span>
-    <span class="comment">// Note: in case of a fork, it can return more than two votes. In that case one of the votes</span>
-    <span class="comment">// will be for one subsection and all the others for the other subsection.</span>
+    <span class="comment">// Note: in case of a fork, it can return more than two proposals. In that case one of the</span>
+    <span class="comment">// proposals will be for one subsection and all the others for the other subsection.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">process</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">our_prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>,

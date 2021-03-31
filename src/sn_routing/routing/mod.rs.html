@@ -503,6 +503,14 @@
 <span id="502">502</span>
 <span id="503">503</span>
 <span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -514,23 +522,23 @@
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">command</span>;
 
-<span class="kw">mod</span> <span class="ident">approved</span>;
 <span class="kw">mod</span> <span class="ident">bootstrap</span>;
 <span class="kw">mod</span> <span class="ident">comm</span>;
+<span class="kw">mod</span> <span class="ident">core</span>;
+<span class="kw">mod</span> <span class="ident">dispatcher</span>;
 <span class="kw">mod</span> <span class="ident">enduser_registry</span>;
 <span class="kw">mod</span> <span class="ident">event_stream</span>;
 <span class="kw">mod</span> <span class="ident">lazy_messaging</span>;
 <span class="kw">mod</span> <span class="ident">split_barrier</span>;
-<span class="kw">mod</span> <span class="ident">stage</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">event_stream</span>::<span class="ident">EventStream</span>;
 <span class="kw">use</span> <span class="self">self</span>::{
-    <span class="ident">approved</span>::<span class="ident">Approved</span>,
     <span class="ident">comm</span>::{<span class="ident">Comm</span>, <span class="ident">ConnectionEvent</span>},
     <span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">stage</span>::<span class="ident">Stage</span>,
+    <span class="ident">core</span>::<span class="ident">Core</span>,
+    <span class="ident">dispatcher</span>::<span class="ident">Dispatcher</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">crypto</span>,
@@ -584,7 +592,7 @@
 <span class="doccomment">/// `Node` or as a part of a section or group location. Their `src` argument indicates that</span>
 <span class="doccomment">/// role, and can be `sn_messaging::SrcLocation::Node` or `sn_messaging::SrcLocation::Section`.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Routing</span> {
-    <span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>,
+    <span class="ident">dispatcher</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Dispatcher</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Routing</span> {
@@ -610,7 +618,7 @@
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the genesis node.&quot;</span>, <span class="ident">node_name</span>);
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>());
-            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Core</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;
 
             <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Genesis</span>);
 
@@ -622,17 +630,17 @@
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>());
             <span class="kw">let</span> (<span class="ident">node</span>, <span class="ident">section</span>, <span class="ident">backlog</span>) <span class="op">=</span>
                 <span class="ident">bootstrap</span>::<span class="ident">initial</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comm</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">connection_event_rx</span>, <span class="ident">bootstrap_addr</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Approved</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
+            <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Core</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
 
             (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">backlog</span>)
         };
 
-        <span class="kw">let</span> <span class="ident">stage</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stage</span>::<span class="ident">new</span>(<span class="ident">state</span>, <span class="ident">comm</span>));
+        <span class="kw">let</span> <span class="ident">dispatcher</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Dispatcher</span>::<span class="ident">new</span>(<span class="ident">state</span>, <span class="ident">comm</span>));
         <span class="kw">let</span> <span class="ident">event_stream</span> <span class="op">=</span> <span class="ident">EventStream</span>::<span class="ident">new</span>(<span class="ident">event_rx</span>);
 
         <span class="comment">// Process message backlog</span>
         <span class="kw">for</span> (<span class="ident">message</span>, <span class="ident">sender</span>) <span class="kw">in</span> <span class="ident">backlog</span> {
-            <span class="ident">stage</span>
+            <span class="ident">dispatcher</span>
                 .<span class="ident">clone</span>()
                 .<span class="ident">handle_commands</span>(<span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
                     <span class="ident">message</span>,
@@ -642,9 +650,12 @@
         }
 
         <span class="comment">// Start listening to incoming connections.</span>
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_connection_events</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">connection_event_rx</span>));
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_connection_events</span>(
+            <span class="ident">dispatcher</span>.<span class="ident">clone</span>(),
+            <span class="ident">connection_event_rx</span>,
+        ));
 
-        <span class="kw">let</span> <span class="ident">routing</span> <span class="op">=</span> <span class="self">Self</span> { <span class="ident">stage</span> };
+        <span class="kw">let</span> <span class="ident">routing</span> <span class="op">=</span> <span class="self">Self</span> { <span class="ident">dispatcher</span> };
 
         <span class="prelude-val">Ok</span>((<span class="ident">routing</span>, <span class="ident">event_stream</span>))
     }
@@ -652,22 +663,22 @@
     <span class="doccomment">/// Sets the JoinsAllowed flag.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">set_joins_allowed</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">joins_allowed</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SetJoinsAllowed</span>(<span class="ident">joins_allowed</span>);
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the current age of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">age</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">age</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">age</span>()
     }
 
     <span class="doccomment">/// Returns the ed25519 public key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PublicKey</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">public</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">public</span>
     }
 
     <span class="doccomment">/// Signs `data` with the ed25519 key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sign_as_node</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Signature</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">sign</span>(<span class="ident">data</span>)
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">sign</span>(<span class="ident">data</span>)
     }
 
     <span class="doccomment">/// Signs `data` with the BLS secret key share of this node, if it has any. Returns</span>
@@ -677,8 +688,8 @@
         <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">public_key</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">SignatureShare</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">sign_with_section_key_share</span>(<span class="ident">data</span>, <span class="ident">public_key</span>)
@@ -686,8 +697,8 @@
 
     <span class="doccomment">/// Verifies `signature` on `data` with the ed25519 public key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">signature</span>: <span class="kw-2">&amp;</span><span class="ident">Signature</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">node</span>()
@@ -698,22 +709,22 @@
 
     <span class="doccomment">/// The name of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">name</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">name</span>()
     }
 
     <span class="doccomment">/// Returns connection info of this node.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">our_connection_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SocketAddr</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
     }
 
     <span class="doccomment">/// Returns the Section Proof Chain</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_chain</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section_chain</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section_chain</span>().<span class="ident">clone</span>()
     }
 
     <span class="doccomment">/// Prefix of our section</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Prefix</span> {
-        <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">prefix</span>()
+        <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">prefix</span>()
     }
 
     <span class="doccomment">/// Finds out if the given XorName matches our prefix.</span>
@@ -723,13 +734,13 @@
 
     <span class="doccomment">/// Returns whether the node is Elder.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">is_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">is_elder</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">is_elder</span>()
     }
 
     <span class="doccomment">/// Returns the information of all the current section elders.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">section</span>()
@@ -750,8 +761,8 @@
 
     <span class="doccomment">/// Returns the information of all the current section adults.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_adults</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">section</span>()
@@ -772,8 +783,8 @@
 
     <span class="doccomment">/// Returns the info about our section or `None` if we are not joined yet.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_section</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">EldersInfo</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">section</span>()
@@ -783,8 +794,8 @@
 
     <span class="doccomment">/// Returns the info about other sections in the network known to us.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">other_sections</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>
-            .<span class="ident">state</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
             .<span class="ident">lock</span>()
             .<span class="kw">await</span>
             .<span class="ident">network</span>()
@@ -795,7 +806,12 @@
 
     <span class="doccomment">/// Returns the last known public key of the section with `prefix`.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section_key</span>(<span class="ident">prefix</span>).<span class="ident">copied</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>
+            .<span class="ident">core</span>
+            .<span class="ident">lock</span>()
+            .<span class="kw">await</span>
+            .<span class="ident">section_key</span>(<span class="ident">prefix</span>)
+            .<span class="ident">copied</span>()
     }
 
     <span class="doccomment">/// Returns the info about the section matching the name.</span>
@@ -803,7 +819,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) {
-        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
         <span class="kw">let</span> (<span class="ident">key</span>, <span class="ident">elders_info</span>) <span class="op">=</span> <span class="ident">state</span>.<span class="ident">matching_section</span>(<span class="ident">name</span>);
         (<span class="ident">key</span>.<span class="ident">copied</span>(), <span class="ident">elders_info</span>.<span class="ident">cloned</span>())
     }
@@ -827,8 +843,8 @@
         }) <span class="op">=</span> <span class="ident">itinerary</span>.<span class="ident">dst</span>
         {
             <span class="kw">let</span> <span class="ident">socket_addr</span> <span class="op">=</span> <span class="self">self</span>
-                .<span class="ident">stage</span>
-                .<span class="ident">state</span>
+                .<span class="ident">dispatcher</span>
+                .<span class="ident">core</span>
                 .<span class="ident">lock</span>()
                 .<span class="kw">await</span>
                 .<span class="ident">get_socket_addr</span>(<span class="ident">socket_id</span>)
@@ -851,7 +867,7 @@
             <span class="ident">content</span>,
             <span class="ident">additional_proof_chain_key</span>,
         };
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Send a message to a client peer.</span>
@@ -867,47 +883,47 @@
             <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
             <span class="ident">message</span>: <span class="ident">MessageType</span>::<span class="ident">ClientMessage</span>(<span class="ident">message</span>),
         };
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">clone</span>().<span class="ident">handle_commands</span>(<span class="ident">command</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Returns the current BLS public key set if this node has one, or</span>
     <span class="doccomment">/// `Error::InvalidState` otherwise.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKeySet</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">public_key_set</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">public_key_set</span>()
     }
 
     <span class="doccomment">/// Returns our section proof chain.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
     }
 
     <span class="doccomment">/// Returns our index in the current BLS group if this node is a member of one, or</span>
     <span class="doccomment">/// `Error::MissingSecretKeyShare` otherwise.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">our_index</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">our_index</span>()
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">Routing</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">stage</span>.<span class="ident">terminate</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">terminate</span>()
     }
 }
 
 <span class="comment">// Listen for incoming connection events and handle them.</span>
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_connection_events</span>(
-    <span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>,
+    <span class="ident">dispatcher</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Dispatcher</span><span class="op">&gt;</span>,
     <span class="kw-2">mut</span> <span class="ident">incoming_conns</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
 ) {
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">event</span>) <span class="op">=</span> <span class="ident">incoming_conns</span>.<span class="ident">recv</span>().<span class="kw">await</span> {
         <span class="kw">match</span> <span class="ident">event</span> {
             <span class="ident">ConnectionEvent</span>::<span class="ident">Received</span>((<span class="ident">src</span>, <span class="ident">bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;New message ({} bytes) received from: {}&quot;</span>, <span class="ident">bytes</span>.<span class="ident">len</span>(), <span class="ident">src</span>);
-                <span class="ident">handle_message</span>(<span class="ident">stage</span>.<span class="ident">clone</span>(), <span class="ident">bytes</span>, <span class="ident">src</span>).<span class="kw">await</span>;
+                <span class="ident">handle_message</span>(<span class="ident">dispatcher</span>.<span class="ident">clone</span>(), <span class="ident">bytes</span>, <span class="ident">src</span>).<span class="kw">await</span>;
             }
             <span class="ident">ConnectionEvent</span>::<span class="ident">Disconnected</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to {:?}&quot;</span>, <span class="ident">addr</span>);
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">stage</span>
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">dispatcher</span>
                     .<span class="ident">clone</span>()
                     .<span class="ident">handle_commands</span>(<span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>))
                     .<span class="kw">await</span>;
@@ -916,9 +932,9 @@
     }
 }
 
-<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(<span class="ident">stage</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stage</span><span class="op">&gt;</span>, <span class="ident">bytes</span>: <span class="ident">Bytes</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>) {
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(<span class="ident">dispatcher</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Dispatcher</span><span class="op">&gt;</span>, <span class="ident">bytes</span>: <span class="ident">Bytes</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>) {
     <span class="kw">let</span> <span class="ident">span</span> <span class="op">=</span> {
-        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">stage</span>.<span class="ident">state</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
         <span class="macro">trace_span</span><span class="macro">!</span>(<span class="string">&quot;handle_message&quot;</span>, <span class="ident">name</span> <span class="op">=</span> <span class="op">%</span><span class="ident">state</span>.<span class="ident">node</span>().<span class="ident">name</span>(), <span class="op">%</span><span class="ident">sender</span>)
     };
     <span class="kw">let</span> <span class="ident">_span_guard</span> <span class="op">=</span> <span class="ident">span</span>.<span class="ident">enter</span>();
@@ -937,7 +953,7 @@
         }
         <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">HandleSectionInfoMsg</span> { <span class="ident">sender</span>, <span class="ident">message</span> };
-            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
         }
         <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="ident">NodeMessage</span>(<span class="ident">msg_bytes</span>)) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>)) {
@@ -946,7 +962,7 @@
                         <span class="ident">message</span>,
                         <span class="ident">sender</span>: <span class="prelude-val">Some</span>(<span class="ident">sender</span>),
                     };
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
                 }
                 <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize node message: {}&quot;</span>, <span class="ident">error</span>);
@@ -954,8 +970,8 @@
             }
         }
         <span class="ident">MessageType</span>::<span class="ident">ClientMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
-            <span class="kw">let</span> <span class="ident">end_user</span> <span class="op">=</span> <span class="ident">stage</span>
-                .<span class="ident">state</span>
+            <span class="kw">let</span> <span class="ident">end_user</span> <span class="op">=</span> <span class="ident">dispatcher</span>
+                .<span class="ident">core</span>
                 .<span class="ident">lock</span>()
                 .<span class="kw">await</span>
                 .<span class="ident">get_enduser_by_addr</span>(<span class="kw-2">&amp;</span><span class="ident">sender</span>)
@@ -974,14 +990,14 @@
                             )),
                         )),
                     };
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
                     <span class="kw">return</span>;
                 }
             };
 
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">client_pk</span>) <span class="op">=</span> <span class="ident">message</span>.<span class="ident">target_section_pk</span>() {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">bls_pk</span>) <span class="op">=</span> <span class="ident">client_pk</span>.<span class="ident">bls</span>() {
-                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span> <span class="ident">stage</span>.<span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="ident">bls_pk</span>).<span class="kw">await</span> {
+                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span> <span class="ident">dispatcher</span>.<span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="ident">bls_pk</span>).<span class="kw">await</span> {
                         <span class="kw">let</span> <span class="ident">correlation_id</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">id</span>();
                         <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                             <span class="ident">recipients</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">sender</span>],
@@ -993,7 +1009,7 @@
                                 },
                             )),
                         };
-                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">stage</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
                         <span class="kw">return</span>;
                     }
                 }
@@ -1004,7 +1020,7 @@
                 <span class="ident">user</span>: <span class="ident">end_user</span>,
             };
 
-            <span class="ident">stage</span>.<span class="ident">send_event</span>(<span class="ident">event</span>).<span class="kw">await</span>;
+            <span class="ident">dispatcher</span>.<span class="ident">send_event</span>(<span class="ident">event</span>).<span class="kw">await</span>;
         }
     }
 }

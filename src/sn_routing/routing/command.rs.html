@@ -199,7 +199,7 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::{<span class="ident">DkgFailureProofSet</span>, <span class="ident">Vote</span>},
+    <span class="ident">agreement</span>::{<span class="ident">DkgFailureProofSet</span>, <span class="ident">Proposal</span>},
     <span class="ident">messages</span>::<span class="ident">Message</span>,
     <span class="ident">relocation</span>::<span class="ident">SignedRelocateDetails</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionKeyShare</span>},
@@ -224,7 +224,7 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Command</span> {
     <span class="doccomment">/// Handle `message` from `sender`.</span>
     <span class="doccomment">/// Note: `sender` is `Some` if the message was received from someone else</span>
-    <span class="doccomment">/// and `None` if it came from an accumulated `Vote::SendMessage`</span>
+    <span class="doccomment">/// and `None` if it is an aggregated message.</span>
     <span class="ident">HandleMessage</span> {
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">message</span>: <span class="ident">Message</span>,
@@ -240,8 +240,8 @@
     <span class="ident">HandleConnectionLost</span>(<span class="ident">SocketAddr</span>),
     <span class="doccomment">/// Handle peer that&#39;s been detected as lost.</span>
     <span class="ident">HandlePeerLost</span>(<span class="ident">SocketAddr</span>),
-    <span class="doccomment">/// Handle consensus on a vote.</span>
-    <span class="ident">HandleConsensus</span> { <span class="ident">vote</span>: <span class="ident">Vote</span>, <span class="ident">proof</span>: <span class="ident">Proof</span> },
+    <span class="doccomment">/// Handle agreement on a proposal.</span>
+    <span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>: <span class="ident">Proposal</span>, <span class="ident">proof</span>: <span class="ident">Proof</span> },
     <span class="doccomment">/// Handle the outcome of a DKG session where we are one of the participants (that is, one of</span>
     <span class="doccomment">/// the proposed new elders).</span>
     <span class="ident">HandleDkgOutcome</span> {
@@ -317,9 +317,9 @@
                 <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;HandleConnectionLost&quot;</span>).<span class="ident">field</span>(<span class="ident">addr</span>).<span class="ident">finish</span>()
             }
             <span class="self">Self</span>::<span class="ident">HandlePeerLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;HandlePeerLost&quot;</span>).<span class="ident">field</span>(<span class="ident">addr</span>).<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">HandleConsensus</span> { <span class="ident">vote</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleConsensus&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;vote&quot;</span>, <span class="ident">vote</span>)
+            <span class="self">Self</span>::<span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;HandleAgreement&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;proposal&quot;</span>, <span class="ident">proposal</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;proof.public_key&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">proof</span>.<span class="ident">public_key</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">HandleDkgOutcome</span> {

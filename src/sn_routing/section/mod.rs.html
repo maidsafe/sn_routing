@@ -396,7 +396,7 @@
 };
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">consensus</span>::<span class="ident">Proven</span>,
+    <span class="ident">agreement</span>::<span class="ident">Proven</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">ELDER_SIZE</span>, <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
@@ -603,7 +603,7 @@
     }
 
     <span class="doccomment">/// Generate a new section info(s) based on the current set of members.</span>
-    <span class="doccomment">/// Returns a set of EldersInfos to vote for.</span>
+    <span class="doccomment">/// Returns a set of candidate EldersInfos.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_info</span>, <span class="ident">other_info</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">our_name</span>) {
             <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">our_info</span>, <span class="ident">other_info</span>];
