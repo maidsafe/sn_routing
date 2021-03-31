@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.56.0](https://github.com/maidsafe/sn_routing/compare/v0.55.0...v0.56.0) (2021-03-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* Events removed and event members changed.
+
+### Bug Fixes
+
+* restore EldersChange to a previous version ([0a85b87](https://github.com/maidsafe/sn_routing/commit/0a85b879d5a2173daf24f49fbb3e106ecc0a0f5d))
+
 ## [0.55.0](https://github.com/maidsafe/sn_routing/compare/v0.54.4...v0.55.0) (2021-03-31)
 
 
