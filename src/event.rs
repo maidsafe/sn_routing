@@ -79,8 +79,8 @@ pub enum Event {
         src: SrcLocation,
         /// The destination location that receives the message.
         dst: DstLocation,
-        /// The proof chain for the message.
-        proof_chain: SectionChain,
+        /// The proof chain for the message, if any.
+        proof_chain: Option<SectionChain>,
     },
     /// A new peer joined our section.
     MemberJoined {
