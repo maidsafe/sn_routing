@@ -8,7 +8,7 @@
 
 use super::{
     member_info::{MemberInfo, PeerState},
-    EldersInfo,
+    SectionAuthorityProvider,
 };
 use crate::{agreement::Proven, peer::Peer};
 
@@ -63,7 +63,11 @@ impl SectionPeers {
     }
 
     /// Returns the candidates for elders out of all the nodes in this section.
-    pub fn elder_candidates(&self, elder_size: usize, current_elders: &EldersInfo) -> Vec<Peer> {
+    pub fn elder_candidates(
+        &self,
+        elder_size: usize,
+        current_elders: &SectionAuthorityProvider,
+    ) -> Vec<Peer> {
         elder_candidates(
             elder_size,
             current_elders,
@@ -79,7 +83,7 @@ impl SectionPeers {
         &self,
         prefix: &Prefix,
         elder_size: usize,
-        current_elders: &EldersInfo,
+        current_elders: &SectionAuthorityProvider,
     ) -> Vec<Peer> {
         elder_candidates(
             elder_size,
@@ -172,7 +176,11 @@ impl IntoIterator for SectionPeers {
 // Returns the nodes that should become the next elders out of the given members, sorted by names.
 // It is assumed that `members` contains only "active" peers (see the `is_active` function below
 // for explanation)
-fn elder_candidates<'a, I>(elder_size: usize, current_elders: &EldersInfo, members: I) -> Vec<Peer>
+fn elder_candidates<'a, I>(
+    elder_size: usize,
+    current_elders: &SectionAuthorityProvider,
+    members: I,
+) -> Vec<Peer>
 where
     I: IntoIterator<Item = &'a Proven<MemberInfo>>,
 {
@@ -188,7 +196,7 @@ where
 fn cmp_elder_candidates(
     lhs: &Proven<MemberInfo>,
     rhs: &Proven<MemberInfo>,
-    current_elders: &EldersInfo,
+    current_elders: &SectionAuthorityProvider,
 ) -> Ordering {
     // Older nodes are preferred. In case of a tie, prefer current elders. If still a tie, break
     // it comparing by the proof signatures because it's impossible for a node to predict its
@@ -225,7 +233,7 @@ fn cmp_elder_candidates_by_peer_state(lhs: &PeerState, rhs: &PeerState) -> Order
 // A peer is considered active if either it is joined or it is a current elder who is being
 // relocated. This is because such elder still fulfils its duties and only when demoted can it
 // leave.
-fn is_active(info: &MemberInfo, current_elders: &EldersInfo) -> bool {
+fn is_active(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bool {
     match info.state {
         PeerState::Joined => true,
         PeerState::Relocated(_) if is_elder(info, current_elders) => true,
@@ -233,6 +241,6 @@ fn is_active(info: &MemberInfo, current_elders: &EldersInfo) -> bool {
     }
 }
 
-fn is_elder(info: &MemberInfo, current_elders: &EldersInfo) -> bool {
+fn is_elder(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bool {
     current_elders.elders.contains_key(info.peer.name())
 }

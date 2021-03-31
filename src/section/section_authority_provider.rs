@@ -16,18 +16,18 @@ use std::{
 };
 
 /// The information about all elders of a section at one point in time. Each elder is always a
-/// member of exactly one current section, but a new `EldersInfo` is created whenever the elders
+/// member of exactly one current section, but a new `SectionAuthorityProvider` is created whenever the elders
 /// change, due to an elder being added or removed, or the section splitting or merging.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct EldersInfo {
+pub struct SectionAuthorityProvider {
     /// The section's complete set of elders as a map from their name to a `Peer`.
     pub elders: BTreeMap<XorName, Peer>,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
 }
 
-impl EldersInfo {
-    /// Creates a new `EldersInfo` with the given members, prefix and version.
+impl SectionAuthorityProvider {
+    /// Creates a new `SectionAuthorityProvider` with the given members, prefix and version.
     pub fn new<I>(elders: I, prefix: Prefix) -> Self
     where
         I: IntoIterator<Item = Peer>,
@@ -55,24 +55,24 @@ impl EldersInfo {
     }
 }
 
-impl Borrow<Prefix> for EldersInfo {
+impl Borrow<Prefix> for SectionAuthorityProvider {
     fn borrow(&self) -> &Prefix {
         &self.prefix
     }
 }
 
-impl Debug for EldersInfo {
+impl Debug for SectionAuthorityProvider {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo {{ prefix: ({:b}), elders: {{{:?}}} }}",
+            "SectionAuthorityProvider {{ prefix: ({:b}), elders: {{{:?}}} }}",
             self.prefix,
             self.elders.values().format(", "),
         )
     }
 }
 
-impl Display for EldersInfo {
+impl Display for SectionAuthorityProvider {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
@@ -85,7 +85,7 @@ impl Display for EldersInfo {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use super::EldersInfo;
+    use super::SectionAuthorityProvider;
     use crate::{crypto, node::Node, MIN_ADULT_AGE, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
@@ -123,8 +123,11 @@ pub(crate) mod test_utils {
             .collect()
     }
 
-    // Generate random `EldersInfo` for testing purposes.
-    pub(crate) fn gen_elders_info(prefix: Prefix, count: usize) -> (EldersInfo, Vec<Node>) {
+    // Generate random `SectionAuthorityProvider` for testing purposes.
+    pub(crate) fn gen_section_authority_provider(
+        prefix: Prefix,
+        count: usize,
+    ) -> (SectionAuthorityProvider, Vec<Node>) {
         let nodes = gen_sorted_nodes(&prefix, count, false);
         let elders = nodes
             .iter()
@@ -134,8 +137,8 @@ pub(crate) mod test_utils {
                 (*peer.name(), peer)
             })
             .collect();
-        let elders_info = EldersInfo { elders, prefix };
+        let section_auth = SectionAuthorityProvider { elders, prefix };
 
-        (elders_info, nodes)
+        (section_auth, nodes)
     }
 }

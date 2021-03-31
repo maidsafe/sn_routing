@@ -10,7 +10,7 @@ use super::{Proof, ProofShare, Proven, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
-    section::{EldersInfo, MemberInfo, SectionChain},
+    section::{MemberInfo, SectionAuthorityProvider, SectionChain},
 };
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
@@ -37,19 +37,19 @@ pub(crate) enum Proposal {
     //    This proposal is then signed by the newly generated section key.
     // 2. To update information about other section in the network. In this case the proposal is
     //    signed by an existing key from the chain.
-    SectionInfo(EldersInfo),
+    SectionInfo(SectionAuthorityProvider),
 
     // Proposal to change the elders (and possibly the prefix) of our section.
-    // NOTE: the `EldersInfo` is already signed with the new key. This proposal is only to signs the
+    // NOTE: the `SectionAuthorityProvider` is already signed with the new key. This proposal is only to signs the
     // new key with the current key. That way, when it aggregates, we obtain all the following
     // pieces of information at the same time:
-    //   1. the new elders info
+    //   1. the new section authority provider
     //   2. the new key
-    //   3. the signature of the new elders info using the new key
+    //   3. the signature of the new section authority provider using the new key
     //   4. the signature of the new key using the current key
-    // Which we can use to update the section elders info and the section chain at the same time as
-    // a single atomic operation without needing to cache anything.
-    OurElders(Proven<EldersInfo>),
+    // Which we can use to update the section section authority provider and the section chain at
+    // the same time as a single atomic operation without needing to cache anything.
+    OurElders(Proven<SectionAuthorityProvider>),
 
     // Proposal to update other section key.
     TheirKey {
@@ -152,15 +152,16 @@ mod tests {
     #[test]
     fn serialize_for_signing() -> Result<()> {
         // Proposal::SectionInfo
-        let (elders_info, _) = section::test_utils::gen_elders_info(Prefix::default(), 4);
-        let proposal = Proposal::SectionInfo(elders_info.clone());
-        verify_serialize_for_signing(&proposal, &elders_info)?;
+        let (section_auth, _) =
+            section::test_utils::gen_section_authority_provider(Prefix::default(), 4);
+        let proposal = Proposal::SectionInfo(section_auth.clone());
+        verify_serialize_for_signing(&proposal, &section_auth)?;
 
         // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
-        let proven_elders_info = agreement::test_utils::proven(&new_sk, elders_info)?;
-        let proposal = Proposal::OurElders(proven_elders_info);
+        let proven_section_auth = agreement::test_utils::proven(&new_sk, section_auth)?;
+        let proposal = Proposal::OurElders(proven_section_auth);
         verify_serialize_for_signing(&proposal, &new_pk)?;
 
         // Proposal::TheirKey

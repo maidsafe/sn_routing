@@ -6,20 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod elders_info;
 mod member_info;
+mod section_authority_provider;
 mod section_chain;
 mod section_keys;
 mod section_peers;
 
 #[cfg(test)]
-pub(crate) use self::elders_info::test_utils;
+pub(crate) use self::section_authority_provider::test_utils;
 pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
-    elders_info::EldersInfo,
     member_info::{
         MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
+    section_authority_provider::SectionAuthorityProvider,
     section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
@@ -39,22 +39,22 @@ use xor_name::{Prefix, XorName};
 pub(crate) struct Section {
     genesis_key: bls::PublicKey,
     chain: SectionChain,
-    elders_info: Proven<EldersInfo>,
+    section_auth: Proven<SectionAuthorityProvider>,
     members: SectionPeers,
 }
 
 impl Section {
     /// Creates a minimal `Section` initially containing only info about our elders
-    /// (`elders_info`).
+    /// (`section_auth`).
     ///
-    /// Returns error if `elders_info` is not signed with the last key of `chain`.
+    /// Returns error if `section_auth` is not signed with the last key of `chain`.
     pub fn new(
         genesis_key: bls::PublicKey,
         chain: SectionChain,
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
-        if elders_info.proof.public_key != *chain.last_key() {
-            error!("can't create section: elders_info signed with incorrect key");
+        if section_auth.proof.public_key != *chain.last_key() {
+            error!("can't create section: section_auth signed with incorrect key");
             // TODO: consider more specific error here.
             return Err(Error::InvalidMessage);
         }
@@ -62,7 +62,7 @@ impl Section {
         Ok(Self {
             genesis_key,
             chain,
-            elders_info,
+            section_auth,
             members: SectionPeers::default(),
         })
     }
@@ -73,15 +73,16 @@ impl Section {
         let public_key_set = secret_key_set.public_keys();
         let secret_key_share = secret_key_set.secret_key_share(0);
 
-        let elders_info = create_first_elders_info(&public_key_set, &secret_key_share, peer)?;
+        let section_auth =
+            create_first_section_authority_provider(&public_key_set, &secret_key_share, peer)?;
 
         let mut section = Self::new(
-            elders_info.proof.public_key,
-            SectionChain::new(elders_info.proof.public_key),
-            elders_info,
+            section_auth.proof.public_key,
+            SectionChain::new(section_auth.proof.public_key),
+            section_auth,
         )?;
 
-        for peer in section.elders_info.value.peers() {
+        for peer in section.section_auth.value.peers() {
             let member_info = MemberInfo::joined(*peer);
             let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
             let _ = section.members.update(Proven {
@@ -106,20 +107,20 @@ impl Section {
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
     /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.elders_info.self_verify() {
-            error!("can't merge sections: other elders_info failed self-verification");
+        if !other.section_auth.self_verify() {
+            error!("can't merge sections: other section_auth failed self-verification");
             return Err(Error::InvalidMessage);
         }
-        if &other.elders_info.proof.public_key != other.chain.last_key() {
+        if &other.section_auth.proof.public_key != other.chain.last_key() {
             // TODO: use more specific error variant.
-            error!("can't merge sections: other elders_info signed with incorrect key");
+            error!("can't merge sections: other section_auth signed with incorrect key");
             return Err(Error::InvalidMessage);
         }
 
         self.chain.merge(other.chain.clone())?;
 
-        if &other.elders_info.proof.public_key == self.chain.last_key() {
-            self.elders_info = other.elders_info;
+        if &other.section_auth.proof.public_key == self.chain.last_key() {
+            self.section_auth = other.section_auth;
         }
 
         for info in other.members {
@@ -127,45 +128,45 @@ impl Section {
         }
 
         self.members
-            .prune_not_matching(&self.elders_info.value.prefix);
+            .prune_not_matching(&self.section_auth.value.prefix);
 
         Ok(())
     }
 
-    /// Update the `EldersInfo` of our section.
+    /// Update the `SectionAuthorityProvider` of our section.
     pub fn update_elders(
         &mut self,
-        new_elders_info: Proven<EldersInfo>,
+        new_section_auth: Proven<SectionAuthorityProvider>,
         new_key_proof: Proof,
     ) -> bool {
-        if new_elders_info.value.prefix != *self.prefix()
-            && !new_elders_info.value.prefix.is_extension_of(self.prefix())
+        if new_section_auth.value.prefix != *self.prefix()
+            && !new_section_auth.value.prefix.is_extension_of(self.prefix())
         {
             return false;
         }
 
-        if !new_elders_info.self_verify() {
+        if !new_section_auth.self_verify() {
             return false;
         }
 
         if let Err(error) = self.chain.insert(
             &new_key_proof.public_key,
-            new_elders_info.proof.public_key,
+            new_section_auth.proof.public_key,
             new_key_proof.signature,
         ) {
             error!(
                 "failed to insert key {:?} (signed with {:?}) into the section chain: {}",
-                new_elders_info.proof.public_key, new_key_proof.public_key, error,
+                new_section_auth.proof.public_key, new_key_proof.public_key, error,
             );
             return false;
         }
 
-        if &new_elders_info.proof.public_key == self.chain.last_key() {
-            self.elders_info = new_elders_info;
+        if &new_section_auth.proof.public_key == self.chain.last_key() {
+            self.section_auth = new_section_auth;
         }
 
         self.members
-            .prune_not_matching(&self.elders_info.value.prefix);
+            .prune_not_matching(&self.section_auth.value.prefix);
 
         true
     }
@@ -202,34 +203,34 @@ impl Section {
 
         Ok(Self {
             genesis_key: self.genesis_key,
-            elders_info: self.elders_info.clone(),
+            section_auth: self.section_auth.clone(),
             chain,
             members: self.members.clone(),
         })
     }
 
-    pub fn elders_info(&self) -> &EldersInfo {
-        &self.elders_info.value
+    pub fn authority_provider(&self) -> &SectionAuthorityProvider {
+        &self.section_auth.value
     }
 
-    pub fn proven_elders_info(&self) -> &Proven<EldersInfo> {
-        &self.elders_info
+    pub fn proven_authority_provider(&self) -> &Proven<SectionAuthorityProvider> {
+        &self.section_auth
     }
 
     pub fn is_elder(&self, name: &XorName) -> bool {
-        self.elders_info().elders.contains_key(name)
+        self.authority_provider().elders.contains_key(name)
     }
 
     /// Generate a new section info(s) based on the current set of members.
-    /// Returns a set of candidate EldersInfos.
-    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<EldersInfo> {
+    /// Returns a set of candidate SectionAuthorityProviders.
+    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<SectionAuthorityProvider> {
         if let Some((our_info, other_info)) = self.try_split(our_name) {
             return vec![our_info, other_info];
         }
 
         let expected_peers = self.elder_candidates(ELDER_SIZE);
         let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).collect();
-        let current_names: BTreeSet<_> = self.elders_info().elders.keys().collect();
+        let current_names: BTreeSet<_> = self.authority_provider().elders.keys().collect();
 
         if expected_names == current_names {
             vec![]
@@ -237,14 +238,15 @@ impl Section {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
-            let new_info = EldersInfo::new(expected_peers, self.elders_info().prefix);
+            let new_info =
+                SectionAuthorityProvider::new(expected_peers, self.authority_provider().prefix);
             vec![new_info]
         }
     }
 
     // Prefix of our section.
     pub fn prefix(&self) -> &Prefix {
-        &self.elders_info().prefix
+        &self.authority_provider().prefix
     }
 
     pub fn members(&self) -> &SectionPeers {
@@ -287,9 +289,12 @@ impl Section {
     }
 
     // Tries to split our section.
-    // If we have enough mature nodes for both subsections, returns the elders infos of the two
-    // subsections. Otherwise returns `None`.
-    fn try_split(&self, our_name: &XorName) -> Option<(EldersInfo, EldersInfo)> {
+    // If we have enough mature nodes for both subsections, returns the SectionAuthorityProviders
+    // of the two subsections. Otherwise returns `None`.
+    fn try_split(
+        &self,
+        our_name: &XorName,
+    ) -> Option<(SectionAuthorityProvider, SectionAuthorityProvider)> {
         let next_bit_index = if let Ok(index) = self.prefix().bit_count().try_into() {
             index
         } else {
@@ -322,16 +327,16 @@ impl Section {
         let our_elders = self.members.elder_candidates_matching_prefix(
             &our_prefix,
             ELDER_SIZE,
-            self.elders_info(),
+            self.authority_provider(),
         );
         let other_elders = self.members.elder_candidates_matching_prefix(
             &other_prefix,
             ELDER_SIZE,
-            self.elders_info(),
+            self.authority_provider(),
         );
 
-        let our_info = EldersInfo::new(our_elders, our_prefix);
-        let other_info = EldersInfo::new(other_elders, other_prefix);
+        let our_info = SectionAuthorityProvider::new(our_elders, our_prefix);
+        let other_info = SectionAuthorityProvider::new(other_elders, other_prefix);
 
         Some((our_info, other_info))
     }
@@ -340,20 +345,20 @@ impl Section {
     // relocating nodes if there would not be enough instead.
     fn elder_candidates(&self, elder_size: usize) -> Vec<Peer> {
         self.members
-            .elder_candidates(elder_size, self.elders_info())
+            .elder_candidates(elder_size, self.authority_provider())
     }
 }
 
-// Create `EldersInfo` for the first node.
-fn create_first_elders_info(
+// Create `SectionAuthorityProvider` for the first node.
+fn create_first_section_authority_provider(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     mut peer: Peer,
-) -> Result<Proven<EldersInfo>> {
+) -> Result<Proven<SectionAuthorityProvider>> {
     peer.set_reachable(true);
-    let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
-    let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
-    Ok(Proven::new(elders_info, proof))
+    let section_auth = SectionAuthorityProvider::new(iter::once(peer), Prefix::default());
+    let proof = create_first_proof(pk_set, sk_share, &section_auth)?;
+    Ok(Proven::new(section_auth, proof))
 }
 
 fn create_first_proof<T: Serialize>(
