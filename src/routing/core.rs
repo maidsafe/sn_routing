@@ -1056,7 +1056,7 @@ impl Core {
             content,
             src: msg.src().src_location(),
             dst: *msg.dst(),
-            proof_chain: msg.proof_chain()?.clone(),
+            proof_chain: msg.proof_chain().ok().cloned(),
         });
         Ok(vec![])
     }
@@ -2066,11 +2066,12 @@ impl Core {
         }
 
         let variant = Variant::UserMessage(content);
-        let proof_chain = self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
 
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
+            let proof_chain =
+                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
             Message::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
                 itinerary.src.name(),
@@ -2080,6 +2081,8 @@ impl Core {
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
+            let proof_chain =
+                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
             let proposal =
                 self.create_accumulate_at_src_proposal(itinerary.dst, variant, proof_chain);
             let recipients = delivery_group::signature_targets(
@@ -2088,7 +2091,7 @@ impl Core {
             );
             return self.send_proposal(&recipients, proposal);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, Some(proof_chain), None)?
+            Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
         let mut commands = vec![];
 
