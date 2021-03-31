@@ -278,8 +278,8 @@
         <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
         <span class="doccomment">/// The destination location that receives the message.</span>
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
-        <span class="doccomment">/// The proof chain for the message.</span>
-        <span class="ident">proof_chain</span>: <span class="ident">SectionChain</span>,
+        <span class="doccomment">/// The proof chain for the message, if any.</span>
+        <span class="ident">proof_chain</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionChain</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// A new peer joined our section.</span>
     <span class="ident">MemberJoined</span> {
