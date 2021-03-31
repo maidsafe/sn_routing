@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bootstrap, Approved, Comm, Command};
+use super::{bootstrap, Comm, Command, Core};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
 use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -18,7 +18,7 @@ use tracing::Instrument;
 
 // `Command` Dispatcher.
 pub(crate) struct Dispatcher {
-    pub(super) state: Mutex<Approved>,
+    pub(super) core: Mutex<Core>,
     pub(super) comm: Comm,
 
     cancel_timer_tx: watch::Sender<bool>,
@@ -26,13 +26,13 @@ pub(crate) struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new(state: Approved, comm: Comm) -> Self {
+    pub fn new(state: Core, comm: Comm) -> Self {
         let (cancel_timer_tx, cancel_timer_rx) = watch::channel(false);
 
         // Take out the initial value.
 
         Self {
-            state: Mutex::new(state),
+            core: Mutex::new(state),
             comm,
             cancel_timer_tx,
             cancel_timer_rx,
@@ -41,7 +41,7 @@ impl Dispatcher {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
-        self.state.lock().await.send_event(event)
+        self.core.lock().await.send_event(event)
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
@@ -61,7 +61,7 @@ impl Dispatcher {
         // analyzing logs produced by running multiple nodes within the same process, for example
         // from integration tests.
         let span = {
-            let state = self.state.lock().await;
+            let state = self.core.lock().await;
             trace_span!(
                 "handle_command",
                 name = %state.node().name(),
@@ -93,40 +93,36 @@ impl Dispatcher {
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
             Command::HandleMessage { sender, message } => {
-                self.state
-                    .lock()
-                    .await
-                    .handle_message(sender, message)
-                    .await
+                self.core.lock().await.handle_message(sender, message).await
             }
             Command::HandleSectionInfoMsg { sender, message } => Ok(self
-                .state
+                .core
                 .lock()
                 .await
                 .handle_section_info_msg(sender, message)
                 .await),
-            Command::HandleTimeout(token) => self.state.lock().await.handle_timeout(token),
+            Command::HandleTimeout(token) => self.core.lock().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
-                self.state.lock().await.handle_agreement(proposal, proof)
+                self.core.lock().await.handle_agreement(proposal, proof)
             }
             Command::HandleConnectionLost(addr) => Ok(self
-                .state
+                .core
                 .lock()
                 .await
                 .handle_connection_lost(addr)
                 .into_iter()
                 .collect()),
-            Command::HandlePeerLost(addr) => self.state.lock().await.handle_peer_lost(&addr),
+            Command::HandlePeerLost(addr) => self.core.lock().await.handle_peer_lost(&addr),
             Command::HandleDkgOutcome {
                 elders_info,
                 outcome,
             } => self
-                .state
+                .core
                 .lock()
                 .await
                 .handle_dkg_outcome(elders_info, outcome),
             Command::HandleDkgFailure(proofs) => self
-                .state
+                .core
                 .lock()
                 .await
                 .handle_dkg_failure(proofs)
@@ -143,7 +139,7 @@ impl Dispatcher {
                 itinerary,
                 content,
                 additional_proof_chain_key,
-            } => self.state.lock().await.send_user_message(
+            } => self.core.lock().await.send_user_message(
                 itinerary,
                 content,
                 additional_proof_chain_key.as_ref(),
@@ -162,7 +158,7 @@ impl Dispatcher {
                     .await
             }
             Command::SetJoinsAllowed(joins_allowed) => {
-                self.state.lock().await.set_joins_allowed(joins_allowed)
+                self.core.lock().await.set_joins_allowed(joins_allowed)
             }
         }
     }
@@ -177,7 +173,7 @@ impl Dispatcher {
         &self,
         bls_pk: &bls::PublicKey,
     ) -> Result<(), TargetSectionError> {
-        self.state.lock().await.check_key_status(bls_pk)
+        self.core.lock().await.check_key_status(bls_pk)
     }
 
     async fn send_message(
@@ -245,7 +241,7 @@ impl Dispatcher {
         message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let (genesis_key, node) = {
-            let state = self.state.lock().await;
+            let state = self.core.lock().await;
             (*state.section().genesis_key(), state.node().clone())
         };
         let previous_name = node.name();
@@ -260,10 +256,10 @@ impl Dispatcher {
         )
         .await?;
 
-        let mut state = self.state.lock().await;
+        let mut state = self.core.lock().await;
         let event_tx = state.event_tx.clone();
         let new_keypair = node.keypair.clone();
-        *state = Approved::new(node, section, None, event_tx);
+        *state = Core::new(node, section, None, event_tx);
 
         state.send_event(Event::Relocated {
             previous_name,

@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
-    Approved, Comm, Command, Dispatcher,
+    core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
+    Comm, Command, Core, Dispatcher,
 };
 use crate::{
     agreement::{test_utils::*, Proposal, Proven},
@@ -49,7 +49,7 @@ use xor_name::{Prefix, XorName};
 #[tokio::test]
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
@@ -96,7 +96,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let (section, _) = create_section(&sk_set, &elders_info)?;
 
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node_name = bad_prefix.substituted_in(rand::random());
@@ -138,14 +138,14 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
         gen_addr(),
     );
-    let section_key = *dispatcher.state.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.core.lock().await.section().chain().last_key();
 
     let message = Message::single_src(
         &new_node,
@@ -183,18 +183,18 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
         gen_addr(),
     );
-    let section_key = *dispatcher.state.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.core.lock().await.section().chain().last_key();
 
     let nonce: [u8; 32] = rand::random();
     let serialized = bincode::serialize(&(new_node.name(), nonce))?;
-    let nonce_signature = crypto::sign(&serialized, &dispatcher.state.lock().await.node().keypair);
+    let nonce_signature = crypto::sign(&serialized, &dispatcher.core.lock().await.node().keypair);
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
     let data = rp.create_proof_data(&nonce);
@@ -260,7 +260,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
-    let state = Approved::new(
+    let state = Core::new(
         node,
         section,
         Some(section_key_share),
@@ -358,7 +358,7 @@ async fn aggregate_proposals() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let pk_set = sk_set.public_keys();
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
-    let state = Approved::new(
+    let state = Core::new(
         nodes[0].clone(),
         section,
         Some(section_key_share),
@@ -439,7 +439,7 @@ async fn handle_agreement_on_online() -> Result<()> {
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&sk_set, &elders_info)?;
     let node = nodes.remove(0);
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_peer = create_peer(MIN_AGE);
@@ -484,7 +484,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     let node = nodes.remove(0);
     let node_name = node.name();
     let section_key_share = create_section_key_share(&sk_set, 0);
-    let state = Approved::new(
+    let state = Core::new(
         node,
         section,
         Some(section_key_share),
@@ -636,7 +636,7 @@ async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     // Make a Node
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Simulate peer with the same name is rejoin and verify resulted behaviours.
@@ -692,7 +692,7 @@ async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let member_info = MemberInfo {
@@ -743,7 +743,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let node_name = node.name();
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Handle agreement on the Offline proposal
@@ -800,7 +800,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
 
     // The removed peer is still our elder because we haven't yet processed the section update.
     assert!(dispatcher
-        .state
+        .core
         .lock()
         .await
         .section()
@@ -862,7 +862,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let section = Section::new(*chain.root_key(), chain, proven_elders_info)?;
 
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // non-elders can't handle messages addressed to sections.
@@ -971,7 +971,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let node = create_node(MIN_AGE + 1);
     let node_name = node.name();
-    let state = Approved::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk1 = bls::SecretKey::random();
@@ -1058,7 +1058,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
         None,
     )?;
 
-    let state = Approved::new(
+    let state = Core::new(
         node,
         section,
         Some(section_key_share),
@@ -1160,7 +1160,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let original_message = Message::section_src(original_message, signature, proof_chain)?;
 
     // Create our node.
-    let state = Approved::new(
+    let state = Core::new(
         node,
         section,
         Some(section_key_share),
@@ -1233,7 +1233,7 @@ async fn handle_sync() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = nodes.remove(0);
-    let state = Approved::new(node, old_section, Some(section_key_share), event_tx);
+    let state = Core::new(node, old_section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Create new `Section` as a successor to the previous one.
@@ -1318,7 +1318,7 @@ async fn handle_untrusted_sync() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node(MIN_AGE + 1);
-    let state = Approved::new(node, old_section, None, event_tx);
+    let state = Core::new(node, old_section, None, event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sender = create_node(MIN_AGE + 1);
@@ -1396,7 +1396,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     let (event_tx, _) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let section_key_share = create_section_key_share(&sk2_set, 0);
-    let state = Approved::new(
+    let state = Core::new(
         node.clone(),
         section_full,
         Some(section_key_share),
@@ -1484,7 +1484,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     assert!(section.update_member(member_info));
 
     let node = nodes.remove(0);
-    let state = Approved::new(
+    let state = Core::new(
         node,
         section,
         Some(section_key_share),
@@ -1563,7 +1563,7 @@ enum MessageDst {
 async fn message_to_self(dst: MessageDst) -> Result<()> {
     let node = create_node(MIN_AGE + 1);
     let peer = node.peer();
-    let state = Approved::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let src = SrcLocation::Node(*peer.name());
@@ -1651,7 +1651,7 @@ async fn handle_elders_update() -> Result<()> {
     };
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let state = Approved::new(node, section0.clone(), Some(section_key_share), event_tx);
+    let state = Core::new(node, section0.clone(), Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let commands = dispatcher
@@ -1744,7 +1744,7 @@ async fn handle_demote_during_split() -> Result<()> {
     }
 
     let (event_tx, _) = mpsc::unbounded_channel();
-    let state = Approved::new(node, section, Some(section_key_share), event_tx);
+    let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk_set_v1_p0 = SecretKeySet::random();

@@ -66,9 +66,8 @@ pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
 pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
 const KEY_CACHE_SIZE: u8 = 5;
 
-// The approved stage - node is a full member of a section and is performing its duties according
-// to its persona (adult or elder).
-pub(crate) struct Approved {
+// State + logic of a routing node.
+pub(crate) struct Core {
     node: Node,
     section: Section,
     network: Network,
@@ -86,18 +85,14 @@ pub(crate) struct Approved {
     end_users: EndUserRegistry,
 }
 
-impl Approved {
-    // Creates the approved state for the first node in the network
+impl Core {
+    // Creates `Core` for the first node in the network
     pub fn first_node(node: Node, event_tx: mpsc::UnboundedSender<Event>) -> Result<Self> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
         Ok(Self::new(node, section, Some(section_key_share), event_tx))
     }
 
-    pub fn section_chain(&self) -> SectionChain {
-        self.section.chain().clone()
-    }
-
-    // Creates the approved state for a regular node.
+    // Creates `Core` for a regular node.
     pub fn new(
         node: Node,
         section: Section,
@@ -145,6 +140,10 @@ impl Approved {
 
     pub fn section(&self) -> &Section {
         &self.section
+    }
+
+    pub fn section_chain(&self) -> &SectionChain {
+        self.section.chain()
     }
 
     pub fn network(&self) -> &Network {
