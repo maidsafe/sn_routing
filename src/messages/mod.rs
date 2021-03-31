@@ -149,7 +149,7 @@ impl Message {
         src_name: XorName,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: SectionChain,
+        proof_chain: Option<SectionChain>,
         dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, CreateError> {
         let serialized = bincode::serialize(&SignableView {
@@ -168,7 +168,7 @@ impl Message {
             proof_share,
         };
 
-        Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)
+        Self::new_signed(src, dst, variant, proof_chain, dst_key)
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
@@ -244,7 +244,7 @@ impl Message {
     pub(crate) fn section_src(
         plain: PlainMessage,
         signature: bls::Signature,
-        proof_chain: SectionChain,
+        proof_chain: Option<SectionChain>,
     ) -> Result<Self, CreateError> {
         Self::new_signed(
             SrcAuthority::Section {
@@ -253,7 +253,7 @@ impl Message {
             },
             plain.dst,
             plain.variant,
-            Some(proof_chain),
+            proof_chain,
             Some(plain.dst_key),
         )
     }

@@ -32,34 +32,6 @@ pub enum NodeElderChange {
     None,
 }
 
-///
-#[derive(Debug, Clone, PartialEq)]
-pub struct Elders {
-    /// The prefix of the section.
-    pub prefix: Prefix,
-    /// The BLS public key of a section.
-    pub key: bls::PublicKey,
-    /// The set of elders of a section.
-    pub elders: BTreeSet<XorName>,
-}
-
-impl Elders {
-    /// The BLS public key
-    pub fn key(&self) -> sn_data_types::PublicKey {
-        sn_data_types::PublicKey::Bls(self.key)
-    }
-
-    /// The BLS based name
-    pub fn name(&self) -> XorName {
-        self.key().into()
-    }
-
-    /// The prefix based address
-    pub fn address(&self) -> XorName {
-        self.prefix.name()
-    }
-}
-
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
 /// These are sent by sn_routing to the library's user. It allows the user to handle requests and
@@ -100,11 +72,15 @@ pub enum Event {
     },
     /// The set of elders in our section has changed.
     EldersChanged {
-        /// The Elders of our section.
-        elders: Elders,
-        /// The Elders of the sibling section, if this event is fired during a split.
+        /// The prefix of our section.
+        prefix: Prefix,
+        /// The BLS public key of our section.
+        key: bls::PublicKey,
+        /// The BLS public key of the sibling section, if this event is fired during a split.
         /// Otherwise `None`.
-        sibling_elders: Option<Elders>,
+        sibling_key: Option<bls::PublicKey>,
+        /// The set of elders of our section.
+        elders: BTreeSet<XorName>,
         /// Promoted, demoted or no change?
         self_status_change: NodeElderChange,
     },
@@ -164,13 +140,17 @@ impl Debug for Event {
                 .field("age", age)
                 .finish(),
             Self::EldersChanged {
+                prefix,
+                key,
+                sibling_key,
                 elders,
-                sibling_elders,
                 self_status_change,
             } => formatter
                 .debug_struct("EldersChanged")
+                .field("prefix", prefix)
+                .field("key", key)
+                .field("sibling_key", sibling_key)
                 .field("elders", elders)
-                .field("sibling_elders", sibling_elders)
                 .field("self_status_change", self_status_change)
                 .finish(),
             Self::RelocationStarted { previous_name } => formatter

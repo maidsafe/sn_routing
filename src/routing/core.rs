@@ -19,7 +19,7 @@ use crate::{
     },
     crypto, delivery_group,
     error::{Error, Result},
-    event::{Elders, Event, NodeElderChange},
+    event::{Event, NodeElderChange},
     message_filter::MessageFilter,
     messages::{
         JoinRequest, Message, MessageHash, MessageStatus, PlainMessage, ResourceProofResponse,
@@ -1422,7 +1422,7 @@ impl Core {
 
         // Consider: Set <= 4, as to not carry out relocations in first 16 sections.
         // TEMP: Do not carry out relocations in the first section
-        if self.section.prefix().bit_count() < 1 {
+        if self.section.prefix().bit_count() < 2 {
             return Ok(commands);
         }
 
@@ -1679,7 +1679,7 @@ impl Core {
     fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
-        proof_chain: SectionChain,
+        proof_chain: Option<SectionChain>,
         proof: Proof,
     ) -> Result<Command> {
         let message = Message::section_src(message, proof.signature, proof_chain)?;
@@ -1734,20 +1734,8 @@ impl Core {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            let sibling_elders = if new.prefix != old.prefix {
-                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
-                    if let Some(info) = self.network.get(&new.prefix.sibling()) {
-                        Some(Elders {
-                            prefix: new.prefix.sibling(),
-                            key: *sibling_key,
-                            elders: info.elders.keys().copied().collect(),
-                        })
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+            let sibling_key = if new.prefix != old.prefix {
+                self.section_key(&new.prefix.sibling()).copied()
             } else {
                 None
             };
@@ -1765,15 +1753,11 @@ impl Core {
                 NodeElderChange::None
             };
 
-            let elders = Elders {
+            self.send_event(Event::EldersChanged {
                 prefix: new.prefix,
                 key: new.last_key,
+                sibling_key,
                 elders: self.section.elders_info().elders.keys().copied().collect(),
-            };
-
-            self.send_event(Event::EldersChanged {
-                elders,
-                sibling_elders,
                 self_status_change,
             });
         }
@@ -2066,7 +2050,9 @@ impl Core {
         }
 
         let variant = Variant::UserMessage(content);
-        let proof_chain = self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
+        let proof_chain = self
+            .create_proof_chain(&itinerary.dst, additional_proof_chain_key)
+            .ok();
 
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
@@ -2088,7 +2074,7 @@ impl Core {
             );
             return self.send_proposal(&recipients, proposal);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, Some(proof_chain), None)?
+            Message::single_src(&self.node, itinerary.dst, variant, proof_chain, None)?
         };
         let mut commands = vec![];
 
@@ -2116,7 +2102,9 @@ impl Core {
         additional_proof_chain_key: Option<&bls::PublicKey>,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let proof_chain = self.create_proof_chain(&dst, additional_proof_chain_key)?;
+        let proof_chain = self
+            .create_proof_chain(&dst, additional_proof_chain_key)
+            .ok();
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -2191,7 +2179,7 @@ impl Core {
         &self,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: SectionChain,
+        proof_chain: Option<SectionChain>,
     ) -> Proposal {
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)

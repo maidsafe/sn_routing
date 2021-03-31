@@ -68,7 +68,7 @@ pub(crate) enum Proposal {
     // TODO: it seems we might not need this. Consider removing it.
     AccumulateAtSrc {
         message: Box<PlainMessage>,
-        proof_chain: SectionChain,
+        proof_chain: Option<SectionChain>,
     },
 
     // Proposal to change whether new nodes are allowed to join our section.

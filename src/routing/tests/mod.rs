@@ -293,7 +293,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
     let proof_chain = SectionChain::new(section_key);
-    let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
+    let relocate_message = Message::section_src(relocate_message, signature, Some(proof_chain))?;
     let relocate_details = SignedRelocateDetails::new(relocate_message)?;
     let relocate_payload = RelocatePayload::new(
         relocate_details,
@@ -985,7 +985,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         variant: Variant::UserMessage(Bytes::from_static(b"hello")),
     };
     let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
-    let original_message = Message::section_src(message, signature, SectionChain::new(pk1))?;
+    let original_message = Message::section_src(message, signature, Some(SectionChain::new(pk1)))?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
@@ -1157,7 +1157,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&original_message.as_signable())?);
     let proof_chain = chain.truncate(1);
-    let original_message = Message::section_src(original_message, signature, proof_chain)?;
+    let original_message = Message::section_src(original_message, signature, Some(proof_chain))?;
 
     // Create our node.
     let state = Core::new(
@@ -1282,9 +1282,9 @@ async fn handle_sync() -> Result<()> {
     // Verify our `Section` got updated.
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { elders, .. }) => {
-            assert_eq!(elders.key, pk2);
-            assert_eq!(elders.elders, new_elders);
+        Some(Event::EldersChanged { key, elders, .. }) => {
+            assert_eq!(key, pk2);
+            assert_eq!(elders, new_elders);
         }
     );
 
@@ -1698,9 +1698,9 @@ async fn handle_elders_update() -> Result<()> {
 
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { elders, .. }) => {
-            assert_eq!(elders.key, pk1);
-            assert_eq!(elders.elders, elder_names1);
+        Some(Event::EldersChanged { key, elders, .. }) => {
+            assert_eq!(key, pk1);
+            assert_eq!(elders, elder_names1);
         }
     );
 
