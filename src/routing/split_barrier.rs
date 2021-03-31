@@ -10,11 +10,11 @@ use std::mem;
 
 use crate::{
     agreement::{Proof, Proven},
-    section::EldersInfo,
+    section::SectionAuthorityProvider,
 };
 use xor_name::Prefix;
 
-type Entry = (Proven<EldersInfo>, Proof);
+type Entry = (Proven<SectionAuthorityProvider>, Proof);
 
 // Helper structure to make sure we process a split by updating info about both our section and the
 // sibling section at the same time.
@@ -34,30 +34,30 @@ impl SplitBarrier {
     pub fn process(
         &mut self,
         our_prefix: &Prefix,
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
         key_proof: Proof,
     ) -> Vec<Entry> {
-        if !elders_info.value.prefix.is_extension_of(our_prefix) {
+        if !section_auth.value.prefix.is_extension_of(our_prefix) {
             // Not a split, no need to cache.
-            return vec![(elders_info, key_proof)];
+            return vec![(section_auth, key_proof)];
         }
 
         // Split detected. Find all cached siblings.
         let (mut give, keep) =
             mem::take(&mut self.0)
                 .into_iter()
-                .partition(|(cached_elders_info, _)| {
-                    cached_elders_info.value.prefix == elders_info.value.prefix.sibling()
+                .partition(|(cached_section_auth, _)| {
+                    cached_section_auth.value.prefix == section_auth.value.prefix.sibling()
                 });
         self.0 = keep;
 
         if give.is_empty() {
             // No sibling found. Cache this update until we see the sibling update.
-            self.0.push((elders_info, key_proof));
+            self.0.push((section_auth, key_proof));
             vec![]
         } else {
             // Sibling found. We can proceed with the update.
-            give.push((elders_info, key_proof));
+            give.push((section_auth, key_proof));
             give
         }
     }

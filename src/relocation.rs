@@ -291,7 +291,7 @@ mod tests {
     use crate::{
         agreement::test_utils::proven,
         peer::test_utils::arbitrary_unique_peers,
-        section::{EldersInfo, SectionChain},
+        section::{SectionAuthorityProvider, SectionChain},
         ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
@@ -338,7 +338,7 @@ mod tests {
 
         // Create `Section` with `peers` as its members and set the `ELDER_SIZE` oldest peers as
         // the elders.
-        let elders_info = EldersInfo::new(
+        let section_auth = SectionAuthorityProvider::new(
             peers
                 .iter()
                 .sorted_by_key(|peer| peer.age())
@@ -347,9 +347,9 @@ mod tests {
                 .copied(),
             Prefix::default(),
         );
-        let elders_info = proven(&sk, elders_info)?;
+        let section_auth = proven(&sk, section_auth)?;
 
-        let mut section = Section::new(pk, SectionChain::new(pk), elders_info)?;
+        let mut section = Section::new(pk, SectionChain::new(pk), section_auth)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);

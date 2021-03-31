@@ -15,8 +15,10 @@ use crate::{
     node::Node,
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    section::{EldersInfo, Section, SectionChain},
-    FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
+    section::{
+        Section, SectionAuthorityProvider, SectionChain, FIRST_SECTION_MAX_AGE,
+        FIRST_SECTION_MIN_AGE,
+    },
 };
 use bytes::Bytes;
 use futures::future;
@@ -328,28 +330,28 @@ impl<'a> State<'a> {
 
             match response {
                 JoinResponse::Approval {
-                    elders_info,
+                    section_auth,
                     genesis_key,
                     section_chain,
                 } => {
                     return Ok((
                         self.node,
-                        Section::new(genesis_key, section_chain, elders_info)?,
+                        Section::new(genesis_key, section_chain, section_auth)?,
                         self.backlog.into_iter().collect(),
                     ));
                 }
                 JoinResponse::Retry {
-                    elders_info,
+                    section_auth,
                     section_key: new_section_key,
                 } => {
                     if new_section_key == section_key {
                         continue;
                     }
 
-                    if elders_info.prefix.matches(&self.node.name()) {
+                    if section_auth.prefix.matches(&self.node.name()) {
                         info!(
                             "Newer Join response for our prefix {:?} from {:?}",
-                            elders_info, sender
+                            section_auth, sender
                         );
                         section_key = new_section_key;
                         let join_request = JoinRequest {
@@ -357,12 +359,12 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        let recipients = elders_info.peers().map(Peer::addr).copied().collect();
+                        let recipients = section_auth.peers().map(Peer::addr).copied().collect();
                         self.send_join_requests(join_request, recipients).await?;
                     } else {
                         warn!(
                             "Newer Join response not for our prefix {:?} from {:?}",
-                            elders_info, sender,
+                            section_auth, sender,
                         );
                     }
                 }
@@ -430,7 +432,7 @@ impl<'a> State<'a> {
 
             match message.variant() {
                 Variant::JoinRetry {
-                    elders_info,
+                    section_auth,
                     section_key,
                 } => {
                     if !self.verify_message(&message, None) {
@@ -439,7 +441,7 @@ impl<'a> State<'a> {
 
                     return Ok((
                         JoinResponse::Retry {
-                            elders_info: elders_info.clone(),
+                            section_auth: section_auth.clone(),
                             section_key: *section_key,
                         },
                         sender,
@@ -472,7 +474,7 @@ impl<'a> State<'a> {
                 }
                 Variant::NodeApproval {
                     genesis_key,
-                    elders_info,
+                    section_auth,
                     member_info,
                 } => {
                     if member_info.value.peer.name() != &self.node.name() {
@@ -501,12 +503,12 @@ impl<'a> State<'a> {
 
                     trace!(
                         "This node has been approved to join the network at {:?}!",
-                        elders_info.value.prefix,
+                        section_auth.value.prefix,
                     );
 
                     return Ok((
                         JoinResponse::Approval {
-                            elders_info: elders_info.clone(),
+                            section_auth: section_auth.clone(),
                             genesis_key: *genesis_key,
                             section_chain,
                         },
@@ -550,12 +552,12 @@ impl<'a> State<'a> {
 
 enum JoinResponse {
     Approval {
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
         genesis_key: bls::PublicKey,
         section_chain: SectionChain,
     },
     Retry {
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         section_key: bls::PublicKey,
     },
     ResourceChallenge {
@@ -634,7 +636,8 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (elders_info, mut nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
+        let (section_auth, mut nodes) =
+            gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
@@ -675,9 +678,9 @@ mod tests {
             });
 
             let infrastructure_info = SectionInfo {
-                prefix: elders_info.prefix,
+                prefix: section_auth.prefix,
                 pk_set,
-                elders: elders_info
+                elders: section_auth
                     .peers()
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
@@ -697,14 +700,14 @@ mod tests {
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
                 Message::from_bytes(Bytes::from(bytes))?);
 
-            itertools::assert_equal(&recipients, elders_info.peers().map(Peer::addr));
+            itertools::assert_equal(&recipients, section_auth.peers().map(Peer::addr));
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());
             });
 
             // Send NodeApproval
-            let elders_info = proven(sk, elders_info.clone())?;
+            let section_auth = proven(sk, section_auth.clone())?;
             let member_info = proven(sk, MemberInfo::joined(peer))?;
             let proof_chain = SectionChain::new(pk);
             let message = Message::single_src(
@@ -712,7 +715,7 @@ mod tests {
                 DstLocation::Direct,
                 Variant::NodeApproval {
                     genesis_key: pk,
-                    elders_info,
+                    section_auth,
                     member_info,
                 },
                 Some(proof_chain),
@@ -730,7 +733,7 @@ mod tests {
         // Drive both tasks to completion concurrently (but on the same thread).
         let ((node, section, _backlog), _) = future::try_join(bootstrap, others).await?;
 
-        assert_eq!(*section.elders_info(), elders_info);
+        assert_eq!(*section.authority_provider(), section_auth);
         assert_eq!(*section.chain().last_key(), pk);
         assert_eq!(node.age(), node_age);
 
@@ -1056,7 +1059,7 @@ mod tests {
                 &bootstrap_node,
                 DstLocation::Direct,
                 Variant::JoinRetry {
-                    elders_info: gen_elders_info(bad_prefix, ELDER_SIZE).0,
+                    section_auth: gen_section_authority_provider(bad_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 None,
@@ -1074,7 +1077,7 @@ mod tests {
                 &bootstrap_node,
                 DstLocation::Direct,
                 Variant::JoinRetry {
-                    elders_info: gen_elders_info(good_prefix, ELDER_SIZE).0,
+                    section_auth: gen_section_authority_provider(good_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 None,

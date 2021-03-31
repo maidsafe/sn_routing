@@ -13,7 +13,7 @@ use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
     agreement::{verify_proof, Proof, Proven},
     peer::Peer,
-    section::{EldersInfo, SectionChain},
+    section::{SectionAuthorityProvider, SectionChain},
 };
 
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use xor_name::{Prefix, XorName};
 /// Container for storing information about other sections in the network.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Network {
-    // Other sections: maps section prefixes to their latest signed elders infos.
+    // Other sections: maps section prefixes to their latest signed section authority providers.
     sections: PrefixMap<OtherSection>,
     // BLS public keys of known sections excluding ours.
     keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
@@ -42,27 +42,26 @@ impl Network {
 
     /// Returns the known section that is closest to the given name, regardless of whether `name`
     /// belongs in that section or not.
-    pub fn closest(&self, name: &XorName) -> Option<&EldersInfo> {
+    pub fn closest(&self, name: &XorName) -> Option<&SectionAuthorityProvider> {
         self.all()
             .min_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, name))
     }
 
     /// Returns iterator over all known sections.
-    pub fn all(&self) -> impl Iterator<Item = &EldersInfo> + Clone {
-        self.sections.iter().map(|info| &info.elders_info.value)
+    pub fn all(&self) -> impl Iterator<Item = &SectionAuthorityProvider> + Clone {
+        self.sections.iter().map(|info| &info.section_auth.value)
     }
 
-    /// Get `EldersInfo` of a known section with the given prefix.
-    #[allow(unused)]
-    pub fn get(&self, prefix: &Prefix) -> Option<&EldersInfo> {
+    /// Get `SectionAuthorityProvider` of a known section with the given prefix.
+    pub fn get(&self, prefix: &Prefix) -> Option<&SectionAuthorityProvider> {
         self.sections
             .get(prefix)
-            .map(|info| &info.elders_info.value)
+            .map(|info| &info.section_auth.value)
     }
 
     /// Returns prefixes of all known sections.
     pub fn prefixes(&self) -> impl Iterator<Item = &Prefix> + Clone {
-        self.all().map(|elders_info| &elders_info.prefix)
+        self.all().map(|section_auth| &section_auth.prefix)
     }
 
     /// Returns all elders from all known sections.
@@ -74,7 +73,7 @@ impl Network {
     pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
         self.sections
             .get_matching(name)?
-            .elders_info
+            .section_auth
             .value
             .elders
             .get(name)
@@ -107,7 +106,7 @@ impl Network {
 
     /// Update the info about a section.
     ///
-    /// If this is for our sibling section, then `elders_info` is signed by them and so the signing
+    /// If this is for our sibling section, then `section_auth` is signed by them and so the signing
     /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
     /// additional `key_proof` which signs it using a key that is present in `section_chain`.
     ///
@@ -116,12 +115,12 @@ impl Network {
     /// needed in that case.
     pub fn update_section(
         &mut self,
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
         key_proof: Option<Proof>,
         section_chain: &SectionChain,
     ) -> bool {
         let info = OtherSection {
-            elders_info: elders_info.clone(),
+            section_auth: section_auth.clone(),
             key_proof,
         };
 
@@ -130,7 +129,7 @@ impl Network {
         }
 
         if let Some(old) = self.sections.insert(info) {
-            if old.elders_info == elders_info {
+            if old.section_auth == section_auth {
                 return false;
             }
         }
@@ -181,17 +180,17 @@ impl Network {
             .map(|entry| &entry.value.1)
     }
 
-    /// Returns the elders_info and the latest known key for the prefix that matches `name`,
+    /// Returns the section_auth and the latest known key for the prefix that matches `name`,
     /// excluding self section.
     pub fn section_by_name(
         &self,
         name: &XorName,
-    ) -> (Option<&bls::PublicKey>, Option<&EldersInfo>) {
+    ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
         (
             self.keys.get_matching(name).map(|entry| &entry.value.1),
             self.sections
                 .get_matching(name)
-                .map(|entry| &entry.elders_info.value),
+                .map(|entry| &entry.section_auth.value),
         )
     }
 
@@ -216,7 +215,7 @@ impl Network {
     }
 
     /// Returns network statistics.
-    pub fn network_stats(&self, our: &EldersInfo) -> NetworkStats {
+    pub fn network_stats(&self, our: &SectionAuthorityProvider) -> NetworkStats {
         let (known_elders, total_elders, total_elders_exact) = self.network_elder_counts(our);
 
         NetworkStats {
@@ -231,7 +230,7 @@ impl Network {
     //
     // Return (known, total, exact), where `exact` indicates whether `total` is an exact number of
     // an estimate.
-    fn network_elder_counts(&self, our: &EldersInfo) -> (u64, u64, bool) {
+    fn network_elder_counts(&self, our: &SectionAuthorityProvider) -> (u64, u64, bool) {
         let known_prefixes = iter::once(&our.prefix).chain(self.prefixes());
         let is_exact = Prefix::default().is_covered_by(known_prefixes.clone());
 
@@ -253,7 +252,7 @@ struct OtherSection {
     // If this is signed by our section, then `key_proof` is `None`. If this is signed by our
     // sibling section, then `key_proof` contains the proof of the signing key itself signed by our
     // section.
-    elders_info: Proven<EldersInfo>,
+    section_auth: Proven<SectionAuthorityProvider>,
     key_proof: Option<Proof>,
 }
 
@@ -261,17 +260,17 @@ impl OtherSection {
     fn verify(&self, section_chain: &SectionChain) -> bool {
         if let Some(key_proof) = &self.key_proof {
             section_chain.has_key(&key_proof.public_key)
-                && verify_proof(key_proof, &self.elders_info.proof.public_key)
-                && self.elders_info.self_verify()
+                && verify_proof(key_proof, &self.section_auth.proof.public_key)
+                && self.section_auth.self_verify()
         } else {
-            self.elders_info.verify(section_chain)
+            self.section_auth.verify(section_chain)
         }
     }
 }
 
 impl Borrow<Prefix> for OtherSection {
     fn borrow(&self) -> &Prefix {
-        &self.elders_info.value.prefix
+        &self.section_auth.value.prefix
     }
 }
 
@@ -404,8 +403,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = Network::new();
-        let _ = map.update_section(gen_proven_elders_info(&sk, p01), None, &chain);
-        let _ = map.update_section(gen_proven_elders_info(&sk, p10), None, &chain);
+        let _ = map.update_section(gen_proven_section_auth(&sk, p01), None, &chain);
+        let _ = map.update_section(gen_proven_section_auth(&sk, p10), None, &chain);
 
         let mut rng = rand::thread_rng();
         let n01 = p01.substituted_in(rng.gen());
@@ -475,9 +474,12 @@ mod tests {
         }
     }
 
-    fn gen_proven_elders_info(sk: &bls::SecretKey, prefix: Prefix) -> Proven<EldersInfo> {
-        let (elders_info, _) = section::test_utils::gen_elders_info(prefix, 5);
-        agreement::test_utils::proven(sk, elders_info).unwrap()
+    fn gen_proven_section_auth(
+        sk: &bls::SecretKey,
+        prefix: Prefix,
+    ) -> Proven<SectionAuthorityProvider> {
+        let (section_auth, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
+        agreement::test_utils::proven(sk, section_auth).unwrap()
     }
 
     fn gen_key() -> bls::PublicKey {

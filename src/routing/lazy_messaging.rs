@@ -42,7 +42,7 @@ pub(crate) fn process(
             // `OtherSection` with their latest info, including their latest key.
             //
             // NOTE: the reason why we update the key only after receiving their `OtherSection` and
-            // not right here is to keep their key and their elders info in sync.
+            // not right here is to keep their key and their section_authority_provider in sync.
             trace!("lazy messaging: src key unknown");
             send_other_section = true;
         }
@@ -108,7 +108,7 @@ fn create_other_section_message(
         .minimize(vec![section.chain().last_key(), dst_knowledge])?;
 
     let variant = Variant::OtherSection {
-        elders_info: section.proven_elders_info().clone(),
+        section_auth: section.proven_authority_provider().clone(),
         nonce,
     };
 
@@ -130,7 +130,7 @@ mod tests {
         agreement::test_utils::proven,
         crypto,
         section::{
-            test_utils::{gen_addr, gen_elders_info},
+            test_utils::{gen_addr, gen_section_authority_provider},
             SectionChain,
         },
         ELDER_SIZE, MIN_ADULT_AGE,
@@ -183,8 +183,8 @@ mod tests {
         assert_matches!(&actions.send, Some(message) => {
             assert_matches!(
                 message.variant(),
-                Variant::OtherSection { elders_info, .. } => {
-                    assert_eq!(&elders_info.value, env.section.elders_info())
+                Variant::OtherSection { section_auth, .. } => {
+                    assert_eq!(&section_auth.value, env.section.authority_provider())
                 }
             );
             assert_eq!(message.dst_key(), Some(&their_old_pk));
@@ -309,22 +309,22 @@ mod tests {
             let (chain, our_sk) =
                 create_chain(chain_len).context("failed to create section chain")?;
 
-            let (elders_info0, mut nodes) = gen_elders_info(prefix0, ELDER_SIZE);
+            let (section_auth0, mut nodes) = gen_section_authority_provider(prefix0, ELDER_SIZE);
             let node = nodes.remove(0);
 
-            let elders_info0 = proven(&our_sk, elders_info0)?;
-            let section = Section::new(*chain.root_key(), chain, elders_info0)
+            let section_auth0 = proven(&our_sk, section_auth0)?;
+            let section = Section::new(*chain.root_key(), chain, section_auth0)
                 .context("failed to create section")?;
 
-            let (elders_info1, _) = gen_elders_info(prefix1, ELDER_SIZE);
-            let elders_info1 = proven(&our_sk, elders_info1)?;
+            let (section_auth1, _) = gen_section_authority_provider(prefix1, ELDER_SIZE);
+            let section_auth1 = proven(&our_sk, section_auth1)?;
 
             let their_sk = bls::SecretKey::random();
             let their_pk = their_sk.public_key();
             let key1 = proven(&our_sk, (prefix1, their_pk))?;
 
             let mut network = Network::new();
-            assert!(network.update_section(elders_info1, None, section.chain()));
+            assert!(network.update_section(section_auth1, None, section.chain()));
             assert!(network.update_their_key(key1));
 
             Ok(Self {

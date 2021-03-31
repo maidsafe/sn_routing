@@ -114,13 +114,13 @@ impl Dispatcher {
                 .collect()),
             Command::HandlePeerLost(addr) => self.core.lock().await.handle_peer_lost(&addr),
             Command::HandleDkgOutcome {
-                elders_info,
+                section_auth,
                 outcome,
             } => self
                 .core
                 .lock()
                 .await
-                .handle_dkg_outcome(elders_info, outcome),
+                .handle_dkg_outcome(section_auth, outcome),
             Command::HandleDkgFailure(proofs) => self
                 .core
                 .lock()

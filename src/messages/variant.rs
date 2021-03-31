@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{EldersInfo, MemberInfo, Section, SectionChain},
+    section::{MemberInfo, Section, SectionAuthorityProvider, SectionChain},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -32,8 +32,8 @@ use xor_name::XorName;
 pub(crate) enum Variant {
     /// Inform other sections about our section or vice-versa.
     OtherSection {
-        /// `EldersInfo` of the sender's section, with the proof chain.
-        elders_info: Proven<EldersInfo>,
+        /// `SectionAuthorityProvider` of the sender's section, with the proof chain.
+        section_auth: Proven<SectionAuthorityProvider>,
         /// Nonce that is derived from the incoming message that triggered sending this
         /// message. It's purpose is to make sure that `OtherSection`s that are identical
         /// but triggered by different messages are not filtered out.
@@ -45,7 +45,7 @@ pub(crate) enum Variant {
     /// section.
     NodeApproval {
         genesis_key: bls::PublicKey,
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
         member_info: Proven<MemberInfo>,
     },
     /// Message sent to all members to update them about the state of our section.
@@ -66,7 +66,7 @@ pub(crate) enum Variant {
     JoinRequest(Box<JoinRequest>),
     /// Response to outdated JoinRequest
     JoinRetry {
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         section_key: bls::PublicKey,
     },
     /// Sent from a node that can't establish the trust of the contained message to its original
@@ -85,7 +85,7 @@ pub(crate) enum Variant {
         /// The identifier of the DKG session to start.
         dkg_key: DkgKey,
         /// The DKG particpants.
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
     },
     /// Message exchanged for DKG process.
     DkgMessage {
@@ -130,13 +130,13 @@ impl Variant {
     {
         let proof_chain = match self {
             Self::NodeApproval {
-                elders_info,
+                section_auth,
                 member_info,
                 ..
             } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
-                if !elders_info.verify(proof_chain) {
+                if !section_auth.verify(proof_chain) {
                     return Err(Error::InvalidMessage);
                 }
 
@@ -147,10 +147,10 @@ impl Variant {
                 proof_chain
             }
             Self::Sync { section, .. } => section.chain(),
-            Self::OtherSection { elders_info, .. } => {
+            Self::OtherSection { section_auth, .. } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
-                if !elders_info.verify(proof_chain) {
+                if !section_auth.verify(proof_chain) {
                     return Err(Error::InvalidMessage);
                 }
 
@@ -170,25 +170,28 @@ impl Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::OtherSection { elders_info, nonce } => f
+            Self::OtherSection {
+                section_auth,
+                nonce,
+            } => f
                 .debug_struct("OtherSection")
-                .field("elders_info", elders_info)
+                .field("section_auth", section_auth)
                 .field("nonce", nonce)
                 .finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval {
                 genesis_key,
-                elders_info,
+                section_auth,
                 member_info,
             } => f
                 .debug_struct("NodeApproval")
                 .field("genesis_key", genesis_key)
-                .field("elders_info", elders_info)
+                .field("section_auth", section_auth)
                 .field("member_info", member_info)
                 .finish(),
             Self::Sync { section, network } => f
                 .debug_struct("Sync")
-                .field("elders_info", section.elders_info())
+                .field("section_auth", section.authority_provider())
                 .field("section_key", section.chain().last_key())
                 .field(
                     "other_prefixes",
@@ -199,11 +202,11 @@ impl Debug for Variant {
             Self::RelocatePromise(payload) => write!(f, "RelocatePromise({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
             Self::JoinRetry {
-                elders_info,
+                section_auth,
                 section_key,
             } => f
                 .debug_struct("JoinRetry")
-                .field("elders_info", elders_info)
+                .field("section_auth", section_auth)
                 .field("section_key", section_key)
                 .finish(),
             Self::BouncedUntrustedMessage(message) => f
@@ -217,11 +220,11 @@ impl Debug for Variant {
                 .finish(),
             Self::DkgStart {
                 dkg_key,
-                elders_info,
+                section_auth,
             } => f
                 .debug_struct("DkgStart")
                 .field("dkg_key", dkg_key)
-                .field("elders_info", elders_info)
+                .field("section_auth", section_auth)
                 .finish(),
             Self::DkgMessage { dkg_key, message } => f
                 .debug_struct("DkgMessage")

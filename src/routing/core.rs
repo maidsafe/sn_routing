@@ -34,7 +34,7 @@ use crate::{
         SignedRelocateDetails,
     },
     section::{
-        EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
+        MemberInfo, PeerState, Section, SectionAuthorityProvider, SectionChain, SectionKeyShare,
         SectionKeysProvider, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     ELDER_SIZE,
@@ -199,11 +199,11 @@ impl Core {
     pub fn matching_section(
         &self,
         name: &XorName,
-    ) -> (Option<&bls::PublicKey>, Option<&EldersInfo>) {
+    ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
         if self.section.prefix().matches(name) {
             (
                 Some(self.section.chain().last_key()),
-                Some(self.section.elders_info()),
+                Some(self.section.authority_provider()),
             )
         } else {
             self.network.section_by_name(name)
@@ -296,11 +296,11 @@ impl Core {
                     (self.section.prefix().matches(&name), self.public_key_set())
                 {
                     GetSectionResponse::Success(SectionInfo {
-                        prefix: self.section.elders_info().prefix,
+                        prefix: self.section.authority_provider().prefix,
                         pk_set,
                         elders: self
                             .section
-                            .elders_info()
+                            .authority_provider()
                             .peers()
                             .map(|peer| (*peer.name(), *peer.addr()))
                             .collect(),
@@ -312,7 +312,7 @@ impl Core {
                     let section = self
                         .network
                         .closest(&name)
-                        .unwrap_or_else(|| self.section.elders_info());
+                        .unwrap_or_else(|| self.section.authority_provider());
                     let addrs = section.peers().map(Peer::addr).copied().collect();
                     GetSectionResponse::Redirect(addrs)
                 };
@@ -403,11 +403,11 @@ impl Core {
                 their_knowledge,
             } => self.handle_online_agreement(member_info, previous_name, their_knowledge, proof),
             Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
-            Proposal::SectionInfo(elders_info) => {
-                self.handle_section_info_agreement(elders_info, proof)
+            Proposal::SectionInfo(section_auth) => {
+                self.handle_section_info_agreement(section_auth, proof)
             }
-            Proposal::OurElders(elders_info) => {
-                self.handle_our_elders_agreement(elders_info, proof)
+            Proposal::OurElders(section_auth) => {
+                self.handle_our_elders_agreement(section_auth, proof)
             }
             Proposal::TheirKey { prefix, key } => {
                 self.handle_their_key_agreement(prefix, key, proof);
@@ -473,9 +473,8 @@ impl Core {
             let variant = Variant::ConnectivityComplaint(name);
             let recipients: Vec<_> = self
                 .section
-                .elders_info()
-                .elders
-                .values()
+                .authority_provider()
+                .peers()
                 .filter(|peer| *peer.name() != name)
                 .copied()
                 .collect();
@@ -506,7 +505,7 @@ impl Core {
         // triggering a chain of further `Offline` proposals.
         let elders: Vec<_> = self
             .section
-            .elders_info()
+            .authority_provider()
             .peers()
             .filter(|peer| !names.contains(peer.name()))
             .copied()
@@ -525,11 +524,11 @@ impl Core {
 
     pub fn handle_dkg_outcome(
         &mut self,
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
-        let proposal = Proposal::SectionInfo(elders_info);
-        let recipients: Vec<_> = self.section.elders_info().peers().copied().collect();
+        let proposal = Proposal::SectionInfo(section_auth);
+        let recipients: Vec<_> = self.section.authority_provider().peers().copied().collect();
         let result = self.send_proposal_with(&recipients, proposal, &key_share);
 
         let public_key = key_share.public_key_set.public_key();
@@ -551,7 +550,7 @@ impl Core {
 
     // Send proposal to all our elders.
     fn propose(&self, proposal: Proposal) -> Result<Vec<Command>> {
-        let elders: Vec<_> = self.section.elders_info().peers().copied().collect();
+        let elders: Vec<_> = self.section.authority_provider().peers().copied().collect();
         self.send_proposal(&elders, proposal)
     }
 
@@ -644,8 +643,8 @@ impl Core {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DkgStart { elders_info, .. } => {
-                if !elders_info.elders.contains_key(&self.node.name()) {
+            Variant::DkgStart { section_auth, .. } => {
+                if !section_auth.elders.contains_key(&self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }
@@ -731,8 +730,8 @@ impl Core {
         };
 
         match msg.variant() {
-            Variant::OtherSection { elders_info, .. } => {
-                self.handle_other_section(elders_info.value.clone(), *msg.proof_chain_last_key()?)
+            Variant::OtherSection { section_auth, .. } => {
+                self.handle_other_section(section_auth.value.clone(), *msg.proof_chain_last_key()?)
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
@@ -771,8 +770,8 @@ impl Core {
             }
             Variant::DkgStart {
                 dkg_key,
-                elders_info,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
+                section_auth,
+            } => self.handle_dkg_start(*dkg_key, section_auth.clone()),
             Variant::DkgMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
             }
@@ -841,14 +840,14 @@ impl Core {
         proof_share: &ProofShare,
     ) -> Option<MessageStatus> {
         match proposal {
-            Proposal::SectionInfo(elders_info)
-                if elders_info.prefix == *self.section.prefix()
-                    || elders_info.prefix.is_extension_of(self.section.prefix()) =>
+            Proposal::SectionInfo(section_auth)
+                if section_auth.prefix == *self.section.prefix()
+                    || section_auth.prefix.is_extension_of(self.section.prefix()) =>
             {
                 // This `SectionInfo` is proposed by the DKG participants and is signed by the new
                 // key created by the DKG so we don't know it yet. We only require the sender of the
                 // proposal to be one of the DKG participants.
-                if elders_info.elders.contains_key(sender) {
+                if section_auth.elders.contains_key(sender) {
                     None
                 } else {
                     Some(MessageStatus::Useless)
@@ -959,7 +958,7 @@ impl Core {
         // explosion.
         let our_elder_sender = sender.filter(|sender| {
             self.section
-                .elders_info()
+                .authority_provider()
                 .peers()
                 .any(|peer| peer.addr() == sender)
         });
@@ -1067,26 +1066,26 @@ impl Core {
 
     fn handle_other_section(
         &self,
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         src_key: bls::PublicKey,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
         if !self.network.has_key(&src_key) {
             commands.extend(self.propose(Proposal::TheirKey {
-                prefix: elders_info.prefix,
+                prefix: section_auth.prefix,
                 key: src_key,
             })?);
         } else {
             trace!(
                 "Ignore not new section key of {:?}: {:?}",
-                elders_info,
+                section_auth,
                 src_key
             );
             return Ok(commands);
         }
 
-        commands.extend(self.propose(Proposal::SectionInfo(elders_info))?);
+        commands.extend(self.propose(Proposal::SectionInfo(section_auth))?);
 
         Ok(commands)
     }
@@ -1142,8 +1141,8 @@ impl Core {
 
         let snapshot = self.state_snapshot();
         trace!(
-            "Updating knowledge of own section \n    elders: {:?} \n    members: {:?}",
-            section.elders_info(),
+            "Updating knowledge of own section \n    authority_provider: {:?} \n    members: {:?}",
+            section.authority_provider(),
             section.members()
         );
         self.section.merge(section)?;
@@ -1193,7 +1192,7 @@ impl Core {
 
         let bootstrap_addrs: Vec<_> = self
             .section
-            .elders_info()
+            .authority_provider()
             .peers()
             .map(Peer::addr)
             .copied()
@@ -1287,7 +1286,7 @@ impl Core {
 
         if join_request.section_key != *self.section.chain().last_key() {
             let variant = Variant::JoinRetry {
-                elders_info: self.section.elders_info().clone(),
+                section_auth: self.section.authority_provider().clone(),
                 section_key: *self.section.chain().last_key(),
             };
             trace!("Sending {:?} to {}", variant, peer);
@@ -1450,11 +1449,11 @@ impl Core {
     fn handle_dkg_start(
         &mut self,
         dkg_key: DkgKey,
-        new_elders_info: EldersInfo,
+        new_section_auth: SectionAuthorityProvider,
     ) -> Result<Vec<Command>> {
-        trace!("Received DkgStart for {}", new_elders_info);
+        trace!("Received DkgStart for {}", new_section_auth);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_elders_info)
+            .start(&self.node.keypair, dkg_key, new_section_auth)
             .into_commands(&self.node)
     }
 
@@ -1495,13 +1494,13 @@ impl Core {
             .peer;
 
         let generation = self.section.chain().main_branch_len() as u64;
-        let elders_info = self
+        let section_auth = self
             .section
             .promote_and_demote_elders(&self.node.name())
             .into_iter()
-            .find(|elders_info| proofs.verify(elders_info, generation));
-        let elders_info = if let Some(elders_info) = elders_info {
-            elders_info
+            .find(|section_auth| proofs.verify(section_auth, generation));
+        let section_auth = if let Some(section_auth) = section_auth {
+            section_auth
         } else {
             trace!("Ignore DKG failure agreement with invalid proofs or outdated participants",);
             return Ok(vec![]);
@@ -1510,18 +1509,18 @@ impl Core {
         if proofs.non_participants.is_empty() {
             // The DKG failure is a corrupted one due to lagging.
             trace!(
-                "Received DKG failure agreement of corrupted result - restarting: {}",
-                elders_info
+                "Received DKG failure agreement - restarting: {}",
+                section_auth
             );
 
-            self.send_dkg_start_to(elders_info, slice::from_ref(sender))
+            self.send_dkg_start_to(section_auth, slice::from_ref(sender))
         } else {
             // The DKG failure is regarding non_participants, i.e. potential unresponsive node.
             trace!(
                 "Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}",
                 proofs.non_participants,
                 generation,
-                elders_info
+                section_auth
             );
             self.cast_offline_proposals(&proofs.non_participants)
         }
@@ -1571,7 +1570,7 @@ impl Core {
         let mut commands = vec![];
 
         // Do not carry out relocation when there is not enough elder nodes.
-        if self.section.elders_info().elders.len() < ELDER_SIZE {
+        if self.section.authority_provider().elders.len() < ELDER_SIZE {
             return Ok(commands);
         }
 
@@ -1736,20 +1735,20 @@ impl Core {
 
     fn handle_section_info_agreement(
         &mut self,
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         proof: Proof,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let equal_or_extension = elders_info.prefix == *self.section.prefix()
-            || elders_info.prefix.is_extension_of(self.section.prefix());
-        let elders_info = Proven::new(elders_info, proof);
+        let equal_or_extension = section_auth.prefix == *self.section.prefix()
+            || section_auth.prefix.is_extension_of(self.section.prefix());
+        let section_auth = Proven::new(section_auth, proof);
 
         if equal_or_extension {
             // Our section of sub-section
 
             let infos = self.section.promote_and_demote_elders(&self.node.name());
-            if !infos.contains(&elders_info.value) {
+            if !infos.contains(&section_auth.value) {
                 // SectionInfo out of date, ignore.
                 return Ok(commands);
             }
@@ -1788,14 +1787,14 @@ impl Core {
                 .copied()
                 .collect();
             commands.extend(
-                self.send_proposal(&our_elders_recipients, Proposal::OurElders(elders_info))?,
+                self.send_proposal(&our_elders_recipients, Proposal::OurElders(section_auth))?,
             );
         } else {
             // Other section
 
             let _ = self
                 .network
-                .update_section(elders_info, None, self.section.chain());
+                .update_section(section_auth, None, self.section.chain());
         }
 
         Ok(commands)
@@ -1803,25 +1802,27 @@ impl Core {
 
     fn handle_our_elders_agreement(
         &mut self,
-        elders_info: Proven<EldersInfo>,
+        section_auth: Proven<SectionAuthorityProvider>,
         key_proof: Proof,
     ) -> Result<Vec<Command>> {
         let updates = self
             .split_barrier
-            .process(self.section.prefix(), elders_info, key_proof);
+            .process(self.section.prefix(), section_auth, key_proof);
         if updates.is_empty() {
             return Ok(vec![]);
         }
 
         let snapshot = self.state_snapshot();
 
-        for (elders_info, key_proof) in updates {
-            if elders_info.value.prefix.matches(&self.node.name()) {
-                let _ = self.section.update_elders(elders_info, key_proof);
+        for (section_auth, key_proof) in updates {
+            if section_auth.value.prefix.matches(&self.node.name()) {
+                let _ = self.section.update_elders(section_auth, key_proof);
             } else {
-                let _ =
-                    self.network
-                        .update_section(elders_info, Some(key_proof), self.section.chain());
+                let _ = self.network.update_section(
+                    section_auth,
+                    Some(key_proof),
+                    self.section.chain(),
+                );
             }
         }
 
@@ -1884,7 +1885,7 @@ impl Core {
                     "Section updated: prefix: ({:b}), key: {:?}, elders: {}",
                     new.prefix,
                     new.last_key,
-                    self.section.elders_info().peers().format(", ")
+                    self.section.authority_provider().peers().format(", ")
                 );
 
                 if self.section_keys_provider.has_key_share() {
@@ -1901,8 +1902,20 @@ impl Core {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            let sibling_key = if new.prefix != old.prefix {
-                self.section_key(&new.prefix.sibling()).copied()
+            let sibling_elders = if new.prefix != old.prefix {
+                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
+                    if let Some(info) = self.network.get(&new.prefix.sibling()) {
+                        Some(Elders {
+                            prefix: new.prefix.sibling(),
+                            key: *sibling_key,
+                            elders: info.elders.keys().copied().collect(),
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -1919,11 +1932,21 @@ impl Core {
                 NodeElderChange::None
             };
 
-            self.send_event(Event::EldersChanged {
+            let elders = Elders {
                 prefix: new.prefix,
                 key: new.last_key,
-                sibling_key,
-                elders: self.section.elders_info().elders.keys().copied().collect(),
+                elders: self
+                    .section
+                    .authority_provider()
+                    .elders
+                    .keys()
+                    .copied()
+                    .collect(),
+            };
+
+            self.send_event(Event::EldersChanged {
+                elders,
+                sibling_elders,
                 self_status_change,
             });
         }
@@ -1983,7 +2006,7 @@ impl Core {
 
         let variant = Variant::NodeApproval {
             genesis_key: *self.section.genesis_key(),
-            elders_info: self.section.proven_elders_info().clone(),
+            section_auth: self.section.proven_authority_provider().clone(),
             member_info,
         };
 
@@ -2109,31 +2132,31 @@ impl Core {
         }
     }
 
-    fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
+    fn send_dkg_start(&self, section_auth: SectionAuthorityProvider) -> Result<Vec<Command>> {
         // Send to all participants.
-        let recipients: Vec<_> = elders_info.elders.values().copied().collect();
-        self.send_dkg_start_to(elders_info, &recipients)
+        let recipients: Vec<_> = section_auth.elders.values().copied().collect();
+        self.send_dkg_start_to(section_auth, &recipients)
     }
 
     fn send_dkg_start_to(
         &self,
-        elders_info: EldersInfo,
+        section_auth: SectionAuthorityProvider,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let src_prefix = elders_info.prefix;
+        let src_prefix = section_auth.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
-        let dkg_key = DkgKey::new(&elders_info, generation);
+        let dkg_key = DkgKey::new(&section_auth, generation);
 
         trace!(
             "Send DkgStart for {} with {:?} to {:?}",
-            elders_info,
+            section_auth,
             dkg_key,
             recipients
         );
 
         let variant = Variant::DkgStart {
             dkg_key,
-            elders_info,
+            section_auth,
         };
 
         self.send_message_for_dst_accumulation(
@@ -2180,10 +2203,13 @@ impl Core {
     #[allow(unused)]
     pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TargetSectionError> {
         let elders_candidates = self.section.promote_and_demote_elders(&self.node.name());
-        // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
+        // Whenever there is a elders candidate, it is considered as having ongoing DKG.
         if !elders_candidates.is_empty() {
             trace!("Non empty elder candidates {:?}", elders_candidates);
-            trace!("Current erlders_info {:?}", self.section.elders_info());
+            trace!(
+                "Current authority_provider {:?}",
+                self.section.authority_provider()
+            );
             return Err(TargetSectionError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
@@ -2196,7 +2222,7 @@ impl Core {
                     pk_set: public_key_set,
                     elders: self
                         .section
-                        .elders_info()
+                        .authority_provider()
                         .peers()
                         .map(|peer| (*peer.name(), *peer.addr()))
                         .collect(),
@@ -2260,8 +2286,15 @@ impl Core {
                 None,
             )?
         } else if itinerary.aggregate_at_src() {
-            let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
-            return self.propose(proposal);
+            let proof_chain =
+                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
+            let proposal =
+                self.create_aggregate_at_src_proposal(itinerary.dst, variant, proof_chain);
+            let recipients = delivery_group::signature_targets(
+                &itinerary.dst,
+                self.section.authority_provider().peers().copied(),
+            );
+            return self.send_proposal(&recipients, proposal);
         } else {
             Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
@@ -2430,7 +2463,7 @@ impl Core {
     fn send_message_to_our_elders(&self, msg: Bytes) -> Command {
         let targets: Vec<_> = self
             .section
-            .elders_info()
+            .authority_provider()
             .peers()
             .map(Peer::addr)
             .copied()
@@ -2481,7 +2514,7 @@ impl Core {
 
     fn print_network_stats(&self) {
         self.network
-            .network_stats(self.section.elders_info())
+            .network_stats(self.section.authority_provider())
             .print()
     }
 }
