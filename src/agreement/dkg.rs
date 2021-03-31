@@ -11,7 +11,6 @@ use crate::{
     error::Result,
     messages::{Message, Variant},
     node::Node,
-    peer::Peer,
     routing::command::{self, Command},
     section::{SectionAuthorityProvider, SectionKeyShare},
     supermajority,
@@ -49,9 +48,8 @@ impl DkgKey {
         let mut hasher = Sha3::v256();
         let mut hash = Digest256::default();
 
-        for peer in section_auth.elders.values() {
+        for peer in section_auth.peers() {
             hasher.update(&peer.name().0);
-            hasher.update(&[peer.age()]);
         }
 
         hasher.update(&section_auth.prefix.name().0);
@@ -141,12 +139,7 @@ impl DkgVoter {
         }
 
         let threshold = supermajority(section_auth.elders.len()) - 1;
-        let participants = section_auth
-            .elders
-            .values()
-            .map(Peer::name)
-            .copied()
-            .collect();
+        let participants = section_auth.elders.keys().copied().collect();
 
         match KeyGen::initialize(name, threshold, participants) {
             Ok((key_gen, message)) => {
@@ -272,11 +265,11 @@ impl Session {
 
     fn recipients(&self) -> Vec<SocketAddr> {
         self.section_auth
-            .peers()
+            .elders
+            .values()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| peer.addr())
-            .copied()
+            .map(|(_, addr)| *addr)
             .collect()
     }
 
@@ -351,7 +344,7 @@ impl Session {
             );
 
             let non_participants: BTreeSet<_> = self
-                .elders_info
+                .section_auth
                 .elders
                 .keys()
                 .filter_map(|elder| {
@@ -516,7 +509,7 @@ impl DkgFailureProofSet {
     // Check whether we have enough proofs to reach agreement on the failure. The contained proofs
     // are assumed valid.
     fn has_agreement(&self, section_auth: &SectionAuthorityProvider) -> bool {
-        has_failure_agreement(section_auth.elders.len(), self.0.len())
+        has_failure_agreement(section_auth.elders.len(), self.proofs.len())
     }
 
     pub fn verify(&self, section_auth: &SectionAuthorityProvider, generation: u64) -> bool {

@@ -300,8 +300,6 @@ impl Network {
             }
             Event::Routing { id, event } => match event {
                 RoutingEvent::EldersChanged {
-                    prefix: new_prefix,
-                    key,
                     elders,
                     self_status_change,
                     ..
@@ -313,12 +311,12 @@ impl Network {
                         ..
                     }) = self.nodes.get_mut(&id)
                     {
-                        *prefix = new_prefix;
+                        *prefix = elders.prefix;
 
-                        if elders.contains(name) {
+                        if elders.elders.contains(name) {
                             *elder = Some(ElderState {
-                                key,
-                                num_elders: elders.len(),
+                                key: elders.key,
+                                num_elders: elders.elders.len(),
                             });
                         } else {
                             *elder = None;

@@ -30,7 +30,7 @@ use self::{
 use crate::{
     crypto,
     error::Result,
-    event::{Event, NodeElderChange},
+    event::{Elders, Event, NodeElderChange},
     messages::Message,
     node::Node,
     peer::Peer,
@@ -114,11 +114,20 @@ impl Routing {
 
             let section = state.section();
 
-            state.send_event(Event::EldersChanged {
+            let elders = Elders {
                 prefix: *section.prefix(),
                 key: *section.chain().last_key(),
-                sibling_key: None,
-                elders: section.elders_info().elders.keys().copied().collect(),
+                elders: section
+                    .authority_provider()
+                    .elders
+                    .keys()
+                    .copied()
+                    .collect(),
+            };
+
+            state.send_event(Event::EldersChanged {
+                elders,
+                sibling_elders: None,
                 self_status_change: NodeElderChange::Promoted,
             });
 
@@ -261,7 +270,6 @@ impl Routing {
             .section()
             .authority_provider()
             .peers()
-            .copied()
             .collect()
     }
 

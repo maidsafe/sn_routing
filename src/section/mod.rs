@@ -83,7 +83,7 @@ impl Section {
         )?;
 
         for peer in section.section_auth.value.peers() {
-            let member_info = MemberInfo::joined(*peer);
+            let member_info = MemberInfo::joined(peer);
             let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
             let _ = section.members.update(Proven {
                 value: member_info,

@@ -13,6 +13,7 @@ use std::{
     borrow::Borrow,
     collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
+    net::SocketAddr,
 };
 
 /// The information about all elders of a section at one point in time. Each elder is always a
@@ -20,8 +21,8 @@ use std::{
 /// change, due to an elder being added or removed, or the section splitting or merging.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct SectionAuthorityProvider {
-    /// The section's complete set of elders as a map from their name to a `Peer`.
-    pub elders: BTreeMap<XorName, Peer>,
+    /// The section's complete set of elders as a map from their name to their socket address.
+    pub elders: BTreeMap<XorName, SocketAddr>,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
 }
@@ -35,16 +36,18 @@ impl SectionAuthorityProvider {
         Self {
             elders: elders
                 .into_iter()
-                .map(|peer| (*peer.name(), peer))
+                .map(|peer| (*peer.name(), *peer.addr()))
                 .collect(),
             prefix,
         }
     }
 
     pub(crate) fn peers(
-        &self,
-    ) -> impl Iterator<Item = &Peer> + DoubleEndedIterator + ExactSizeIterator + Clone {
-        self.elders.values()
+        &'_ self,
+    ) -> impl Iterator<Item = Peer> + DoubleEndedIterator + ExactSizeIterator + Clone + '_ {
+        self.elders
+            .iter()
+            .map(|(name, addr)| Peer::new(*name, *addr))
     }
 
     /// Returns the index of the elder with `name` in this set of elders.
@@ -134,7 +137,7 @@ pub(crate) mod test_utils {
             .map(Node::peer)
             .map(|mut peer| {
                 peer.set_reachable(true);
-                (*peer.name(), peer)
+                (*peer.name(), *peer.addr())
             })
             .collect();
         let section_auth = SectionAuthorityProvider { elders, prefix };

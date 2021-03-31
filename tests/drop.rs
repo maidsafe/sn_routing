@@ -37,7 +37,7 @@ async fn test_node_drop() -> Result<()> {
             continue;
         }
 
-        assert_event!(events, Event::EldersChanged { elders, .. } if elders.len() == node_count);
+        assert_event!(events, Event::EldersChanged { elders, .. } if elders.elders.len() == node_count);
     }
 
     // Drop one node
