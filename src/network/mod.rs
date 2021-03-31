@@ -11,7 +11,7 @@ mod stats;
 
 use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
-    consensus::{verify_proof, Proof, Proven},
+    agreement::{verify_proof, Proof, Proven},
     peer::Peer,
     section::{EldersInfo, SectionChain},
 };
@@ -277,7 +277,7 @@ impl Borrow<Prefix> for OtherSection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{consensus, section};
+    use crate::{agreement, section};
     use rand::Rng;
 
     #[test]
@@ -433,7 +433,7 @@ mod tests {
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
-            let proof = consensus::test_utils::prove(&sk, &(&prefix, key)).unwrap();
+            let proof = agreement::test_utils::prove(&sk, &(&prefix, key)).unwrap();
             let proven = Proven::new((prefix, *key), proof);
             let _ = map.update_their_key(proven);
         }
@@ -462,7 +462,7 @@ mod tests {
 
         for (prefix_str, key) in updates {
             let prefix = prefix_str.parse().unwrap();
-            let payload = consensus::test_utils::proven(&sk, (prefix, key)).unwrap();
+            let payload = agreement::test_utils::proven(&sk, (prefix, key)).unwrap();
             map.update_knowledge(payload);
         }
 
@@ -476,7 +476,7 @@ mod tests {
 
     fn gen_proven_elders_info(sk: &bls::SecretKey, prefix: Prefix) -> Proven<EldersInfo> {
         let (elders_info, _) = section::test_utils::gen_elders_info(prefix, 5);
-        consensus::test_utils::proven(sk, elders_info).unwrap()
+        agreement::test_utils::proven(sk, elders_info).unwrap()
     }
 
     fn gen_key() -> bls::PublicKey {

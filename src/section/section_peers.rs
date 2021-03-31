@@ -10,7 +10,7 @@ use super::{
     member_info::{MemberInfo, PeerState},
     EldersInfo,
 };
-use crate::{consensus::Proven, peer::Peer};
+use crate::{agreement::Proven, peer::Peer};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};

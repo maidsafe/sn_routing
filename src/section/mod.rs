@@ -23,7 +23,7 @@ pub use self::{
 };
 
 use crate::{
-    consensus::Proven,
+    agreement::Proven,
     error::{Error, Result},
     peer::Peer,
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,

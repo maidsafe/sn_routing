@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::Proposal,
+    agreement::Proposal,
     error::Result,
     messages::{Message, MessageHash, Variant},
     network::Network,
@@ -133,7 +133,7 @@ pub(crate) struct Actions {
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::proven,
+        agreement::test_utils::proven,
         crypto,
         section::{
             test_utils::{gen_addr, gen_elders_info},

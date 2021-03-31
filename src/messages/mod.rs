@@ -485,7 +485,7 @@ pub(crate) struct SignableView<'a> {
 mod tests {
     use super::*;
     use crate::{
-        consensus, crypto,
+        agreement, crypto,
         peer::Peer,
         section::{self, test_utils::gen_addr, MemberInfo},
         MIN_AGE,
@@ -512,11 +512,11 @@ mod tests {
         let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 
         let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
-        let elders_info = consensus::test_utils::proven(&sk1, elders_info)?;
+        let elders_info = agreement::test_utils::proven(&sk1, elders_info)?;
 
         let peer = Peer::new(rand::random(), gen_addr());
         let member_info = MemberInfo::joined(peer);
-        let member_info = consensus::test_utils::proven(&sk1, member_info)?;
+        let member_info = agreement::test_utils::proven(&sk1, member_info)?;
 
         let variant = Variant::NodeApproval {
             genesis_key: pk0,

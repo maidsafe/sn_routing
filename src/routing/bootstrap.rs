@@ -8,7 +8,7 @@
 
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
-    consensus::Proven,
+    agreement::Proven,
     crypto::{self, Signature},
     error::{Error, Result},
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
@@ -591,7 +591,7 @@ async fn send_messages(mut rx: mpsc::Receiver<(MessageType, Vec<SocketAddr>)>, c
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
+        agreement::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
         section::MemberInfo, ELDER_SIZE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};

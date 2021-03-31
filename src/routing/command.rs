@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{DkgFailureProofSet, Proposal},
+    agreement::{DkgFailureProofSet, Proposal},
     messages::Message,
     relocation::SignedRelocateDetails,
     section::{EldersInfo, SectionKeyShare},
@@ -48,8 +48,8 @@ pub(crate) enum Command {
     HandleConnectionLost(SocketAddr),
     /// Handle peer that's been detected as lost.
     HandlePeerLost(SocketAddr),
-    /// Handle consensus on a proposal.
-    HandleConsensus { proposal: Proposal, proof: Proof },
+    /// Handle agreement on a proposal.
+    HandleAgreement { proposal: Proposal, proof: Proof },
     /// Handle the outcome of a DKG session where we are one of the participants (that is, one of
     /// the proposed new elders).
     HandleDkgOutcome {
@@ -125,8 +125,8 @@ impl Debug for Command {
                 f.debug_tuple("HandleConnectionLost").field(addr).finish()
             }
             Self::HandlePeerLost(addr) => f.debug_tuple("HandlePeerLost").field(addr).finish(),
-            Self::HandleConsensus { proposal, proof } => f
-                .debug_struct("HandleConsensus")
+            Self::HandleAgreement { proposal, proof } => f
+                .debug_struct("HandleAgreement")
                 .field("proposal", proposal)
                 .field("proof.public_key", &proof.public_key)
                 .finish(),

@@ -285,7 +285,7 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use crate::{
-        consensus::test_utils::proven,
+        agreement::test_utils::proven,
         peer::test_utils::arbitrary_unique_peers,
         section::{EldersInfo, SectionChain},
         ELDER_SIZE, MIN_AGE,
