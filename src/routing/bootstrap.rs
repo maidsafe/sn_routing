@@ -124,7 +124,7 @@ impl<'a> State<'a> {
             .await?;
 
         let relocate_payload = if let Some(details) = relocate_details {
-            Some(self.process_relocation(&prefix, details))
+            Some(self.process_relocation(&prefix, details)?)
         } else {
             None
         };
@@ -195,9 +195,10 @@ impl<'a> State<'a> {
 
         debug!("Sending GetSectionQuery to {:?}", recipients);
 
-        let destination = relocate_details
-            .map(|details| *details.destination())
-            .unwrap_or_else(|| self.node.name());
+        let destination = match relocate_details {
+            Some(details) => *details.destination()?,
+            None => self.node.name(),
+        };
 
         let message = SectionInfoMsg::GetSectionQuery(destination);
 
@@ -213,9 +214,10 @@ impl<'a> State<'a> {
         &mut self,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<(GetSectionResponse, SocketAddr)> {
-        let destination = relocate_details
-            .map(|details| *details.destination())
-            .unwrap_or_else(|| self.node.name());
+        let destination = match relocate_details {
+            Some(details) => *details.destination()?,
+            None => self.node.name(),
+        };
 
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
@@ -257,16 +259,16 @@ impl<'a> State<'a> {
         &mut self,
         prefix: &Prefix,
         relocate_details: SignedRelocateDetails,
-    ) -> RelocatePayload {
+    ) -> Result<RelocatePayload> {
         // We are relocating so we need to change our name.
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
         let name_prefix = Prefix::new(
             prefix.bit_count() + extra_split_count,
-            *relocate_details.destination(),
+            *relocate_details.destination()?,
         );
 
-        let age = relocate_details.relocate_details().age;
+        let age = relocate_details.relocate_details()?.age;
         let new_keypair = crypto::gen_keypair(&name_prefix.range_inclusive(), age);
         let new_name = crypto::name(&new_keypair.public);
         let relocate_payload =
@@ -275,7 +277,7 @@ impl<'a> State<'a> {
         info!("Changing name to {}", new_name);
         self.node = Node::new(new_keypair, self.node.addr);
 
-        relocate_payload
+        Ok(relocate_payload)
     }
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
@@ -463,7 +465,7 @@ impl<'a> State<'a> {
                     }
 
                     let trusted_key = if let Some(payload) = relocate_payload {
-                        Some(&payload.relocate_details().destination_key)
+                        Some(&payload.relocate_details()?.destination_key)
                     } else {
                         None
                     };

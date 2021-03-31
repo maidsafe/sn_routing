@@ -123,13 +123,12 @@ impl SignedRelocateDetails {
         }
     }
 
-    // FIXME: need a non-panicking version of this, because when we receive it from another node,
-    // we can't be sure it's well formed.
-    pub fn relocate_details(&self) -> &RelocateDetails {
+    pub fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
         if let Variant::Relocate(details) = &self.signed_msg.variant() {
-            details
+            Ok(details)
         } else {
-            panic!("SignedRelocateDetails always contain Variant::Relocate")
+            error!("SignedRelocateDetails does not contain Variant::Relocate");
+            Err(Error::InvalidMessage)
         }
     }
 
@@ -137,8 +136,8 @@ impl SignedRelocateDetails {
         &self.signed_msg
     }
 
-    pub fn destination(&self) -> &XorName {
-        &self.relocate_details().destination
+    pub fn destination(&self) -> Result<&XorName, Error> {
+        Ok(&self.relocate_details()?.destination)
     }
 }
 
@@ -179,8 +178,13 @@ impl RelocatePayload {
     }
 
     pub fn verify_identity(&self, new_name: &XorName) -> bool {
-        let pub_key = if let Ok(pub_key) = crypto::pub_key(&self.details.relocate_details().pub_id)
-        {
+        let details = if let Ok(details) = self.details.relocate_details() {
+            details
+        } else {
+            return false;
+        };
+
+        let pub_key = if let Ok(pub_key) = crypto::pub_key(&details.pub_id) {
             pub_key
         } else {
             return false;
@@ -191,7 +195,7 @@ impl RelocatePayload {
             .is_ok()
     }
 
-    pub fn relocate_details(&self) -> &RelocateDetails {
+    pub fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
         self.details.relocate_details()
     }
 }
