@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.54.4](https://github.com/maidsafe/sn_routing/compare/v0.54.3...v0.54.4) (2021-03-31)
+
+
+### Bug Fixes
+
+* remove potential panic in SignedRelocateDetails ([23d0936](https://github.com/maidsafe/sn_routing/commit/23d09363211fc6d957f74ef85bc103c27685644b))
+
 ### [0.54.3](https://github.com/maidsafe/sn_routing/compare/v0.54.2...v0.54.3) (2021-03-31)
 
 
