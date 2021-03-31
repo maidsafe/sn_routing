@@ -232,7 +232,6 @@ impl Routing {
             .section()
             .authority_provider()
             .peers()
-            .copied()
             .collect()
     }
 

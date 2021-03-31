@@ -295,7 +295,7 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    let addrs = section.peers().map(Peer::addr).copied().collect();
+                    let addrs = section.elders.values().copied().collect();
                     GetSectionResponse::Redirect(addrs)
                 };
 
@@ -457,7 +457,6 @@ impl Core {
                 .authority_provider()
                 .peers()
                 .filter(|peer| peer.name() != info.peer.name())
-                .copied()
                 .collect();
 
             self.send_proposal(&elders, Proposal::Offline(info))
@@ -472,7 +471,7 @@ impl Core {
         key_share: SectionKeyShare,
     ) -> Result<Vec<Command>> {
         let proposal = Proposal::SectionInfo(section_auth);
-        let recipients: Vec<_> = self.section.authority_provider().peers().copied().collect();
+        let recipients: Vec<_> = self.section.authority_provider().peers().collect();
         let result = self.send_proposal_with(&recipients, proposal, &key_share);
 
         let public_key = key_share.public_key_set.public_key();
@@ -494,7 +493,7 @@ impl Core {
 
     // Send proposal to all our elders.
     fn propose(&self, proposal: Proposal) -> Result<Vec<Command>> {
-        let elders: Vec<_> = self.section.authority_provider().peers().copied().collect();
+        let elders: Vec<_> = self.section.authority_provider().peers().collect();
         self.send_proposal(&elders, proposal)
     }
 
@@ -1104,8 +1103,8 @@ impl Core {
         let bootstrap_addrs: Vec<_> = self
             .section
             .authority_provider()
-            .peers()
-            .map(Peer::addr)
+            .elders
+            .values()
             .copied()
             .collect();
 
@@ -1593,8 +1592,7 @@ impl Core {
                 .iter()
                 .flat_map(|info| info.peers())
                 .filter(|peer| !self.section.is_elder(peer.name()))
-                .map(Peer::addr)
-                .copied()
+                .map(|peer| *peer.addr())
                 .collect();
             if !sync_recipients.is_empty() {
                 let sync_message = Message::single_src(
@@ -1615,11 +1613,8 @@ impl Core {
             }
 
             // Send the `OurElder` proposal to all of the to-be-elders so it's aggregated by them.
-            let our_elders_recipients: Vec<_> = infos
-                .iter()
-                .flat_map(|info| info.peers())
-                .copied()
-                .collect();
+            let our_elders_recipients: Vec<_> =
+                infos.iter().flat_map(|info| info.peers()).collect();
             commands.extend(
                 self.send_proposal(&our_elders_recipients, Proposal::OurElders(section_auth))?,
             );
@@ -1942,7 +1937,7 @@ impl Core {
 
     fn send_dkg_start(&self, section_auth: SectionAuthorityProvider) -> Result<Vec<Command>> {
         // Send to all participants.
-        let recipients: Vec<_> = section_auth.elders.values().copied().collect();
+        let recipients: Vec<_> = section_auth.peers().collect();
         self.send_dkg_start_to(section_auth, &recipients)
     }
 
@@ -2095,7 +2090,7 @@ impl Core {
                 self.create_accumulate_at_src_proposal(itinerary.dst, variant, proof_chain);
             let recipients = delivery_group::signature_targets(
                 &itinerary.dst,
-                self.section.authority_provider().peers().copied(),
+                self.section.authority_provider().peers(),
             );
             return self.send_proposal(&recipients, proposal);
         } else {
@@ -2268,8 +2263,8 @@ impl Core {
         let targets: Vec<_> = self
             .section
             .authority_provider()
-            .peers()
-            .map(Peer::addr)
+            .elders
+            .values()
             .copied()
             .collect();
         Command::send_message_to_nodes(&targets, targets.len(), msg)

@@ -11,7 +11,6 @@ use crate::{
     error::Result,
     messages::{Message, Variant},
     node::Node,
-    peer::Peer,
     routing::command::{self, Command},
     section::{SectionAuthorityProvider, SectionKeyShare},
     supermajority,
@@ -48,9 +47,8 @@ impl DkgKey {
         let mut hasher = Sha3::v256();
         let mut hash = Digest256::default();
 
-        for peer in section_auth.elders.values() {
+        for peer in section_auth.peers() {
             hasher.update(&peer.name().0);
-            hasher.update(&[peer.age()]);
         }
 
         hasher.update(&section_auth.prefix.name().0);
@@ -140,12 +138,7 @@ impl DkgVoter {
         }
 
         let threshold = supermajority(section_auth.elders.len()) - 1;
-        let participants = section_auth
-            .elders
-            .values()
-            .map(Peer::name)
-            .copied()
-            .collect();
+        let participants = section_auth.elders.keys().copied().collect();
 
         match KeyGen::initialize(name, threshold, participants) {
             Ok((key_gen, message)) => {
@@ -270,11 +263,11 @@ impl Session {
 
     fn recipients(&self) -> Vec<SocketAddr> {
         self.section_auth
-            .peers()
+            .elders
+            .values()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| peer.addr())
-            .copied()
+            .map(|(_, addr)| *addr)
             .collect()
     }
 

@@ -43,7 +43,7 @@ pub(crate) fn delivery_targets(
     if !section.is_elder(our_name) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
-        let targets: Vec<_> = section.authority_provider().peers().copied().collect();
+        let targets: Vec<_> = section.authority_provider().peers().collect();
         let dg_size = targets.len();
         return Ok((targets, dg_size));
     }
@@ -61,7 +61,7 @@ pub(crate) fn delivery_targets(
                 return Ok((Vec::new(), 0));
             }
             if let Some(node) = get_peer(target_name, section, network) {
-                return Ok((vec![*node], 1));
+                return Ok((vec![node], 1));
             }
 
             candidates(target_name, our_name, section, network)?
@@ -89,7 +89,6 @@ fn section_candidates(
         let section: Vec<_> = info
             .peers()
             .filter(|node| node.name() != our_name)
-            .copied()
             .collect();
         let dg_size = section.len();
         return Ok((section, dg_size));
@@ -109,12 +108,12 @@ fn candidates(
     let sections = iter::once(section.authority_provider())
         .chain(network.all())
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
-        .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
+        .map(|info| (&info.prefix, info.elders.len(), info.peers()));
 
     let mut dg_size = ELDER_SIZE;
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
-        nodes_to_send.extend(connected.cloned());
+        nodes_to_send.extend(connected);
         // If we don't have enough contacts send to as many as possible
         // up to majority of Elders
         dg_size = cmp::min(len, dg_size);
@@ -146,11 +145,11 @@ fn candidates(
 }
 
 // Returns a `Peer` for a known node.
-fn get_peer<'a>(name: &XorName, section: &'a Section, network: &'a Network) -> Option<&'a Peer> {
+fn get_peer(name: &XorName, section: &Section, network: &Network) -> Option<Peer> {
     section
         .members()
         .get(name)
-        .map(|info| &info.peer)
+        .map(|info| info.peer)
         .or_else(|| network.get_elder(name))
 }
 
@@ -249,7 +248,7 @@ mod tests {
             .peers()
             .filter(|peer| peer.name() != &our_name);
         assert_eq!(dg_size, expected_recipients.clone().count());
-        itertools::assert_equal(&recipients, expected_recipients);
+        itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())
     }
@@ -290,7 +289,7 @@ mod tests {
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
         assert_eq!(dg_size, section_auth1.elders.len());
-        itertools::assert_equal(&recipients, expected_recipients);
+        itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())
     }
@@ -312,7 +311,7 @@ mod tests {
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
         assert_eq!(dg_size, section_auth1.elders.len());
-        itertools::assert_equal(&recipients, expected_recipients);
+        itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())
     }
@@ -327,7 +326,7 @@ mod tests {
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders.len());
-        itertools::assert_equal(&recipients, section.authority_provider().peers());
+        itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -342,7 +341,7 @@ mod tests {
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders.len());
-        itertools::assert_equal(&recipients, section.authority_provider().peers());
+        itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -357,7 +356,7 @@ mod tests {
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders.len());
-        itertools::assert_equal(&recipients, section.authority_provider().peers());
+        itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -374,7 +373,7 @@ mod tests {
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders.len());
-        itertools::assert_equal(&recipients, section.authority_provider().peers());
+        itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -391,7 +390,7 @@ mod tests {
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders.len());
-        itertools::assert_equal(&recipients, section.authority_provider().peers());
+        itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
     }
@@ -405,7 +404,7 @@ mod tests {
         let chain = SectionChain::new(pk);
 
         let (section_auth0, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
-        let elders0: Vec<_> = section_auth0.peers().copied().collect();
+        let elders0: Vec<_> = section_auth0.peers().collect();
         let section_auth0 = proven(&sk, section_auth0)?;
 
         let mut section = Section::new(pk, chain, section_auth0)?;

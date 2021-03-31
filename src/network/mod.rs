@@ -65,18 +65,19 @@ impl Network {
     }
 
     /// Returns all elders from all known sections.
-    pub fn elders(&self) -> impl Iterator<Item = &Peer> {
-        self.all().flat_map(|info| info.elders.values())
+    pub fn elders(&'_ self) -> impl Iterator<Item = Peer> + '_ {
+        self.all().flat_map(|info| info.peers())
     }
 
     /// Returns a `Peer` of an elder from a known section.
-    pub fn get_elder(&self, name: &XorName) -> Option<&Peer> {
+    pub fn get_elder(&self, name: &XorName) -> Option<Peer> {
         self.sections
             .get_matching(name)?
             .section_auth
             .value
             .elders
             .get(name)
+            .map(|addr| Peer::new(*name, *addr))
     }
 
     /// Merge two `Network`s into one.

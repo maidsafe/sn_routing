@@ -13,7 +13,6 @@ use crate::{
     error::{Error, Result},
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
-    peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::{Section, SectionAuthorityProvider, SectionChain},
 };
@@ -334,7 +333,7 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        let recipients = section_auth.peers().map(Peer::addr).copied().collect();
+                        let recipients = section_auth.elders.values().copied().collect();
                         self.send_join_requests(join_request, recipients).await?;
                     } else {
                         warn!(
@@ -671,7 +670,7 @@ mod tests {
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
                 Message::from_bytes(Bytes::from(bytes))?);
 
-            itertools::assert_equal(&recipients, section_auth.peers().map(Peer::addr));
+            itertools::assert_equal(&recipients, section_auth.elders.values());
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());
