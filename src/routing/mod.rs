@@ -29,7 +29,7 @@ use self::{
 use crate::{
     crypto,
     error::Result,
-    event::Event,
+    event::{Event, NodeElderChange},
     messages::Message,
     node::Node,
     peer::Peer,
@@ -106,7 +106,15 @@ impl Routing {
             let node = Node::new(keypair, comm.our_connection_info());
             let state = Core::first_node(node, event_tx)?;
 
-            state.send_event(Event::Genesis);
+            let section = state.section();
+
+            state.send_event(Event::EldersChanged {
+                prefix: *section.prefix(),
+                key: *section.chain().last_key(),
+                sibling_key: None,
+                elders: section.elders_info().elders.keys().copied().collect(),
+                self_status_change: NodeElderChange::Promoted,
+            });
 
             (state, comm, vec![])
         } else {

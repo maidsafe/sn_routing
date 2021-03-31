@@ -223,9 +223,6 @@ fn run_node(index: usize, mut node: Routing, mut event_stream: EventStream) -> J
 // Handles the event emitted by the node.
 async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
     match event {
-        Event::Genesis => {
-            info!("Node #{} is Genesis", index);
-        }
         Event::MemberJoined {
             name,
             previous_name,
@@ -240,13 +237,15 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             info!("Node #{} member left - name: {}, age: {}", index, name, age);
         }
         Event::EldersChanged {
+            prefix,
+            key,
+            sibling_key,
             elders,
-            sibling_elders,
             self_status_change,
         } => {
             info!(
-                "Node #{} elders changed - prefix: {:b}, key: {:?}, sibling elders: {:?}, elders: {:?}, node elder status change: {:?}",
-                index, elders.prefix, elders.key, sibling_elders, elders.elders, self_status_change
+                "Node #{} elders changed - prefix: {:b}, key: {:?}, sibling key: {:?}, elders: {:?}, node elder status change: {:?}",
+                index, prefix, key, sibling_key, elders, self_status_change
             );
         }
         Event::MessageReceived {

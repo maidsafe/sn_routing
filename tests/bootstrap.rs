@@ -29,7 +29,7 @@ async fn test_genesis_node() -> Result<()> {
 
     assert_eq!(pub_key, node.public_key().await);
 
-    assert_next_event!(event_stream, Event::Genesis);
+    assert_next_event!(event_stream, Event::EldersChanged { .. });
 
     assert!(node.is_elder().await);
 
@@ -46,7 +46,7 @@ async fn test_node_bootstrapping() -> Result<()> {
 
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
-        assert_next_event!(event_stream, Event::Genesis);
+        assert_next_event!(event_stream, Event::EldersChanged { .. });
 
         assert_next_event!(event_stream, Event::MemberJoined { .. });
     });
