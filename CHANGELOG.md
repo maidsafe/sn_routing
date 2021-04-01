@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.57.0](https://github.com/maidsafe/sn_routing/compare/v0.56.0...v0.57.0) (2021-04-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dep:** the new qp2p version includes a breaking change
+
+* **dep:** update qp2p dependency ([3efb8c5](https://github.com/maidsafe/sn_routing/commit/3efb8c54906397a5dd676cfb835eb22e3d453e40))
+
 ## [0.56.0](https://github.com/maidsafe/sn_routing/compare/v0.55.0...v0.56.0) (2021-03-31)
 
 
