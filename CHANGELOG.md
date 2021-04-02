@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.57.1](https://github.com/maidsafe/sn_routing/compare/v0.57.0...v0.57.1) (2021-04-02)
+
+
+### Bug Fixes
+
+* no router startup fixed w/qp2p udpate ([29b98ea](https://github.com/maidsafe/sn_routing/commit/29b98eabe87921377b605c86ac8724453b55ba8f))
+
 ## [0.57.0](https://github.com/maidsafe/sn_routing/compare/v0.56.0...v0.57.0) (2021-04-01)
 
 
