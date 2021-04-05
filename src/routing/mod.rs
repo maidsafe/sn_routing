@@ -101,7 +101,12 @@ impl Routing {
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
         let (state, comm, backlog) = if config.first {
+            // Genesis node having a fix age of 255.
+            let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
+            let node_name = crypto::name(&keypair.public);
+
             info!("{} Starting a new network as the genesis node.", node_name);
+
             let comm = Comm::new(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info());
             let state = Core::first_node(node, event_tx)?;

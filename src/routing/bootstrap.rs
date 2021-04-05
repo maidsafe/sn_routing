@@ -19,6 +19,7 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::future;
+use rand::seq::IteratorRandom;
 use resource_proof::ResourceProof;
 use sn_messaging::{
     node::NodeMessage,
@@ -122,6 +123,19 @@ impl<'a> State<'a> {
         let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
+
+        // For the first section, using age random among 6 - 100 to avoid relocating too many nodes
+        // at the same time.
+        if prefix == Prefix::default() {
+            let age: u8 = (6..100)
+                .choose(&mut rand::thread_rng())
+                .unwrap_or_else(|| 100);
+            let new_keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
+            let new_name = crypto::name(&new_keypair.public);
+
+            info!("Changing name to {}", new_name);
+            self.node = Node::new(new_keypair, self.node.addr);
+        }
 
         let relocate_payload = if let Some(details) = relocate_details {
             Some(self.process_relocation(&prefix, details)?)
