@@ -34,7 +34,7 @@ use crate::{
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionChain},
-    TransportConfig, MIN_AGE,
+    TransportConfig, MIN_ADULT_AGE,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
@@ -93,7 +93,7 @@ impl Routing {
     /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
         let keypair = config.keypair.unwrap_or_else(|| {
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1)
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
         });
         let node_name = crypto::name(&keypair.public);
 

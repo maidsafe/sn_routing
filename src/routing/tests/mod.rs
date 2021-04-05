@@ -21,7 +21,7 @@ use crate::{
     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
-        FIRST_SECTION_MIN_AGE, MIN_AGE,
+        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     supermajority, ELDER_SIZE,
 };
@@ -48,12 +48,12 @@ use xor_name::{Prefix, XorName};
 
 #[tokio::test]
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         gen_addr(),
     );
 
@@ -95,7 +95,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let elders_addrs: Vec<_> = elders_info.peers().map(Peer::addr).copied().collect();
     let (section, _) = create_section(&sk_set, &elders_info)?;
 
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -269,7 +269,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let relocated_node_old_keypair =
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1);
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
     let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
     let relocated_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
@@ -842,7 +842,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
             // from other sections), bounce it to our elders.
             (
                 Node::new(
-                    crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+                    crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
                     gen_addr(),
                 ),
                 elders_info
@@ -861,7 +861,7 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
     let proven_elders_info = proven(&sk, elders_info)?;
     let section = Section::new(*chain.root_key(), chain, proven_elders_info)?;
 
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -969,7 +969,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     let proven_elders_info = proven(&sk0, elders_info)?;
     let section = Section::new(pk0, chain.clone(), proven_elders_info)?;
 
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
     let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
@@ -1046,7 +1046,7 @@ async fn handle_bounced_unknown_message() -> Result<()> {
     // Create the original message whose bounce we want to test. The content of the message doesn't
     // matter for the purpose of this test.
     let other_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         gen_addr(),
     );
     let original_message_content = Bytes::from_static(b"unknown message");
@@ -1142,7 +1142,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
     let other_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         gen_addr(),
     );
 
@@ -1317,11 +1317,11 @@ async fn handle_untrusted_sync() -> Result<()> {
     let new_section = Section::new(pk0, chain.truncate(2), proven_new_elders_info)?;
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let state = Core::new(node, old_section, None, event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
-    let sender = create_node(MIN_AGE + 1);
+    let sender = create_node(MIN_ADULT_AGE);
     let orig_message = Message::single_src(
         &sender,
         DstLocation::Direct,
@@ -1415,7 +1415,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         None,
     )?;
 
-    let sender = create_node(MIN_AGE + 1);
+    let sender = create_node(MIN_ADULT_AGE);
     let bounced_message = Message::single_src(
         &sender,
         DstLocation::Node(node.name()),
@@ -1561,7 +1561,7 @@ enum MessageDst {
 }
 
 async fn message_to_self(dst: MessageDst) -> Result<()> {
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let peer = node.peer();
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
@@ -1606,7 +1606,7 @@ async fn handle_elders_update() -> Result<()> {
     let mut other_elder_peers: Vec<_> = iter::repeat_with(|| create_peer(MIN_AGE + 2))
         .take(ELDER_SIZE - 1)
         .collect();
-    let adult_peer = create_peer(MIN_AGE + 1);
+    let adult_peer = create_peer(MIN_ADULT_AGE);
     let promoted_peer = create_peer(MIN_AGE + 3);
 
     let sk_set0 = SecretKeySet::random();
@@ -1710,7 +1710,7 @@ async fn handle_elders_update() -> Result<()> {
 // Test that demoted node still sends `Sync` messages on split.
 #[tokio::test]
 async fn handle_demote_during_split() -> Result<()> {
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
 
     let prefix0 = Prefix::default().pushed(false);
@@ -1718,15 +1718,15 @@ async fn handle_demote_during_split() -> Result<()> {
 
     // These peers together with `node` are pre-split elders.
     // These peers together with `peer_c` are prefix-0 post-split elders.
-    let peers_a: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix0, MIN_AGE + 1))
+    let peers_a: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix0, MIN_ADULT_AGE))
         .take(ELDER_SIZE - 1)
         .collect();
     // These peers are prefix-1 post-split elders.
-    let peers_b: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix1, MIN_AGE + 1))
+    let peers_b: Vec<_> = iter::repeat_with(|| create_peer_in_prefix(&prefix1, MIN_ADULT_AGE))
         .take(ELDER_SIZE)
         .collect();
     // This peer is a prefix-0 post-split elder.
-    let peer_c = create_peer_in_prefix(&prefix0, MIN_AGE + 1);
+    let peer_c = create_peer_in_prefix(&prefix0, MIN_ADULT_AGE);
 
     // Create the pre-split section
     let sk_set_v0 = SecretKeySet::random();
@@ -1891,7 +1891,7 @@ fn create_section(
 fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Proposal, Proof)> {
     loop {
         let proposal = Proposal::Online {
-            member_info: MemberInfo::joined(create_peer(MIN_AGE + 1)),
+            member_info: MemberInfo::joined(create_peer(MIN_ADULT_AGE)),
             previous_name: Some(rand::random()),
             their_knowledge: None,
         };

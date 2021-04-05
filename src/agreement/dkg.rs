@@ -655,7 +655,7 @@ mod tests {
     use super::*;
     use crate::{
         crypto, node::test_utils::arbitrary_unique_nodes, section::test_utils::gen_addr,
-        ELDER_SIZE, MIN_AGE,
+        ELDER_SIZE, MIN_ADULT_AGE,
     };
     use assert_matches::assert_matches;
     use proptest::prelude::*;
@@ -670,7 +670,7 @@ mod tests {
         let mut voter = DkgVoter::default();
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());

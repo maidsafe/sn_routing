@@ -488,7 +488,7 @@ mod tests {
         agreement, crypto,
         peer::Peer,
         section::{self, test_utils::gen_addr, MemberInfo},
-        MIN_AGE,
+        MIN_ADULT_AGE,
     };
     use anyhow::Result;
     use std::iter;
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn extend_proof_chain() -> Result<()> {
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
