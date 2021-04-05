@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.57.2](https://github.com/maidsafe/sn_routing/compare/v0.57.1...v0.57.2) (2021-04-05)
+
+
+### Features
+
+* nodes using different ages ([abb39c1](https://github.com/maidsafe/sn_routing/commit/abb39c1e190582df02367ad75fb7e6d6f3a4e985))
+
+
+### Bug Fixes
+
+* relocated node can have higher age to join after first section split ([68b3e1e](https://github.com/maidsafe/sn_routing/commit/68b3e1e1335b2ca6b23c2779fef013793d694e3d))
+
 ### [0.57.1](https://github.com/maidsafe/sn_routing/compare/v0.57.0...v0.57.1) (2021-04-02)
 
 
