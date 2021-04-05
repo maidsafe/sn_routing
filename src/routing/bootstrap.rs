@@ -16,6 +16,7 @@ use crate::{
     peer::Peer,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::{EldersInfo, Section, SectionChain},
+    FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
 use bytes::Bytes;
 use futures::future;
@@ -33,7 +34,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tracing::Instrument;
-use xor_name::{Prefix, XorName};
+use xor_name::{Prefix, XorName, XOR_NAME_LEN};
 
 const BACKLOG_CAPACITY: usize = 100;
 
@@ -124,16 +125,17 @@ impl<'a> State<'a> {
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
 
-        // For the first section, using age random among 6 - 100 to avoid relocating too many nodes
+        // For the first section, using age random among 6 to 100 to avoid relocating too many nodes
         // at the same time.
-        if prefix == Prefix::default() {
-            let age: u8 = (6..100)
+        if prefix.is_empty() && self.node.name()[XOR_NAME_LEN - 1] < FIRST_SECTION_MIN_AGE {
+            let age: u8 = (FIRST_SECTION_MIN_AGE..FIRST_SECTION_MAX_AGE)
                 .choose(&mut rand::thread_rng())
-                .unwrap_or_else(|| 100);
+                .unwrap_or(FIRST_SECTION_MAX_AGE);
+
             let new_keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
             let new_name = crypto::name(&new_keypair.public);
 
-            info!("Changing name to {}", new_name);
+            info!("Setting name to {}", new_name);
             self.node = Node::new(new_keypair, self.node.addr);
         }
 
@@ -473,7 +475,7 @@ impl<'a> State<'a> {
 
                     if let Some(expected_genesis_key) = expected_genesis_key {
                         if expected_genesis_key != genesis_key {
-                            error!("Unexpected Genesis key");
+                            trace!("Unexpected Genesis key");
                             continue;
                         }
                     }
@@ -490,7 +492,7 @@ impl<'a> State<'a> {
 
                     let section_chain = message.proof_chain()?.clone();
 
-                    info!(
+                    trace!(
                         "This node has been approved to join the network at {:?}!",
                         elders_info.value.prefix,
                     );
@@ -634,8 +636,11 @@ mod tests {
         let sk = sk_set.secret_key();
         let pk = sk.public_key();
 
+        // Node in first section has to have an age higher than MIN_AGE + 1
+        // Otherwise during the bootstrap process, node will change its id and age.
+        let node_age = MIN_AGE + 2;
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), node_age),
             gen_addr(),
         );
         let peer = node.peer();
@@ -719,7 +724,7 @@ mod tests {
 
         assert_eq!(*section.elders_info(), elders_info);
         assert_eq!(*section.chain().last_key(), pk);
-        assert_eq!(node.age(), MIN_AGE + 1);
+        assert_eq!(node.age(), node_age);
 
         Ok(())
     }
