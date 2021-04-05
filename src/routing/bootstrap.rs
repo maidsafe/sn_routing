@@ -610,7 +610,7 @@ mod tests {
     use super::*;
     use crate::{
         agreement::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
-        section::MemberInfo, ELDER_SIZE, MIN_AGE,
+        section::MemberInfo, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};
     use assert_matches::assert_matches;
@@ -636,7 +636,7 @@ mod tests {
         let sk = sk_set.secret_key();
         let pk = sk.public_key();
 
-        // Node in first section has to have an age higher than MIN_AGE + 1
+        // Node in first section has to have an age higher than MIN_ADULT_AGE
         // Otherwise during the bootstrap process, node will change its id and age.
         let node_age = MIN_AGE + 2;
         let node = Node::new(
@@ -736,12 +736,12 @@ mod tests {
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let mut state = State::new(node, send_tx, recv_rx);
@@ -800,12 +800,12 @@ mod tests {
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let mut state = State::new(node, send_tx, recv_rx);
@@ -862,11 +862,11 @@ mod tests {
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
@@ -942,11 +942,11 @@ mod tests {
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 

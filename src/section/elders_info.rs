@@ -86,7 +86,7 @@ impl Display for EldersInfo {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::EldersInfo;
-    use crate::{crypto, node::Node, MIN_AGE};
+    use crate::{crypto, node::Node, MIN_ADULT_AGE, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
@@ -105,14 +105,14 @@ pub(crate) mod test_utils {
     // Create `count` Nodes sorted by their names.
     // The `age_diff` flag is used to trigger nodes being generated with different age pattern.
     // The test of `handle_agreement_on_online_of_elder_candidate` requires most nodes to be with
-    // age of MIN_AGE + 2 and one node with age of MIN_AGE + 1.
+    // age of MIN_AGE + 2 and one node with age of MIN_ADULT_AGE.
     pub(crate) fn gen_sorted_nodes(prefix: &Prefix, count: usize, age_diff: bool) -> Vec<Node> {
         (0..count)
             .map(|index| {
                 let age = if age_diff && index < count - 1 {
                     MIN_AGE + 2
                 } else {
-                    MIN_AGE + 1
+                    MIN_ADULT_AGE
                 };
                 Node::new(
                     crypto::gen_keypair(&prefix.range_inclusive(), age),
