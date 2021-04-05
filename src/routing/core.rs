@@ -34,7 +34,7 @@ use crate::{
     },
     section::{
         EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
-        SectionKeysProvider, MIN_AGE,
+        SectionKeysProvider, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_AGE,
     },
     ELDER_SIZE,
 };
@@ -1265,6 +1265,27 @@ impl Core {
             debug!(
                 "Ignoring JoinRequest from {} - required age {:?} not presented.",
                 peer, age,
+            );
+            return Ok(vec![]);
+        }
+
+        // During the first section, node shall use ranged age to avoid too many nodes got
+        // relocated at the same time. After the first section got split, later on nodes shall
+        // only start with age of MIN_AGE + 1
+        if self.section.prefix().is_empty() {
+            if peer.age() < FIRST_SECTION_MIN_AGE || peer.age() > FIRST_SECTION_MAX_AGE {
+                debug!(
+                    "Ignoring JoinRequest from {} - first-section node having wrong age {:?}",
+                    peer,
+                    peer.age(),
+                );
+                return Ok(vec![]);
+            }
+        } else if peer.age() != MIN_AGE + 1 {
+            debug!(
+                "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
+                peer,
+                peer.age(),
             );
             return Ok(vec![]);
         }

@@ -17,7 +17,7 @@ pub(crate) use self::elders_info::test_utils;
 pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
     elders_info::EldersInfo,
-    member_info::{MemberInfo, PeerState, MIN_AGE},
+    member_info::{MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_AGE},
     section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
