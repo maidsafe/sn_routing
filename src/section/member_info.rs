@@ -14,6 +14,9 @@ use xor_name::XorName;
 /// relocations during the beginning of a node's lifetime.
 pub const MIN_AGE: u8 = 4;
 
+/// The minimum age a node becomes an adult node.
+pub const MIN_ADULT_AGE: u8 = MIN_AGE + 1;
+
 /// During the first section, nodes can start at a range of age to avoid too many nodes having the
 /// same time get relocated at the same time.
 /// Defines the lower bound of this range.
