@@ -1213,7 +1213,7 @@ impl Core {
         }
 
         // This joining node is being relocated to us.
-        let (age, previous_name, their_knowledge) =
+        let (mut age, previous_name, their_knowledge) =
             if let Some(payload) = join_request.relocate_payload {
                 if !payload.verify_identity(peer.name()) {
                     debug!(
@@ -1260,15 +1260,6 @@ impl Core {
                 (MIN_AGE + 1, None, None)
             };
 
-        // Requires the node name matches the age.
-        if age != peer.age() {
-            debug!(
-                "Ignoring JoinRequest from {} - required age {:?} not presented.",
-                peer, age,
-            );
-            return Ok(vec![]);
-        }
-
         // During the first section, node shall use ranged age to avoid too many nodes got
         // relocated at the same time. After the first section got split, later on nodes shall
         // only start with age of MIN_AGE + 1
@@ -1280,12 +1271,23 @@ impl Core {
                     peer.age(),
                 );
                 return Ok(vec![]);
+            } else {
+                age = peer.age();
             }
         } else if peer.age() != MIN_AGE + 1 {
             debug!(
                 "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
                 peer,
                 peer.age(),
+            );
+            return Ok(vec![]);
+        }
+
+        // Requires the node name matches the age.
+        if age != peer.age() {
+            debug!(
+                "Ignoring JoinRequest from {} - required age {:?} not presented.",
+                peer, age,
             );
             return Ok(vec![]);
         }

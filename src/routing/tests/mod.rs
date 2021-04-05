@@ -21,7 +21,7 @@ use crate::{
     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
-        MIN_AGE,
+        FIRST_SECTION_MIN_AGE, MIN_AGE,
     },
     supermajority, ELDER_SIZE,
 };
@@ -137,12 +137,12 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
 #[tokio::test]
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(FIRST_SECTION_MIN_AGE);
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         gen_addr(),
     );
     let section_key = *dispatcher.core.lock().await.section().chain().last_key();
@@ -182,12 +182,12 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
 #[tokio::test]
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
-    let node = create_node(MIN_AGE + 1);
+    let node = create_node(FIRST_SECTION_MIN_AGE);
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 1),
+        crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         gen_addr(),
     );
     let section_key = *dispatcher.core.lock().await.section().chain().last_key();
@@ -240,7 +240,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         Proposal::Online { member_info, previous_name, their_knowledge } => {
             assert_eq!(*member_info.peer.name(), new_node.name());
             assert_eq!(*member_info.peer.addr(), new_node.addr);
-            assert_eq!(member_info.peer.age(), MIN_AGE + 1);
+            assert_eq!(member_info.peer.age(), FIRST_SECTION_MIN_AGE);
             assert_eq!(member_info.state, PeerState::Joined);
             assert_eq!(*previous_name, None);
             assert_eq!(*their_knowledge, None);

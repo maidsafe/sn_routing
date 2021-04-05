@@ -15,11 +15,11 @@ use sn_routing::{Config, Event, NodeElderChange, ELDER_SIZE};
 use std::collections::HashSet;
 use tokio::time;
 use utils::*;
+use xor_name::XOR_NAME_LEN;
 
 #[tokio::test]
 async fn test_genesis_node() -> Result<()> {
     let keypair = Keypair::generate(&mut rand::thread_rng());
-    let pub_key = keypair.public;
     let (node, mut event_stream) = create_node(Config {
         first: true,
         keypair: Some(keypair),
@@ -27,11 +27,11 @@ async fn test_genesis_node() -> Result<()> {
     })
     .await?;
 
-    assert_eq!(pub_key, node.public_key().await);
-
     assert_next_event!(event_stream, Event::EldersChanged { .. });
 
     assert!(node.is_elder().await);
+
+    assert_eq!(node.name().await[XOR_NAME_LEN - 1], 255);
 
     Ok(())
 }
