@@ -1215,7 +1215,7 @@ impl Core {
 
         // This joining node is being relocated to us.
         let (mut age, previous_name, their_knowledge) =
-            if let Some(payload) = join_request.relocate_payload {
+            if let Some(ref payload) = join_request.relocate_payload {
                 if !payload.verify_identity(peer.name()) {
                     debug!(
                         "Ignoring relocation JoinRequest from {} - invalid signature.",
@@ -1275,7 +1275,8 @@ impl Core {
             } else {
                 age = peer.age();
             }
-        } else if peer.age() != MIN_AGE + 1 {
+        } else if peer.age() != MIN_AGE + 1 && join_request.relocate_payload.is_none() {
+            // After section split, new node has to join with age of MIN_AGE + 1.
             debug!(
                 "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
                 peer,
