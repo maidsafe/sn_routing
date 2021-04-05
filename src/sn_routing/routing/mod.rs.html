@@ -519,6 +519,11 @@
 <span id="518">518</span>
 <span id="519">519</span>
 <span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -556,7 +561,7 @@
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
     <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionChain</span>},
-    <span class="ident">TransportConfig</span>, <span class="ident">MIN_AGE</span>,
+    <span class="ident">TransportConfig</span>, <span class="ident">MIN_ADULT_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>};
@@ -615,7 +620,7 @@
     <span class="doccomment">/// caller to handle this case, for example by using a timeout.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">config</span>: <span class="ident">Config</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">EventStream</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">config</span>.<span class="ident">keypair</span>.<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> {
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">1</span>)
+            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>)
         });
         <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">keypair</span>.<span class="ident">public</span>);
 
@@ -623,7 +628,12 @@
         <span class="kw">let</span> (<span class="ident">connection_event_tx</span>, <span class="kw-2">mut</span> <span class="ident">connection_event_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
 
         <span class="kw">let</span> (<span class="ident">state</span>, <span class="ident">comm</span>, <span class="ident">backlog</span>) <span class="op">=</span> <span class="kw">if</span> <span class="ident">config</span>.<span class="ident">first</span> {
+            <span class="comment">// Genesis node having a fix age of 255.</span>
+            <span class="kw">let</span> <span class="ident">keypair</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="number">255</span>);
+            <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">keypair</span>.<span class="ident">public</span>);
+
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{} Starting a new network as the genesis node.&quot;</span>, <span class="ident">node_name</span>);
+
             <span class="kw">let</span> <span class="ident">comm</span> <span class="op">=</span> <span class="ident">Comm</span>::<span class="ident">new</span>(<span class="ident">config</span>.<span class="ident">transport_config</span>, <span class="ident">connection_event_tx</span>).<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">comm</span>.<span class="ident">our_connection_info</span>());
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">Core</span>::<span class="ident">first_node</span>(<span class="ident">node</span>, <span class="ident">event_tx</span>)<span class="question-mark">?</span>;

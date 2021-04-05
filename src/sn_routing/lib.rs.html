@@ -143,6 +143,9 @@
 <span id="142">142</span>
 <span id="143">143</span>
 <span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -220,7 +223,10 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">event</span>::{<span class="ident">Event</span>, <span class="ident">NodeElderChange</span>, <span class="ident">SendStream</span>},
     <span class="ident">routing</span>::{<span class="ident">Config</span>, <span class="ident">EventStream</span>, <span class="ident">Routing</span>},
-    <span class="ident">section</span>::{<span class="ident">SectionChain</span>, <span class="ident">SectionChainError</span>, <span class="ident">MIN_AGE</span>},
+    <span class="ident">section</span>::{
+        <span class="ident">SectionChain</span>, <span class="ident">SectionChainError</span>, <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>,
+        <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
+    },
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">qp2p</span>::<span class="ident">Config</span> <span class="kw">as</span> <span class="ident">TransportConfig</span>;
 

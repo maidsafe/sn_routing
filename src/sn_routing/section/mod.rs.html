@@ -370,6 +370,8 @@
 <span id="369">369</span>
 <span id="370">370</span>
 <span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -390,7 +392,9 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="self">self</span>::<span class="ident">section_peers</span>::<span class="ident">SectionPeers</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::{
     <span class="ident">elders_info</span>::<span class="ident">EldersInfo</span>,
-    <span class="ident">member_info</span>::{<span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">MIN_AGE</span>},
+    <span class="ident">member_info</span>::{
+        <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
+    },
     <span class="ident">section_chain</span>::{<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SectionChainError</span>, <span class="ident">SectionChain</span>},
     <span class="ident">section_keys</span>::{<span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>},
 };
