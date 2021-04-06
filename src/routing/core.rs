@@ -1261,28 +1261,31 @@ impl Core {
                 (MIN_ADULT_AGE, None, None)
             };
 
-        // During the first section, node shall use ranged age to avoid too many nodes got
-        // relocated at the same time. After the first section got split, later on nodes shall
-        // only start with age of MIN_ADULT_AGE
-        if self.section.prefix().is_empty() {
-            if peer.age() < FIRST_SECTION_MIN_AGE || peer.age() > FIRST_SECTION_MAX_AGE {
+        // Age differentiate only applies to the new node.
+        if join_request.relocate_payload.is_none() {
+            // During the first section, node shall use ranged age to avoid too many nodes got
+            // relocated at the same time. After the first section got split, later on nodes shall
+            // only start with age of MIN_ADULT_AGE
+            if self.section.prefix().is_empty() {
+                if peer.age() < FIRST_SECTION_MIN_AGE || peer.age() > FIRST_SECTION_MAX_AGE {
+                    debug!(
+                        "Ignoring JoinRequest from {} - first-section node having wrong age {:?}",
+                        peer,
+                        peer.age(),
+                    );
+                    return Ok(vec![]);
+                } else {
+                    age = peer.age();
+                }
+            } else if peer.age() != MIN_ADULT_AGE {
+                // After section split, new node has to join with age of MIN_ADULT_AGE.
                 debug!(
-                    "Ignoring JoinRequest from {} - first-section node having wrong age {:?}",
+                    "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
                     peer,
                     peer.age(),
                 );
                 return Ok(vec![]);
-            } else {
-                age = peer.age();
             }
-        } else if peer.age() != MIN_ADULT_AGE && join_request.relocate_payload.is_none() {
-            // After section split, new node has to join with age of MIN_ADULT_AGE.
-            debug!(
-                "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
-                peer,
-                peer.age(),
-            );
-            return Ok(vec![]);
         }
 
         // Requires the node name matches the age.
