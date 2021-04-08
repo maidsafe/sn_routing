@@ -171,7 +171,14 @@ impl<'a> State<'a> {
                     prefix,
                     pk_set,
                     elders,
+                    joins_allowed,
                 }) => {
+                    if !joins_allowed {
+                        error!(
+                            "Network is set to not taking any new joining node, try join later."
+                        );
+                        return Err(Error::TryJoinLater);
+                    }
                     let key = pk_set.public_key();
                     info!(
                         "Joining a section ({:b}), key: {:?}, elders: {:?} (given by {:?})",
@@ -609,8 +616,8 @@ async fn send_messages(mut rx: mpsc::Receiver<(MessageType, Vec<SocketAddr>)>, c
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::*, routing::tests::SecretKeySet, section::test_utils::*,
-        section::MemberInfo, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
+        agreement::test_utils::*, error::Error as RoutingError, routing::tests::SecretKeySet,
+        section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};
     use assert_matches::assert_matches;
@@ -674,6 +681,7 @@ mod tests {
                     .peers()
                     .map(|peer| (*peer.name(), *peer.addr()))
                     .collect(),
+                joins_allowed: true,
             };
             // Send GetSectionResponse::Success
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
@@ -856,6 +864,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn joins_disallowed_get_section_response_success() -> Result<()> {
+        let (send_tx, mut send_rx) = mpsc::channel(1);
+        let (recv_tx, recv_rx) = mpsc::channel(1);
+        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+
+        let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let bootstrap_node = nodes.remove(0);
+        let bootstrap_addr = bootstrap_node.addr;
+
+        let sk_set = SecretKeySet::random();
+        let pk_set = sk_set.public_keys();
+
+        let node = Node::new(
+            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            gen_addr(),
+        );
+
+        let mut state = State::new(node, send_tx, recv_rx);
+
+        let bootstrap_task = state.bootstrap(vec![bootstrap_addr], None);
+
+        // Send an valid `BootstrapResponse::Join` followed by a valid one. The invalid one is
+        // ignored and the valid one processed normally.
+        let test_task = async {
+            let (message, _) = send_rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
+
+            assert_matches!(
+                message,
+                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+            );
+
+            let infrastructure_info = SectionInfo {
+                prefix: elders_info.prefix,
+                pk_set,
+                elders: elders_info
+                    .peers()
+                    .map(|peer| (*peer.name(), *peer.addr()))
+                    .collect(),
+                joins_allowed: false,
+            };
+            // Send GetSectionResponse::Success with the flag of joins_allowed set to false.
+            let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
+                infrastructure_info,
+            ));
+            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
+
+            Ok(())
+        };
+
+        let (bootstrap_result, test_result) = future::join(bootstrap_task, test_task).await;
+
+        if let Err(RoutingError::TryJoinLater) = bootstrap_result {
+        } else {
+            return Err(anyhow!("Not getting an execpted network rejection."));
+        }
+
+        test_result
+    }
+
+    #[tokio::test]
     async fn invalid_get_section_response_success() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
         let (recv_tx, recv_rx) = mpsc::channel(1);
@@ -904,6 +975,7 @@ mod tests {
                 elders: (0..ELDER_SIZE)
                     .map(|_| (bad_prefix.substituted_in(rand::random()), gen_addr()))
                     .collect(),
+                joins_allowed: true,
             };
 
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
@@ -919,6 +991,7 @@ mod tests {
                 elders: (0..ELDER_SIZE)
                     .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
                     .collect(),
+                joins_allowed: true,
             };
 
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
