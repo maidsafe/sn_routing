@@ -154,29 +154,6 @@ fn get_peer<'a>(name: &XorName, section: &'a Section, network: &'a Network) -> O
         .or_else(|| network.get_elder(name))
 }
 
-// Returns the set of peers that are responsible for collecting signatures to verify a message;
-// this may contain us or only other nodes.
-pub fn signature_targets<I>(dst: &DstLocation, our_elders: I) -> Vec<Peer>
-where
-    I: IntoIterator<Item = Peer>,
-{
-    let dst_name = match dst {
-        DstLocation::Node(name) => *name,
-        DstLocation::Section(name) => *name,
-        DstLocation::EndUser(_) | DstLocation::Direct => {
-            error!("Invalid destination for signature targets: {:?}", dst);
-            return vec![];
-        }
-    };
-
-    let mut list: Vec<_> = our_elders
-        .into_iter()
-        .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
-        .collect();
-    list.truncate(cmp::min(list.len(), ELDER_SIZE));
-    list
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
