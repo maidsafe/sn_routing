@@ -2091,16 +2091,6 @@ impl Core {
                 proof_chain,
                 None,
             )?
-        } else if itinerary.aggregate_at_src() {
-            let proof_chain =
-                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
-            let proposal =
-                self.create_accumulate_at_src_proposal(itinerary.dst, variant, proof_chain);
-            let recipients = delivery_group::signature_targets(
-                &itinerary.dst,
-                self.section.elders_info().peers().copied(),
-            );
-            return self.send_proposal(&recipients, proposal);
         } else {
             Message::single_src(&self.node, itinerary.dst, variant, None, None)?
         };
@@ -2199,38 +2189,6 @@ impl Core {
         }
 
         commands
-    }
-
-    fn create_accumulate_at_src_proposal(
-        &self,
-        dst: DstLocation,
-        variant: Variant,
-        proof_chain: SectionChain,
-    ) -> Proposal {
-        let dst_key = if let Some(name) = dst.name() {
-            *self.section_key_by_name(&name)
-        } else {
-            // NOTE: `dst` is `Direct`. We use this when we want the message to accumulate at the
-            // destination and also be handled only there. We only do this if the recipient is in
-            // our section, so it's OK to use our latest key as the `dst_key`.
-            *self.section.chain().last_key()
-        };
-
-        let message = PlainMessage {
-            src: self.section.prefix().name(),
-            dst,
-            dst_key,
-            variant,
-        };
-
-        let proposal = Proposal::AccumulateAtSrc {
-            message: Box::new(message),
-            proof_chain,
-        };
-
-        trace!("Create {:?}", proposal);
-
-        proposal
     }
 
     fn create_proof_chain(
