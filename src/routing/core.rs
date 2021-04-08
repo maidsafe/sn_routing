@@ -287,6 +287,7 @@ impl Core {
                             .peers()
                             .map(|peer| (*peer.name(), *peer.addr()))
                             .collect(),
+                        joins_allowed: self.joins_allowed,
                     })
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
@@ -2033,6 +2034,7 @@ impl Core {
                         .peers()
                         .map(|peer| (*peer.name(), *peer.addr()))
                         .collect(),
+                    joins_allowed: self.joins_allowed,
                 }));
             } else {
                 return Err(TargetSectionError::DkgInProgress);
