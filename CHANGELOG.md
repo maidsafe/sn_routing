@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.58.0](https://github.com/maidsafe/sn_routing/compare/v0.57.3...v0.58.0) (2021-04-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** new version of sn_messaging
+- Also removes handling of the unused `AtSource` aggregation scheme.
+
+* **deps:** update sn_messaging ([8d61421](https://github.com/maidsafe/sn_routing/commit/8d61421e1d8b92c0d52d2bdb964bee4095b70084))
+
 ### [0.57.3](https://github.com/maidsafe/sn_routing/compare/v0.57.2...v0.57.3) (2021-04-06)
 
 
