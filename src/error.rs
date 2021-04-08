@@ -42,4 +42,6 @@ pub enum Error {
     InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
+    #[error("Routing is set to not allow taking any new node")]
+    TryJoinLater,
 }
