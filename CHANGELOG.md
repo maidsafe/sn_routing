@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.58.1](https://github.com/maidsafe/sn_routing/compare/v0.58.0...v0.58.1) (2021-04-08)
+
+
+### Features
+
+* return TryJoinLater error when network disallow join ([a5e4d4b](https://github.com/maidsafe/sn_routing/commit/a5e4d4bc0a086a9165545c40c9ba7e1471b043ff))
+
 ## [0.58.0](https://github.com/maidsafe/sn_routing/compare/v0.57.3...v0.58.0) (2021-04-08)
 
 
