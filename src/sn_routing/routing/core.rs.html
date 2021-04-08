@@ -2290,6 +2290,8 @@
 <span id="2289">2289</span>
 <span id="2290">2290</span>
 <span id="2291">2291</span>
+<span id="2292">2292</span>
+<span id="2293">2293</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2580,6 +2582,7 @@
                             .<span class="ident">peers</span>()
                             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                             .<span class="ident">collect</span>(),
+                        <span class="ident">joins_allowed</span>: <span class="self">self</span>.<span class="ident">joins_allowed</span>,
                     })
                 } <span class="kw">else</span> {
                     <span class="comment">// If we are elder, we should know a section that is closer to `name` that us.</span>
@@ -4326,6 +4329,7 @@
                         .<span class="ident">peers</span>()
                         .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                         .<span class="ident">collect</span>(),
+                    <span class="ident">joins_allowed</span>: <span class="self">self</span>.<span class="ident">joins_allowed</span>,
                 }));
             } <span class="kw">else</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">TargetSectionError</span>::<span class="ident">DkgInProgress</span>);

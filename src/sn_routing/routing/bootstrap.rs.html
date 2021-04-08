@@ -1034,6 +1034,79 @@
 <span id="1033">1033</span>
 <span id="1034">1034</span>
 <span id="1035">1035</span>
+<span id="1036">1036</span>
+<span id="1037">1037</span>
+<span id="1038">1038</span>
+<span id="1039">1039</span>
+<span id="1040">1040</span>
+<span id="1041">1041</span>
+<span id="1042">1042</span>
+<span id="1043">1043</span>
+<span id="1044">1044</span>
+<span id="1045">1045</span>
+<span id="1046">1046</span>
+<span id="1047">1047</span>
+<span id="1048">1048</span>
+<span id="1049">1049</span>
+<span id="1050">1050</span>
+<span id="1051">1051</span>
+<span id="1052">1052</span>
+<span id="1053">1053</span>
+<span id="1054">1054</span>
+<span id="1055">1055</span>
+<span id="1056">1056</span>
+<span id="1057">1057</span>
+<span id="1058">1058</span>
+<span id="1059">1059</span>
+<span id="1060">1060</span>
+<span id="1061">1061</span>
+<span id="1062">1062</span>
+<span id="1063">1063</span>
+<span id="1064">1064</span>
+<span id="1065">1065</span>
+<span id="1066">1066</span>
+<span id="1067">1067</span>
+<span id="1068">1068</span>
+<span id="1069">1069</span>
+<span id="1070">1070</span>
+<span id="1071">1071</span>
+<span id="1072">1072</span>
+<span id="1073">1073</span>
+<span id="1074">1074</span>
+<span id="1075">1075</span>
+<span id="1076">1076</span>
+<span id="1077">1077</span>
+<span id="1078">1078</span>
+<span id="1079">1079</span>
+<span id="1080">1080</span>
+<span id="1081">1081</span>
+<span id="1082">1082</span>
+<span id="1083">1083</span>
+<span id="1084">1084</span>
+<span id="1085">1085</span>
+<span id="1086">1086</span>
+<span id="1087">1087</span>
+<span id="1088">1088</span>
+<span id="1089">1089</span>
+<span id="1090">1090</span>
+<span id="1091">1091</span>
+<span id="1092">1092</span>
+<span id="1093">1093</span>
+<span id="1094">1094</span>
+<span id="1095">1095</span>
+<span id="1096">1096</span>
+<span id="1097">1097</span>
+<span id="1098">1098</span>
+<span id="1099">1099</span>
+<span id="1100">1100</span>
+<span id="1101">1101</span>
+<span id="1102">1102</span>
+<span id="1103">1103</span>
+<span id="1104">1104</span>
+<span id="1105">1105</span>
+<span id="1106">1106</span>
+<span id="1107">1107</span>
+<span id="1108">1108</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1208,7 +1281,14 @@
                     <span class="ident">prefix</span>,
                     <span class="ident">pk_set</span>,
                     <span class="ident">elders</span>,
+                    <span class="ident">joins_allowed</span>,
                 }) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="kw">if</span> <span class="op">!</span><span class="ident">joins_allowed</span> {
+                        <span class="macro">error</span><span class="macro">!</span>(
+                            <span class="string">&quot;Network is set to not taking any new joining node, try join later.&quot;</span>
+                        );
+                        <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">TryJoinLater</span>);
+                    }
                     <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">pk_set</span>.<span class="ident">public_key</span>();
                     <span class="macro">info</span><span class="macro">!</span>(
                         <span class="string">&quot;Joining a section ({:b}), key: {:?}, elders: {:?} (given by {:?})&quot;</span>,
@@ -1646,8 +1726,8 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>,
-        <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">RoutingError</span>, <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>,
+        <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
     };
     <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">anyhow</span>, <span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
@@ -1711,6 +1791,7 @@
                     .<span class="ident">peers</span>()
                     .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                     .<span class="ident">collect</span>(),
+                <span class="ident">joins_allowed</span>: <span class="bool-val">true</span>,
             };
             <span class="comment">// Send GetSectionResponse::Success</span>
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
@@ -1893,6 +1974,69 @@
     }
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">joins_disallowed_get_section_response_success</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
+        <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
+
+        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>;
+
+        <span class="kw">let</span> <span class="ident">sk_set</span> <span class="op">=</span> <span class="ident">SecretKeySet</span>::<span class="ident">random</span>();
+        <span class="kw">let</span> <span class="ident">pk_set</span> <span class="op">=</span> <span class="ident">sk_set</span>.<span class="ident">public_keys</span>();
+
+        <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
+            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">gen_addr</span>(),
+        );
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">State</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">send_tx</span>, <span class="ident">recv_rx</span>);
+
+        <span class="kw">let</span> <span class="ident">bootstrap_task</span> <span class="op">=</span> <span class="ident">state</span>.<span class="ident">bootstrap</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">bootstrap_addr</span>], <span class="prelude-val">None</span>);
+
+        <span class="comment">// Send an valid `BootstrapResponse::Join` followed by a valid one. The invalid one is</span>
+        <span class="comment">// ignored and the valid one processed normally.</span>
+        <span class="kw">let</span> <span class="ident">test_task</span> <span class="op">=</span> <span class="kw">async</span> {
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">send_rx</span>
+                .<span class="ident">recv</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;GetSectionQuery was not received&quot;</span>))<span class="question-mark">?</span>;
+
+            <span class="macro">assert_matches</span><span class="macro">!</span>(
+                <span class="ident">message</span>,
+                <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>))
+            );
+
+            <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">SectionInfo</span> {
+                <span class="ident">prefix</span>: <span class="ident">elders_info</span>.<span class="ident">prefix</span>,
+                <span class="ident">pk_set</span>,
+                <span class="ident">elders</span>: <span class="ident">elders_info</span>
+                    .<span class="ident">peers</span>()
+                    .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
+                    .<span class="ident">collect</span>(),
+                <span class="ident">joins_allowed</span>: <span class="bool-val">false</span>,
+            };
+            <span class="comment">// Send GetSectionResponse::Success with the flag of joins_allowed set to false.</span>
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
+                <span class="ident">infrastructure_info</span>,
+            ));
+            <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((<span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">message</span>), <span class="ident">bootstrap_addr</span>))<span class="question-mark">?</span>;
+
+            <span class="prelude-val">Ok</span>(())
+        };
+
+        <span class="kw">let</span> (<span class="ident">bootstrap_result</span>, <span class="ident">test_result</span>) <span class="op">=</span> <span class="ident">future</span>::<span class="ident">join</span>(<span class="ident">bootstrap_task</span>, <span class="ident">test_task</span>).<span class="kw">await</span>;
+
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">RoutingError</span>::<span class="ident">TryJoinLater</span>) <span class="op">=</span> <span class="ident">bootstrap_result</span> {
+        } <span class="kw">else</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;Not getting an execpted network rejection.&quot;</span>));
+        }
+
+        <span class="ident">test_result</span>
+    }
+
+    <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">invalid_get_section_response_success</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="kw-2">mut</span> <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
@@ -1941,6 +2085,7 @@
                 <span class="ident">elders</span>: (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>)
                     .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> (<span class="ident">bad_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>()), <span class="ident">gen_addr</span>()))
                     .<span class="ident">collect</span>(),
+                <span class="ident">joins_allowed</span>: <span class="bool-val">true</span>,
             };
 
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
@@ -1956,6 +2101,7 @@
                 <span class="ident">elders</span>: (<span class="number">0</span>..<span class="ident">ELDER_SIZE</span>)
                     .<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> (<span class="ident">good_prefix</span>.<span class="ident">substituted_in</span>(<span class="ident">rand</span>::<span class="ident">random</span>()), <span class="ident">gen_addr</span>()))
                     .<span class="ident">collect</span>(),
+                <span class="ident">joins_allowed</span>: <span class="bool-val">true</span>,
             };
 
             <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(
