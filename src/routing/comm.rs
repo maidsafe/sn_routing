@@ -121,6 +121,14 @@ impl Comm {
             })
     }
 
+    /// Tests whether the peer is reachable.
+    pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), SendError> {
+        self.endpoint.is_reachable(peer).await.map_err(|err| {
+            error!("{}", err);
+            SendError
+        })
+    }
+
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
     /// recipients out of the `recipients` list. If a send fails, attempts to send to the next peer
     /// until `delivery_goup_size` successful sends complete or there are no more recipients to

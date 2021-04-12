@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::routing::Peer;
 use crate::{
     agreement::{DkgFailureProofSet, Proposal},
     messages::Message,
@@ -26,6 +27,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
+use xor_name::XorName;
 
 /// Command for node.
 #[allow(clippy::large_enum_variant)]
@@ -84,6 +86,14 @@ pub(crate) enum Command {
     },
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),
+    /// Test peer's connectivity
+    TestConnectivity {
+        peer: Peer,
+        // Previous name if relocated.
+        previous_name: Option<XorName>,
+        // The key of the destination section that the joining node knows, if any.
+        their_knowledge: Option<bls::PublicKey>,
+    },
 }
 
 impl Command {
@@ -178,6 +188,15 @@ impl Debug for Command {
             Self::SetJoinsAllowed(joins_allowed) => f
                 .debug_tuple("SetJoinsAllowed")
                 .field(joins_allowed)
+                .finish(),
+            Self::TestConnectivity {
+                peer,
+                previous_name,
+                ..
+            } => f
+                .debug_struct("TestConnectivity")
+                .field("peer", peer)
+                .field("previous_name", previous_name)
                 .finish(),
         }
     }

@@ -160,6 +160,18 @@ impl Dispatcher {
             Command::SetJoinsAllowed(joins_allowed) => {
                 self.core.lock().await.set_joins_allowed(joins_allowed)
             }
+            Command::TestConnectivity {
+                mut peer,
+                previous_name,
+                their_knowledge,
+            } => {
+                peer.set_reachable(self.comm.is_reachable(peer.addr()).await.is_ok());
+                self.core
+                    .lock()
+                    .await
+                    .make_online_proposal(peer, previous_name, their_knowledge)
+                    .await
+            }
         }
     }
 
