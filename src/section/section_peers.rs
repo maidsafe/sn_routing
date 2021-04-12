@@ -69,7 +69,8 @@ impl SectionPeers {
             current_elders,
             self.members
                 .values()
-                .filter(|info| is_active(&info.value, current_elders)),
+                .filter(|info| is_active(&info.value, current_elders))
+                .filter(|info| info.value.peer.is_reachable()),
         )
     }
 
@@ -84,7 +85,9 @@ impl SectionPeers {
             elder_size,
             current_elders,
             self.members.values().filter(|info| {
-                info.value.state == PeerState::Joined && prefix.matches(info.value.peer.name())
+                info.value.state == PeerState::Joined
+                    && prefix.matches(info.value.peer.name())
+                    && info.value.peer.is_reachable()
             }),
         )
     }

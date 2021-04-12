@@ -21,12 +21,25 @@ use xor_name::{XorName, XOR_NAME_LEN};
 pub struct Peer {
     name: XorName,
     addr: SocketAddr,
+    // A node's connectivity will be checked when first time join the network or got relocated.
+    // An adult can only got promoted to elder when this flag is set to true.
+    reachable: bool,
 }
 
 impl Peer {
     /// Creates a new `Peer` given `Name`, `SocketAddr`.
     pub fn new(name: XorName, addr: SocketAddr) -> Self {
-        Self { name, addr }
+        // Default to false enforce the connectivity check.
+        Self {
+            name,
+            addr,
+            reachable: false,
+        }
+    }
+
+    /// Set the reachable flag.
+    pub fn set_reachable(&mut self, reachable: bool) {
+        self.reachable = reachable;
     }
 
     /// Returns the `XorName` of the peer.
@@ -42,6 +55,11 @@ impl Peer {
     /// Returns the age.
     pub fn age(&self) -> u8 {
         self.name[XOR_NAME_LEN - 1]
+    }
+
+    /// Returns the reachable flag.
+    pub fn is_reachable(&self) -> bool {
+        self.reachable
     }
 }
 

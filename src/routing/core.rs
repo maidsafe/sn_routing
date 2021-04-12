@@ -219,6 +219,19 @@ impl Core {
         }
     }
 
+    pub async fn make_online_proposal(
+        &mut self,
+        peer: Peer,
+        previous_name: Option<XorName>,
+        their_knowledge: Option<bls::PublicKey>,
+    ) -> Result<Vec<Command>> {
+        self.propose(Proposal::Online {
+            member_info: MemberInfo::joined(peer),
+            previous_name,
+            their_knowledge,
+        })
+    }
+
     pub async fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
@@ -1312,11 +1325,11 @@ impl Core {
             }
         }
 
-        self.propose(Proposal::Online {
-            member_info: MemberInfo::joined(peer),
+        Ok(vec![Command::TestConnectivity {
+            peer,
             previous_name,
             their_knowledge,
-        })
+        }])
     }
 
     fn validate_resource_proof_response(

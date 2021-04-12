@@ -129,7 +129,10 @@ pub(crate) mod test_utils {
         let elders = nodes
             .iter()
             .map(Node::peer)
-            .map(|peer| (*peer.name(), peer))
+            .map(|mut peer| {
+                peer.set_reachable(true);
+                (*peer.name(), peer)
+            })
             .collect();
         let elders_info = EldersInfo { elders, prefix };
 
