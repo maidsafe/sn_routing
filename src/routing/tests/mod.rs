@@ -218,7 +218,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         None,
     )?;
 
-    let mut commands = dispatcher
+    let commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
@@ -226,26 +226,25 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         .await?
         .into_iter();
 
-    let message = assert_matches!(
-        commands.next(),
-        Some(Command::HandleMessage { message, .. }) => message
-    );
-    let proposal = assert_matches!(
-        message.variant(),
-        Variant::Propose { content, .. } => content
-    );
+    let mut test_connectivity = false;
+    for command in commands {
+        if let Command::TestConnectivity {
+            peer,
+            previous_name,
+            their_knowledge,
+        } = command
+        {
+            assert_eq!(*peer.name(), new_node.name());
+            assert_eq!(*peer.addr(), new_node.addr);
+            assert_eq!(peer.age(), FIRST_SECTION_MIN_AGE);
+            assert_eq!(previous_name, None);
+            assert_eq!(their_knowledge, None);
 
-    assert_matches!(
-        proposal,
-        Proposal::Online { member_info, previous_name, their_knowledge } => {
-            assert_eq!(*member_info.peer.name(), new_node.name());
-            assert_eq!(*member_info.peer.addr(), new_node.addr);
-            assert_eq!(member_info.peer.age(), FIRST_SECTION_MIN_AGE);
-            assert_eq!(member_info.state, PeerState::Joined);
-            assert_eq!(*previous_name, None);
-            assert_eq!(*their_knowledge, None);
+            test_connectivity = true;
         }
-    );
+    }
+
+    assert!(test_connectivity);
 
     Ok(())
 }
@@ -320,34 +319,24 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         })
         .await?;
 
-    let mut online_proposed = false;
+    let mut test_connectivity = false;
 
     for command in commands {
-        let message = match command {
-            Command::HandleMessage { message, .. } => message,
-            _ => continue,
-        };
-        let proposal = match message.variant() {
-            Variant::Propose { content, .. } => content,
-            _ => continue,
-        };
-
-        if let Proposal::Online {
-            member_info,
+        if let Command::TestConnectivity {
+            peer,
             previous_name,
             their_knowledge,
-        } = proposal
+        } = command
         {
-            assert_eq!(member_info.peer, relocated_node.peer());
-            assert_eq!(member_info.state, PeerState::Joined);
-            assert_eq!(*previous_name, Some(relocated_node_old_name));
-            assert_eq!(*their_knowledge, Some(section_key));
+            assert_eq!(peer, relocated_node.peer());
+            assert_eq!(previous_name, Some(relocated_node_old_name));
+            assert_eq!(their_knowledge, Some(section_key));
 
-            online_proposed = true;
+            test_connectivity = true;
         }
     }
 
-    assert!(online_proposed);
+    assert!(test_connectivity);
 
     Ok(())
 }
@@ -470,14 +459,16 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     let mut expected_new_elders = BTreeSet::new();
 
     for peer in elders_info.elders.values() {
-        let member_info = MemberInfo::joined(*peer);
+        let mut peer = *peer;
+        peer.set_reachable(true);
+        let member_info = MemberInfo::joined(peer);
         let proof = prove(sk_set.secret_key(), &member_info)?;
         let _ = section.update_member(Proven {
             value: member_info,
             proof,
         });
         if peer.age() == MIN_AGE + 2 {
-            let _ = expected_new_elders.insert(*peer);
+            let _ = expected_new_elders.insert(peer);
         }
     }
 
@@ -1823,12 +1814,16 @@ fn init_log() {
 
 fn create_peer(age: u8) -> Peer {
     let name = crypto::gen_name_with_age(age);
-    Peer::new(name, gen_addr())
+    let mut peer = Peer::new(name, gen_addr());
+    peer.set_reachable(true);
+    peer
 }
 
 fn create_peer_in_prefix(prefix: &Prefix, age: u8) -> Peer {
     let name = crypto::gen_name_with_age(age);
-    Peer::new(prefix.substituted_in(name), gen_addr())
+    let mut peer = Peer::new(prefix.substituted_in(name), gen_addr());
+    peer.set_reachable(true);
+    peer
 }
 
 fn create_node(age: u8) -> Node {
@@ -1872,7 +1867,8 @@ fn create_section(
 
     let mut section = Section::new(*section_chain.root_key(), section_chain, proven_elders_info)?;
 
-    for peer in elders_info.elders.values().copied() {
+    for mut peer in elders_info.elders.values().copied() {
+        peer.set_reachable(true);
         let member_info = MemberInfo::joined(peer);
         let member_info = proven(sk_set.secret_key(), member_info)?;
         let _ = section.update_member(member_info);

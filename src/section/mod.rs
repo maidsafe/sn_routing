@@ -348,8 +348,9 @@ impl Section {
 fn create_first_elders_info(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
-    peer: Peer,
+    mut peer: Peer,
 ) -> Result<Proven<EldersInfo>> {
+    peer.set_reachable(true);
     let elders_info = EldersInfo::new(iter::once(peer), Prefix::default());
     let proof = create_first_proof(pk_set, sk_share, &elders_info)?;
     Ok(Proven::new(elders_info, proof))
