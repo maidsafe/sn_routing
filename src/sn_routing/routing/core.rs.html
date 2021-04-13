@@ -2292,6 +2292,19 @@
 <span id="2291">2291</span>
 <span id="2292">2292</span>
 <span id="2293">2293</span>
+<span id="2294">2294</span>
+<span id="2295">2295</span>
+<span id="2296">2296</span>
+<span id="2297">2297</span>
+<span id="2298">2298</span>
+<span id="2299">2299</span>
+<span id="2300">2300</span>
+<span id="2301">2301</span>
+<span id="2302">2302</span>
+<span id="2303">2303</span>
+<span id="2304">2304</span>
+<span id="2305">2305</span>
+<span id="2306">2306</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2512,6 +2525,19 @@
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">event_tx</span>.<span class="ident">clone</span>().<span class="ident">send</span>(<span class="ident">event</span>).<span class="ident">is_err</span>() {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Event receiver has been closed&quot;</span>);
         }
+    }
+
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">make_online_proposal</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">peer</span>: <span class="ident">Peer</span>,
+        <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
+        <span class="ident">their_knowledge</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">Online</span> {
+            <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>),
+            <span class="ident">previous_name</span>,
+            <span class="ident">their_knowledge</span>,
+        })
     }
 
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_message</span>(
@@ -3607,11 +3633,11 @@
             }
         }
 
-        <span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">Online</span> {
-            <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>),
+        <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">TestConnectivity</span> {
+            <span class="ident">peer</span>,
             <span class="ident">previous_name</span>,
             <span class="ident">their_knowledge</span>,
-        })
+        }])
     }
 
     <span class="kw">fn</span> <span class="ident">validate_resource_proof_response</span>(

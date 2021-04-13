@@ -189,6 +189,25 @@
 <span id="188">188</span>
 <span id="189">189</span>
 <span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -198,6 +217,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">routing</span>::<span class="ident">Peer</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::{<span class="ident">DkgFailureProofSet</span>, <span class="ident">Proposal</span>},
     <span class="ident">messages</span>::<span class="ident">Message</span>,
@@ -218,6 +238,7 @@
     <span class="ident">time</span>::<span class="ident">Duration</span>,
 };
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// Command for node.</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
@@ -276,6 +297,14 @@
     },
     <span class="doccomment">/// Attempt to set JoinsAllowed flag.</span>
     <span class="ident">SetJoinsAllowed</span>(<span class="ident">bool</span>),
+    <span class="doccomment">/// Test peer&#39;s connectivity</span>
+    <span class="ident">TestConnectivity</span> {
+        <span class="ident">peer</span>: <span class="ident">Peer</span>,
+        <span class="comment">// Previous name if relocated.</span>
+        <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
+        <span class="comment">// The key of the destination section that the joining node knows, if any.</span>
+        <span class="ident">their_knowledge</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+    },
 }
 
 <span class="kw">impl</span> <span class="ident">Command</span> {
@@ -370,6 +399,15 @@
             <span class="self">Self</span>::<span class="ident">SetJoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_tuple</span>(<span class="string">&quot;SetJoinsAllowed&quot;</span>)
                 .<span class="ident">field</span>(<span class="ident">joins_allowed</span>)
+                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">TestConnectivity</span> {
+                <span class="ident">peer</span>,
+                <span class="ident">previous_name</span>,
+                ..
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;TestConnectivity&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;peer&quot;</span>, <span class="ident">peer</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
         }
     }
