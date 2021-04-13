@@ -27,7 +27,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use xor_name::XorName;
 
 /// Command for node.
 #[allow(clippy::large_enum_variant)]

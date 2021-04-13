@@ -143,11 +143,13 @@ impl Dispatcher {
                 itinerary,
                 content,
                 additional_proof_chain_key,
-            } => self.core.lock().await.send_user_message(
-                itinerary,
-                content,
-                additional_proof_chain_key.as_ref(),
-            ),
+            } => {
+                self.core
+                    .lock()
+                    .await
+                    .send_user_message(itinerary, content, additional_proof_chain_key.as_ref())
+                    .await
+            }
             Command::ScheduleTimeout { duration, token } => Ok(self
                 .handle_schedule_timeout(duration, token)
                 .await

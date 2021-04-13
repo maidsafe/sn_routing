@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    approved::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
-    Approved, Comm, Command, Stage,
-};
+use super::{Comm, Command, Core, Dispatcher};
+use crate::agreement::test_utils::{prove, proven};
+use crate::agreement::{Proposal, Proven};
+use crate::routing::core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY};
 use crate::{
-    consensus::{test_utils::*, Proven, Vote},
     crypto,
     event::Event,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
@@ -23,7 +22,7 @@ use crate::{
         test_utils::*, EldersInfo, MemberInfo, PeerState, Section, SectionChain, SectionKeyShare,
         MIN_AGE,
     },
-    supermajority, ELDER_SIZE,
+    supermajority, ELDER_SIZE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
 };
 use anyhow::Result;
 use assert_matches::assert_matches;
@@ -291,7 +290,9 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let relocated_node_old_keypair =
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
-    let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
+    let relocated_node_old_name = crypto::name(&sn_data_types::PublicKey::from(
+        relocated_node_old_keypair.public,
+    ));
     let relocated_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
         gen_addr(),

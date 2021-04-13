@@ -51,8 +51,9 @@ use sn_messaging::{
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
-    Aggregation, DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation,
+    DstLocation, EndUser, HeaderInfo, Itinerary, MessageType, SrcLocation,
 };
+use std::cmp::Ordering;
 use std::{cmp, iter, net::SocketAddr, slice};
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
@@ -1710,7 +1711,7 @@ impl Core {
 
         let equal_or_extension = elders_info.prefix == *self.section.prefix()
             || elders_info.prefix.is_extension_of(self.section.prefix());
-        let elders_info = Proven::new(elders_info, proof);
+        let elders_info = Proven::new(elders_info, proof.clone());
 
         if equal_or_extension {
             // Our section of sub-section
@@ -1727,8 +1728,7 @@ impl Core {
                 .iter()
                 .flat_map(|info| info.peers())
                 .filter(|peer| !self.section.is_elder(peer.name()))
-                .map(Peer::addr)
-                .copied()
+                .map(|peer| (*peer.addr(), *peer.name()))
                 .collect();
             if !sync_recipients.is_empty() {
                 let sync_message = Message::single_src(
@@ -1741,10 +1741,15 @@ impl Core {
                     None,
                     None,
                 )?;
+                let len = sync_recipients.len();
                 commands.push(Command::send_message_to_nodes(
-                    &sync_recipients,
-                    sync_recipients.len(),
+                    sync_recipients,
+                    len,
                     sync_message.to_bytes(),
+                    HeaderInfo {
+                        dest: XorName::random(),
+                        dest_section_pk: proof.public_key.clone(),
+                    },
                 ));
             }
 

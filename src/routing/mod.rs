@@ -103,7 +103,7 @@ impl Routing {
         let (state, comm, backlog) = if config.first {
             // Genesis node having a fix age of 255.
             let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
-            let node_name = crypto::name(&keypair.public);
+            let node_name = crypto::name(&sn_data_types::PublicKey::from(keypair.public));
 
             info!("{} Starting a new network as the genesis node.", node_name);
 
@@ -378,8 +378,8 @@ impl Routing {
         message: ClientMessage,
     ) -> Result<()> {
         let end_user = self
-            .stage
-            .state
+            .dispatcher
+            .core
             .lock()
             .await
             .get_enduser_by_addr(&recipient)
@@ -543,7 +543,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
 
             let dest = hdr_info.dest;
             let client_pk = hdr_info.dest_section_pk;
-            if let Err(error) = stage.check_key_status(&client_pk).await {
+            if let Err(error) = dispatcher.clone().check_key_status(&client_pk).await {
                 let correlation_id = msg.id();
                 let command = Command::SendMessage {
                     recipients: vec![(sender, dest)],
@@ -559,7 +559,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                         },
                     },
                 };
-                let _ = task::spawn(stage.handle_commands(command));
+                let _ = task::spawn(dispatcher.handle_commands(command));
                 return;
             }
 
