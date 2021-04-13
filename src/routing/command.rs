@@ -18,7 +18,8 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, HeaderInfo, Itinerary, MessageType,
+    node::NodeMessage, section_info::Message as SectionInfoMsg, DestInfo, HeaderInfo, Itinerary,
+    MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -27,7 +28,6 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use xor_name::XorName;
 
 /// Command for node.
 #[allow(clippy::large_enum_variant)]
@@ -43,7 +43,7 @@ pub(crate) enum Command {
     HandleSectionInfoMsg {
         sender: SocketAddr,
         message: SectionInfoMsg,
-        hdr_info: HeaderInfo,
+        dest_info: DestInfo,
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),

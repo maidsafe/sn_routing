@@ -134,7 +134,7 @@ impl<'a> State<'a> {
                 .unwrap_or(FIRST_SECTION_MAX_AGE);
 
             let new_keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
-            let new_name = crypto::name(&new_keypair.public);
+            let new_name = crypto::name(&sn_data_types::PublicKey::from(new_keypair.public));
 
             info!("Setting name to {}", new_name);
             self.node = Node::new(new_keypair, self.node.addr);
@@ -224,14 +224,13 @@ impl<'a> State<'a> {
 
         debug!("Sending GetSectionQuery to {:?}", recipients);
 
-        let (dest_pk, dest_xorname): (PublicKey, XorName) = relocate_details
-            .map(|details| {
-                (
-                    PublicKey::from(details.relocate_details().destination_key),
-                    *details.destination(),
-                )
-            })
-            .unwrap_or_else(|| (PublicKey::from(self.node.keypair.public), self.node.name()));
+        let (dest_pk, dest_xorname): (PublicKey, XorName) = match relocate_details {
+            Some(details) => (
+                PublicKey::from(details.relocate_details()?.destination_key),
+                *details.destination()?,
+            ),
+            None => (PublicKey::from(self.node.keypair.public), self.node.name()),
+        };
 
         let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(self.node.keypair.public));
 
@@ -266,9 +265,10 @@ impl<'a> State<'a> {
         &mut self,
         relocate_details: Option<&SignedRelocateDetails>,
     ) -> Result<(GetSectionResponse, SocketAddr, HeaderInfo)> {
-        let destination = relocate_details
-            .map(|details| *details.destination())
-            .unwrap_or_else(|| self.node.name());
+        let destination = match relocate_details {
+            Some(details) => *details.destination()?,
+            None => self.node.name(),
+        };
 
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
@@ -1019,11 +1019,14 @@ mod tests {
 
         let sk_set = SecretKeySet::random();
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let node = Node::new(
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+
+        let node_name = node.name();
 
         let mut state = State::new(node, send_tx, recv_rx);
 
@@ -1039,7 +1042,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let infrastructure_info = SectionInfo {
@@ -1055,7 +1061,16 @@ mod tests {
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    hdr_info: HeaderInfo {
+                        dest: node_name,
+                        dest_section_pk: pk,
+                    },
+                },
+                bootstrap_addr,
+            ))?;
 
             Ok(())
         };

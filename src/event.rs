@@ -55,8 +55,6 @@ pub enum Event {
         /// The proof chain for the message, if any.
         proof_chain: Option<SectionChain>,
     },
-    /// The node has been promoted to adult
-    PromotedToAdult,
     /// A new peer joined our section.
     MemberJoined {
         /// Name of the node
@@ -128,7 +126,6 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::PromotedToAdult => write!(formatter, "PromotedToAdult"),
             Self::MemberJoined {
                 name,
                 previous_name,

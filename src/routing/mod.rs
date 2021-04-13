@@ -104,7 +104,7 @@ impl Routing {
         let (state, comm, backlog) = if config.first {
             // Genesis node having a fix age of 255.
             let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
-            let node_name = crypto::name(&keypair.public);
+            let node_name = crypto::name(&sn_data_types::PublicKey::from(keypair.public));
 
             info!("{} Starting a new network as the genesis node.", node_name);
 
@@ -403,8 +403,8 @@ impl Routing {
         message: ClientMessage,
     ) -> Result<()> {
         let end_user = self
-            .stage
-            .state
+            .dispatcher
+            .core
             .lock()
             .await
             .get_enduser_by_addr(&recipient)
@@ -508,15 +508,15 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
         MessageType::Ping(_) => {
             // Pings are not handled
         }
-        MessageType::SectionInfo { msg, hdr_info } => {
+        MessageType::SectionInfo { msg, dest_info } => {
             let command = Command::HandleSectionInfoMsg {
                 sender,
                 message: msg,
-                hdr_info,
+                dest_info,
             };
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
-        MessageType::NodeMessage {
+        MessageType::Node {
             msg: NodeMessage(msg_bytes),
             ..
         } => match Message::from_bytes(Bytes::from(msg_bytes)) {
@@ -531,7 +531,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 error!("Failed to deserialize node message: {}", error);
             }
         },
-        MessageType::ClientMessage { msg, dest_info } => {
+        MessageType::Client { msg, dest_info } => {
             let end_user = dispatcher
                 .core
                 .lock()
