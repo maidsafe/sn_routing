@@ -35,7 +35,7 @@ impl Comm {
         transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<Self> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
 
         // Don't bootstrap, just create an endpoint to listen to
         // the incoming messages from other nodes.
@@ -65,7 +65,7 @@ impl Comm {
         transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<(Self, SocketAddr)> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config), Default::default(), true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
 
         // Bootstrap to the network returning the connection to a node.
         // We can use the returned channels to listen for incoming messages and disconnection events

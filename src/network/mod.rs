@@ -34,9 +34,9 @@ pub struct Network {
 impl Network {
     pub fn new() -> Self {
         Self {
-            sections: Default::default(),
-            keys: Default::default(),
-            knowledge: Default::default(),
+            sections: PrefixMap::new(),
+            keys: PrefixMap::new(),
+            knowledge: PrefixMap::new(),
         }
     }
 

@@ -634,7 +634,7 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let (elders_info, mut nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
@@ -869,7 +869,7 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (elders_info, mut nodes) = gen_elders_info(Default::default(), ELDER_SIZE);
+        let (elders_info, mut nodes) = gen_elders_info(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
 
