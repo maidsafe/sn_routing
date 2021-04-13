@@ -511,7 +511,7 @@ mod tests {
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
         let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 
-        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 3);
+        let (elders_info, _) = section::test_utils::gen_elders_info(Prefix::default(), 3);
         let elders_info = agreement::test_utils::proven(&sk1, elders_info)?;
 
         let peer = Peer::new(rand::random(), gen_addr());

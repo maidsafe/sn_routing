@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn serialize_for_signing() -> Result<()> {
         // Proposal::SectionInfo
-        let (elders_info, _) = section::test_utils::gen_elders_info(Default::default(), 4);
+        let (elders_info, _) = section::test_utils::gen_elders_info(Prefix::default(), 4);
         let proposal = Proposal::SectionInfo(elders_info.clone());
         verify_serialize_for_signing(&proposal, &elders_info)?;
 

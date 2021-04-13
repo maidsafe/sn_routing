@@ -156,7 +156,7 @@ impl DkgVoter {
                     elders_info,
                     participant_index,
                     timer_token: 0,
-                    failures: Default::default(),
+                    failures: DkgFailureProofSet::default(),
                     complete: false,
                 };
 

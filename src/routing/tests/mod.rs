@@ -1847,7 +1847,7 @@ async fn create_comm() -> Result<Comm> {
 
 // Generate random EldersInfo and the corresponding Nodes.
 fn create_elders_info() -> (EldersInfo, Vec<Node>) {
-    gen_elders_info(Default::default(), ELDER_SIZE)
+    gen_elders_info(Prefix::default(), ELDER_SIZE)
 }
 
 fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> SectionKeyShare {
