@@ -522,9 +522,9 @@
 <span class="kw">impl</span> <span class="ident">Network</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">sections</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
-            <span class="ident">keys</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
-            <span class="ident">knowledge</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
+            <span class="ident">sections</span>: <span class="ident">PrefixMap</span>::<span class="ident">new</span>(),
+            <span class="ident">keys</span>: <span class="ident">PrefixMap</span>::<span class="ident">new</span>(),
+            <span class="ident">knowledge</span>: <span class="ident">PrefixMap</span>::<span class="ident">new</span>(),
         }
     }
 

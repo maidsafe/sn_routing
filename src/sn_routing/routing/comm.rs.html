@@ -571,7 +571,7 @@
         <span class="ident">transport_config</span>: <span class="ident">qp2p</span>::<span class="ident">Config</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="ident">Default</span>::<span class="ident">default</span>(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">true</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Don&#39;t bootstrap, just create an endpoint to listen to</span>
         <span class="comment">// the incoming messages from other nodes.</span>
@@ -601,7 +601,7 @@
         <span class="ident">transport_config</span>: <span class="ident">qp2p</span>::<span class="ident">Config</span>,
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="ident">Default</span>::<span class="ident">default</span>(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">true</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Bootstrap to the network returning the connection to a node.</span>
         <span class="comment">// We can use the returned channels to listen for incoming messages and disconnection events</span>

@@ -1744,7 +1744,7 @@
         <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
-        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Prefix</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
         <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>;
 
@@ -1979,7 +1979,7 @@
         <span class="kw">let</span> (<span class="ident">recv_tx</span>, <span class="ident">recv_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
-        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw-2">mut</span> <span class="ident">nodes</span>) <span class="op">=</span> <span class="ident">gen_elders_info</span>(<span class="ident">Prefix</span>::<span class="ident">default</span>(), <span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
         <span class="kw">let</span> <span class="ident">bootstrap_addr</span> <span class="op">=</span> <span class="ident">bootstrap_node</span>.<span class="ident">addr</span>;
 
