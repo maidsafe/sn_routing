@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.59.0](https://github.com/maidsafe/sn_routing/compare/v0.58.2...v0.59.0) (2021-04-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* new version of routing
+- This commit is mainly to cover the change of Peer. Which used by
+a public struct but won't trigger the version update automatically.
+
+* breaking version change ([0fb090c](https://github.com/maidsafe/sn_routing/commit/0fb090cd0136661adad0b6e7f37bba5ae4858a87))
+
 ### [0.58.2](https://github.com/maidsafe/sn_routing/compare/v0.58.1...v0.58.2) (2021-04-13)
 
 ### [0.58.1](https://github.com/maidsafe/sn_routing/compare/v0.58.0...v0.58.1) (2021-04-08)
