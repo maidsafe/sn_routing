@@ -33,10 +33,12 @@ use std::{
     net::SocketAddr,
 };
 use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 use tracing::Instrument;
 use xor_name::{Prefix, XorName, XOR_NAME_LEN};
 
 const BACKLOG_CAPACITY: usize = 100;
+const BOOTSTRAP_RETRY_TIME: u64 = 180;
 
 /// Bootstrap into the network as new node.
 ///
@@ -161,6 +163,8 @@ impl<'a> State<'a> {
 
         loop {
             used_addrs.extend(bootstrap_addrs.iter().copied());
+
+            info!("Sending boostrap request. . .");
             self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
@@ -174,10 +178,11 @@ impl<'a> State<'a> {
                     joins_allowed,
                 }) => {
                     if !joins_allowed {
-                        error!(
-                            "Network is set to not taking any new joining node, try join later."
+                        info!(
+                            "The Network is currently not accepting new nodes. Retrying to join in another 3 minutes . . ."
                         );
-                        return Err(Error::TryJoinLater);
+                        sleep(Duration::from_secs(BOOTSTRAP_RETRY_TIME)).await;
+                        continue;
                     }
                     let key = pk_set.public_key();
                     info!(
