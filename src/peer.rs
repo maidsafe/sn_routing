@@ -22,14 +22,14 @@ pub struct Peer {
     name: XorName,
     addr: SocketAddr,
     // A node's connectivity will be checked when first time join the network or got relocated.
-    // An adult can only got promoted to elder when this flag is set to true.
+    // An adult can only got promoted to elder when this flag is set to `true`.
+    // Taking a default of `false` to enforce the connectivity check.
     reachable: bool,
 }
 
 impl Peer {
     /// Creates a new `Peer` given `Name`, `SocketAddr`.
     pub fn new(name: XorName, addr: SocketAddr) -> Self {
-        // Default to false enforce the connectivity check.
         Self {
             name,
             addr,
