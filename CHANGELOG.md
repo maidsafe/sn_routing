@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.60.0](https://github.com/maidsafe/sn_routing/compare/v0.59.1...v0.60.0) (2021-04-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** Node message members changed.
+
+* **deps:** update sn_messaging ([1b1fdf7](https://github.com/maidsafe/sn_routing/commit/1b1fdf7756bb287bd5c2b4c7637febf6a03e5a58))
+
 ### [0.59.1](https://github.com/maidsafe/sn_routing/compare/v0.59.0...v0.59.1) (2021-04-13)
 
 ## [0.59.0](https://github.com/maidsafe/sn_routing/compare/v0.58.2...v0.59.0) (2021-04-13)
