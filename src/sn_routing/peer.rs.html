@@ -123,14 +123,14 @@
     <span class="ident">name</span>: <span class="ident">XorName</span>,
     <span class="ident">addr</span>: <span class="ident">SocketAddr</span>,
     <span class="comment">// A node&#39;s connectivity will be checked when first time join the network or got relocated.</span>
-    <span class="comment">// An adult can only got promoted to elder when this flag is set to true.</span>
+    <span class="comment">// An adult can only got promoted to elder when this flag is set to `true`.</span>
+    <span class="comment">// Taking a default of `false` to enforce the connectivity check.</span>
     <span class="ident">reachable</span>: <span class="ident">bool</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Peer</span> {
     <span class="doccomment">/// Creates a new `Peer` given `Name`, `SocketAddr`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">name</span>: <span class="ident">XorName</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="comment">// Default to false enforce the connectivity check.</span>
         <span class="self">Self</span> {
             <span class="ident">name</span>,
             <span class="ident">addr</span>,
