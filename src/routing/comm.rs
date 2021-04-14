@@ -184,7 +184,7 @@ impl Comm {
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
         let send = |recipient: (SocketAddr, XorName), mut msg: MessageType| async move {
-            msg.update_header(None, Some(recipient.1));
+            msg.update_dest_info(None, Some(recipient.1));
             match msg.serialize() {
                 Ok(bytes) => {
                     trace!(
@@ -343,22 +343,23 @@ mod tests {
 
         let mut original_message = new_ping_message();
 
-        let status = comm.send(
-            &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
-            2,
-            original_message.clone(),
-        )
-        .await?;
+        let status = comm
+            .send(
+                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                2,
+                original_message.clone(),
+            )
+            .await?;
 
         assert_matches!(status, SendStatus::AllRecipients);
 
         if let Some(bytes) = peer0.rx.recv().await {
-            original_message.update_header(None, Some(peer0._name));
+            original_message.update_dest_info(None, Some(peer0._name));
             assert_eq!(WireMsg::deserialize(bytes)?, original_message.clone());
         }
 
         if let Some(bytes) = peer1.rx.recv().await {
-            original_message.update_header(None, Some(peer1._name));
+            original_message.update_dest_info(None, Some(peer1._name));
             assert_eq!(WireMsg::deserialize(bytes)?, original_message);
         }
 
@@ -374,17 +375,18 @@ mod tests {
         let mut peer1 = Peer::new().await?;
 
         let mut original_message = new_ping_message();
-        let status = comm.send(
-            &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
-            1,
-            original_message.clone(),
-        )
-        .await?;
+        let status = comm
+            .send(
+                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                1,
+                original_message.clone(),
+            )
+            .await?;
 
         assert_matches!(status, SendStatus::AllRecipients);
 
         if let Some(bytes) = peer0.rx.recv().await {
-            original_message.update_header(None, Some(peer0._name));
+            original_message.update_dest_info(None, Some(peer0._name));
             assert_eq!(WireMsg::deserialize(bytes)?, original_message);
         }
 
@@ -413,7 +415,7 @@ mod tests {
         let status = comm
             .send(&[(invalid_addr, XorName::random())], 1, new_ping_message())
             .await?;
-            
+
         assert_matches!(
             &status,
             &SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
@@ -437,17 +439,18 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let mut message = new_ping_message();
-        let _ = comm.send(
-            &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
-            1,
-            message.clone(),
-        )
-        .await?;
+        let _ = comm
+            .send(
+                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                1,
+                message.clone(),
+            )
+            .await?;
 
         assert_eq!(peer.rx.recv().await, Some(message));
 
         if let Some(bytes) = peer.rx.recv().await {
-            message.update_header(None, Some(peer._name));
+            message.update_dest_info(None, Some(peer._name));
             assert_eq!(WireMsg::deserialize(bytes)?, message);
         }
         Ok(())
@@ -480,9 +483,9 @@ mod tests {
             status,
             SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
         );
-        
+
         if let Some(bytes) = peer.rx.recv().await {
-            message.update_header(None, Some(peer._name));
+            message.update_dest_info(None, Some(peer._name));
             assert_eq!(WireMsg::deserialize(bytes)?, message);
         }
         Ok(())
@@ -561,7 +564,7 @@ mod tests {
                 new_ping_message(),
             )
             .await?;
-            
+
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));
         // Drop `comm1` to cause connection lost.
         drop(comm1);

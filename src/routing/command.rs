@@ -18,8 +18,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, DestInfo, HeaderInfo, Itinerary,
-    MessageType,
+    node::NodeMessage, section_info::Message as SectionInfoMsg, DestInfo, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -104,9 +103,9 @@ impl Command {
     pub fn send_message_to_node(
         recipient: (SocketAddr, XorName),
         message_bytes: Bytes,
-        hdr_info: HeaderInfo,
+        dest_info: DestInfo,
     ) -> Self {
-        Self::send_message_to_nodes(vec![recipient], 1, message_bytes, hdr_info)
+        Self::send_message_to_nodes(vec![recipient], 1, message_bytes, dest_info)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
@@ -114,13 +113,13 @@ impl Command {
         recipients: Vec<(SocketAddr, XorName)>,
         delivery_group_size: usize,
         message_bytes: Bytes,
-        hdr_info: HeaderInfo,
+        dest_info: DestInfo,
     ) -> Self {
         let msg = NodeMessage::new(message_bytes);
         Self::SendMessage {
             recipients,
             delivery_group_size,
-            message: MessageType::NodeMessage { hdr_info, msg },
+            message: MessageType::NodeMessage { dest_info, msg },
         }
     }
 }
@@ -138,12 +137,12 @@ impl Debug for Command {
             Self::HandleSectionInfoMsg {
                 sender,
                 message,
-                hdr_info,
+                dest_info,
             } => f
                 .debug_struct("HandleSectionInfoMsg")
                 .field("sender", sender)
                 .field("message", message)
-                .field("hdr_info", hdr_info)
+                .field("dest_info", dest_info)
                 .finish(),
             Self::HandleTimeout(token) => f.debug_tuple("HandleTimeout").field(token).finish(),
             Self::HandleConnectionLost(addr) => {

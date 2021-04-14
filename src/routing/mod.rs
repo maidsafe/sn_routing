@@ -427,7 +427,7 @@ impl Routing {
                 delivery_group_size: 1,
                 message: MessageType::ClientMessage {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: XorName::from(end_user_pk),
                         dest_section_pk: section_pk,
                     },

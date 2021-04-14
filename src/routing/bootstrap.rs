@@ -26,7 +26,7 @@ use sn_data_types::PublicKey;
 use sn_messaging::{
     node::NodeMessage,
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
-    DstLocation, HeaderInfo, MessageType, WireMsg,
+    DestInfo, DstLocation, MessageType, WireMsg,
 };
 use std::{
     collections::{BTreeMap, HashSet, VecDeque},
@@ -240,7 +240,7 @@ impl<'a> State<'a> {
             .map(|addr| (*addr, dest_xorname))
             .collect();
 
-        let hdr_info = HeaderInfo {
+        let dest_info = DestInfo {
             dest: dest_xorname,
             dest_section_pk: PublicKey::bls(&dest_pk).unwrap_or_else(|| {
                 // Create a random PK as we'll be getting the right one with the response
@@ -252,7 +252,7 @@ impl<'a> State<'a> {
             .send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info,
+                    dest_info,
                 },
                 recipients,
             ))
@@ -264,7 +264,7 @@ impl<'a> State<'a> {
     async fn receive_get_section_response(
         &mut self,
         relocate_details: Option<&SignedRelocateDetails>,
-    ) -> Result<(GetSectionResponse, SocketAddr, HeaderInfo)> {
+    ) -> Result<(GetSectionResponse, SocketAddr, DestInfo)> {
         let destination = match relocate_details {
             Some(details) => *details.destination()?,
             None => self.node.name(),
@@ -274,7 +274,7 @@ impl<'a> State<'a> {
             match message {
                 MessageType::SectionInfo {
                     msg: SectionInfoMsg::GetSectionResponse(response),
-                    hdr_info,
+                    dest_info,
                 } => match response {
                     GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
                         error!("Invalid GetSectionResponse::Redirect: missing peers");
@@ -289,7 +289,7 @@ impl<'a> State<'a> {
                     GetSectionResponse::Redirect(_)
                     | GetSectionResponse::Success { .. }
                     | GetSectionResponse::SectionInfoUpdate(_) => {
-                        return Ok((response, sender, hdr_info))
+                        return Ok((response, sender, dest_info))
                     }
                 },
                 MessageType::NodeMessage {
@@ -299,7 +299,8 @@ impl<'a> State<'a> {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
                     self.backlog_message(message, sender)
                 }
-                MessageType::SectionInfo { .. }
+                MessageType::NodeCmdMessage { .. }
+                | MessageType::SectionInfo { .. }
                 | MessageType::ClientMessage { .. }
                 | MessageType::Ping(_) => {}
             }
@@ -359,7 +360,7 @@ impl<'a> State<'a> {
             .await?;
 
         loop {
-            let (response, sender, hdr_info) = self
+            let (response, sender, dest_info) = self
                 .receive_join_response(genesis_key.as_ref(), relocate_payload.as_ref())
                 .await?;
 
@@ -429,7 +430,7 @@ impl<'a> State<'a> {
                             nonce_signature,
                         }),
                     };
-                    let recipients = vec![(sender, hdr_info.dest)];
+                    let recipients = vec![(sender, dest_info.dest)];
                     self.send_join_requests(join_request, recipients, section_key)
                         .await?;
                 }
@@ -454,7 +455,7 @@ impl<'a> State<'a> {
             .send((
                 MessageType::NodeMessage {
                     msg: node_msg,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         // Will be overridden while sending to multiple elders
                         dest: XorName::random(),
                         dest_section_pk: section_key,
@@ -471,14 +472,15 @@ impl<'a> State<'a> {
         &mut self,
         expected_genesis_key: Option<&bls::PublicKey>,
         relocate_payload: Option<&RelocatePayload>,
-    ) -> Result<(JoinResponse, SocketAddr, HeaderInfo)> {
+    ) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
-            let (message, hdr_info) = match message {
+            let (message, dest_info) = match message {
                 MessageType::NodeMessage {
                     msg: NodeMessage(msg_bytes),
-                    hdr_info,
-                } => (Message::from_bytes(Bytes::from(msg_bytes))?, hdr_info),
-                MessageType::Ping(_)
+                    dest_info,
+                } => (Message::from_bytes(Bytes::from(msg_bytes))?, dest_info),
+                MessageType::NodeCmdMessage { .. }
+                | MessageType::Ping(_)
                 | MessageType::ClientMessage { .. }
                 | MessageType::SectionInfo { .. } => continue,
             };
@@ -498,7 +500,7 @@ impl<'a> State<'a> {
                             section_key: *section_key,
                         },
                         sender,
-                        hdr_info,
+                        dest_info,
                     ));
                 }
                 Variant::ResourceChallenge {
@@ -524,7 +526,7 @@ impl<'a> State<'a> {
                             nonce_signature: *nonce_signature,
                         },
                         sender,
-                        hdr_info,
+                        dest_info,
                     ));
                 }
                 Variant::NodeApproval {
@@ -568,7 +570,7 @@ impl<'a> State<'a> {
                             section_chain,
                         },
                         sender,
-                        hdr_info,
+                        dest_info,
                     ));
                 }
 
@@ -755,7 +757,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: *peer.name(),
                         dest_section_pk: pk,
                     },
@@ -768,10 +770,10 @@ mod tests {
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
-            let (message, hdr_info) = assert_matches!(message, MessageType::NodeMessage { msg: NodeMessage(bytes), hdr_info } =>
-                (Message::from_bytes(Bytes::from(bytes))?, hdr_info));
+            let (message, dest_info) = assert_matches!(message, MessageType::NodeMessage { msg: NodeMessage(bytes), dest_info } =>
+                (Message::from_bytes(Bytes::from(bytes))?, dest_info));
 
-            assert_eq!(hdr_info.dest_section_pk, pk);
+            assert_eq!(dest_info.dest_section_pk, pk);
             itertools::assert_equal(
                 recipients,
                 elders_info.peers().map(|peer| (*peer.addr(), *peer.name())),
@@ -800,7 +802,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::NodeMessage {
                     msg: NodeMessage::new(message.to_bytes()),
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: *peer.name(),
                         dest_section_pk: pk,
                     },
@@ -873,7 +875,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: name,
                         dest_section_pk: bls::SecretKey::random().public_key(),
                     },
@@ -956,7 +958,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: bls::SecretKey::random().public_key(),
                     },
@@ -973,7 +975,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: bls::SecretKey::random().public_key(),
                     },
@@ -1064,7 +1066,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: pk,
                     },
@@ -1148,7 +1150,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: bls::SecretKey::random().public_key(),
                     },
@@ -1173,7 +1175,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::SectionInfo {
                     msg: message,
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: bls::SecretKey::random().public_key(),
                     },
@@ -1248,7 +1250,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::NodeMessage {
                     msg: NodeMessage::new(message.to_bytes()),
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
                     },
@@ -1272,7 +1274,7 @@ mod tests {
             recv_tx.try_send((
                 MessageType::NodeMessage {
                     msg: NodeMessage::new(message.to_bytes()),
-                    hdr_info: HeaderInfo {
+                    dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
                     },

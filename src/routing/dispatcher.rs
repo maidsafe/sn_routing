@@ -7,7 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Comm, Command, Core};
-use crate::{routing::comm::SendStatus, error::Result, event::Event, relocation::SignedRelocateDetails, Error};
+use crate::{
+    error::Result, event::Event, relocation::SignedRelocateDetails, routing::comm::SendStatus,
+    Error,
+};
 use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -98,12 +101,12 @@ impl Dispatcher {
             Command::HandleSectionInfoMsg {
                 sender,
                 message,
-                hdr_info,
+                dest_info,
             } => Ok(self
                 .core
                 .lock()
                 .await
-                .handle_section_info_msg(sender, message, hdr_info)
+                .handle_section_info_msg(sender, message, dest_info)
                 .await),
             Command::HandleTimeout(token) => self.core.lock().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
@@ -197,7 +200,7 @@ impl Dispatcher {
         let msg_bytes = message.serialize()?;
 
         let cmds = match message {
-            MessageType::Ping | MessageType::Node { .. } => {
+            MessageType::Ping | MessageType::Node { .. } | MessageType::Routing { .. } => {
                 let status = self
                     .comm
                     .send(recipients, delivery_group_size, msg_bytes)
