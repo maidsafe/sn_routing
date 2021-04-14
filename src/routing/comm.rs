@@ -23,8 +23,6 @@ use tokio::{sync::mpsc, task};
 pub(crate) struct Comm {
     _quic_p2p: QuicP2p,
     endpoint: Endpoint,
-    // Additional endpoint used to check if peers are externally reachable
-    connectivity_endpoint: Endpoint,
     // Sender for connection events. Kept here so we can clone it and pass it to the incoming
     // messages handler every time we establish new connection. It's kept in an `Option` so we can
     // take it out and drop it on `terminate` which together with all the incoming message handlers
@@ -34,10 +32,10 @@ pub(crate) struct Comm {
 
 impl Comm {
     pub async fn new(
-        mut transport_config: qp2p::Config,
+        transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<Self> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config.clone()), &[], true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
 
         // Don't bootstrap, just create an endpoint to listen to
         // the incoming messages from other nodes.
@@ -45,13 +43,6 @@ impl Comm {
         // disconnection events.
         let (endpoint, _incoming_connections, incoming_messages, disconnections) =
             quic_p2p.new_endpoint().await?;
-
-        transport_config.local_ip = Some(endpoint.local_addr().ip());
-        transport_config.local_port = Some(0);
-        transport_config.forward_port = false;
-
-        let qp2p = QuicP2p::with_config(Some(transport_config), &[], false)?;
-        let (connectivity_endpoint, _, _, _) = qp2p.new_endpoint().await?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -66,28 +57,20 @@ impl Comm {
         Ok(Self {
             _quic_p2p: quic_p2p,
             endpoint,
-            connectivity_endpoint,
             event_tx: RwLock::new(Some(event_tx)),
         })
     }
 
     pub async fn bootstrap(
-        mut transport_config: qp2p::Config,
+        transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<(Self, SocketAddr)> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config.clone()), &[], true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
 
         // Bootstrap to the network returning the connection to a node.
         // We can use the returned channels to listen for incoming messages and disconnection events
         let (endpoint, _incoming_connections, incoming_messages, disconnections, bootstrap_addr) =
             quic_p2p.bootstrap().await?;
-
-        transport_config.local_ip = Some(endpoint.local_addr().ip());
-        transport_config.local_port = Some(0);
-        transport_config.forward_port = false;
-
-        let qp2p = QuicP2p::with_config(Some(transport_config), &[], false)?;
-        let (connectivity_endpoint, _, _, _) = qp2p.new_endpoint().await?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -103,7 +86,6 @@ impl Comm {
             Self {
                 _quic_p2p: quic_p2p,
                 endpoint,
-                connectivity_endpoint,
                 event_tx: RwLock::new(Some(event_tx)),
             },
             bootstrap_addr,
@@ -140,13 +122,21 @@ impl Comm {
     }
 
     /// Tests whether the peer is reachable.
-    pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), SendError> {
-        self.connectivity_endpoint
+    pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), Error> {
+        let mut qp2p_config = qp2p::Config::default();
+        qp2p_config.local_ip = Some(self.endpoint.local_addr().ip());
+        qp2p_config.local_port = Some(0);
+        qp2p_config.forward_port = false;
+
+        let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)?;
+        let (connectivity_endpoint, _, _, _) = qp2p.new_endpoint().await?;
+
+        connectivity_endpoint
             .is_reachable(peer)
             .await
             .map_err(|err| {
                 info!("Peer {} is NOT externally reachable: {}", peer, err);
-                SendError
+                err.into()
             })
             .map(|()| {
                 info!("Peer {} is externally reachable.", peer);
