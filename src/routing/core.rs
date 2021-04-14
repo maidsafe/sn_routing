@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    connectivity_complaints::ConnectivityComplaints,
     enduser_registry::{EndUserRegistry, SocketId},
     lazy_messaging,
     split_barrier::SplitBarrier,
@@ -55,6 +56,7 @@ use sn_messaging::{
 };
 use std::{
     cmp::{self, Ordering},
+    collections::BTreeSet,
     iter,
     net::SocketAddr,
     slice,
@@ -83,6 +85,7 @@ pub(crate) struct Core {
     joins_allowed: bool,
     resource_proof: ResourceProof,
     end_users: EndUserRegistry,
+    connectivity_complaints: ConnectivityComplaints,
 }
 
 impl Core {
@@ -116,6 +119,7 @@ impl Core {
             joins_allowed: true,
             resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
             end_users: EndUserRegistry::new(),
+            connectivity_complaints: ConnectivityComplaints::new(),
         }
     }
 
@@ -458,9 +462,36 @@ impl Core {
         };
 
         if !self.is_elder() {
-            return Ok(vec![]);
+            // When self is not an elder, then the peer has to be an elder, and we shall complaint
+            // the lost to other elders.
+            let variant = Variant::ConnectivityComplaint(name);
+            let recipients: Vec<_> = self
+                .section
+                .elders_info()
+                .elders
+                .values()
+                .filter(|peer| *peer.name() != name)
+                .copied()
+                .collect();
+            trace!(
+                "Casting connectivity complaint against {:?} {:?}",
+                name,
+                recipients
+            );
+
+            return self.send_message_for_dst_accumulation(
+                self.node.name(),
+                DstLocation::Direct,
+                variant,
+                None,
+                &recipients,
+            );
         }
 
+        self.propose_offline(name)
+    }
+
+    fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {
         if let Some(info) = self.section.members().get(&name) {
             let info = info.clone().leave()?;
 
@@ -581,7 +612,7 @@ impl Core {
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant() {
-            Variant::OtherSection { .. } => {
+            Variant::OtherSection { .. } | Variant::ConnectivityComplaint(_) => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Unknown);
                 }
@@ -752,6 +783,9 @@ impl Core {
 
                 commands.extend(result?);
                 Ok(commands)
+            }
+            Variant::ConnectivityComplaint(elder_name) => {
+                self.handle_connectivity_complaint(msg.src().name(), *elder_name)
             }
             Variant::NodeApproval { .. }
             | Variant::JoinRetry { .. }
@@ -1437,6 +1471,30 @@ impl Core {
         );
 
         self.send_dkg_start_to(elders_info, slice::from_ref(sender))
+    }
+
+    fn handle_connectivity_complaint(
+        &mut self,
+        sender: XorName,
+        elder_name: XorName,
+    ) -> Result<Vec<Command>> {
+        self.connectivity_complaints
+            .add_complaint(sender, elder_name);
+
+        let weighing_adults: BTreeSet<XorName> = self
+            .section
+            .members()
+            .joined()
+            .map(|info| *info.peer.name())
+            .collect();
+        if self
+            .connectivity_complaints
+            .is_complained(elder_name, &weighing_adults)
+        {
+            self.propose_offline(elder_name)
+        } else {
+            Ok(vec![])
+        }
     }
 
     // Generate a new section info based on the current set of members and if it differs from the
