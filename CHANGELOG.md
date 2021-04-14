@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.3](https://github.com/maidsafe/sn_routing/compare/v0.60.2...v0.60.3) (2021-04-14)
+
+
+### Bug Fixes
+
+* **connectivity:** use separate endpoint to test connectivity to new ([26a2bcc](https://github.com/maidsafe/sn_routing/commit/26a2bccdcc7659e3d585bacd24b31ab842e4f5c0))
+
 ### [0.60.2](https://github.com/maidsafe/sn_routing/compare/v0.60.1...v0.60.2) (2021-04-14)
 
 
