@@ -123,10 +123,16 @@ impl Comm {
 
     /// Tests whether the peer is reachable.
     pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), SendError> {
-        self.endpoint.is_reachable(peer).await.map_err(|err| {
-            error!("{}", err);
-            SendError
-        })
+        self.endpoint
+            .is_reachable(peer)
+            .await
+            .map_err(|err| {
+                info!("Peer {} is NOT externally reachable: {}", peer, err);
+                SendError
+            })
+            .map(|()| {
+                info!("Peer {} is externally reachable.", peer);
+            })
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
