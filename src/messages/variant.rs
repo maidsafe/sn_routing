@@ -24,6 +24,7 @@ use std::{
     collections::VecDeque,
     fmt::{self, Debug, Formatter},
 };
+use xor_name::XorName;
 
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -113,6 +114,8 @@ pub(crate) enum Variant {
         nonce: [u8; 32],
         nonce_signature: Signature,
     },
+    /// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.
+    ConnectivityComplaint(XorName),
 }
 
 impl Variant {
@@ -249,6 +252,7 @@ impl Debug for Variant {
                 .field("data_size", data_size)
                 .field("difficulty", difficulty)
                 .finish(),
+            Self::ConnectivityComplaint(name) => write!(f, "ConnectivityComplaint({:?})", name),
         }
     }
 }

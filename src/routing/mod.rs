@@ -10,6 +10,7 @@ pub(crate) mod command;
 
 mod bootstrap;
 mod comm;
+mod connectivity_complaints;
 mod core;
 mod dispatcher;
 mod enduser_registry;
