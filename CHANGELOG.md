@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.2](https://github.com/maidsafe/sn_routing/compare/v0.60.1...v0.60.2) (2021-04-14)
+
+
+### Features
+
+* kill elder received too many connectivity complaints ([cc9ca8a](https://github.com/maidsafe/sn_routing/commit/cc9ca8a39a24ff048d47d6a6c4d9dff07f1e1f40))
+
 ### [0.60.1](https://github.com/maidsafe/sn_routing/compare/v0.60.0...v0.60.1) (2021-04-14)
 
 ## [0.60.0](https://github.com/maidsafe/sn_routing/compare/v0.59.1...v0.60.0) (2021-04-13)
