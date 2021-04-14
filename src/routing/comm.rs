@@ -123,10 +123,12 @@ impl Comm {
 
     /// Tests whether the peer is reachable.
     pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), Error> {
-        let mut qp2p_config = qp2p::Config::default();
-        qp2p_config.local_ip = Some(self.endpoint.local_addr().ip());
-        qp2p_config.local_port = Some(0);
-        qp2p_config.forward_port = false;
+        let qp2p_config = qp2p::Config {
+            local_ip: Some(self.endpoint.local_addr().ip()),
+            local_port: Some(0),
+            forward_port: false,
+            ..Default::default()
+        };
 
         let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)?;
         let (connectivity_endpoint, _, _, _) = qp2p.new_endpoint().await?;
