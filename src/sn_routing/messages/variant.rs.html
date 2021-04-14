@@ -296,6 +296,10 @@
 <span id="295">295</span>
 <span id="296">296</span>
 <span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -323,6 +327,7 @@
     <span class="ident">collections</span>::<span class="ident">VecDeque</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
 };
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
@@ -412,6 +417,8 @@
         <span class="ident">nonce</span>: [<span class="ident">u8</span>; <span class="number">32</span>],
         <span class="ident">nonce_signature</span>: <span class="ident">Signature</span>,
     },
+    <span class="doccomment">/// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.</span>
+    <span class="ident">ConnectivityComplaint</span>(<span class="ident">XorName</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Variant</span> {
@@ -548,6 +555,7 @@
                 .<span class="ident">field</span>(<span class="string">&quot;data_size&quot;</span>, <span class="ident">data_size</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;difficulty&quot;</span>, <span class="ident">difficulty</span>)
                 .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">ConnectivityComplaint</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;ConnectivityComplaint({:?})&quot;</span>, <span class="ident">name</span>),
         }
     }
 }
