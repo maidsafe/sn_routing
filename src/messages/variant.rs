@@ -21,7 +21,7 @@ use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
 };
 use xor_name::XorName;
@@ -98,6 +98,7 @@ pub(crate) enum Variant {
     DkgFailureObservation {
         dkg_key: DkgKey,
         proof: DkgFailureProof,
+        non_participants: BTreeSet<XorName>,
     },
     /// Sent to the current elders by the DKG participants when at least majority of them observe
     /// a DKG failure.
@@ -227,10 +228,15 @@ impl Debug for Variant {
                 .field("dkg_key", &dkg_key)
                 .field("message", message)
                 .finish(),
-            Self::DkgFailureObservation { dkg_key, proof } => f
+            Self::DkgFailureObservation {
+                dkg_key,
+                proof,
+                non_participants,
+            } => f
                 .debug_struct("DkgFailureObservation")
                 .field("dkg_key", dkg_key)
                 .field("proof", proof)
+                .field("non_participants", non_participants)
                 .finish(),
             Self::DkgFailureAgreement(proofs) => {
                 f.debug_tuple("DkgFailureAgreement").field(proofs).finish()
