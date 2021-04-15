@@ -492,23 +492,29 @@ impl Core {
     }
 
     pub fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {
-        if let Some(info) = self.section.members().get(&name) {
-            let info = info.clone().leave()?;
+        self.cast_offline_proposals(&iter::once(name).collect())
+    }
 
-            // Don't send the `Offline` proposal to the peer being lost as that send would fail,
-            // triggering a chain of further `Offline` proposals.
-            let elders: Vec<_> = self
-                .section
-                .elders_info()
-                .peers()
-                .filter(|peer| peer.name() != info.peer.name())
-                .copied()
-                .collect();
-
-            self.send_proposal(&elders, Proposal::Offline(info))
-        } else {
-            Ok(vec![])
+    fn cast_offline_proposals(&self, names: &BTreeSet<XorName>) -> Result<Vec<Command>> {
+        // Don't send the `Offline` proposal to the peer being lost as that send would fail,
+        // triggering a chain of further `Offline` proposals.
+        let elders: Vec<_> = self
+            .section
+            .elders_info()
+            .peers()
+            .filter(|peer| !names.contains(peer.name()))
+            .copied()
+            .collect();
+        let mut result: Vec<Command> = Vec::new();
+        for name in names.iter() {
+            if let Some(info) = self.section.members().get(name) {
+                let info = info.clone().leave()?;
+                if let Ok(commands) = self.send_proposal(&elders, Proposal::Offline(info)) {
+                    result.extend(commands);
+                }
+            }
         }
+        Ok(result)
     }
 
     pub fn handle_dkg_outcome(
@@ -764,9 +770,11 @@ impl Core {
             Variant::DkgMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
             }
-            Variant::DkgFailureObservation { dkg_key, proof } => {
-                self.handle_dkg_failure_observation(*dkg_key, *proof)
-            }
+            Variant::DkgFailureObservation {
+                dkg_key,
+                proof,
+                non_participants,
+            } => self.handle_dkg_failure_observation(*dkg_key, non_participants, *proof),
             Variant::DkgFailureAgreement(proofs) => {
                 self.handle_dkg_failure_agreement(&msg.src().name(), proofs)
             }
@@ -1433,10 +1441,11 @@ impl Core {
     fn handle_dkg_failure_observation(
         &mut self,
         dkg_key: DkgKey,
+        non_participants: &BTreeSet<XorName>,
         proof: DkgFailureProof,
     ) -> Result<Vec<Command>> {
         self.dkg_voter
-            .process_failure(&dkg_key, proof)
+            .process_failure(&dkg_key, non_participants, proof)
             .into_commands(&self.node)
     }
 
@@ -1465,12 +1474,24 @@ impl Core {
             return Ok(vec![]);
         };
 
-        trace!(
-            "Received DKG failure agreement - restarting: {}",
-            elders_info
-        );
+        if proofs.non_participants.is_empty() {
+            // The DKG failure is a corrupted one due to lagging.
+            trace!(
+                "Received DKG failure agreement of corrupted result - restarting: {}",
+                elders_info
+            );
 
-        self.send_dkg_start_to(elders_info, slice::from_ref(sender))
+            self.send_dkg_start_to(elders_info, slice::from_ref(sender))
+        } else {
+            // The DKG failure is regarding non_participants, i.e. potential unresponsive node.
+            trace!(
+                "Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}",
+                proofs.non_participants,
+                generation,
+                elders_info
+            );
+            self.cast_offline_proposals(&proofs.non_participants)
+        }
     }
 
     fn handle_connectivity_complaint(
