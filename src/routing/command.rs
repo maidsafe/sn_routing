@@ -18,7 +18,7 @@ use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, DestInfo, Itinerary, MessageType,
+    node::RoutingMsg, section_info::Message as SectionInfoMsg, DestInfo, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -115,11 +115,11 @@ impl Command {
         message_bytes: Bytes,
         dest_info: DestInfo,
     ) -> Self {
-        let msg = NodeMessage::new(message_bytes);
+        let msg = RoutingMsg::new(message_bytes);
         Self::SendMessage {
             recipients,
             delivery_group_size,
-            message: MessageType::NodeMessage { dest_info, msg },
+            message: MessageType::Routing { dest_info, msg },
         }
     }
 }

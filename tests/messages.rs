@@ -14,7 +14,7 @@ use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::client::ProcessMsg;
 use sn_messaging::{
-    client::{Message, Query, TransferQuery},
+    client::{ClientMsg, Query, TransferQuery},
     location::{Aggregation, Itinerary},
     DstLocation, MessageId, SrcLocation, WireMsg,
 };
@@ -65,7 +65,7 @@ async fn test_messages_client_node() -> Result<()> {
         .send_message(registration_bytes, &node_addr)
         .await?;
 
-    let query = Message::Process(ProcessMsg::Query {
+    let query = ClientMsg::Process(ProcessMsg::Query {
         query: Query::Transfer(TransferQuery::GetBalance(pk)),
         id,
     });
@@ -76,7 +76,7 @@ async fn test_messages_client_node() -> Result<()> {
     let node_handler = tokio::spawn(async move {
         while let Some(event) = event_stream.next().await {
             match event {
-                Event::ClientMessageReceived { msg, user } => {
+                Event::ClientMsgReceived { msg, user } => {
                     assert_eq!(*msg, query_clone.clone());
                     node.send_message(
                         Itinerary {

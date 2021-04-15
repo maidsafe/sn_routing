@@ -32,7 +32,7 @@ use resource_proof::ResourceProof;
 use sn_data_types::{Keypair, PublicKey};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
-    node::NodeMessage,
+    node::RoutingMsg,
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
     DestInfo, DstLocation, MessageType, SrcLocation,
 };
@@ -189,7 +189,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message: MessageType::NodeMessage { msg: NodeMessage(message), .. }, .. }) => message
+        Some(Command::SendMessage { message: MessageType::Routing { msg: RoutingMsg(message), .. }, .. }) => message
     );
     let response_message = Message::from_bytes(Bytes::from(response_message))?;
 
@@ -537,8 +537,8 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -599,8 +599,8 @@ async fn handle_online_command(
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -790,8 +790,8 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -923,8 +923,8 @@ async fn handle_unknown_message(source: UnknownMessageSource) -> Result<()> {
         let (recipients, message) = if let Command::SendMessage {
             recipients,
             message:
-                MessageType::NodeMessage {
-                    msg: NodeMessage(msg_bytes),
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
                     ..
                 },
             ..
@@ -1050,8 +1050,8 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         let (recipients, message) = if let Command::SendMessage {
             recipients,
             message:
-                MessageType::NodeMessage {
-                    msg: NodeMessage(msg_bytes),
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
                     ..
                 },
             ..
@@ -1152,8 +1152,8 @@ async fn handle_bounced_unknown_message() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1262,8 +1262,8 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1422,8 +1422,8 @@ async fn handle_untrusted_sync() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1516,8 +1516,8 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1591,8 +1591,8 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1756,8 +1756,8 @@ async fn handle_elders_update() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..
@@ -1878,8 +1878,8 @@ async fn handle_demote_during_split() -> Result<()> {
             Command::SendMessage {
                 recipients,
                 message:
-                    MessageType::NodeMessage {
-                        msg: NodeMessage(msg_bytes),
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
                         ..
                     },
                 ..

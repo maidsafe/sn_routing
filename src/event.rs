@@ -12,7 +12,7 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use sn_messaging::{client::Message, DstLocation, EndUser, SrcLocation};
+use sn_messaging::{client::ClientMsg, DstLocation, EndUser, SrcLocation};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -101,9 +101,9 @@ pub enum Event {
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Received a message from a client node.
-    ClientMessageReceived {
+    ClientMsgReceived {
         /// The content of the message.
-        msg: Box<Message>,
+        msg: Box<ClientMsg>,
         /// The SocketAddr and PublicKey that sent the message.
         /// (Note: socket_id will be a random hash, to map against the actual socketaddr)
         user: EndUser,
@@ -168,9 +168,9 @@ impl Debug for Event {
                 .field("new_keypair", new_keypair)
                 .finish(),
             Self::RestartRequired => write!(formatter, "RestartRequired"),
-            Self::ClientMessageReceived { msg, user, .. } => write!(
+            Self::ClientMsgReceived { msg, user, .. } => write!(
                 formatter,
-                "ClientMessageReceived {{ msg: {:?}, src: {:?} }}",
+                "ClientMsgReceived {{ msg: {:?}, src: {:?} }}",
                 msg, user,
             ),
             Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),

@@ -47,8 +47,8 @@ use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_data_types::PublicKey as EndUserPK;
 use sn_messaging::{
-    client::Message as ClientMessage,
-    node::NodeMessage,
+    client::ClientMsg,
+    node::RoutingMsg,
     section_info::{
         Error as TargetSectionError, GetSectionResponse, Message as SectionInfoMsg, SectionInfo,
     },
@@ -851,10 +851,10 @@ impl Core {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let node_msg = NodeMessage::new(msg.to_bytes());
+                        let node_msg = RoutingMsg::new(msg.to_bytes());
                         let _ = message_tx
                             .send((
-                                MessageType::NodeMessage {
+                                MessageType::Routing {
                                     msg: node_msg,
                                     dest_info: DestInfo {
                                         dest: src_name,
@@ -1202,8 +1202,8 @@ impl Core {
             return Ok(vec![Command::SendMessage {
                 recipients,
                 delivery_group_size: 1,
-                message: MessageType::ClientMessage {
-                    msg: ClientMessage::from(content)?,
+                message: MessageType::Client {
+                    msg: ClientMsg::from(content)?,
                     dest_info: DestInfo {
                         dest: name,
                         dest_section_pk: *self.section.chain().last_key(),

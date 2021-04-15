@@ -41,8 +41,8 @@ use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
 use sn_messaging::{
-    client::Message as ClientMessage,
-    node::NodeMessage,
+    client::ClientMsg,
+    node::RoutingMsg,
     section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
     DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
@@ -400,7 +400,7 @@ impl Routing {
     async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
-        message: ClientMessage,
+        message: ClientMsg,
     ) -> Result<()> {
         let end_user = self
             .dispatcher
@@ -425,7 +425,7 @@ impl Routing {
             let command = Command::SendMessage {
                 recipients: vec![(recipient, user_xor_name)],
                 delivery_group_size: 1,
-                message: MessageType::ClientMessage {
+                message: MessageType::Client {
                     msg: message,
                     dest_info: DestInfo {
                         dest: XorName::from(end_user_pk),

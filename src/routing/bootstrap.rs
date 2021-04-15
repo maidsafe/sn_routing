@@ -24,7 +24,7 @@ use rand::seq::IteratorRandom;
 use resource_proof::ResourceProof;
 use sn_data_types::PublicKey;
 use sn_messaging::{
-    node::NodeMessage,
+    node::RoutingMsg,
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, MessageType, WireMsg,
 };
@@ -292,16 +292,16 @@ impl<'a> State<'a> {
                         return Ok((response, sender, dest_info))
                     }
                 },
-                MessageType::NodeMessage {
-                    msg: NodeMessage(msg_bytes),
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
                     ..
                 } => {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
                     self.backlog_message(message, sender)
                 }
-                MessageType::NodeCmdMessage { .. }
+                MessageType::Node { .. }
                 | MessageType::SectionInfo { .. }
-                | MessageType::ClientMessage { .. }
+                | MessageType::Client { .. }
                 | MessageType::Ping(_) => {}
             }
         }
@@ -448,12 +448,12 @@ impl<'a> State<'a> {
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-        let node_msg = NodeMessage::new(message.to_bytes());
+        let node_msg = RoutingMsg::new(message.to_bytes());
 
         let _ = self
             .send_tx
             .send((
-                MessageType::NodeMessage {
+                MessageType::Routing {
                     msg: node_msg,
                     dest_info: DestInfo {
                         // Will be overridden while sending to multiple elders
@@ -475,13 +475,13 @@ impl<'a> State<'a> {
     ) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             let (message, dest_info) = match message {
-                MessageType::NodeMessage {
-                    msg: NodeMessage(msg_bytes),
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
                     dest_info,
                 } => (Message::from_bytes(Bytes::from(msg_bytes))?, dest_info),
-                MessageType::NodeCmdMessage { .. }
+                MessageType::Node { .. }
                 | MessageType::Ping(_)
-                | MessageType::ClientMessage { .. }
+                | MessageType::Client { .. }
                 | MessageType::SectionInfo { .. } => continue,
             };
 
@@ -770,7 +770,7 @@ mod tests {
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
-            let (message, dest_info) = assert_matches!(message, MessageType::NodeMessage { msg: NodeMessage(bytes), dest_info } =>
+            let (message, dest_info) = assert_matches!(message, MessageType::Routing { msg: RoutingMsg(bytes), dest_info } =>
                 (Message::from_bytes(Bytes::from(bytes))?, dest_info));
 
             assert_eq!(dest_info.dest_section_pk, pk);
@@ -800,8 +800,8 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage {
-                    msg: NodeMessage::new(message.to_bytes()),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
                     dest_info: DestInfo {
                         dest: *peer.name(),
                         dest_section_pk: pk,
@@ -1230,9 +1230,9 @@ mod tests {
             let (message, _) = send_rx
                 .recv()
                 .await
-                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+                .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage{ msg: NodeMessage(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
@@ -1248,8 +1248,8 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage {
-                    msg: NodeMessage::new(message.to_bytes()),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
                     dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
@@ -1272,8 +1272,8 @@ mod tests {
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage {
-                    msg: NodeMessage::new(message.to_bytes()),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
                     dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
@@ -1285,9 +1285,9 @@ mod tests {
             let (message, _) = send_rx
                 .recv()
                 .await
-                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+                .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage{ msg: NodeMessage(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())

@@ -272,7 +272,7 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             info!("Node #{} requires restart", index);
             return false;
         }
-        Event::ClientMessageReceived { msg, user, .. } => info!(
+        Event::ClientMsgReceived { msg, user, .. } => info!(
             "Node #{} received message from user: {:?}, msg: {:?}",
             index, user, msg
         ),
