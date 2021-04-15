@@ -34,7 +34,7 @@ use sn_messaging::{
     location::{Aggregation, Itinerary},
     node::NodeMessage,
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
-    DstLocation, HeaderInfo, MessageType, SrcLocation,
+    DestInfo, DstLocation, MessageType, SrcLocation,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -63,7 +63,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node.addr,
             message,
-            hdr_info: HeaderInfo {
+            dest_info: DestInfo {
                 dest: new_node.name(),
                 dest_section_pk: bls::SecretKey::random().public_key(),
             },
@@ -125,7 +125,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node_addr,
             message,
-            hdr_info: HeaderInfo {
+            dest_info: DestInfo {
                 dest: new_node_name,
                 dest_section_pk: bls::SecretKey::random().public_key(),
             },

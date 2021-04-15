@@ -326,7 +326,7 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::future;
     use qp2p::Config;
-    use sn_messaging::{HeaderInfo, WireMsg};
+    use sn_messaging::{DestInfo, WireMsg};
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
@@ -503,7 +503,7 @@ mod tests {
 
         // Send the first message.
         let key0 = bls::SecretKey::random().public_key();
-        let msg0 = MessageType::Ping(HeaderInfo {
+        let msg0 = MessageType::Ping(DestInfo {
             dest: name,
             dest_section_pk: key0,
         });
@@ -526,7 +526,7 @@ mod tests {
         // Send the second message.
         // Send the first message.
         let key1 = bls::SecretKey::random().public_key();
-        let msg1 = MessageType::Ping(HeaderInfo {
+        let msg1 = MessageType::Ping(DestInfo {
             dest: name,
             dest_section_pk: key1,
         });
@@ -585,7 +585,7 @@ mod tests {
     }
 
     fn new_ping_message() -> MessageType {
-        MessageType::Ping(HeaderInfo {
+        MessageType::Ping(DestInfo {
             dest: XorName::random(),
             dest_section_pk: bls::SecretKey::random().public_key(),
         })
