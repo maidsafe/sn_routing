@@ -38,7 +38,7 @@ use crate::{
     TransportConfig, MIN_ADULT_AGE,
 };
 use bytes::Bytes;
-use ed25519_dalek::{Keypair, PublicKey, Signature, Signer};
+use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
 use sn_messaging::{
     client::Message as ClientMessage,
@@ -174,6 +174,11 @@ impl Routing {
     /// Returns the ed25519 public key of this node.
     pub async fn public_key(&self) -> PublicKey {
         self.dispatcher.core.lock().await.node().keypair.public
+    }
+
+    /// Returns the ed25519 keypair of this node, as bytes.
+    pub async fn keypair_as_bytes(&self) -> [u8; KEYPAIR_LENGTH] {
+        self.dispatcher.core.lock().await.node().keypair.to_bytes()
     }
 
     /// Signs `data` with the ed25519 key of this node.
