@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.5](https://github.com/maidsafe/sn_routing/compare/v0.60.4...v0.60.5) (2021-04-21)
+
+
+### Features
+
+* **messaging:** restore target group size ([02fca6e](https://github.com/maidsafe/sn_routing/commit/02fca6ead186bddc3577e1ae2177c90e2b6e69d1))
+
 ### [0.60.4](https://github.com/maidsafe/sn_routing/compare/v0.60.3...v0.60.4) (2021-04-21)
 
 ### [0.60.3](https://github.com/maidsafe/sn_routing/compare/v0.60.2...v0.60.3) (2021-04-14)
