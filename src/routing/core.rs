@@ -491,7 +491,7 @@ impl Core {
         self.propose_offline(name)
     }
 
-    fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {
+    pub fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {
         if let Some(info) = self.section.members().get(&name) {
             let info = info.clone().leave()?;
 
