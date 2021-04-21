@@ -525,6 +525,11 @@
 <span id="524">524</span>
 <span id="525">525</span>
 <span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -566,7 +571,7 @@
     <span class="ident">TransportConfig</span>, <span class="ident">MIN_ADULT_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
-<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>};
+<span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>, <span class="ident">KEYPAIR_LENGTH</span>};
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">client</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">ClientMessage</span>,
@@ -702,6 +707,11 @@
     <span class="doccomment">/// Returns the ed25519 public key of this node.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">public_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PublicKey</span> {
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">public</span>
+    }
+
+    <span class="doccomment">/// Returns the ed25519 keypair of this node, as bytes.</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">keypair_as_bytes</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> [<span class="ident">u8</span>; <span class="ident">KEYPAIR_LENGTH</span>] {
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">node</span>().<span class="ident">keypair</span>.<span class="ident">to_bytes</span>()
     }
 
     <span class="doccomment">/// Signs `data` with the ed25519 key of this node.</span>
