@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.10](https://github.com/maidsafe/sn_routing/compare/v0.60.9...v0.60.10) (2021-04-21)
+
+
+### Bug Fixes
+
+* **delivery_targets:** deliver to all when targets are final dst ([f26722b](https://github.com/maidsafe/sn_routing/commit/f26722b156194cb834d02cf33e53a54b1cd3b6a0))
+
 ### [0.60.9](https://github.com/maidsafe/sn_routing/compare/v0.60.8...v0.60.9) (2021-04-21)
 
 
