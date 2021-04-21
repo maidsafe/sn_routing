@@ -92,7 +92,7 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
 };
-<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">ProofShare</span>;
+<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::{<span class="ident">Proof</span>, <span class="ident">ProofShare</span>};
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">SrcLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
@@ -124,8 +124,8 @@
     <span class="ident">Section</span> {
         <span class="doccomment">/// Name in the source section.</span>
         <span class="ident">src_name</span>: <span class="ident">XorName</span>,
-        <span class="doccomment">/// BLS signature of the message corresponding to the source section public key.</span>
-        <span class="ident">signature</span>: <span class="ident">bls</span>::<span class="ident">Signature</span>,
+        <span class="doccomment">/// BLS proof of the message corresponding to the source section.</span>
+        <span class="ident">proof</span>: <span class="ident">Proof</span>,
     },
 }
 
