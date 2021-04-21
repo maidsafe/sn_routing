@@ -13,7 +13,7 @@ use crate::{
     network::Network,
     peer::Peer,
     section::Section,
-    ELDER_SIZE,
+    supermajority, ELDER_SIZE,
 };
 use itertools::Itertools;
 use sn_messaging::DstLocation;
@@ -111,17 +111,19 @@ fn candidates(
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
-    let mut dg_size = ELDER_SIZE;
+    // gives at least 1 honest target among recipients.
+    let min_group_size = 1 + ELDER_SIZE - supermajority(ELDER_SIZE);
+    let mut dg_size = min_group_size;
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
         // If we don't have enough contacts send to as many as possible
-        // up to majority of Elders
+        // up to dg_size of Elders
         dg_size = cmp::min(len, dg_size);
-        if len < ELDER_SIZE {
+        if len < min_group_size {
             warn!(
                 "Delivery group only {:?} when it should be {:?}",
-                len, ELDER_SIZE
+                len, min_group_size
             )
         }
 
