@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.8](https://github.com/maidsafe/sn_routing/compare/v0.60.7...v0.60.8) (2021-04-21)
+
+
+### Features
+
+* **api:** add new API for an Elder node to propose that a node has gone ([2937e59](https://github.com/maidsafe/sn_routing/commit/2937e5938e84560850efd4eb892dcd353bc7790e))
+
 ### [0.60.7](https://github.com/maidsafe/sn_routing/compare/v0.60.6...v0.60.7) (2021-04-21)
 
 
