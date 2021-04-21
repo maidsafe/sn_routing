@@ -22,13 +22,14 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sn_messaging::DstLocation;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeSet, HashMap, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
     net::SocketAddr,
     time::Duration,
 };
 use tiny_keccak::{Hasher, Sha3};
+use xor_name::XorName;
 
 // Interval to progress DKG timed phase
 const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
@@ -218,11 +219,12 @@ impl DkgVoter {
     pub fn process_failure(
         &mut self,
         dkg_key: &DkgKey,
+        non_participants: &BTreeSet<XorName>,
         proof: DkgFailureProof,
     ) -> Option<DkgCommand> {
         self.sessions
             .get_mut(dkg_key)?
-            .process_failure(dkg_key, proof)
+            .process_failure(dkg_key, non_participants, proof)
     }
 }
 
@@ -319,7 +321,7 @@ impl Session {
             }
             Err(error) => {
                 trace!("DKG for {} failed: {}", self.elders_info, error);
-                self.report_failure(dkg_key, keypair)
+                self.report_failure(dkg_key, BTreeSet::new(), keypair)
             }
         }
     }
@@ -348,7 +350,20 @@ impl Session {
                 participants.iter().format(", ")
             );
 
-            return self.report_failure(dkg_key, keypair);
+            let non_participants: BTreeSet<_> = self
+                .elders_info
+                .elders
+                .keys()
+                .filter_map(|elder| {
+                    if !participants.contains(elder) {
+                        Some(*elder)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            return self.report_failure(dkg_key, non_participants, keypair);
         }
 
         // Corrupted DKG outcome. This can happen when a DKG session is restarted using the same set
@@ -361,7 +376,7 @@ impl Session {
             != outcome.secret_key_share.public_key_share()
         {
             trace!("DKG for {} failed: corrupted outcome", self.elders_info);
-            return self.report_failure(dkg_key, keypair);
+            return self.report_failure(dkg_key, BTreeSet::new(), keypair);
         }
 
         trace!(
@@ -384,10 +399,15 @@ impl Session {
         }]
     }
 
-    fn report_failure(&mut self, dkg_key: &DkgKey, keypair: &Keypair) -> Vec<DkgCommand> {
-        let proof = DkgFailureProof::new(keypair, dkg_key);
+    fn report_failure(
+        &mut self,
+        dkg_key: &DkgKey,
+        non_participants: BTreeSet<XorName>,
+        keypair: &Keypair,
+    ) -> Vec<DkgCommand> {
+        let proof = DkgFailureProof::new(keypair, &non_participants, dkg_key);
 
-        if !self.failures.insert(proof) {
+        if !self.failures.insert(proof, &non_participants) {
             return vec![];
         }
 
@@ -397,11 +417,17 @@ impl Session {
                 recipients: self.recipients(),
                 dkg_key: *dkg_key,
                 proof,
+                non_participants,
             }))
             .collect()
     }
 
-    fn process_failure(&mut self, dkg_key: &DkgKey, proof: DkgFailureProof) -> Option<DkgCommand> {
+    fn process_failure(
+        &mut self,
+        dkg_key: &DkgKey,
+        non_participants: &BTreeSet<XorName>,
+        proof: DkgFailureProof,
+    ) -> Option<DkgCommand> {
         if !self
             .elders_info
             .elders
@@ -410,11 +436,11 @@ impl Session {
             return None;
         }
 
-        if !proof.verify(dkg_key) {
+        if !proof.verify(dkg_key, non_participants) {
             return None;
         }
 
-        if !self.failures.insert(proof) {
+        if !self.failures.insert(proof, non_participants) {
             return None;
         }
 
@@ -449,32 +475,38 @@ pub(crate) struct DkgFailureProof {
 }
 
 impl DkgFailureProof {
-    fn new(keypair: &Keypair, dkg_key: &DkgKey) -> Self {
+    fn new(keypair: &Keypair, non_participants: &BTreeSet<XorName>, dkg_key: &DkgKey) -> Self {
         Self {
             public_key: keypair.public,
-            signature: crypto::sign(&failure_proof_hash(dkg_key), keypair),
+            signature: crypto::sign(&failure_proof_hash(dkg_key, non_participants), keypair),
         }
     }
 
-    fn verify(&self, dkg_key: &DkgKey) -> bool {
-        let hash = failure_proof_hash(dkg_key);
+    fn verify(&self, dkg_key: &DkgKey, non_participants: &BTreeSet<XorName>) -> bool {
+        let hash = failure_proof_hash(dkg_key, non_participants);
         self.public_key.verify(&hash, &self.signature).is_ok()
     }
 }
 
 #[derive(Default, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub(crate) struct DkgFailureProofSet(Vec<DkgFailureProof>);
+pub(crate) struct DkgFailureProofSet {
+    proofs: Vec<DkgFailureProof>,
+    pub non_participants: BTreeSet<XorName>,
+}
 
 impl DkgFailureProofSet {
     // Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was
     // not already present in the set and `false` otherwise.
-    fn insert(&mut self, proof: DkgFailureProof) -> bool {
+    fn insert(&mut self, proof: DkgFailureProof, non_participants: &BTreeSet<XorName>) -> bool {
+        if self.non_participants.is_empty() {
+            self.non_participants = non_participants.clone();
+        }
         if self
-            .0
+            .proofs
             .iter()
             .all(|existing_proof| existing_proof.public_key != proof.public_key)
         {
-            self.0.push(proof);
+            self.proofs.push(proof);
             true
         } else {
             false
@@ -484,13 +516,16 @@ impl DkgFailureProofSet {
     // Check whether we have enough proofs to reach agreement on the failure. The contained proofs
     // are assumed valid.
     fn has_agreement(&self, elders_info: &EldersInfo) -> bool {
-        has_failure_agreement(elders_info.elders.len(), self.0.len())
+        has_failure_agreement(elders_info.elders.len(), self.proofs.len())
     }
 
     pub fn verify(&self, elders_info: &EldersInfo, generation: u64) -> bool {
-        let hash = failure_proof_hash(&DkgKey::new(elders_info, generation));
+        let hash = failure_proof_hash(
+            &DkgKey::new(elders_info, generation),
+            &self.non_participants,
+        );
         let votes = self
-            .0
+            .proofs
             .iter()
             .filter(|proof| {
                 elders_info
@@ -513,11 +548,14 @@ fn has_failure_agreement(num_participants: usize, num_votes: usize) -> bool {
 
 // Create a value whose signature serves as the proof that a failure of a DKG session with the given
 // `dkg_key` was observed.
-fn failure_proof_hash(dkg_key: &DkgKey) -> Digest256 {
+fn failure_proof_hash(dkg_key: &DkgKey, non_participants: &BTreeSet<XorName>) -> Digest256 {
     let mut hasher = Sha3::v256();
     let mut hash = Digest256::default();
     hasher.update(&dkg_key.hash);
     hasher.update(&dkg_key.generation.to_le_bytes());
+    for name in non_participants.iter() {
+        hasher.update(&name.0);
+    }
     hasher.update(b"failure");
     hasher.finalize(&mut hash);
     hash
@@ -580,6 +618,7 @@ pub(crate) enum DkgCommand {
         recipients: Vec<SocketAddr>,
         dkg_key: DkgKey,
         proof: DkgFailureProof,
+        non_participants: BTreeSet<XorName>,
     },
     HandleFailureAgreement(DkgFailureProofSet),
 }
@@ -615,8 +654,13 @@ impl DkgCommand {
                 recipients,
                 dkg_key,
                 proof,
+                non_participants,
             } => {
-                let variant = Variant::DkgFailureObservation { dkg_key, proof };
+                let variant = Variant::DkgFailureObservation {
+                    dkg_key,
+                    proof,
+                    non_participants,
+                };
                 let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
 
                 Ok(Command::send_message_to_nodes(
