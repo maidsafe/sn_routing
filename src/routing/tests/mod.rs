@@ -292,7 +292,14 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
     let proof_chain = SectionChain::new(section_key);
-    let relocate_message = Message::section_src(relocate_message, signature, proof_chain)?;
+    let relocate_message = Message::section_src(
+        relocate_message,
+        Proof {
+            public_key: section_key,
+            signature,
+        },
+        proof_chain,
+    )?;
     let relocate_details = SignedRelocateDetails::new(relocate_message)?;
     let relocate_payload = RelocatePayload::new(
         relocate_details,
@@ -976,7 +983,14 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         variant: Variant::UserMessage(Bytes::from_static(b"hello")),
     };
     let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
-    let original_message = Message::section_src(message, signature, SectionChain::new(pk1))?;
+    let original_message = Message::section_src(
+        message,
+        Proof {
+            public_key: pk1,
+            signature,
+        },
+        SectionChain::new(pk1),
+    )?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
@@ -1148,7 +1162,14 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&original_message.as_signable())?);
     let proof_chain = chain.truncate(1);
-    let original_message = Message::section_src(original_message, signature, proof_chain)?;
+    let original_message = Message::section_src(
+        original_message,
+        Proof {
+            public_key: pk1,
+            signature,
+        },
+        proof_chain,
+    )?;
 
     // Create our node.
     let state = Core::new(

@@ -96,9 +96,12 @@ impl Message {
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
-            SrcAuthority::Section { signature, .. } => {
+            SrcAuthority::Section { proof, .. } => {
                 if let Some(proof_chain) = msg.proof_chain.as_ref() {
-                    if !proof_chain.last_key().verify(signature, &signed_bytes) {
+                    if !proof_chain
+                        .last_key()
+                        .verify(&proof.signature, &signed_bytes)
+                    {
                         error!(
                             "Failed signature: {:?} (proof chain: {:?})",
                             msg, proof_chain
@@ -206,10 +209,7 @@ impl Message {
             return Err(Error::FailedSignature);
         }
 
-        self.src = SrcAuthority::Section {
-            signature: proof.signature,
-            src_name,
-        };
+        self.src = SrcAuthority::Section { proof, src_name };
 
         Ok(self)
     }
@@ -246,16 +246,16 @@ impl Message {
     }
 
     /// Creates a signed message from a section.
-    /// Note: `signature` isn't verified and is assumed valid.
+    /// Note: `proof` isn't verified and is assumed valid.
     pub(crate) fn section_src(
         plain: PlainMessage,
-        signature: bls::Signature,
+        proof: Proof,
         proof_chain: SectionChain,
     ) -> Result<Self> {
         Self::new_signed(
             SrcAuthority::Section {
                 src_name: plain.src,
-                signature,
+                proof,
             },
             plain.dst,
             plain.variant,
@@ -311,7 +311,7 @@ impl Message {
                     Ok(VerifyStatus::Unknown)
                 }
             }
-            SrcAuthority::Section { signature, .. } => {
+            SrcAuthority::Section { proof, .. } => {
                 // Proof chain is required for section-src messages.
                 let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
                     proof_chain
@@ -319,7 +319,7 @@ impl Message {
                     return Err(Error::InvalidMessage);
                 };
 
-                if !proof_chain.last_key().verify(signature, &bytes) {
+                if !proof_chain.last_key().verify(&proof.signature, &bytes) {
                     return Err(Error::FailedSignature);
                 }
 
@@ -329,6 +329,15 @@ impl Message {
                     Ok(VerifyStatus::Unknown)
                 }
             }
+        }
+    }
+
+    /// Getter
+    pub fn proof(&self) -> Option<Proof> {
+        if let SrcAuthority::Section { proof, .. } = &self.src {
+            Some(proof.clone())
+        } else {
+            None
         }
     }
 
