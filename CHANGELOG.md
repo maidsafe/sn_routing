@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.61.0](https://github.com/maidsafe/sn_routing/compare/v0.60.11...v0.61.0) (2021-04-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* for aggregate_at_src message, notify sn_node with proof as well
+
+### Features
+
+* restore aggregate at source ([4e86a20](https://github.com/maidsafe/sn_routing/commit/4e86a20c6479a5cafda953e38fb61ca2b6d347d7))
+
+
+### api
+
+* for aggregate_at_src message, notify sn_node with proof as well ([8a39aaa](https://github.com/maidsafe/sn_routing/commit/8a39aaa936ea6e478bb1d96bd49ca390d62297c0))
+
 ### [0.60.11](https://github.com/maidsafe/sn_routing/compare/v0.60.10...v0.60.11) (2021-04-21)
 
 ### [0.60.10](https://github.com/maidsafe/sn_routing/compare/v0.60.9...v0.60.10) (2021-04-21)
