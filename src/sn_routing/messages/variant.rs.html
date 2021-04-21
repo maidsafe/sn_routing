@@ -300,6 +300,12 @@
 <span id="299">299</span>
 <span id="300">300</span>
 <span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -324,7 +330,7 @@
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">collections</span>::<span class="ident">VecDeque</span>,
+    <span class="ident">collections</span>::{<span class="ident">BTreeSet</span>, <span class="ident">VecDeque</span>},
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -401,6 +407,7 @@
     <span class="ident">DkgFailureObservation</span> {
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>,
+        <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Sent to the current elders by the DKG participants when at least majority of them observe</span>
     <span class="doccomment">/// a DKG failure.</span>
@@ -530,10 +537,15 @@
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">dkg_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">message</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">DkgFailureObservation</span> { <span class="ident">dkg_key</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+            <span class="self">Self</span>::<span class="ident">DkgFailureObservation</span> {
+                <span class="ident">dkg_key</span>,
+                <span class="ident">proof</span>,
+                <span class="ident">non_participants</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DkgFailureObservation&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="ident">dkg_key</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;proof&quot;</span>, <span class="ident">proof</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;non_participants&quot;</span>, <span class="ident">non_participants</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgFailureAgreement</span>(<span class="ident">proofs</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;DkgFailureAgreement&quot;</span>).<span class="ident">field</span>(<span class="ident">proofs</span>).<span class="ident">finish</span>()

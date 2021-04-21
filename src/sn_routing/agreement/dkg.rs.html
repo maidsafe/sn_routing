@@ -792,6 +792,50 @@
 <span id="791">791</span>
 <span id="792">792</span>
 <span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+<span id="805">805</span>
+<span id="806">806</span>
+<span id="807">807</span>
+<span id="808">808</span>
+<span id="809">809</span>
+<span id="810">810</span>
+<span id="811">811</span>
+<span id="812">812</span>
+<span id="813">813</span>
+<span id="814">814</span>
+<span id="815">815</span>
+<span id="816">816</span>
+<span id="817">817</span>
+<span id="818">818</span>
+<span id="819">819</span>
+<span id="820">820</span>
+<span id="821">821</span>
+<span id="822">822</span>
+<span id="823">823</span>
+<span id="824">824</span>
+<span id="825">825</span>
+<span id="826">826</span>
+<span id="827">827</span>
+<span id="828">828</span>
+<span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -817,13 +861,14 @@
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">collections</span>::{<span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
+    <span class="ident">collections</span>::{<span class="ident">BTreeSet</span>, <span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">iter</span>, <span class="ident">mem</span>,
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
     <span class="ident">time</span>::<span class="ident">Duration</span>,
 };
 <span class="kw">use</span> <span class="ident">tiny_keccak</span>::{<span class="ident">Hasher</span>, <span class="ident">Sha3</span>};
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="comment">// Interval to progress DKG timed phase</span>
 <span class="kw">const</span> <span class="ident">DKG_PROGRESS_INTERVAL</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">30</span>);
@@ -1013,11 +1058,12 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">process_failure</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>,
+        <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sessions</span>
             .<span class="ident">get_mut</span>(<span class="ident">dkg_key</span>)<span class="question-mark">?</span>
-            .<span class="ident">process_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">proof</span>)
+            .<span class="ident">process_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>, <span class="ident">proof</span>)
     }
 }
 
@@ -1114,7 +1160,7 @@
             }
             <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;DKG for {} failed: {}&quot;</span>, <span class="self">self</span>.<span class="ident">elders_info</span>, <span class="ident">error</span>);
-                <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">keypair</span>)
+                <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">BTreeSet</span>::<span class="ident">new</span>(), <span class="ident">keypair</span>)
             }
         }
     }
@@ -1143,7 +1189,20 @@
                 <span class="ident">participants</span>.<span class="ident">iter</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>)
             );
 
-            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">keypair</span>);
+            <span class="kw">let</span> <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
+                .<span class="ident">elders_info</span>
+                .<span class="ident">elders</span>
+                .<span class="ident">keys</span>()
+                .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">elder</span><span class="op">|</span> {
+                    <span class="kw">if</span> <span class="op">!</span><span class="ident">participants</span>.<span class="ident">contains</span>(<span class="ident">elder</span>) {
+                        <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">elder</span>)
+                    } <span class="kw">else</span> {
+                        <span class="prelude-val">None</span>
+                    }
+                })
+                .<span class="ident">collect</span>();
+
+            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>, <span class="ident">keypair</span>);
         }
 
         <span class="comment">// Corrupted DKG outcome. This can happen when a DKG session is restarted using the same set</span>
@@ -1156,7 +1215,7 @@
             <span class="op">!</span><span class="op">=</span> <span class="ident">outcome</span>.<span class="ident">secret_key_share</span>.<span class="ident">public_key_share</span>()
         {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;DKG for {} failed: corrupted outcome&quot;</span>, <span class="self">self</span>.<span class="ident">elders_info</span>);
-            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">keypair</span>);
+            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">report_failure</span>(<span class="ident">dkg_key</span>, <span class="ident">BTreeSet</span>::<span class="ident">new</span>(), <span class="ident">keypair</span>);
         }
 
         <span class="macro">trace</span><span class="macro">!</span>(
@@ -1179,10 +1238,15 @@
         }]
     }
 
-    <span class="kw">fn</span> <span class="ident">report_failure</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">proof</span> <span class="op">=</span> <span class="ident">DkgFailureProof</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="ident">dkg_key</span>);
+    <span class="kw">fn</span> <span class="ident">report_failure</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>,
+        <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
+        <span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">proof</span> <span class="op">=</span> <span class="ident">DkgFailureProof</span>::<span class="ident">new</span>(<span class="ident">keypair</span>, <span class="kw-2">&amp;</span><span class="ident">non_participants</span>, <span class="ident">dkg_key</span>);
 
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">failures</span>.<span class="ident">insert</span>(<span class="ident">proof</span>) {
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">failures</span>.<span class="ident">insert</span>(<span class="ident">proof</span>, <span class="kw-2">&amp;</span><span class="ident">non_participants</span>) {
             <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[];
         }
 
@@ -1192,11 +1256,17 @@
                 <span class="ident">recipients</span>: <span class="self">self</span>.<span class="ident">recipients</span>(),
                 <span class="ident">dkg_key</span>: <span class="kw-2">*</span><span class="ident">dkg_key</span>,
                 <span class="ident">proof</span>,
+                <span class="ident">non_participants</span>,
             }))
             .<span class="ident">collect</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">process_failure</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">process_failure</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>,
+        <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
+        <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">DkgCommand</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
             .<span class="ident">elders_info</span>
             .<span class="ident">elders</span>
@@ -1205,11 +1275,11 @@
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
 
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">proof</span>.<span class="ident">verify</span>(<span class="ident">dkg_key</span>) {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">proof</span>.<span class="ident">verify</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>) {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
 
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">failures</span>.<span class="ident">insert</span>(<span class="ident">proof</span>) {
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">failures</span>.<span class="ident">insert</span>(<span class="ident">proof</span>, <span class="ident">non_participants</span>) {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
 
@@ -1244,32 +1314,38 @@
 }
 
 <span class="kw">impl</span> <span class="ident">DkgFailureProof</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">public_key</span>: <span class="ident">keypair</span>.<span class="ident">public</span>,
-            <span class="ident">signature</span>: <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>), <span class="ident">keypair</span>),
+            <span class="ident">signature</span>: <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>), <span class="ident">keypair</span>),
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>);
+    <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>);
         <span class="self">self</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
     }
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">DkgFailureProofSet</span>(<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgFailureProof</span><span class="op">&gt;</span>);
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">DkgFailureProofSet</span> {
+    <span class="ident">proofs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgFailureProof</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
+}
 
 <span class="kw">impl</span> <span class="ident">DkgFailureProofSet</span> {
     <span class="comment">// Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was</span>
     <span class="comment">// not already present in the set and `false` otherwise.</span>
-    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">non_participants</span>.<span class="ident">is_empty</span>() {
+            <span class="self">self</span>.<span class="ident">non_participants</span> <span class="op">=</span> <span class="ident">non_participants</span>.<span class="ident">clone</span>();
+        }
         <span class="kw">if</span> <span class="self">self</span>
-            .<span class="number">0</span>
+            .<span class="ident">proofs</span>
             .<span class="ident">iter</span>()
             .<span class="ident">all</span>(<span class="op">|</span><span class="ident">existing_proof</span><span class="op">|</span> <span class="ident">existing_proof</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">proof</span>.<span class="ident">public_key</span>)
         {
-            <span class="self">self</span>.<span class="number">0</span>.<span class="ident">push</span>(<span class="ident">proof</span>);
+            <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">push</span>(<span class="ident">proof</span>);
             <span class="bool-val">true</span>
         } <span class="kw">else</span> {
             <span class="bool-val">false</span>
@@ -1279,13 +1355,16 @@
     <span class="comment">// Check whether we have enough proofs to reach agreement on the failure. The contained proofs</span>
     <span class="comment">// are assumed valid.</span>
     <span class="kw">fn</span> <span class="ident">has_agreement</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elders_info</span>: <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="ident">has_failure_agreement</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="self">self</span>.<span class="number">0</span>.<span class="ident">len</span>())
+        <span class="ident">has_failure_agreement</span>(<span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">len</span>())
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elders_info</span>: <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span>, <span class="ident">generation</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(<span class="kw-2">&amp;</span><span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="ident">elders_info</span>, <span class="ident">generation</span>));
+        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(
+            <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="ident">elders_info</span>, <span class="ident">generation</span>),
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">non_participants</span>,
+        );
         <span class="kw">let</span> <span class="ident">votes</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="number">0</span>
+            .<span class="ident">proofs</span>
             .<span class="ident">iter</span>()
             .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">proof</span><span class="op">|</span> {
                 <span class="ident">elders_info</span>
@@ -1308,11 +1387,14 @@
 
 <span class="comment">// Create a value whose signature serves as the proof that a failure of a DKG session with the given</span>
 <span class="comment">// `dkg_key` was observed.</span>
-<span class="kw">fn</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Digest256</span> {
+<span class="kw">fn</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Digest256</span> {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">Sha3</span>::<span class="ident">v256</span>();
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">Digest256</span>::<span class="ident">default</span>();
     <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>.<span class="ident">hash</span>);
     <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>.<span class="ident">generation</span>.<span class="ident">to_le_bytes</span>());
+    <span class="kw">for</span> <span class="ident">name</span> <span class="kw">in</span> <span class="ident">non_participants</span>.<span class="ident">iter</span>() {
+        <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>.<span class="number">0</span>);
+    }
     <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="string">b&quot;failure&quot;</span>);
     <span class="ident">hasher</span>.<span class="ident">finalize</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">hash</span>);
     <span class="ident">hash</span>
@@ -1375,6 +1457,7 @@
         <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>,
+        <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     },
     <span class="ident">HandleFailureAgreement</span>(<span class="ident">DkgFailureProofSet</span>),
 }
@@ -1410,8 +1493,13 @@
                 <span class="ident">recipients</span>,
                 <span class="ident">dkg_key</span>,
                 <span class="ident">proof</span>,
+                <span class="ident">non_participants</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DkgFailureObservation</span> { <span class="ident">dkg_key</span>, <span class="ident">proof</span> };
+                <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DkgFailureObservation</span> {
+                    <span class="ident">dkg_key</span>,
+                    <span class="ident">proof</span>,
+                    <span class="ident">non_participants</span>,
+                };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">Direct</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
