@@ -114,12 +114,17 @@ fn candidates(
     // gives at least 1 honest target among recipients.
     let min_dg_size = 1 + ELDER_SIZE - supermajority(ELDER_SIZE);
     let mut dg_size = min_dg_size;
-    let mut nodes_to_send = Vec::new();
+    let mut candidates = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
-        nodes_to_send.extend(connected.cloned());
-        // If we don't have enough contacts send to as many as possible
-        // up to dg_size of Elders
-        dg_size = cmp::min(len, dg_size);
+        candidates.extend(connected.cloned());
+        if prefix.matches(target_name) {
+            // If we are last hop before final dst, send to all candidates.
+            dg_size = len;
+        } else {
+            // If we don't have enough contacts send to as many as possible
+            // up to dg_size of Elders
+            dg_size = cmp::min(len, dg_size);
+        }
         if len < min_dg_size {
             warn!(
                 "Delivery group only {:?} when it should be {:?}",
@@ -129,19 +134,19 @@ fn candidates(
 
         if prefix == section.prefix() {
             // Send to all connected targets so they can forward the message
-            nodes_to_send.retain(|node| node.name() != our_name);
-            dg_size = nodes_to_send.len();
+            candidates.retain(|node| node.name() != our_name);
+            dg_size = candidates.len();
             break;
         }
-        if idx == 0 && nodes_to_send.len() >= dg_size {
+        if idx == 0 && candidates.len() >= dg_size {
             // can deliver to enough of the closest section
             break;
         }
     }
-    nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
+    candidates.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
 
-    if dg_size > 0 && nodes_to_send.len() >= dg_size {
-        Ok((nodes_to_send, dg_size))
+    if dg_size > 0 && candidates.len() >= dg_size {
+        Ok((candidates, dg_size))
     } else {
         Err(Error::CannotRoute)
     }
@@ -253,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn delivery_targets_elder_to_unknown_remote_peer() -> Result<()> {
+    fn delivery_targets_elder_to_final_hop_unknown_remote_peer() -> Result<()> {
         let (our_name, section, network, _) = setup_elder()?;
 
         let elders_info1 = network
@@ -261,6 +266,32 @@ mod tests {
             .context("unknown section")?;
 
         let dst_name = elders_info1.prefix.substituted_in(rand::random());
+        let dst = DstLocation::Node(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to all elders in the dst section
+        let expected_recipients = elders_info1
+            .peers()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        assert_eq!(dg_size, elders_info1.elders.len());
+        itertools::assert_equal(&recipients, expected_recipients);
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Need to setup network so that we do not locate final dst, as to trigger correct outcome."]
+    fn delivery_targets_elder_to_intermediary_hop_unknown_remote_peer() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let elders_info1 = network
+            .get(&Prefix::default().pushed(true))
+            .context("unknown section")?;
+
+        let dst_name = elders_info1
+            .prefix
+            .pushed(false)
+            .substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
@@ -276,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn delivery_targets_elder_to_remote_section() -> Result<()> {
+    fn delivery_targets_elder_final_hop_to_remote_section() -> Result<()> {
         let (our_name, section, network, _) = setup_elder()?;
 
         let elders_info1 = network
@@ -287,11 +318,39 @@ mod tests {
         let dst = DstLocation::Section(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
 
-        // Send to all elders in the dst section
+        // Send to all elders in the final dst section
         let expected_recipients = elders_info1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        assert_eq!(dg_size, elders_info1.elders.len());
+        itertools::assert_equal(&recipients, expected_recipients);
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Need to setup network so that we do not locate final dst, as to trigger correct outcome."]
+    fn delivery_targets_elder_intermediary_hop_to_remote_section() -> Result<()> {
+        let (our_name, section, network, _) = setup_elder()?;
+
+        let elders_info1 = network
+            .get(&Prefix::default().pushed(true))
+            .context("unknown section")?;
+
+        let dst_name = elders_info1
+            .prefix
+            .pushed(false)
+            .substituted_in(rand::random());
+        let dst = DstLocation::Section(dst_name);
+        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+
+        // Send to a subset of elders in the intermediary dst section
         let min_dg_size = 1 + elders_info1.elders.len() - supermajority(elders_info1.elders.len());
+        let expected_recipients = elders_info1
+            .peers()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
+            .take(min_dg_size);
+
         assert_eq!(dg_size, min_dg_size);
         itertools::assert_equal(&recipients, expected_recipients);
 
