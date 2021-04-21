@@ -35,7 +35,7 @@ use crate::{
     node::Node,
     peer::Peer,
     section::{EldersInfo, SectionChain},
-    TransportConfig, MIN_ADULT_AGE,
+    Error, TransportConfig, MIN_ADULT_AGE,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
@@ -163,6 +163,16 @@ impl Routing {
     /// Sets the JoinsAllowed flag.
     pub async fn set_joins_allowed(&self, joins_allowed: bool) -> Result<()> {
         let command = Command::SetJoinsAllowed(joins_allowed);
+        self.dispatcher.clone().handle_commands(command).await
+    }
+
+    /// Starts a proposal that a node has gone offline.
+    /// This can be done only by an Elder.
+    pub async fn propose_offline(&self, name: XorName) -> Result<()> {
+        if !self.is_elder().await {
+            return Err(Error::InvalidState);
+        }
+        let command = Command::ProposeOffline(name);
         self.dispatcher.clone().handle_commands(command).await
     }
 

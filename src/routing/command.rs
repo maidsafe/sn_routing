@@ -94,6 +94,8 @@ pub(crate) enum Command {
         // The key of the destination section that the joining node knows, if any.
         their_knowledge: Option<bls::PublicKey>,
     },
+    /// Proposes a peer as offline
+    ProposeOffline(XorName),
 }
 
 impl Command {
@@ -198,6 +200,7 @@ impl Debug for Command {
                 .field("peer", peer)
                 .field("previous_name", previous_name)
                 .finish(),
+            Self::ProposeOffline(name) => f.debug_tuple("ProposeOffline").field(name).finish(),
         }
     }
 }

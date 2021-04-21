@@ -172,6 +172,7 @@ impl Dispatcher {
                     .make_online_proposal(peer, previous_name, their_knowledge)
                     .await
             }
+            Command::ProposeOffline(name) => self.core.lock().await.propose_offline(name),
         }
     }
 
