@@ -65,7 +65,6 @@ pub(crate) enum Proposal {
 
     // Proposal to accumulate the message at the source (that is, our section) and then send it to
     // its destination.
-    // TODO: it seems we might not need this. Consider removing it.
     AccumulateAtSrc {
         message: Box<PlainMessage>,
         proof_chain: SectionChain,
