@@ -11,7 +11,7 @@ use crate::{
     error::{Error, Result},
     peer::Peer,
 };
-use bls_signature_aggregator::ProofShare;
+use bls_signature_aggregator::{Proof, ProofShare};
 use serde::{Deserialize, Serialize};
 use sn_messaging::SrcLocation;
 use std::net::SocketAddr;
@@ -43,8 +43,8 @@ pub enum SrcAuthority {
     Section {
         /// Name in the source section.
         src_name: XorName,
-        /// BLS signature of the message corresponding to the source section public key.
-        signature: bls::Signature,
+        /// BLS proof of the message corresponding to the source section.
+        proof: Proof,
     },
 }
 

@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::section::SectionChain;
+use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
@@ -49,6 +50,8 @@ pub enum Event {
         src: SrcLocation,
         /// The destination location that receives the message.
         dst: DstLocation,
+        /// The proof if the message was set to be aggregated at source.
+        proof: Option<Proof>,
         /// The proof chain for the message, if any.
         proof_chain: Option<SectionChain>,
     },
