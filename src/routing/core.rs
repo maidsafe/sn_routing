@@ -1104,6 +1104,7 @@ impl Core {
             content,
             src: msg.src().src_location(),
             dst: *msg.dst(),
+            proof: msg.proof(),
             proof_chain: msg.proof_chain().ok().cloned(),
         });
         Ok(vec![])
@@ -1781,7 +1782,7 @@ impl Core {
         proof_chain: SectionChain,
         proof: Proof,
     ) -> Result<Command> {
-        let message = Message::section_src(message, proof.signature, proof_chain)?;
+        let message = Message::section_src(message, proof, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,
