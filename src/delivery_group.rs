@@ -112,18 +112,18 @@ fn candidates(
         .map(|info| (&info.prefix, info.elders.len(), info.elders.values()));
 
     // gives at least 1 honest target among recipients.
-    let min_group_size = 1 + ELDER_SIZE - supermajority(ELDER_SIZE);
-    let mut dg_size = min_group_size;
+    let min_dg_size = 1 + ELDER_SIZE - supermajority(ELDER_SIZE);
+    let mut dg_size = min_dg_size;
     let mut nodes_to_send = Vec::new();
     for (idx, (prefix, len, connected)) in sections.enumerate() {
         nodes_to_send.extend(connected.cloned());
         // If we don't have enough contacts send to as many as possible
         // up to dg_size of Elders
         dg_size = cmp::min(len, dg_size);
-        if len < min_group_size {
+        if len < min_dg_size {
             warn!(
                 "Delivery group only {:?} when it should be {:?}",
-                len, min_group_size
+                len, min_dg_size
             )
         }
 
@@ -268,7 +268,8 @@ mod tests {
         let expected_recipients = elders_info1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, elders_info1.elders.len());
+        let min_dg_size = 1 + elders_info1.elders.len() - supermajority(elders_info1.elders.len());
+        assert_eq!(dg_size, min_dg_size);
         itertools::assert_equal(&recipients, expected_recipients);
 
         Ok(())
@@ -290,7 +291,8 @@ mod tests {
         let expected_recipients = elders_info1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, elders_info1.elders.len());
+        let min_dg_size = 1 + elders_info1.elders.len() - supermajority(elders_info1.elders.len());
+        assert_eq!(dg_size, min_dg_size);
         itertools::assert_equal(&recipients, expected_recipients);
 
         Ok(())
