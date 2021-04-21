@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.60.9](https://github.com/maidsafe/sn_routing/compare/v0.60.8...v0.60.9) (2021-04-21)
+
+
+### Features
+
+* vote DKG non_participants off ([c4d6067](https://github.com/maidsafe/sn_routing/commit/c4d6067679003de74380f218cd91e9f529c8bb5d))
+
 ### [0.60.8](https://github.com/maidsafe/sn_routing/compare/v0.60.7...v0.60.8) (2021-04-21)
 
 
