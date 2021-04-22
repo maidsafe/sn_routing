@@ -293,7 +293,7 @@ mod tests {
             .pushed(false)
             .substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _dst_pk) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the dst section
         let expected_recipients = elders_info1
@@ -342,7 +342,7 @@ mod tests {
             .pushed(false)
             .substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _dst_pk) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to a subset of elders in the intermediary dst section
         let min_dg_size = 1 + elders_info1.elders.len() - supermajority(elders_info1.elders.len());

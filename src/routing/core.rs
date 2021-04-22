@@ -1949,7 +1949,7 @@ impl Core {
         self.network.update_knowledge(knowledge)
     }
 
-    async fn handle_accumulate_at_src_agreement(
+    fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
         proof_chain: SectionChain,
