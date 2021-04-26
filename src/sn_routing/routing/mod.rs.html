@@ -520,26 +520,6 @@
 <span id="519">519</span>
 <span id="520">520</span>
 <span id="521">521</span>
-<span id="522">522</span>
-<span id="523">523</span>
-<span id="524">524</span>
-<span id="525">525</span>
-<span id="526">526</span>
-<span id="527">527</span>
-<span id="528">528</span>
-<span id="529">529</span>
-<span id="530">530</span>
-<span id="531">531</span>
-<span id="532">532</span>
-<span id="533">533</span>
-<span id="534">534</span>
-<span id="535">535</span>
-<span id="536">536</span>
-<span id="537">537</span>
-<span id="538">538</span>
-<span id="539">539</span>
-<span id="540">540</span>
-<span id="541">541</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -586,7 +566,7 @@
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">client</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">ClientMessage</span>,
     <span class="ident">node</span>::<span class="ident">NodeMessage</span>,
-    <span class="ident">section_info</span>::{<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">TargetSectionError</span>, <span class="ident">ErrorResponse</span>, <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>},
+    <span class="ident">section_info</span>::{<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">TargetSectionError</span>, <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>},
     <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
@@ -1052,26 +1032,6 @@
                     <span class="kw">return</span>;
                 }
             };
-
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">client_pk</span>) <span class="op">=</span> <span class="ident">message</span>.<span class="ident">target_section_pk</span>() {
-                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">bls_pk</span>) <span class="op">=</span> <span class="ident">client_pk</span>.<span class="ident">bls</span>() {
-                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span> <span class="ident">dispatcher</span>.<span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="ident">bls_pk</span>).<span class="kw">await</span> {
-                        <span class="kw">let</span> <span class="ident">correlation_id</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">id</span>();
-                        <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
-                            <span class="ident">recipients</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">sender</span>],
-                            <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
-                            <span class="ident">message</span>: <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="ident">SectionInfoMsg</span>::<span class="ident">SectionInfoUpdate</span>(
-                                <span class="ident">ErrorResponse</span> {
-                                    <span class="ident">correlation_id</span>,
-                                    <span class="ident">error</span>,
-                                },
-                            )),
-                        };
-                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
-                        <span class="kw">return</span>;
-                    }
-                }
-            }
 
             <span class="kw">let</span> <span class="ident">event</span> <span class="op">=</span> <span class="ident">Event</span>::<span class="ident">ClientMessageReceived</span> {
                 <span class="ident">msg</span>: <span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">message</span>),
