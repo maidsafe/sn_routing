@@ -8,11 +8,12 @@
 
 use super::{Proof, Proven};
 use crate::error::Result;
+use crate::Error;
 use serde::Serialize;
 
 // Create proof for the given payload using the given secret key.
 pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Proof> {
-    let bytes = bincode::serialize(payload)?;
+    let bytes = bincode::serialize(payload).map_err(Error::InvalidPayload)?;
     Ok(Proof {
         public_key: secret_key.public_key(),
         signature: secret_key.sign(&bytes),

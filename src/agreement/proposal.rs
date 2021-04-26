@@ -86,7 +86,7 @@ impl Proposal {
             public_key_set,
             index,
             secret_key_share,
-            &bincode::serialize(&SignableView(self))?,
+            &bincode::serialize(&SignableView(self)).map_err(|_| ProposalError::Invalid)?,
         ))
     }
 
@@ -125,19 +125,20 @@ impl ProposalAggregator {
         &mut self,
         proposal: Proposal,
         proof_share: ProofShare,
-    ) -> Result<(Proposal, Proof), ProposalAggregationError> {
-        let bytes = bincode::serialize(&SignableView(&proposal))?;
+    ) -> Result<(Proposal, Proof), ProposalError> {
+        let bytes =
+            bincode::serialize(&SignableView(&proposal)).map_err(|_| ProposalError::Invalid)?;
         let proof = self.0.add(&bytes, proof_share)?;
         Ok((proposal, proof))
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ProposalAggregationError {
+pub enum ProposalError {
     #[error("failed to aggregate signature shares: {0}")]
     Aggregation(#[from] bls_signature_aggregator::Error),
-    #[error("failed to serialize proposal: {0}")]
-    Serialization(#[from] bincode::Error),
+    #[error("invalid proposal")]
+    Invalid,
 }
 
 #[cfg(test)]
