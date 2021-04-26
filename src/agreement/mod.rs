@@ -15,7 +15,7 @@ pub mod test_utils;
 pub use self::{dkg::DkgKey, proven::Proven};
 pub(crate) use self::{
     dkg::{DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgVoter},
-    proposal::{Proposal, ProposalAggregationError, ProposalAggregator},
+    proposal::{Proposal, ProposalAggregator, ProposalError},
 };
 pub(crate) use bls_signature_aggregator::{Proof, ProofShare, SignatureAggregator};
 use serde::Serialize;

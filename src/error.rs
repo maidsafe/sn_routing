@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::agreement::ProposalError;
+use crate::messages::{CreateError, ExtendProofChainError};
 use crate::section::SectionChainError;
 use thiserror::Error;
 
@@ -24,8 +26,6 @@ pub enum Error {
     Network(#[from] qp2p::Error),
     #[error("The node is not in a state to handle the action.")]
     InvalidState,
-    #[error("Bincode error: {0}")]
-    Bincode(#[from] bincode::Error),
     #[error("Invalid source location.")]
     InvalidSrcLocation,
     #[error("Invalid destination location.")]
@@ -42,4 +42,14 @@ pub enum Error {
     InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
+    #[error("Message not signed")]
+    MessageNotSigned,
+    #[error("proposal error: {0}")]
+    ProposalError(#[from] ProposalError),
+    #[error("create error: {0}")]
+    CreateError(#[from] CreateError),
+    #[error("extend proof error: {0}")]
+    ExtendProofError(#[from] ExtendProofChainError),
+    #[error("invalid payload")]
+    InvalidPayload,
 }

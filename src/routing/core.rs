@@ -15,7 +15,7 @@ use super::{
 use crate::{
     agreement::{
         DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, DkgVoter, Proof, ProofShare,
-        Proposal, ProposalAggregationError, ProposalAggregator, Proven,
+        Proposal, ProposalAggregator, ProposalError, Proven,
     },
     crypto, delivery_group,
     error::{Error, Result},
@@ -364,9 +364,9 @@ impl Core {
     ) -> Result<Vec<Command>> {
         match self.proposal_aggregator.add(proposal, proof_share) {
             Ok((proposal, proof)) => Ok(vec![Command::HandleAgreement { proposal, proof }]),
-            Err(ProposalAggregationError::Aggregation(
-                bls_signature_aggregator::Error::NotEnoughShares,
-            )) => Ok(vec![]),
+            Err(ProposalError::Aggregation(bls_signature_aggregator::Error::NotEnoughShares)) => {
+                Ok(vec![])
+            }
             Err(error) => {
                 error!("Failed to add proposal: {}", error);
                 Err(Error::InvalidSignatureShare)
@@ -642,7 +642,8 @@ impl Core {
             return Ok(Some(msg));
         };
 
-        let signed_bytes = bincode::serialize(&msg.signable_view())?;
+        let signed_bytes =
+            bincode::serialize(&msg.signable_view()).map_err(|_| Error::InvalidMessage)?;
         match self
             .message_aggregator
             .add(&signed_bytes, proof_share.clone())
@@ -1318,7 +1319,8 @@ impl Core {
 
     fn send_resource_proof_challenge(&self, peer: &Peer) -> Result<Command> {
         let nonce: [u8; 32] = rand::random();
-        let serialized = bincode::serialize(&(peer.name(), &nonce))?;
+        let serialized =
+            bincode::serialize(&(peer.name(), &nonce)).map_err(|_| Error::InvalidMessage)?;
         let response = Variant::ResourceChallenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
             difficulty: RESOURCE_PROOF_DIFFICULTY,
