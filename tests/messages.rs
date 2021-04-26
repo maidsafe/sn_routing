@@ -64,7 +64,6 @@ async fn test_messages_client_node() -> Result<()> {
     let query = Message::Query {
         query: Query::Transfer(TransferQuery::GetBalance(pk)),
         id,
-        target_section_pk: None,
     };
     let query_clone = query.clone();
     let client_msg_bytes = WireMsg::serialize_client_msg(&query)?;
