@@ -59,14 +59,16 @@ pub(crate) struct Message {
 
 impl Message {
     /// Deserialize the message. Only called on message receipt.
-    pub(crate) fn from_bytes(msg_bytes: Bytes) -> Result<Self, CreateError> {
-        let mut msg: Message = bincode::deserialize(&msg_bytes)?;
+    pub(crate) fn from_bytes(msg_bytes: Bytes) -> Result<Self> {
+        let mut msg: Message =
+            bincode::deserialize(&msg_bytes).map_err(|_| Error::InvalidMessage)?;
 
         let signed_bytes = bincode::serialize(&SignableView {
             dst: &msg.dst,
             dst_key: msg.dst_key.as_ref(),
             variant: &msg.variant,
-        })?;
+        })
+        .map_err(|_| Error::InvalidMessage)?;
 
         match &msg.src {
             SrcAuthority::Node {
@@ -76,13 +78,13 @@ impl Message {
             } => {
                 if public_key.verify(&signed_bytes, signature).is_err() {
                     error!("Failed signature: {:?}", msg);
-                    return Err(CreateError::FailedSignature);
+                    return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
             SrcAuthority::BlsShare { proof_share, .. } => {
                 if !proof_share.verify(&signed_bytes) {
                     error!("Failed signature: {:?}", msg);
-                    return Err(CreateError::FailedSignature);
+                    return Err(Error::CreateError(CreateError::FailedSignature));
                 }
 
                 if Some(&proof_share.public_key_set.public_key()) != msg.proof_chain_last_key().ok()
@@ -91,7 +93,7 @@ impl Message {
                         "Proof share public key doesn't match proof chain last key: {:?}",
                         msg
                     );
-                    return Err(CreateError::PublicKeyMismatch);
+                    return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
             SrcAuthority::Section { proof, .. } => {
@@ -104,7 +106,7 @@ impl Message {
                             "Failed signature: {:?} (proof chain: {:?})",
                             msg, proof_chain
                         );
-                        return Err(CreateError::FailedSignature);
+                        return Err(Error::CreateError(CreateError::FailedSignature));
                     }
                 }
             }
@@ -128,7 +130,7 @@ impl Message {
         variant: Variant,
         proof_chain: Option<SectionChain>,
         dst_key: Option<bls::PublicKey>,
-    ) -> Result<Message, CreateError> {
+    ) -> Result<Message, Error> {
         let mut msg = Message {
             dst,
             src,
@@ -140,7 +142,9 @@ impl Message {
             hash: Default::default(),
         };
 
-        msg.serialized = bincode::serialize(&msg)?.into();
+        msg.serialized = bincode::serialize(&msg)
+            .map_err(|_| Error::InvalidMessage)?
+            .into();
         msg.hash = MessageHash::from_bytes(&msg.serialized);
 
         Ok(msg)
@@ -154,12 +158,13 @@ impl Message {
         variant: Variant,
         proof_chain: SectionChain,
         dst_key: Option<bls::PublicKey>,
-    ) -> Result<Self, CreateError> {
+    ) -> Result<Self, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
             variant: &variant,
-        })?;
+        })
+        .map_err(|_| Error::InvalidMessage)?;
         let signature_share = key_share.secret_key_share.sign(&serialized);
         let proof_share = ProofShare {
             public_key_set: key_share.public_key_set.clone(),
@@ -198,7 +203,7 @@ impl Message {
             return Err(Error::InvalidMessage);
         }
 
-        let bytes = bincode::serialize(&self.signable_view())?;
+        let bytes = bincode::serialize(&self.signable_view()).map_err(|_| Error::InvalidMessage)?;
 
         if !proof.verify(&bytes) {
             return Err(Error::FailedSignature);
@@ -224,12 +229,13 @@ impl Message {
         variant: Variant,
         proof_chain: Option<SectionChain>,
         dst_key: Option<bls::PublicKey>,
-    ) -> Result<Self, CreateError> {
+    ) -> Result<Self> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             dst_key: dst_key.as_ref(),
             variant: &variant,
-        })?;
+        })
+        .map_err(|_| Error::InvalidMessage)?;
         let signature = crypto::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
             public_key: node.keypair.public,
@@ -245,7 +251,7 @@ impl Message {
         plain: PlainMessage,
         proof: Proof,
         proof_chain: SectionChain,
-    ) -> Result<Self, CreateError> {
+    ) -> Result<Self> {
         Self::new_signed(
             SrcAuthority::Section {
                 src_name: plain.src,
@@ -267,7 +273,8 @@ impl Message {
             dst: &self.dst,
             dst_key: self.dst_key.as_ref(),
             variant: &self.variant,
-        })?;
+        })
+        .map_err(|_| Error::MessageNotSigned)?;
 
         match &self.src {
             SrcAuthority::Node {
@@ -376,7 +383,7 @@ impl Message {
         mut self,
         new_first_key: &bls::PublicKey,
         full_chain: &SectionChain,
-    ) -> Result<Self, ExtendProofChainError> {
+    ) -> Result<Self, Error> {
         let proof_chain = self
             .proof_chain
             .as_mut()
@@ -393,13 +400,13 @@ impl Message {
             Err(error) => return Err(error.into()),
         };
 
-        Ok(Self::new_signed(
+        Self::new_signed(
             self.src,
             self.dst,
             self.variant,
             self.proof_chain,
             self.dst_key,
-        )?)
+        )
     }
 }
 
@@ -452,22 +459,10 @@ pub enum MessageStatus {
 
 #[derive(Debug, Error)]
 pub enum CreateError {
-    #[error("bincode error: {}", .0)]
-    Bincode(#[from] bincode::Error),
     #[error("signature check failed")]
     FailedSignature,
     #[error("public key mismatch")]
     PublicKeyMismatch,
-}
-
-impl From<CreateError> for Error {
-    fn from(src: CreateError) -> Self {
-        match src {
-            CreateError::Bincode(inner) => Self::Bincode(inner),
-            CreateError::FailedSignature => Self::FailedSignature,
-            CreateError::PublicKeyMismatch => Self::InvalidMessage,
-        }
-    }
 }
 
 /// Error returned from `Message::extend_proof_chain`.

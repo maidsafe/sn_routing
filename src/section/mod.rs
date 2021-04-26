@@ -361,7 +361,7 @@ fn create_first_proof<T: Serialize>(
     sk_share: &bls::SecretKeyShare,
     payload: &T,
 ) -> Result<Proof> {
-    let bytes = bincode::serialize(payload)?;
+    let bytes = bincode::serialize(payload).map_err(|_| Error::InvalidPayload)?;
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
