@@ -52,4 +52,6 @@ pub enum Error {
     ExtendProofError(#[from] ExtendProofChainError),
     #[error("invalid payload")]
     InvalidPayload,
+    #[error("Routing is set to not allow taking any new node")]
+    TryJoinLater,
 }
