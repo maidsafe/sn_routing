@@ -43,7 +43,7 @@ use itertools::Itertools;
 use sn_messaging::{
     client::Message as ClientMessage,
     node::NodeMessage,
-    section_info::{Error as TargetSectionError, ErrorResponse, Message as SectionInfoMsg},
+    section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
     DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -509,26 +509,6 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                     return;
                 }
             };
-
-            if let Some(client_pk) = message.target_section_pk() {
-                if let Some(bls_pk) = client_pk.bls() {
-                    if let Err(error) = dispatcher.check_key_status(&bls_pk).await {
-                        let correlation_id = message.id();
-                        let command = Command::SendMessage {
-                            recipients: vec![sender],
-                            delivery_group_size: 1,
-                            message: MessageType::SectionInfo(SectionInfoMsg::SectionInfoUpdate(
-                                ErrorResponse {
-                                    correlation_id,
-                                    error,
-                                },
-                            )),
-                        };
-                        let _ = task::spawn(dispatcher.handle_commands(command));
-                        return;
-                    }
-                }
-            }
 
             let event = Event::ClientMessageReceived {
                 msg: Box::new(message),

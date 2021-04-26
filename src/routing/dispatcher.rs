@@ -8,7 +8,7 @@
 
 use super::{bootstrap, Comm, Command, Core};
 use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
-use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
+use sn_messaging::MessageType;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -180,13 +180,6 @@ impl Dispatcher {
     // inside `handle_commands` causes compile error about type check cycle.
     fn spawn_handle_commands(self: Arc<Self>, command: Command) {
         let _ = tokio::spawn(self.handle_commands(command));
-    }
-
-    pub async fn check_key_status(
-        &self,
-        bls_pk: &bls::PublicKey,
-    ) -> Result<(), TargetSectionError> {
-        self.core.lock().await.check_key_status(bls_pk)
     }
 
     async fn send_message(

@@ -2106,6 +2106,7 @@ impl Core {
         Ok(Some(command))
     }
 
+    #[allow(unused)]
     pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TargetSectionError> {
         // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
         if !self
