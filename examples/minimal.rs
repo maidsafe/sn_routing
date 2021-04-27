@@ -277,6 +277,9 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             index, user, msg
         ),
         Event::ClientLost(addr) => info!("Node #{} received ClientLost({:?})", index, addr),
+        Event::AdultsChanged(adult_list) => {
+            info!("Node #{} received AdultsChanged({:?})", index, adult_list)
+        }
     }
 
     true

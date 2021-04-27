@@ -110,6 +110,8 @@ pub enum Event {
     },
     /// Failed in sending a message to client, or connection to client is lost
     ClientLost(SocketAddr),
+    /// Notify the current list of adult nodes, in case of churning.
+    AdultsChanged(BTreeSet<XorName>),
 }
 
 impl Debug for Event {
@@ -172,6 +174,7 @@ impl Debug for Event {
                 msg, user,
             ),
             Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),
+            Self::AdultsChanged(adult_list) => write!(formatter, "AdultsChanged({:?})", adult_list),
         }
     }
 }

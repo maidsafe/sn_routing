@@ -173,22 +173,11 @@ impl Section {
     /// Update the member. Returns whether it actually changed anything.
     pub fn update_member(&mut self, member_info: Proven<MemberInfo>) -> bool {
         if !member_info.verify(&self.chain) {
+            error!("can't merge member {:?}", member_info.value);
             return false;
         }
 
         self.members.update(member_info)
-    }
-
-    // Returns a trimmed version of this `Section` which contains only the elders info and the
-    // section chain truncated to the given length (the chain is truncated from the end, so it
-    // always contains the latest key). If `chain_len` is zero, it is silently replaced with one.
-    pub fn trimmed(&self, chain_len: usize) -> Self {
-        Self {
-            genesis_key: self.genesis_key,
-            elders_info: self.elders_info.clone(),
-            chain: self.chain.truncate(chain_len),
-            members: SectionPeers::default(),
-        }
     }
 
     pub fn chain(&self) -> &SectionChain {

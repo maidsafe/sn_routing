@@ -1134,9 +1134,44 @@ impl Core {
             return Ok(vec![]);
         }
 
+        let old_adults: BTreeSet<_> = self
+            .section
+            .active_members()
+            .filter_map(|peer| {
+                if self.section.is_elder(peer.name()) {
+                    None
+                } else {
+                    Some(*peer.name())
+                }
+            })
+            .collect();
+
         let snapshot = self.state_snapshot();
+        trace!(
+            "Updating knowledge of own section \n    elders: {:?} \n    members: {:?}",
+            section.elders_info(),
+            section.members()
+        );
         self.section.merge(section)?;
         self.network.merge(network, self.section.chain());
+
+        if !self.is_elder() {
+            let new_adults: BTreeSet<_> = self
+                .section
+                .active_members()
+                .filter_map(|peer| {
+                    if self.section.is_elder(peer.name()) {
+                        None
+                    } else {
+                        Some(*peer.name())
+                    }
+                })
+                .collect();
+            if old_adults != new_adults {
+                self.send_event(Event::AdultsChanged(new_adults));
+            }
+        }
+
         self.update_state(snapshot)
     }
 
@@ -1662,6 +1697,8 @@ impl Core {
         commands.extend(self.promote_and_demote_elders()?);
         commands.push(self.send_node_approval(new_info, their_knowledge)?);
 
+        commands.extend(self.send_sync_to_adults()?);
+
         self.print_network_stats();
 
         Ok(commands)
@@ -1690,6 +1727,8 @@ impl Core {
 
         commands.extend(self.relocate_peers(peer.name(), &signature)?);
         commands.extend(self.promote_and_demote_elders()?);
+
+        commands.extend(self.send_sync_to_adults()?);
 
         self.send_event(Event::MemberLeft {
             name: *peer.name(),
@@ -1877,7 +1916,6 @@ impl Core {
                 NodeElderChange::Promoted
             } else if old.is_elder && !new.is_elder {
                 info!("Demoted");
-                self.section = self.section.trimmed(1);
                 self.network = Network::new();
                 self.section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, None);
                 NodeElderChange::Demoted
@@ -1987,11 +2025,10 @@ impl Core {
             .copied()
             .partition(|peer| section.is_elder(peer.name()));
 
-        // Send the trimmed state to non-elders. The trimmed state contains only the latest
-        // section key and one key before that which is the key the recipients should know so they
-        // will be able to trust it.
+        // Send the trimmed state to non-elders. The trimmed state contains only the knowledge of
+        // own section.
         let variant = Variant::Sync {
-            section: section.trimmed(2),
+            section: section.clone(),
             network: Network::new(),
         };
         commands.push(send(variant, non_elders)?);
@@ -2000,6 +2037,39 @@ impl Core {
         // The full state contains the whole section chain.
         let variant = Variant::Sync { section, network };
         commands.push(send(variant, elders)?);
+
+        Ok(commands)
+    }
+
+    fn send_sync_to_adults(&mut self) -> Result<Vec<Command>> {
+        let send = |variant, recipients: Vec<_>| -> Result<_> {
+            trace!("Send {:?} to {:?}", variant, recipients);
+
+            let message =
+                Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+            let recipients: Vec<_> = recipients.iter().map(Peer::addr).copied().collect();
+
+            Ok(Command::send_message_to_nodes(
+                &recipients,
+                recipients.len(),
+                message.to_bytes(),
+            ))
+        };
+
+        let mut commands = vec![];
+
+        let non_elders: Vec<_> = self
+            .section
+            .active_members()
+            .filter(|peer| !self.section.is_elder(peer.name()))
+            .copied()
+            .collect();
+
+        let variant = Variant::Sync {
+            section: self.section.clone(),
+            network: Network::new(),
+        };
+        commands.push(send(variant, non_elders)?);
 
         Ok(commands)
     }
