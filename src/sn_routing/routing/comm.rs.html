@@ -668,7 +668,7 @@
             .<span class="ident">send_message</span>(<span class="ident">msg</span>, <span class="ident">recipient</span>)
             .<span class="kw">await</span>
             .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
-                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;{}&quot;</span>, <span class="ident">err</span>);
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Sending to {:?} failed with {}&quot;</span>, <span class="ident">recipient</span>, <span class="ident">err</span>);
                 <span class="ident">SendError</span>
             })
     }

@@ -283,6 +283,11 @@
 <span id="282">282</span>
 <span id="283">283</span>
 <span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -493,6 +498,11 @@
                         .<span class="kw">await</span>
                         .<span class="ident">is_err</span>()
                     {
+                        <span class="macro">trace</span><span class="macro">!</span>(
+                            <span class="string">&quot;Lost connection to client {:?} when sending message {:?}&quot;</span>,
+                            <span class="ident">recipient</span>,
+                            <span class="ident">message</span>
+                        );
                         <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">ClientLost</span>(<span class="kw-2">*</span><span class="ident">recipient</span>)).<span class="kw">await</span>;
                     }
                 }

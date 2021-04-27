@@ -2420,6 +2420,9 @@
 <span id="2419">2419</span>
 <span id="2420">2420</span>
 <span id="2421">2421</span>
+<span id="2422">2422</span>
+<span id="2423">2423</span>
+<span id="2424">2424</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -3508,6 +3511,7 @@
     }
 
     <span class="kw">fn</span> <span class="ident">handle_user_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>, <span class="ident">content</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;handle user message {:?}&quot;</span>, <span class="ident">msg</span>);
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">DstLocation</span>::<span class="ident">EndUser</span>(<span class="ident">end_user</span>) <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">dst</span>() {
             <span class="kw">let</span> <span class="ident">recipients</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">end_user</span> {
                 <span class="ident">EndUser</span>::<span class="ident">AllClients</span>(<span class="ident">public_key</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -3522,8 +3526,10 @@
                 }
             };
             <span class="kw">if</span> <span class="ident">recipients</span>.<span class="ident">is_empty</span>() {
+                <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Cannot route user message, recipient list empty: {:?}&quot;</span>, <span class="ident">msg</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CannotRoute</span>);
             };
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;sending user message {:?} to client {:?}&quot;</span>, <span class="ident">msg</span>, <span class="ident">recipients</span>);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                 <span class="ident">recipients</span>,
                 <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
@@ -4515,8 +4521,9 @@
         }
 
         <span class="macro">trace</span><span class="macro">!</span>(
-            <span class="string">&quot;relay {:?} to {:?} (proof_chain: {:?})&quot;</span>,
+            <span class="string">&quot;relay {:?} to first {:?} of {:?} (proof_chain: {:?})&quot;</span>,
             <span class="ident">msg</span>,
+            <span class="ident">dg_size</span>,
             <span class="ident">targets</span>,
             <span class="ident">msg</span>.<span class="ident">proof_chain</span>().<span class="ident">ok</span>()
         );
@@ -4529,12 +4536,11 @@
 
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bls_pk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">TargetSectionError</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">elders_candidates</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>());
         <span class="comment">// Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.</span>
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
-            .<span class="ident">is_empty</span>()
-        {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_candidates</span>.<span class="ident">is_empty</span>() {
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Non empty elder candidates {:?}&quot;</span>, <span class="ident">elders_candidates</span>);
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Current erlders_info {:?}&quot;</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>());
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">TargetSectionError</span>::<span class="ident">DkgInProgress</span>);
         }
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="ident">bls_pk</span>) {
