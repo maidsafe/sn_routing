@@ -274,7 +274,7 @@ impl Message {
             dst_key: self.dst_key.as_ref(),
             variant: &self.variant,
         })
-        .map_err(|_| Error::MessageNotSigned)?;
+        .map_err(|_| Error::InvalidMessage)?;
 
         match &self.src {
             SrcAuthority::Node {
