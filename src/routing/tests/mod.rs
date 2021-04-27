@@ -1403,14 +1403,13 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     let (elders_info, mut nodes) = create_elders_info();
     let proven_elders_info = proven(sk2, elders_info.clone())?;
     let section_full = Section::new(pk0, chain, proven_elders_info)?;
-    let section_trimmed = section_full.trimmed(2);
 
     let (event_tx, _) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let section_key_share = create_section_key_share(&sk2_set, 0);
     let state = Core::new(
         node.clone(),
-        section_full,
+        section_full.clone(),
         Some(section_key_share),
         event_tx,
     );
@@ -1420,7 +1419,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         &node,
         DstLocation::Direct,
         Variant::Sync {
-            section: section_trimmed,
+            section: section_full,
             network: Network::new(),
         },
         None,
