@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.63.2](https://github.com/maidsafe/sn_routing/compare/v0.63.1...v0.63.2) (2021-04-27)
+
+
+### Bug Fixes
+
+* only send to client directly when it belongs to self section ([b8ddc1b](https://github.com/maidsafe/sn_routing/commit/b8ddc1b86f728c08734bbf06d4a5c63ee63a4f4b))
+
 ### [0.63.1](https://github.com/maidsafe/sn_routing/compare/v0.63.0...v0.63.1) (2021-04-26)
 
 ## [0.63.0](https://github.com/maidsafe/sn_routing/compare/v0.62.1...v0.63.0) (2021-04-23)
