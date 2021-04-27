@@ -112,13 +112,7 @@ fn create_other_section_message(
         nonce,
     };
 
-    Ok(Message::single_src(
-        node,
-        dst,
-        variant,
-        Some(proof_chain),
-        dst_key,
-    )?)
+    Message::single_src(node, dst, variant, Some(proof_chain), dst_key)
 }
 
 #[derive(Default)]
