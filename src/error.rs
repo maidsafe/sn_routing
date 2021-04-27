@@ -44,8 +44,6 @@ pub enum Error {
     InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
-    #[error("Message not signed")]
-    MessageNotSigned,
     #[error("proposal error: {0}")]
     ProposalError(#[from] ProposalError),
     #[error("create error: {0}")]
