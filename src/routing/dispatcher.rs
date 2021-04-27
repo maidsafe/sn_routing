@@ -207,6 +207,11 @@ impl Dispatcher {
                         .await
                         .is_err()
                     {
+                        trace!(
+                            "Lost connection to client {:?} when sending message {:?}",
+                            recipient,
+                            message
+                        );
                         self.send_event(Event::ClientLost(*recipient)).await;
                     }
                 }

@@ -357,24 +357,33 @@ impl Routing {
             public_key,
         }) = itinerary.dst
         {
-            let socket_addr = self
-                .dispatcher
-                .core
-                .lock()
-                .await
-                .get_socket_addr(socket_id)
-                .copied();
+            let name = XorName::from(public_key);
+            if self.our_prefix().await.matches(&name) {
+                let socket_addr = self
+                    .dispatcher
+                    .core
+                    .lock()
+                    .await
+                    .get_socket_addr(socket_id)
+                    .copied();
 
-            if let Some(socket_addr) = socket_addr {
-                return self
-                    .send_message_to_client(socket_addr, ClientMessage::from(content)?)
-                    .await;
+                if let Some(socket_addr) = socket_addr {
+                    debug!(
+                        "Sending client msg of {:?} to {:?}",
+                        public_key, socket_addr
+                    );
+                    return self
+                        .send_message_to_client(socket_addr, ClientMessage::from(content)?)
+                        .await;
+                } else {
+                    debug!(
+                        "Could not find socketaddr corresponding to socket_id {:?} and public_key {:?}",
+                        socket_id, public_key
+                    );
+                    debug!("Sending user message instead.. (Command::SendUserMessage)");
+                }
             } else {
-                debug!(
-                    "Could not find socketaddr corresponding to socket_id {:?} and public_key {:?}",
-                    socket_id, public_key
-                );
-                debug!("Sending user message instead.. (Command::SendUserMessage)");
+                debug!("Relaying message with sending user message (Command::SendUserMessage)");
             }
         }
         let command = Command::SendUserMessage {
