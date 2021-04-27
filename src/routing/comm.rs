@@ -116,7 +116,7 @@ impl Comm {
             .send_message(msg, recipient)
             .await
             .map_err(|err| {
-                error!("{}", err);
+                error!("Sending to {:?} failed with {}", recipient, err);
                 SendError
             })
     }

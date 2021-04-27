@@ -1085,6 +1085,7 @@ impl Core {
     }
 
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
+        trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(end_user) = msg.dst() {
             let recipients = match end_user {
                 EndUser::AllClients(public_key) => {
@@ -1099,8 +1100,10 @@ impl Core {
                 }
             };
             if recipients.is_empty() {
+                trace!("Cannot route user message, recipient list empty: {:?}", msg);
                 return Err(Error::CannotRoute);
             };
+            trace!("sending user message {:?} to client {:?}", msg, recipients);
             return Ok(vec![Command::SendMessage {
                 recipients,
                 delivery_group_size: 1,
@@ -2092,8 +2095,9 @@ impl Core {
         }
 
         trace!(
-            "relay {:?} to {:?} (proof_chain: {:?})",
+            "relay {:?} to first {:?} of {:?} (proof_chain: {:?})",
             msg,
+            dg_size,
             targets,
             msg.proof_chain().ok()
         );
@@ -2106,12 +2110,11 @@ impl Core {
 
     #[allow(unused)]
     pub fn check_key_status(&self, bls_pk: &bls::PublicKey) -> Result<(), TargetSectionError> {
+        let elders_candidates = self.section.promote_and_demote_elders(&self.node.name());
         // Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.
-        if !self
-            .section
-            .promote_and_demote_elders(&self.node.name())
-            .is_empty()
-        {
+        if !elders_candidates.is_empty() {
+            trace!("Non empty elder candidates {:?}", elders_candidates);
+            trace!("Current erlders_info {:?}", self.section.elders_info());
             return Err(TargetSectionError::DkgInProgress);
         }
         if !self.section.chain().has_key(bls_pk) {
