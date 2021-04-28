@@ -165,7 +165,7 @@ impl<'a> State<'a> {
             self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
-            let (response, sender, _hdr_info) =
+            let (response, sender, _dest_info) =
                 self.receive_get_section_response(relocate_details).await?;
 
             match response {

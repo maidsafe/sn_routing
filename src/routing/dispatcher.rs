@@ -9,9 +9,9 @@
 use super::{bootstrap, Comm, Command, Core};
 use crate::{
     error::Result, event::Event, relocation::SignedRelocateDetails, routing::comm::SendStatus,
-    Error,
+    Error, XorName,
 };
-use sn_messaging::{section_info::Error as TargetSectionError, MessageType};
+use sn_messaging::MessageType;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -112,13 +112,9 @@ impl Dispatcher {
             Command::HandleAgreement { proposal, proof } => {
                 self.core.lock().await.handle_agreement(proposal, proof)
             }
-            Command::HandleConnectionLost(addr) => Ok(self
-                .core
-                .lock()
-                .await
-                .handle_connection_lost(addr)
-                .into_iter()
-                .collect()),
+            Command::HandleConnectionLost(addr) => {
+                self.core.lock().await.handle_connection_lost(addr)
+            }
             Command::HandlePeerLost(addr) => self.core.lock().await.handle_peer_lost(&addr),
             Command::HandleDkgOutcome {
                 elders_info,

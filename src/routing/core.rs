@@ -461,36 +461,43 @@ impl Core {
         }
     }
 
-    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Option<Command> {
-        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
-            debug!("Lost connection to {}", peer);
+    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
+        let name = if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
+            debug!("Lost known peer {}", peer);
+            *peer.name()
         } else {
-            if let Some(end_user) = self.get_enduser_by_addr(&addr) {
-                debug!("Lost connection to client {:?}", end_user);
-            } else {
-                debug!("Lost connection to unknown peer {}", addr);
-            }
-            return None;
-        }
+            trace!("Lost unknown peer {}", addr);
+            return Ok(vec![]);
+        };
 
         if !self.is_elder() {
-            if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
-                trace!("Lost connection to {}", peer);
-                // Try to send a "ping" message to probe the peer connection. If it succeeds, the
-                // connection loss was just temporary. Otherwise the peer is assumed lost and we will vote
-                // it offline.
-                Some(Command::SendMessage {
-                    recipients: vec![(addr, *peer.name())],
-                    delivery_group_size: 1,
-                    message: MessageType::Ping(DestInfo {
-                        dest: *peer.name(),
-                        dest_section_pk: *self.section.chain().last_key(),
-                    }),
-                })
-            }
-        } else {
-            None
+            // When self is not an elder, then the peer has to be an elder, and we shall complaint
+            // the lost to other elders.
+            let variant = Variant::ConnectivityComplaint(name);
+            let recipients: Vec<_> = self
+                .section
+                .elders_info()
+                .elders
+                .values()
+                .filter(|peer| *peer.name() != name)
+                .copied()
+                .collect();
+            trace!(
+                "Casting connectivity complaint against {:?} {:?}",
+                name,
+                recipients
+            );
+
+            return self.send_message_for_dst_accumulation(
+                self.node.name(),
+                DstLocation::Direct,
+                variant,
+                None,
+                &recipients,
+            );
         }
+
+        self.propose_offline(name)
     }
 
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
@@ -2159,24 +2166,32 @@ impl Core {
 
             let message =
                 Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-            let recipients: Vec<_> = recipients.iter().map(Peer::addr).copied().collect();
 
             Ok(Command::send_message_to_nodes(
-                &recipients,
+                recipients.clone(),
                 recipients.len(),
                 message.to_bytes(),
+                DestInfo {
+                    dest: XorName::random(),
+                    dest_section_pk: *self.section_chain().last_key(),
+                },
             ))
         };
 
         let mut commands = vec![];
 
-        let adults: Vec<_> = self.section.live_adults().copied().collect();
+        let non_elders: Vec<_> = self
+            .section
+            .active_members()
+            .filter(|peer| !self.section.is_elder(peer.name()))
+            .map(|peer| (*peer.addr(), *peer.name()))
+            .collect();
 
         let variant = Variant::Sync {
             section: self.section.clone(),
             network: Network::new(),
         };
-        commands.push(send(variant, adults)?);
+        commands.push(send(variant, non_elders)?);
 
         Ok(commands)
     }

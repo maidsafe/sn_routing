@@ -373,7 +373,7 @@ impl Routing {
                         public_key, socket_addr
                     );
                     return self
-                        .send_message_to_client(socket_addr, ClientMessage::from(content)?)
+                        .send_message_to_client(socket_addr, ClientMsg::from(content)?)
                         .await;
                 } else {
                     debug!(
@@ -516,8 +516,8 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             };
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
-        MessageType::Node {
-            msg: NodeMessage(msg_bytes),
+        MessageType::Routing {
+            msg: RoutingMsg(msg_bytes),
             ..
         } => match Message::from_bytes(Bytes::from(msg_bytes)) {
             Ok(message) => {
@@ -531,6 +531,13 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 error!("Failed to deserialize node message: {}", error);
             }
         },
+        MessageType::Node {
+            msg: _,
+            dest_info: _,
+            src_section_pk: _,
+        } => {
+            unimplemented!()
+        }
         MessageType::Client { msg, dest_info } => {
             let end_user = dispatcher
                 .core
@@ -548,7 +555,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                     let dest = dest_info.dest;
                     let client_pk = dest_info.dest_section_pk;
                     let command = Command::SendMessage {
-                        recipients: vec![sender],
+                        recipients: vec![(sender, dest)],
                         delivery_group_size: 1,
                         message: MessageType::SectionInfo {
                             msg: SectionInfoMsg::RegisterEndUserError(
@@ -568,7 +575,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 }
             };
 
-            let event = Event::ClientMessageReceived {
+            let event = Event::ClientMsgReceived {
                 msg: Box::new(msg),
                 user: end_user,
             };
