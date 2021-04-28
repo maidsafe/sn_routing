@@ -330,6 +330,7 @@ impl Core {
                 end_user,
                 socketaddr_sig,
             } => {
+                trace!("Try adding enduser {} from {}", end_user, sender);
                 if self
                     .end_users
                     .try_add(sender, end_user, socketaddr_sig)
@@ -432,13 +433,18 @@ impl Core {
     }
 
     pub fn handle_connection_lost(&self, addr: SocketAddr) -> Option<Command> {
-        if !self.is_elder() {
+        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
+            debug!("Lost connection to {}", peer);
+        } else {
+            if let Some(end_user) = self.get_enduser_by_addr(&addr) {
+                debug!("Lost connection to client {:?}", end_user);
+            } else {
+                debug!("Lost connection to unknown peer {}", addr);
+            }
             return None;
         }
 
-        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
-            trace!("Lost connection to {}", peer);
-        } else {
+        if !self.is_elder() {
             return None;
         }
 
