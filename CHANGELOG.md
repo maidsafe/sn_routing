@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.64.1](https://github.com/maidsafe/sn_routing/compare/v0.64.0...v0.64.1) (2021-04-28)
+
 ## [0.64.0](https://github.com/maidsafe/sn_routing/compare/v0.63.2...v0.64.0) (2021-04-27)
 
 
