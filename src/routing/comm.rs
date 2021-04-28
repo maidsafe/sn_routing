@@ -36,14 +36,17 @@ impl Comm {
         transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<Self> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)
+            .map_err(|_| Error::InvalidConfig)?;
 
         // Don't bootstrap, just create an endpoint to listen to
         // the incoming messages from other nodes.
         // This also returns the a channel where we can listen for
         // disconnection events.
-        let (endpoint, _incoming_connections, incoming_messages, disconnections) =
-            quic_p2p.new_endpoint().await?;
+        let (endpoint, _incoming_connections, incoming_messages, disconnections) = quic_p2p
+            .new_endpoint()
+            .await
+            .map_err(|_| Error::CannotConnectEndpoint)?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -66,12 +69,16 @@ impl Comm {
         transport_config: qp2p::Config,
         event_tx: mpsc::Sender<ConnectionEvent>,
     ) -> Result<(Self, SocketAddr)> {
-        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)?;
+        let quic_p2p = QuicP2p::with_config(Some(transport_config), &[], true)
+            .map_err(|_| Error::InvalidConfig)?;
 
         // Bootstrap to the network returning the connection to a node.
         // We can use the returned channels to listen for incoming messages and disconnection events
         let (endpoint, _incoming_connections, incoming_messages, disconnections, bootstrap_addr) =
-            quic_p2p.bootstrap().await?;
+            quic_p2p
+                .bootstrap()
+                .await
+                .map_err(|_| Error::CannotConnectEndpoint)?;
 
         let _ = task::spawn(handle_incoming_messages(
             incoming_messages,
@@ -133,15 +140,19 @@ impl Comm {
             ..Default::default()
         };
 
-        let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)?;
-        let (connectivity_endpoint, _, _, _) = qp2p.new_endpoint().await?;
+        let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)
+            .map_err(|_| Error::InvalidConfig)?;
+        let (connectivity_endpoint, _, _, _) = qp2p
+            .new_endpoint()
+            .await
+            .map_err(|_| Error::CannotConnectEndpoint)?;
 
         connectivity_endpoint
             .is_reachable(peer)
             .await
             .map_err(|err| {
                 info!("Peer {} is NOT externally reachable: {}", peer, err);
-                err.into()
+                Error::AddressNotReachable(1)
             })
             .map(|()| {
                 info!("Peer {} is externally reachable.", peer);
@@ -195,7 +206,12 @@ impl Comm {
                     (
                         self.send_to(&recipient.1, bytes)
                             .await
-                            .map_err(Error::Network),
+                            .map_err(|e| match e {
+                                qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed) => {
+                                    Error::AddressNotReachable(0)
+                                }
+                                _ => Error::AddressNotReachable(1),
+                            }),
                         recipient.1,
                     )
                 }
@@ -214,9 +230,7 @@ impl Comm {
         while let Some((result, addr)) = tasks.next().await {
             match result {
                 Ok(()) => successes += 1,
-                Err(Error::Network(qp2p::Error::Connection(
-                    qp2p::ConnectionError::LocallyClosed,
-                ))) => {
+                Err(Error::AddressNotReachable(reason)) if reason == 1 => {
                     // The connection was closed by us which means we are terminating so let's cut
                     // this short.
                     return Err(Error::ConnectionClosed);
