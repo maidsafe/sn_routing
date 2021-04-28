@@ -46,6 +46,16 @@
 <span id="45">45</span>
 <span id="46">46</span>
 <span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -55,7 +65,11 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">section</span>::<span class="ident">SectionChainError</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">agreement</span>::<span class="ident">ProposalError</span>,
+    <span class="ident">messages</span>::{<span class="ident">CreateError</span>, <span class="ident">ExtendProofChainError</span>},
+    <span class="ident">section</span>::<span class="ident">SectionChainError</span>,
+};
 <span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 
 <span class="doccomment">/// The type returned by the sn_routing message handling methods.</span>
@@ -73,8 +87,6 @@
     <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Bincode error: {0}&quot;</span>)]</span>
-    <span class="ident">Bincode</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">bincode</span>::<span class="ident">Error</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source location.&quot;</span>)]</span>
     <span class="ident">InvalidSrcLocation</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid destination location.&quot;</span>)]</span>
@@ -91,6 +103,14 @@
     <span class="ident">InvalidSectionChain</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">SectionChainError</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Messaging protocol error: {0}&quot;</span>)]</span>
     <span class="ident">Messaging</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">sn_messaging</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;proposal error: {0}&quot;</span>)]</span>
+    <span class="ident">ProposalError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ProposalError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;create error: {0}&quot;</span>)]</span>
+    <span class="ident">CreateError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">CreateError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;extend proof error: {0}&quot;</span>)]</span>
+    <span class="ident">ExtendProofError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ExtendProofChainError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;invalid payload&quot;</span>)]</span>
+    <span class="ident">InvalidPayload</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Routing is set to not allow taking any new node&quot;</span>)]</span>
     <span class="ident">TryJoinLater</span>,
 }

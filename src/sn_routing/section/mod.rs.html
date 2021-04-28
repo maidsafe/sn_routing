@@ -737,7 +737,7 @@
     <span class="ident">sk_share</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKeyShare</span>,
     <span class="ident">payload</span>: <span class="kw-2">&amp;</span><span class="ident">T</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="ident">payload</span>)<span class="question-mark">?</span>;
+    <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">bincode</span>::<span class="ident">serialize</span>(<span class="ident">payload</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidPayload</span>)<span class="question-mark">?</span>;
     <span class="kw">let</span> <span class="ident">signature_share</span> <span class="op">=</span> <span class="ident">sk_share</span>.<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">bytes</span>);
     <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">pk_set</span>
         .<span class="ident">combine_signatures</span>(<span class="ident">iter</span>::<span class="ident">once</span>((<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="ident">signature_share</span>)))
