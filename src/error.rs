@@ -19,13 +19,18 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Internal error.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error("Failed signature check.")]
     FailedSignature,
     #[error("Cannot route.")]
     CannotRoute,
-    #[error("Network layer error: {0}")]
-    Network(#[from] qp2p::Error),
+    #[error("The config is invalid")]
+    InvalidConfig,
+    #[error("Cannot connect to the endpoint")]
+    CannotConnectEndpoint,
+    #[error("Address not reachable")]
+    AddressNotReachable,
     #[error("The node is not in a state to handle the action.")]
     InvalidState,
     #[error("Invalid source location.")]
