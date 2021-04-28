@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.64.3](https://github.com/maidsafe/sn_routing/compare/v0.64.2...v0.64.3) (2021-04-28)
+
+
+### Features
+
+* notify adult nodes with own section's adult list ([b4dddc0](https://github.com/maidsafe/sn_routing/commit/b4dddc0fcc13ca196ccb66ff43a05ea91c72c732))
+
 ### [0.64.2](https://github.com/maidsafe/sn_routing/compare/v0.64.1...v0.64.2) (2021-04-28)
 
 ### [0.64.1](https://github.com/maidsafe/sn_routing/compare/v0.64.0...v0.64.1) (2021-04-28)
