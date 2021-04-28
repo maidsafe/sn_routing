@@ -176,6 +176,9 @@
 <span id="175">175</span>
 <span id="176">176</span>
 <span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -289,6 +292,8 @@
     },
     <span class="doccomment">/// Failed in sending a message to client, or connection to client is lost</span>
     <span class="ident">ClientLost</span>(<span class="ident">SocketAddr</span>),
+    <span class="doccomment">/// Notify the current list of adult nodes, in case of churning.</span>
+    <span class="ident">AdultsChanged</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Event</span> {
@@ -351,6 +356,7 @@
                 <span class="ident">msg</span>, <span class="ident">user</span>,
             ),
             <span class="self">Self</span>::<span class="ident">ClientLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;ClientLost({:?})&quot;</span>, <span class="ident">addr</span>),
+            <span class="self">Self</span>::<span class="ident">AdultsChanged</span>(<span class="ident">adult_list</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;AdultsChanged({:?})&quot;</span>, <span class="ident">adult_list</span>),
         }
     }
 }
