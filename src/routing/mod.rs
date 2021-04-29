@@ -18,7 +18,7 @@ mod event_stream;
 mod lazy_messaging;
 mod split_barrier;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use self::event_stream::EventStream;
 use self::{
@@ -120,7 +120,7 @@ impl Routing {
                 remaining: BTreeSet::new(),
                 added: section
                     .authority_provider()
-                    .elders
+                    .elders()
                     .keys()
                     .copied()
                     .collect(),

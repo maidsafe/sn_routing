@@ -15,7 +15,7 @@ use crate::{
     peer::Peer,
     relocation::{RelocateDetails, RelocatePromise, RelocateState},
     routing::command::Command,
-    section::{MemberInfo, Section, SectionAuthorityProvider, SectionChain},
+    section::{EldersInfo, MemberInfo, Section, SectionChain},
 };
 use bytes::Bytes;
 use sn_messaging::DstLocation;
@@ -178,34 +178,31 @@ impl Core {
         }
     }
 
-    pub(crate) fn send_dkg_start(
-        &self,
-        section_auth: SectionAuthorityProvider,
-    ) -> Result<Vec<Command>> {
+    pub(crate) fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
         // Send to all participants.
-        let recipients: Vec<_> = section_auth.peers().collect();
-        self.send_dkg_start_to(section_auth, &recipients)
+        let recipients: Vec<_> = elders_info.peers().collect();
+        self.send_dkg_start_to(elders_info, &recipients)
     }
 
     pub(crate) fn send_dkg_start_to(
         &self,
-        section_auth: SectionAuthorityProvider,
+        elders_info: EldersInfo,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let src_prefix = section_auth.prefix;
+        let src_prefix = elders_info.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
-        let dkg_key = DkgKey::new(&section_auth, generation);
+        let dkg_key = DkgKey::new(&elders_info, generation);
 
         trace!(
-            "Send DkgStart for {} with {:?} to {:?}",
-            section_auth,
+            "Send DkgStart for {:?} with {:?} to {:?}",
+            elders_info,
             dkg_key,
             recipients
         );
 
         let variant = Variant::DkgStart {
             dkg_key,
-            section_auth,
+            elders_info,
         };
 
         self.send_message_for_dst_accumulation(
@@ -366,13 +363,7 @@ impl Core {
     // TODO: consider changing this so it sends only to a subset of the elders
     // (say 1/3 of the ones closest to our name or so)
     pub(crate) fn send_message_to_our_elders(&self, msg: Bytes) -> Command {
-        let targets: Vec<_> = self
-            .section
-            .authority_provider()
-            .elders
-            .values()
-            .copied()
-            .collect();
+        let targets = self.section.authority_provider().addrs();
         Command::send_message_to_nodes(&targets, targets.len(), msg)
     }
 }

@@ -291,6 +291,7 @@ mod tests {
     use crate::{
         agreement::test_utils::proven,
         peer::test_utils::arbitrary_unique_peers,
+        routing::tests::SecretKeySet,
         section::{SectionAuthorityProvider, SectionChain},
         ELDER_SIZE, MIN_AGE,
     };
@@ -333,7 +334,8 @@ mod tests {
     ) -> Result<()> {
         let mut rng = SmallRng::seed_from_u64(seed);
 
-        let sk: bls::SecretKey = rng.gen();
+        let sk_set = SecretKeySet::random();
+        let sk = sk_set.secret_key();
         let pk = sk.public_key();
 
         // Create `Section` with `peers` as its members and set the `ELDER_SIZE` oldest peers as
@@ -346,14 +348,15 @@ mod tests {
                 .take(ELDER_SIZE)
                 .copied(),
             Prefix::default(),
+            sk_set.public_keys(),
         );
-        let section_auth = proven(&sk, section_auth)?;
+        let section_auth = proven(sk, section_auth)?;
 
         let mut section = Section::new(pk, SectionChain::new(pk), section_auth)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);
-            let info = proven(&sk, info)?;
+            let info = proven(sk, info)?;
 
             assert!(section.update_member(info));
         }

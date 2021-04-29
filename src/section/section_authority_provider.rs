@@ -7,8 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{peer::Peer, Prefix, XorName};
+use bls::{PublicKey, PublicKeyShare};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use sn_data_types::ReplicaPublicKeySet;
 use std::{
     borrow::Borrow,
     collections::BTreeMap,
@@ -16,20 +18,18 @@ use std::{
     net::SocketAddr,
 };
 
-/// The information about all elders of a section at one point in time. Each elder is always a
-/// member of exactly one current section, but a new `SectionAuthorityProvider` is created whenever the elders
-/// change, due to an elder being added or removed, or the section splitting or merging.
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct SectionAuthorityProvider {
+/// The information about all elders of a section at one point in time.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
+pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to their socket address.
     pub elders: BTreeMap<XorName, SocketAddr>,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
 }
 
-impl SectionAuthorityProvider {
-    /// Creates a new `SectionAuthorityProvider` with the given members, prefix and version.
-    pub fn new<I>(elders: I, prefix: Prefix) -> Self
+impl EldersInfo {
+    /// Creates a new `EldersInfo` with the given members and prefix.
+    pub(crate) fn new<I>(elders: I, prefix: Prefix) -> Self
     where
         I: IntoIterator<Item = Peer>,
     {
@@ -63,6 +63,94 @@ impl SectionAuthorityProvider {
     }
 }
 
+/// A new `SectionAuthorityProvider` is created whenever the elders change,
+/// due to an elder being added or removed, or the section splitting or merging.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
+pub struct SectionAuthorityProvider {
+    /// The section prefix. It matches all the members' names.
+    pub prefix: Prefix,
+    /// Public key of the section.
+    section_key: PublicKey,
+    // The section's complete set of elders as a map from their name to their socket address.
+    elders: BTreeMap<XorName, (PublicKeyShare, SocketAddr)>,
+}
+
+impl SectionAuthorityProvider {
+    /// Creates a new `SectionAuthorityProvider` with the given members, prefix and public keyset.
+    pub fn new<I>(elders: I, prefix: Prefix, pk_set: ReplicaPublicKeySet) -> Self
+    where
+        I: IntoIterator<Item = Peer>,
+    {
+        let elders = elders
+            .into_iter()
+            .enumerate()
+            .map(|(index, peer)| (*peer.name(), (pk_set.public_key_share(index), *peer.addr())))
+            .collect();
+        Self {
+            prefix,
+            section_key: pk_set.public_key(),
+            elders,
+        }
+    }
+
+    /// Creates a new `SectionAuthorityProvider` from EldersInfo and public keyset.
+    pub fn from_elders_info(elders_info: EldersInfo, pk_set: ReplicaPublicKeySet) -> Self {
+        let elders = elders_info
+            .elders
+            .iter()
+            .enumerate()
+            .map(|(index, (name, addr))| (*name, (pk_set.public_key_share(index), *addr)))
+            .collect();
+        Self {
+            prefix: elders_info.prefix,
+            section_key: pk_set.public_key(),
+            elders,
+        }
+    }
+
+    /// Returns `EldersInfo`, which doesn't have key related infos.
+    pub fn elders_info(&self) -> EldersInfo {
+        EldersInfo {
+            elders: self.elders(),
+            prefix: self.prefix,
+        }
+    }
+
+    pub(crate) fn peers(
+        &'_ self,
+    ) -> impl Iterator<Item = Peer> + DoubleEndedIterator + ExactSizeIterator + Clone + '_ {
+        // The `reachable` flag of Peer is defaulted to `false` during the construction.
+        // As the SectionAuthorityProvider only holds the list of alive elders, it shall be safe
+        // to set the flag as true here during the mapping.
+        self.elders.iter().map(|(name, (_, addr))| {
+            let mut peer = Peer::new(*name, *addr);
+            peer.set_reachable(true);
+            peer
+        })
+    }
+
+    /// Returns a map of name to socket_addr.
+    pub fn elders(&self) -> BTreeMap<XorName, SocketAddr> {
+        self.elders
+            .iter()
+            .map(|(name, (_, addr))| (*name, *addr))
+            .collect()
+    }
+
+    pub(crate) fn addrs(&self) -> Vec<SocketAddr> {
+        self.elders.values().map(|(_, addr)| *addr).collect()
+    }
+
+    pub(crate) fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
+    /// Key of the section.
+    pub fn section_key(&self) -> PublicKey {
+        self.section_key
+    }
+}
+
 impl Borrow<Prefix> for SectionAuthorityProvider {
     fn borrow(&self) -> &Prefix {
         &self.prefix
@@ -73,9 +161,10 @@ impl Debug for SectionAuthorityProvider {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SectionAuthorityProvider {{ prefix: ({:b}), elders: {{{:?}}} }}",
+            "SectionAuthorityProvider {{ prefix: ({:b}), section_key: {:?}, elders: {{{:?}}} }}",
             self.prefix,
-            self.elders.values().format(", "),
+            self.section_key,
+            self.elders.iter().format(", "),
         )
     }
 }
@@ -93,8 +182,8 @@ impl Display for SectionAuthorityProvider {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use super::SectionAuthorityProvider;
-    use crate::{crypto, node::Node, MIN_ADULT_AGE, MIN_AGE};
+    use super::*;
+    use crate::{crypto, node::Node, supermajority, MIN_ADULT_AGE, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
@@ -145,7 +234,13 @@ pub(crate) mod test_utils {
                 (*peer.name(), *peer.addr())
             })
             .collect();
-        let section_auth = SectionAuthorityProvider { elders, prefix };
+
+        let threshold = supermajority(count) - 1;
+        let secret_key_set = bls::SecretKeySet::random(threshold, &mut rand::thread_rng());
+        let section_auth = SectionAuthorityProvider::from_elders_info(
+            EldersInfo { elders, prefix },
+            secret_key_set.public_keys(),
+        );
 
         (section_auth, nodes)
     }

@@ -288,12 +288,10 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             remaining,
             added,
             removed,
-        } => {
-            info!(
-                "Node #{} adults changed - remaining: {:?}, added: {:?}, removed: {:?}",
-                index, remaining, added, removed
-            )
-        }
+        } => info!(
+            "Node #{} adults changed - remaining: {:?}, added: {:?}, removed: {:?}",
+            index, remaining, added, removed
+        ),
     }
 
     true

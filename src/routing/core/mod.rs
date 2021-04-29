@@ -117,7 +117,7 @@ impl Core {
             elders: self
                 .section()
                 .authority_provider()
-                .elders
+                .elders()
                 .keys()
                 .copied()
                 .collect(),
@@ -160,22 +160,10 @@ impl Core {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            let self_status_change = if !old.is_elder && new.is_elder {
-                info!("Promoted to elder");
-                NodeElderChange::Promoted
-            } else if old.is_elder && !new.is_elder {
-                info!("Demoted");
-                self.network = Network::new();
-                self.section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, None);
-                NodeElderChange::Demoted
-            } else {
-                NodeElderChange::None
-            };
-
             let current: BTreeSet<_> = self
                 .section
                 .authority_provider()
-                .elders
+                .elders()
                 .keys()
                 .copied()
                 .collect();
@@ -191,24 +179,32 @@ impl Core {
                 removed,
             };
 
+            let self_status_change = if !old.is_elder && new.is_elder {
+                info!("Promoted to elder");
+                NodeElderChange::Promoted
+            } else if old.is_elder && !new.is_elder {
+                info!("Demoted");
+                self.network = Network::new();
+                self.section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, None);
+                NodeElderChange::Demoted
+            } else {
+                NodeElderChange::None
+            };
+
             let sibling_elders = if new.prefix != old.prefix {
-                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
-                    self.network.get(&new.prefix.sibling()).map(|info| {
-                        let current: BTreeSet<_> = info.elders.keys().copied().collect();
-                        let added = current.difference(&old.elders).copied().collect();
-                        let removed = old.elders.difference(&current).copied().collect();
-                        let remaining = old.elders.intersection(&current).copied().collect();
-                        Elders {
-                            prefix: new.prefix.sibling(),
-                            key: *sibling_key,
-                            remaining,
-                            added,
-                            removed,
-                        }
-                    })
-                } else {
-                    None
-                }
+                self.network.get(&new.prefix.sibling()).map(|sec_auth| {
+                    let current: BTreeSet<_> = sec_auth.elders().keys().copied().collect();
+                    let added = current.difference(&old.elders).copied().collect();
+                    let removed = old.elders.difference(&current).copied().collect();
+                    let remaining = old.elders.intersection(&current).copied().collect();
+                    Elders {
+                        prefix: new.prefix.sibling(),
+                        key: sec_auth.section_key(),
+                        remaining,
+                        added,
+                        removed,
+                    }
+                })
             } else {
                 None
             };
