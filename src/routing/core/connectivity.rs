@@ -12,7 +12,7 @@ use crate::{
     error::Result,
     messages::Variant,
     routing::command::Command,
-    section::SectionAuthorityProvider,
+    section::EldersInfo,
     Error,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
@@ -24,11 +24,11 @@ impl Core {
     pub(crate) fn handle_dkg_start(
         &mut self,
         dkg_key: DkgKey,
-        new_section_auth: SectionAuthorityProvider,
+        new_elders_info: EldersInfo,
     ) -> Result<Vec<Command>> {
-        trace!("Received DkgStart for {}", new_section_auth);
+        trace!("Received DkgStart for {:?}", new_elders_info);
         self.dkg_voter
-            .start(&self.node.keypair, dkg_key, new_section_auth)
+            .start(&self.node.keypair, dkg_key, new_elders_info)
             .into_commands(&self.node)
     }
 
@@ -69,13 +69,13 @@ impl Core {
             .peer;
 
         let generation = self.section.chain().main_branch_len() as u64;
-        let section_auth = self
+        let elders_info = self
             .section
             .promote_and_demote_elders(&self.node.name())
             .into_iter()
-            .find(|section_auth| proofs.verify(section_auth, generation));
-        let section_auth = if let Some(section_auth) = section_auth {
-            section_auth
+            .find(|elders_info| proofs.verify(elders_info, generation));
+        let elders_info = if let Some(elders_info) = elders_info {
+            elders_info
         } else {
             trace!("Ignore DKG failure agreement with invalid proofs or outdated participants",);
             return Ok(vec![]);
@@ -84,18 +84,18 @@ impl Core {
         if proofs.non_participants.is_empty() {
             // The DKG failure is a corrupted one due to lagging.
             trace!(
-                "Received DKG failure agreement - restarting: {}",
-                section_auth
+                "Received DKG failure agreement - restarting: {:?}",
+                elders_info
             );
 
-            self.send_dkg_start_to(section_auth, slice::from_ref(sender))
+            self.send_dkg_start_to(elders_info, slice::from_ref(sender))
         } else {
             // The DKG failure is regarding non_participants, i.e. potential unresponsive node.
             trace!(
                 "Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}",
                 proofs.non_participants,
                 generation,
-                section_auth
+                elders_info
             );
             self.cast_offline_proposals(&proofs.non_participants)
         }

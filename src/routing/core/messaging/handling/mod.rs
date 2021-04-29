@@ -96,7 +96,7 @@ impl Core {
                     (self.section.prefix().matches(&name), self.public_key_set())
                 {
                     GetSectionResponse::Success(SectionInfo {
-                        prefix: self.section.authority_provider().prefix,
+                        prefix: self.section.authority_provider().prefix(),
                         pk_set,
                         elders: self
                             .section
@@ -109,12 +109,11 @@ impl Core {
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
                     // Otherwise redirect to our elders.
-                    let section = self
+                    let section_auth = self
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    let addrs = section.elders.values().copied().collect();
-                    GetSectionResponse::Redirect(addrs)
+                    GetSectionResponse::Redirect(section_auth.addrs())
                 };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);
@@ -291,8 +290,8 @@ impl Core {
             }
             Variant::DkgStart {
                 dkg_key,
-                section_auth,
-            } => self.handle_dkg_start(*dkg_key, section_auth.clone()),
+                elders_info,
+            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DkgMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
             }

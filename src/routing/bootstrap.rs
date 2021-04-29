@@ -347,7 +347,7 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    if section_auth.prefix.matches(&self.node.name()) {
+                    if section_auth.prefix().matches(&self.node.name()) {
                         info!(
                             "Newer Join response for our prefix {:?} from {:?}",
                             section_auth, sender
@@ -358,8 +358,8 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        let recipients = section_auth.elders.values().copied().collect();
-                        self.send_join_requests(join_request, recipients).await?;
+                        self.send_join_requests(join_request, section_auth.addrs())
+                            .await?;
                     } else {
                         warn!(
                             "Newer Join response not for our prefix {:?} from {:?}",
@@ -699,7 +699,7 @@ mod tests {
             let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
                 Message::from_bytes(Bytes::from(bytes))?);
 
-            itertools::assert_equal(&recipients, section_auth.elders.values());
+            itertools::assert_equal(recipients, section_auth.addrs());
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());

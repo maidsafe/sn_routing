@@ -19,7 +19,7 @@ pub use self::{
     member_info::{
         MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
-    section_authority_provider::SectionAuthorityProvider,
+    section_authority_provider::{EldersInfo, SectionAuthorityProvider},
     section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
@@ -128,7 +128,7 @@ impl Section {
         }
 
         self.members
-            .prune_not_matching(&self.section_auth.value.prefix);
+            .prune_not_matching(&self.section_auth.value.prefix());
 
         Ok(())
     }
@@ -139,8 +139,11 @@ impl Section {
         new_section_auth: Proven<SectionAuthorityProvider>,
         new_key_proof: Proof,
     ) -> bool {
-        if new_section_auth.value.prefix != *self.prefix()
-            && !new_section_auth.value.prefix.is_extension_of(self.prefix())
+        if new_section_auth.value.prefix() != *self.prefix()
+            && !new_section_auth
+                .value
+                .prefix()
+                .is_extension_of(self.prefix())
         {
             return false;
         }
@@ -166,7 +169,7 @@ impl Section {
         }
 
         self.members
-            .prune_not_matching(&self.section_auth.value.prefix);
+            .prune_not_matching(&self.section_auth.value.prefix());
 
         true
     }
@@ -218,19 +221,20 @@ impl Section {
     }
 
     pub fn is_elder(&self, name: &XorName) -> bool {
-        self.authority_provider().elders.contains_key(name)
+        self.authority_provider().elders().contains_key(name)
     }
 
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of candidate SectionAuthorityProviders.
-    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<SectionAuthorityProvider> {
+    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<EldersInfo> {
         if let Some((our_info, other_info)) = self.try_split(our_name) {
             return vec![our_info, other_info];
         }
 
         let expected_peers = self.elder_candidates(ELDER_SIZE);
-        let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).collect();
-        let current_names: BTreeSet<_> = self.authority_provider().elders.keys().collect();
+        let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).cloned().collect();
+        let current_names: BTreeSet<_> =
+            self.authority_provider().elders().keys().cloned().collect();
 
         if expected_names == current_names {
             vec![]
@@ -238,8 +242,7 @@ impl Section {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
-            let new_info =
-                SectionAuthorityProvider::new(expected_peers, self.authority_provider().prefix);
+            let new_info = EldersInfo::new(expected_peers, self.authority_provider().prefix());
             vec![new_info]
         }
     }
@@ -291,10 +294,7 @@ impl Section {
     // Tries to split our section.
     // If we have enough mature nodes for both subsections, returns the SectionAuthorityProviders
     // of the two subsections. Otherwise returns `None`.
-    fn try_split(
-        &self,
-        our_name: &XorName,
-    ) -> Option<(SectionAuthorityProvider, SectionAuthorityProvider)> {
+    fn try_split(&self, our_name: &XorName) -> Option<(EldersInfo, EldersInfo)> {
         let next_bit_index = if let Ok(index) = self.prefix().bit_count().try_into() {
             index
         } else {
@@ -335,8 +335,8 @@ impl Section {
             self.authority_provider(),
         );
 
-        let our_info = SectionAuthorityProvider::new(our_elders, our_prefix);
-        let other_info = SectionAuthorityProvider::new(other_elders, other_prefix);
+        let our_info = EldersInfo::new(our_elders, our_prefix);
+        let other_info = EldersInfo::new(other_elders, other_prefix);
 
         Some((our_info, other_info))
     }
@@ -356,7 +356,8 @@ fn create_first_section_authority_provider(
     mut peer: Peer,
 ) -> Result<Proven<SectionAuthorityProvider>> {
     peer.set_reachable(true);
-    let section_auth = SectionAuthorityProvider::new(iter::once(peer), Prefix::default());
+    let section_auth =
+        SectionAuthorityProvider::new(iter::once(peer), Prefix::default(), pk_set.clone());
     let proof = create_first_proof(pk_set, sk_share, &section_auth)?;
     Ok(Proven::new(section_auth, proof))
 }

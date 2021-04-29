@@ -47,8 +47,8 @@ impl Core {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DkgStart { section_auth, .. } => {
-                if !section_auth.elders.contains_key(&self.node.name()) {
+            Variant::DkgStart { elders_info, .. } => {
+                if !elders_info.elders.contains_key(&self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }
@@ -108,7 +108,7 @@ impl Core {
                 // This `SectionInfo` is proposed by the DKG participants and is signed by the new
                 // key created by the DKG so we don't know it yet. We only require the sender of the
                 // proposal to be one of the DKG participants.
-                if section_auth.elders.contains_key(sender) {
+                if section_auth.elders().contains_key(sender) {
                     None
                 } else {
                     Some(MessageStatus::Useless)

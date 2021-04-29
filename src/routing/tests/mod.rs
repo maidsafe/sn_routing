@@ -92,7 +92,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
     let sk_set = SecretKeySet::random();
     let (section_auth, _) = gen_section_authority_provider(good_prefix, ELDER_SIZE);
-    let elders_addrs: Vec<_> = section_auth.elders.values().copied().collect();
+    let elders_addrs = section_auth.addrs();
     let (section, _) = create_section(&sk_set, &section_auth)?;
 
     let node = create_node(MIN_ADULT_AGE);
@@ -459,8 +459,11 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     // Creates nodes where everybody has age 6 except one has 5.
     let mut nodes: Vec<_> = gen_sorted_nodes(&Prefix::default(), ELDER_SIZE, true);
 
-    let section_auth =
-        SectionAuthorityProvider::new(nodes.iter().map(Node::peer), Prefix::default());
+    let section_auth = SectionAuthorityProvider::new(
+        nodes.iter().map(Node::peer),
+        Prefix::default(),
+        sk_set.public_keys(),
+    );
     let proven_section_auth = proven(sk_set.secret_key(), section_auth.clone())?;
 
     let mut section = Section::new(*chain.root_key(), chain, proven_section_auth)?;
@@ -520,11 +523,11 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
             _ => continue,
         };
 
-        let actual_section_auth = match message.variant() {
-            Variant::DkgStart { section_auth, .. } => section_auth,
+        let actual_elders_info = match message.variant() {
+            Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
-        itertools::assert_equal(actual_section_auth.peers(), expected_new_elders.clone());
+        itertools::assert_equal(actual_elders_info.peers(), expected_new_elders.clone());
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
@@ -762,8 +765,8 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             _ => continue,
         };
 
-        let actual_section_auth = match message.variant() {
-            Variant::DkgStart { section_auth, .. } => section_auth,
+        let actual_elders_info = match message.variant() {
+            Variant::DkgStart { elders_info, .. } => elders_info,
             _ => continue,
         };
 
@@ -772,7 +775,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             .filter(|peer| *peer != remove_peer)
             .chain(iter::once(existing_peer))
             .collect();
-        itertools::assert_equal(actual_section_auth.peers(), expected_new_elders.clone());
+        itertools::assert_equal(actual_elders_info.peers(), expected_new_elders.clone());
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
@@ -798,7 +801,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         .await
         .section()
         .authority_provider()
-        .elders
+        .elders()
         .contains_key(remove_peer.name()));
 
     Ok(())
@@ -830,17 +833,13 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         UntrustedMessageSource::Peer => {
             // When the untrusted message is sent from a single peer, we should bounce it back to
             // that peer.
-            let sender = *section_auth
-                .elders
-                .values()
-                .next()
-                .expect("section_auth is empty");
+            let sender = *section_auth.addrs().get(0).expect("section_auth is empty");
             (Some(sender), vec![sender])
         }
         UntrustedMessageSource::Accumulation => {
             // When the untrusted message is the result of message accumulation, we should bounce
             // it to our elders.
-            (None, section_auth.elders.values().copied().collect())
+            (None, section_auth.addrs())
         }
     };
 
@@ -1033,7 +1032,8 @@ async fn handle_sync() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Create new `Section` as a successor to the previous one.
-    let sk2 = bls::SecretKey::random();
+    let sk2_set = SecretKeySet::random();
+    let sk2 = sk2_set.secret_key();
     let pk2 = sk2.public_key();
     let pk2_signature = sk1_set.secret_key().sign(bincode::serialize(&pk2)?);
     chain.insert(&pk1, pk2, pk2_signature)?;
@@ -1045,12 +1045,13 @@ async fn handle_sync() -> Result<()> {
     let new_section_auth = SectionAuthorityProvider::new(
         old_section_auth
             .peers()
-            .take(old_section_auth.elders.len() - 1)
+            .take(old_section_auth.elders().len() - 1)
             .chain(iter::once(new_peer)),
         old_section_auth.prefix,
+        sk2_set.public_keys(),
     );
-    let new_section_elders: BTreeSet<_> = new_section_auth.elders.keys().copied().collect();
-    let proven_new_section_auth = proven(&sk2, new_section_auth)?;
+    let new_section_elders: BTreeSet<_> = new_section_auth.elders().keys().copied().collect();
+    let proven_new_section_auth = proven(sk2, new_section_auth)?;
     let new_section = Section::new(pk0, chain, proven_new_section_auth)?;
 
     // Create the `Sync` message containing the new `Section`.
@@ -1410,6 +1411,7 @@ async fn handle_elders_update() -> Result<()> {
     let section_auth0 = SectionAuthorityProvider::new(
         iter::once(node.peer()).chain(other_elder_peers.clone()),
         Prefix::default(),
+        sk_set0.public_keys(),
     );
 
     let (mut section0, section_key_share) = create_section(&sk_set0, &section_auth0)?;
@@ -1422,6 +1424,8 @@ async fn handle_elders_update() -> Result<()> {
 
     let demoted_peer = other_elder_peers.remove(0);
 
+    let sk_set1 = SecretKeySet::random();
+    let pk1 = sk_set1.secret_key().public_key();
     // Create `HandleAgreement` command for an `OurElders` proposal. This will demote one of the
     // current elders and promote the oldest peer.
     let section_auth1 = SectionAuthorityProvider::new(
@@ -1429,11 +1433,9 @@ async fn handle_elders_update() -> Result<()> {
             .chain(other_elder_peers.clone())
             .chain(iter::once(promoted_peer)),
         Prefix::default(),
+        sk_set1.public_keys(),
     );
-    let elder_names1: BTreeSet<_> = section_auth1.elders.keys().copied().collect();
-
-    let sk_set1 = SecretKeySet::random();
-    let pk1 = sk_set1.secret_key().public_key();
+    let elder_names1: BTreeSet<_> = section_auth1.elders().keys().copied().collect();
 
     let proven_section_auth1 = proven(sk_set1.secret_key(), section_auth1)?;
     let proposal = Proposal::OurElders(proven_section_auth1);
@@ -1529,6 +1531,7 @@ async fn handle_demote_during_split() -> Result<()> {
     let section_auth_v0 = SectionAuthorityProvider::new(
         iter::once(node.peer()).chain(peers_a.iter().copied()),
         Prefix::default(),
+        sk_set_v0.public_keys(),
     );
 
     let (mut section, section_key_share) = create_section(&sk_set_v0, &section_auth_v0)?;
@@ -1562,14 +1565,18 @@ async fn handle_demote_during_split() -> Result<()> {
     };
 
     // Handle agreement on `OurElders` for prefix-0.
-    let section_auth =
-        SectionAuthorityProvider::new(peers_a.iter().copied().chain(iter::once(peer_c)), prefix0);
+    let section_auth = SectionAuthorityProvider::new(
+        peers_a.iter().copied().chain(iter::once(peer_c)),
+        prefix0,
+        sk_set_v1_p0.public_keys(),
+    );
     let command = create_our_elders_command(sk_set_v1_p0.secret_key(), section_auth)?;
     let commands = dispatcher.handle_command(command).await?;
     assert_matches!(&commands[..], &[]);
 
     // Handle agreement on `OurElders` for prefix-1.
-    let section_auth = SectionAuthorityProvider::new(peers_b.iter().copied(), prefix1);
+    let section_auth =
+        SectionAuthorityProvider::new(peers_b.iter().copied(), prefix1, sk_set_v1_p1.public_keys());
     let command = create_our_elders_command(sk_set_v1_p1.secret_key(), section_auth)?;
     let commands = dispatcher.handle_command(command).await?;
 

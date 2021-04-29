@@ -181,15 +181,15 @@ impl Core {
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let equal_or_extension = section_auth.prefix == *self.section.prefix()
-            || section_auth.prefix.is_extension_of(self.section.prefix());
+        let equal_or_extension = section_auth.prefix() == *self.section.prefix()
+            || section_auth.prefix().is_extension_of(self.section.prefix());
         let section_auth = Proven::new(section_auth, proof);
 
         if equal_or_extension {
             // Our section of sub-section
 
             let infos = self.section.promote_and_demote_elders(&self.node.name());
-            if !infos.contains(&section_auth.value) {
+            if !infos.contains(&section_auth.value.elders_info()) {
                 // SectionInfo out of date, ignore.
                 return Ok(commands);
             }

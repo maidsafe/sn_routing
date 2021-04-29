@@ -13,7 +13,7 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{MemberInfo, Section, SectionAuthorityProvider, SectionChain},
+    section::{EldersInfo, MemberInfo, Section, SectionAuthorityProvider, SectionChain},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -77,7 +77,7 @@ pub(crate) enum Variant {
         /// The identifier of the DKG session to start.
         dkg_key: DkgKey,
         /// The DKG particpants.
-        section_auth: SectionAuthorityProvider,
+        elders_info: EldersInfo,
     },
     /// Message exchanged for DKG process.
     DkgMessage {
@@ -207,11 +207,11 @@ impl Debug for Variant {
                 .finish(),
             Self::DkgStart {
                 dkg_key,
-                section_auth,
+                elders_info,
             } => f
                 .debug_struct("DkgStart")
                 .field("dkg_key", dkg_key)
-                .field("section_auth", section_auth)
+                .field("elders_info", elders_info)
                 .finish(),
             Self::DkgMessage { dkg_key, message } => f
                 .debug_struct("DkgMessage")

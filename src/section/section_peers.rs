@@ -242,5 +242,5 @@ fn is_active(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bo
 }
 
 fn is_elder(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bool {
-    current_elders.elders.contains_key(info.peer.name())
+    current_elders.elders().contains_key(info.peer.name())
 }
