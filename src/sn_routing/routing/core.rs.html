@@ -2484,23 +2484,6 @@
 <span id="2483">2483</span>
 <span id="2484">2484</span>
 <span id="2485">2485</span>
-<span id="2486">2486</span>
-<span id="2487">2487</span>
-<span id="2488">2488</span>
-<span id="2489">2489</span>
-<span id="2490">2490</span>
-<span id="2491">2491</span>
-<span id="2492">2492</span>
-<span id="2493">2493</span>
-<span id="2494">2494</span>
-<span id="2495">2495</span>
-<span id="2496">2496</span>
-<span id="2497">2497</span>
-<span id="2498">2498</span>
-<span id="2499">2499</span>
-<span id="2500">2500</span>
-<span id="2501">2501</span>
-<span id="2502">2502</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -3638,17 +3621,7 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
-        <span class="kw">let</span> <span class="ident">old_adults</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">active_members</span>()
-            .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> {
-                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">is_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
-                    <span class="prelude-val">None</span>
-                } <span class="kw">else</span> {
-                    <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>())
-                }
-            })
-            .<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">old_adults</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">adults</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()).<span class="ident">collect</span>();
 
         <span class="kw">let</span> <span class="ident">snapshot</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state_snapshot</span>();
         <span class="macro">trace</span><span class="macro">!</span>(
@@ -3660,17 +3633,7 @@
         <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">merge</span>(<span class="ident">network</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>());
 
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
-            <span class="kw">let</span> <span class="ident">new_adults</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
-                .<span class="ident">section</span>
-                .<span class="ident">active_members</span>()
-                .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> {
-                    <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">is_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
-                        <span class="prelude-val">None</span>
-                    } <span class="kw">else</span> {
-                        <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>())
-                    }
-                })
-                .<span class="ident">collect</span>();
+            <span class="kw">let</span> <span class="ident">new_adults</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">adults</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()).<span class="ident">collect</span>();
             <span class="kw">if</span> <span class="ident">old_adults</span> <span class="op">!</span><span class="op">=</span> <span class="ident">new_adults</span> {
                 <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">AdultsChanged</span>(<span class="ident">new_adults</span>));
             }
@@ -4198,10 +4161,14 @@
 
         <span class="ident">commands</span>
             .<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">relocate_peers</span>(<span class="ident">new_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">&amp;</span><span class="ident">new_info</span>.<span class="ident">proof</span>.<span class="ident">signature</span>)<span class="question-mark">?</span>);
-        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">promote_and_demote_elders</span>()<span class="question-mark">?</span>);
-        <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">send_node_approval</span>(<span class="ident">new_info</span>, <span class="ident">their_knowledge</span>)<span class="question-mark">?</span>);
 
-        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync_to_adults</span>()<span class="question-mark">?</span>);
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">promote_and_demote_elders</span>()<span class="question-mark">?</span>;
+        <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_empty</span>() {
+            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync_to_adults</span>()<span class="question-mark">?</span>);
+        }
+
+        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span>);
+        <span class="ident">commands</span>.<span class="ident">push</span>(<span class="self">self</span>.<span class="ident">send_node_approval</span>(<span class="ident">new_info</span>, <span class="ident">their_knowledge</span>)<span class="question-mark">?</span>);
 
         <span class="self">self</span>.<span class="ident">print_network_stats</span>();
 
@@ -4230,9 +4197,13 @@
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;handle Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
 
         <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">relocate_peers</span>(<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">&amp;</span><span class="ident">signature</span>)<span class="question-mark">?</span>);
-        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">promote_and_demote_elders</span>()<span class="question-mark">?</span>);
 
-        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync_to_adults</span>()<span class="question-mark">?</span>);
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">promote_and_demote_elders</span>()<span class="question-mark">?</span>;
+        <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_empty</span>() {
+            <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync_to_adults</span>()<span class="question-mark">?</span>);
+        }
+
+        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span>);
 
         <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">MemberLeft</span> {
             <span class="ident">name</span>: <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(),
@@ -4562,18 +4533,13 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">let</span> <span class="ident">non_elders</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">active_members</span>()
-            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">is_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>()))
-            .<span class="ident">copied</span>()
-            .<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">adults</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">adults</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">Sync</span> {
             <span class="ident">section</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(),
             <span class="ident">network</span>: <span class="ident">Network</span>::<span class="ident">new</span>(),
         };
-        <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">send</span>(<span class="ident">variant</span>, <span class="ident">non_elders</span>)<span class="question-mark">?</span>);
+        <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">send</span>(<span class="ident">variant</span>, <span class="ident">adults</span>)<span class="question-mark">?</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
