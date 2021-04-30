@@ -268,6 +268,17 @@ impl Section {
             .filter(move |peer| !self.is_elder(peer.name()))
     }
 
+    /// Returns live adults from our section.
+    pub fn live_adults(&self) -> impl Iterator<Item = &Peer> {
+        self.members.joined().filter_map(move |info| {
+            if !self.is_elder(info.peer.name()) {
+                Some(&info.peer)
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn find_joined_member_by_addr(&self, addr: &SocketAddr) -> Option<&Peer> {
         self.members
             .joined()

@@ -1134,7 +1134,11 @@ impl Core {
             return Ok(vec![]);
         }
 
-        let old_adults: BTreeSet<_> = self.section.adults().map(|peer| *peer.name()).collect();
+        let old_adults: BTreeSet<_> = self
+            .section
+            .live_adults()
+            .map(|peer| *peer.name())
+            .collect();
 
         let snapshot = self.state_snapshot();
         trace!(
@@ -1146,7 +1150,11 @@ impl Core {
         self.network.merge(network, self.section.chain());
 
         if !self.is_elder() {
-            let new_adults: BTreeSet<_> = self.section.adults().map(|peer| *peer.name()).collect();
+            let new_adults: BTreeSet<_> = self
+                .section
+                .live_adults()
+                .map(|peer| *peer.name())
+                .collect();
             if old_adults != new_adults {
                 self.send_event(Event::AdultsChanged(new_adults));
             }
@@ -2046,7 +2054,7 @@ impl Core {
 
         let mut commands = vec![];
 
-        let adults: Vec<_> = self.section.adults().copied().collect();
+        let adults: Vec<_> = self.section.live_adults().copied().collect();
 
         let variant = Variant::Sync {
             section: self.section.clone(),
