@@ -115,7 +115,7 @@ impl DkgVoter {
             return vec![];
         }
 
-        let name = crypto::name(&sn_data_types::PublicKey::from(keypair.public));
+        let name = XorName::from(sn_data_types::PublicKey::from(keypair.public));
         let participant_index = if let Some(index) = elders_info.position(&name) {
             index
         } else {
@@ -430,7 +430,7 @@ impl Session {
         if !self
             .elders_info
             .elders
-            .contains_key(&crypto::name(&sn_data_types::PublicKey::from(
+            .contains_key(&XorName::from(sn_data_types::PublicKey::from(
                 proof.public_key,
             )))
         {
@@ -531,7 +531,7 @@ impl DkgFailureProofSet {
             .filter(|proof| {
                 elders_info
                     .elders
-                    .contains_key(&crypto::name(&sn_data_types::PublicKey::from(
+                    .contains_key(&XorName::from(sn_data_types::PublicKey::from(
                         proof.public_key,
                     )))
             })

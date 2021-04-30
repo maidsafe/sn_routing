@@ -299,7 +299,7 @@ impl Core {
 
         match message {
             SectionInfoMsg::GetSectionQuery(pk) => {
-                let name = crypto::name(&pk);
+                let name = XorName::from(pk);
                 debug!("Received GetSectionQuery({}) from {}", name, sender);
 
                 let response = if let (true, Ok(pk_set)) =
@@ -362,7 +362,7 @@ impl Core {
                     ));
                 debug!("Sending {:?} to {}", response, sender);
 
-                let name = crypto::name(&end_user);
+                let name = XorName::from(end_user);
                 vec![Command::SendMessage {
                     recipients: vec![(sender, name)],
                     delivery_group_size: 1,
@@ -1186,7 +1186,7 @@ impl Core {
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(end_user) = msg.dst() {
-            let name = crypto::name(end_user.id());
+            let name = XorName::from(*end_user.id());
             let recipients = match end_user {
                 EndUser::AllClients(public_key) => self
                     .get_all_socket_addr(public_key)

@@ -290,7 +290,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let relocated_node_old_keypair =
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
-    let relocated_node_old_name = crypto::name(&sn_data_types::PublicKey::from(
+    let relocated_node_old_name = XorName::from(sn_data_types::PublicKey::from(
         relocated_node_old_keypair.public,
     ));
     let relocated_node = Node::new(

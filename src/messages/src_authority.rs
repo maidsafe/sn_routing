@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::{name, PublicKey, Signature as SimpleSignature},
+    crypto::{PublicKey, Signature as SimpleSignature},
     error::{Error, Result},
     peer::Peer,
 };
@@ -52,7 +52,7 @@ impl SrcAuthority {
     pub(crate) fn src_location(&self) -> SrcLocation {
         match self {
             Self::Node { public_key, .. } => {
-                SrcLocation::Node(name(&sn_data_types::PublicKey::from(*public_key)))
+                SrcLocation::Node(XorName::from(sn_data_types::PublicKey::from(*public_key)))
             }
             Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
             Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
@@ -65,7 +65,9 @@ impl SrcAuthority {
 
     pub(crate) fn name(&self) -> XorName {
         match self {
-            Self::Node { public_key, .. } => name(&sn_data_types::PublicKey::from(*public_key)),
+            Self::Node { public_key, .. } => {
+                XorName::from(sn_data_types::PublicKey::from(*public_key))
+            }
             Self::BlsShare { src_name, .. } => *src_name,
             Self::Section { src_name, .. } => *src_name,
         }
@@ -75,7 +77,7 @@ impl SrcAuthority {
     pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
             Self::Node { public_key, .. } => Ok(Peer::new(
-                name(&sn_data_types::PublicKey::from(*public_key)),
+                XorName::from(sn_data_types::PublicKey::from(*public_key)),
                 addr,
             )),
             Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
