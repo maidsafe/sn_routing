@@ -1134,17 +1134,7 @@ impl Core {
             return Ok(vec![]);
         }
 
-        let old_adults: BTreeSet<_> = self
-            .section
-            .active_members()
-            .filter_map(|peer| {
-                if self.section.is_elder(peer.name()) {
-                    None
-                } else {
-                    Some(*peer.name())
-                }
-            })
-            .collect();
+        let old_adults: BTreeSet<_> = self.section.adults().map(|peer| *peer.name()).collect();
 
         let snapshot = self.state_snapshot();
         trace!(
@@ -1156,17 +1146,7 @@ impl Core {
         self.network.merge(network, self.section.chain());
 
         if !self.is_elder() {
-            let new_adults: BTreeSet<_> = self
-                .section
-                .active_members()
-                .filter_map(|peer| {
-                    if self.section.is_elder(peer.name()) {
-                        None
-                    } else {
-                        Some(*peer.name())
-                    }
-                })
-                .collect();
+            let new_adults: BTreeSet<_> = self.section.adults().map(|peer| *peer.name()).collect();
             if old_adults != new_adults {
                 self.send_event(Event::AdultsChanged(new_adults));
             }
@@ -1694,10 +1674,14 @@ impl Core {
 
         commands
             .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.proof.signature)?);
-        commands.extend(self.promote_and_demote_elders()?);
-        commands.push(self.send_node_approval(new_info, their_knowledge)?);
 
-        commands.extend(self.send_sync_to_adults()?);
+        let result = self.promote_and_demote_elders()?;
+        if result.is_empty() {
+            commands.extend(self.send_sync_to_adults()?);
+        }
+
+        commands.extend(result);
+        commands.push(self.send_node_approval(new_info, their_knowledge)?);
 
         self.print_network_stats();
 
@@ -1726,9 +1710,13 @@ impl Core {
         info!("handle Offline: {:?}", peer);
 
         commands.extend(self.relocate_peers(peer.name(), &signature)?);
-        commands.extend(self.promote_and_demote_elders()?);
 
-        commands.extend(self.send_sync_to_adults()?);
+        let result = self.promote_and_demote_elders()?;
+        if result.is_empty() {
+            commands.extend(self.send_sync_to_adults()?);
+        }
+
+        commands.extend(result);
 
         self.send_event(Event::MemberLeft {
             name: *peer.name(),
@@ -2058,18 +2046,13 @@ impl Core {
 
         let mut commands = vec![];
 
-        let non_elders: Vec<_> = self
-            .section
-            .active_members()
-            .filter(|peer| !self.section.is_elder(peer.name()))
-            .copied()
-            .collect();
+        let adults: Vec<_> = self.section.adults().copied().collect();
 
         let variant = Variant::Sync {
             section: self.section.clone(),
             network: Network::new(),
         };
-        commands.push(send(variant, non_elders)?);
+        commands.push(send(variant, adults)?);
 
         Ok(commands)
     }
