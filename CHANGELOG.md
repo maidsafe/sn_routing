@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.64.4](https://github.com/maidsafe/sn_routing/compare/v0.64.3...v0.64.4) (2021-04-30)
+
+
+### Bug Fixes
+
+* only send adult list notification when no elder changing ([4964a20](https://github.com/maidsafe/sn_routing/commit/4964a20fab42e78b6a1cab0951dcbdde7bc53449))
+
 ### [0.64.3](https://github.com/maidsafe/sn_routing/compare/v0.64.2...v0.64.3) (2021-04-28)
 
 
