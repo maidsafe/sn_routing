@@ -420,27 +420,18 @@ impl Routing {
             }
         };
         let user_xor_name = XorName::from(end_user_pk);
-        let (target_section_pk, _) = self.matching_section(&user_xor_name).await;
-        if let Some(section_pk) = target_section_pk {
-            let command = Command::SendMessage {
-                recipients: vec![(recipient, user_xor_name)],
-                delivery_group_size: 1,
-                message: MessageType::Client {
-                    msg: message,
-                    dest_info: DestInfo {
-                        dest: XorName::from(end_user_pk),
-                        dest_section_pk: section_pk,
-                    },
+        let command = Command::SendMessage {
+            recipients: vec![(recipient, user_xor_name)],
+            delivery_group_size: 1,
+            message: MessageType::Client {
+                msg: message,
+                dest_info: DestInfo {
+                    dest: user_xor_name,
+                    dest_section_pk: *self.section_chain().await.last_key(),
                 },
-            };
-            self.dispatcher.clone().handle_commands(command).await
-        } else {
-            warn!(
-                "No section PK matching our client PK xorname: {:?}",
-                user_xor_name
-            );
-            Ok(())
-        }
+            },
+        };
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Returns the current BLS public key set if this node has one, or

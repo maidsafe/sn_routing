@@ -330,7 +330,6 @@ mod tests {
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
-    #[allow(unused)]
     const TIMEOUT: Duration = Duration::from_secs(1);
 
     #[tokio::test]
@@ -524,7 +523,6 @@ mod tests {
         }
 
         // Send the second message.
-        // Send the first message.
         let key1 = bls::SecretKey::random().public_key();
         let msg1 = MessageType::Ping(DestInfo {
             dest: name,
@@ -625,7 +623,6 @@ mod tests {
         }
     }
 
-    #[allow(unused)]
     async fn get_invalid_addr() -> Result<SocketAddr> {
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let addr = socket.local_addr()?;

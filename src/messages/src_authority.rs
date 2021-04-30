@@ -41,7 +41,7 @@ pub enum SrcAuthority {
     },
     /// Authority of a whole section.
     Section {
-        /// Name of the source section.
+        /// Name in the source section.
         src_name: XorName,
         /// BLS proof of the message corresponding to the source section.
         proof: Proof,

@@ -2180,10 +2180,9 @@ impl Core {
 
         let mut commands = vec![];
 
-        let non_elders: Vec<_> = self
+        let adults: Vec<_> = self
             .section
-            .active_members()
-            .filter(|peer| !self.section.is_elder(peer.name()))
+            .adults()
             .map(|peer| (*peer.addr(), *peer.name()))
             .collect();
 
@@ -2191,7 +2190,8 @@ impl Core {
             section: self.section.clone(),
             network: Network::new(),
         };
-        commands.push(send(variant, non_elders)?);
+
+        commands.push(send(variant, adults)?);
 
         Ok(commands)
     }
