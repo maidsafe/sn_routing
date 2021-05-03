@@ -45,9 +45,14 @@ impl SectionAuthorityProvider {
     pub(crate) fn peers(
         &'_ self,
     ) -> impl Iterator<Item = Peer> + DoubleEndedIterator + ExactSizeIterator + Clone + '_ {
-        self.elders
-            .iter()
-            .map(|(name, addr)| Peer::new(*name, *addr))
+        // The `reachable` flag of Peer is defaulted to `false` during the construction.
+        // As the SectionAuthorityProvider only holds the list of alive elders, it shall be safe
+        // to set the flag as true here during the mapping.
+        self.elders.iter().map(|(name, addr)| {
+            let mut peer = Peer::new(*name, *addr);
+            peer.set_reachable(true);
+            peer
+        })
     }
 
     /// Returns the index of the elder with `name` in this set of elders.
