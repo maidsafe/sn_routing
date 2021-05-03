@@ -11,6 +11,7 @@ use crate::{
     messages::{CreateError, ExtendProofChainError},
     section::SectionChainError,
 };
+use std::net::SocketAddr;
 use thiserror::Error;
 
 /// The type returned by the sn_routing message handling methods.
@@ -24,6 +25,14 @@ pub enum Error {
     FailedSignature,
     #[error("Cannot route.")]
     CannotRoute,
+    #[error("Empty recipient list")]
+    EmptyRecipientList,
+    #[error("The config is invalid")]
+    InvalidConfig,
+    #[error("Cannot connect to the endpoint")]
+    CannotConnectEndpoint,
+    #[error("Address not reachable")]
+    AddressNotReachable,
     #[error("Network layer error: {0}")]
     Network(#[from] qp2p::Error),
     #[error("The node is not in a state to handle the action.")]
@@ -38,8 +47,10 @@ pub enum Error {
     InvalidSignatureShare,
     #[error("The secret key share is missing.")]
     MissingSecretKeyShare,
-    #[error("Failed to send a message.")]
-    FailedSend,
+    #[error("Failed to send a message to {0}")]
+    FailedSend(SocketAddr),
+    #[error("Connection closed locally")]
+    ConnectionClosed,
     #[error("Invalid section chain: {0}")]
     InvalidSectionChain(#[from] SectionChainError),
     #[error("Messaging protocol error: {0}")]

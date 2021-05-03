@@ -16,7 +16,6 @@ use std::{
     net::SocketAddr,
     sync::RwLock,
 };
-use thiserror::Error;
 use tokio::{sync::mpsc, task};
 
 // Communication component of the node to interact with other nodes.
@@ -111,13 +110,13 @@ impl Comm {
         &self,
         recipient: &SocketAddr,
         msg: Bytes,
-    ) -> Result<(), SendError> {
+    ) -> Result<()> {
         self.endpoint
             .send_message(msg, recipient)
             .await
             .map_err(|err| {
                 error!("Sending to {:?} failed with {}", recipient, err);
-                SendError
+                Error::FailedSend(*recipient)
             })
     }
 
@@ -147,18 +146,19 @@ impl Comm {
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
     /// recipients out of the `recipients` list. If a send fails, attempts to send to the next peer
-    /// until `delivery_goup_size` successful sends complete or there are no more recipients to
+    /// until `delivery_group_size`  successful sends complete or there are no more recipients to
     /// try.
     ///
-    /// Returns `Ok` if all of `delivery_group_size` sends succeeded and `Err` if less that
-    /// `delivery_group_size` succeeded. Also returns all the failed recipients which can be used
-    /// by the caller to identify lost peers.
+    /// Returns an `Error::ConnectionClosed` if the connection is closed locally. Else it returns a
+    /// `SendStatus::MinDeliveryGroupSizeReached` or `SendStatus::MinDeliveryGroupSizeFailed` depending
+    /// on if the minimum delivery group size is met or not. The failed recipients are sent along
+    /// with the status. It returns a `SendStatus::AllRecipients` if message is sent to all the recipients.
     pub async fn send(
         &self,
         recipients: &[SocketAddr],
         delivery_group_size: usize,
         msg: Bytes,
-    ) -> (Result<(), SendError>, Vec<SocketAddr>) {
+    ) -> Result<SendStatus> {
         trace!(
             "Sending message ({} bytes) to {} of {:?}",
             msg.len(),
@@ -196,7 +196,7 @@ impl Comm {
                 Err(qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)) => {
                     // The connection was closed by us which means we are terminating so let's cut
                     // this short.
-                    return (Err(SendError), vec![]);
+                    return Err(Error::ConnectionClosed);
                 }
                 Err(_) => {
                     failed_recipients.push(*addr);
@@ -217,13 +217,15 @@ impl Comm {
             failed_recipients
         );
 
-        let result = if successes == delivery_group_size {
-            Ok(())
+        if successes == delivery_group_size {
+            if failed_recipients.is_empty() {
+                Ok(SendStatus::AllRecipients)
+            } else {
+                Ok(SendStatus::MinDeliveryGroupSizeReached(failed_recipients))
+            }
         } else {
-            Err(SendError)
-        };
-
-        (result, failed_recipients)
+            Ok(SendStatus::MinDeliveryGroupSizeFailed(failed_recipients))
+        }
     }
 
     // Low-level send
@@ -248,16 +250,6 @@ impl Comm {
 impl Drop for Comm {
     fn drop(&mut self) {
         self.endpoint.close()
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Send failed")]
-pub struct SendError;
-
-impl From<SendError> for Error {
-    fn from(_: SendError) -> Self {
-        Error::FailedSend
     }
 }
 
@@ -295,6 +287,14 @@ async fn handle_incoming_messages(
     }
 }
 
+/// Returns the status of the send operation.
+#[derive(Debug, Clone)]
+pub enum SendStatus {
+    AllRecipients,
+    MinDeliveryGroupSizeReached(Vec<SocketAddr>),
+    MinDeliveryGroupSizeFailed(Vec<SocketAddr>),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,9 +316,11 @@ mod tests {
         let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send(&[peer0.addr, peer1.addr], 2, message.clone())
-            .await
-            .0?;
+        let status = comm
+            .send(&[peer0.addr, peer1.addr], 2, message.clone())
+            .await?;
+
+        assert_matches!(status, SendStatus::AllRecipients);
 
         assert_eq!(peer0.rx.recv().await, Some(message.clone()));
         assert_eq!(peer1.rx.recv().await, Some(message));
@@ -335,9 +337,11 @@ mod tests {
         let mut peer1 = Peer::new().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send(&[peer0.addr, peer1.addr], 1, message.clone())
-            .await
-            .0?;
+        let status = comm
+            .send(&[peer0.addr, peer1.addr], 1, message.clone())
+            .await?;
+
+        assert_matches!(status, SendStatus::AllRecipients);
 
         assert_eq!(peer0.rx.recv().await, Some(message));
 
@@ -364,9 +368,12 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let (result, failed_recipients) = comm.send(&[invalid_addr], 1, message.clone()).await;
-        assert!(result.is_err());
-        assert_eq!(failed_recipients, [invalid_addr]);
+        let status = comm.send(&[invalid_addr], 1, message.clone()).await?;
+
+        assert_matches!(
+            &status,
+            &SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
+        );
 
         Ok(())
     }
@@ -386,9 +393,9 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        comm.send(&[invalid_addr, peer.addr], 1, message.clone())
-            .await
-            .0?;
+        let _ = comm
+            .send(&[invalid_addr, peer.addr], 1, message.clone())
+            .await?;
 
         assert_eq!(peer.rx.recv().await, Some(message));
 
@@ -410,12 +417,14 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let message = Bytes::from_static(b"hello world");
-        let (result, failed_recipients) = comm
+        let status = comm
             .send(&[invalid_addr, peer.addr], 2, message.clone())
-            .await;
+            .await?;
 
-        assert!(result.is_err());
-        assert_eq!(failed_recipients, [invalid_addr]);
+        assert_matches!(
+            status,
+            SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
+        );
         assert_eq!(peer.rx.recv().await, Some(message));
 
         Ok(())
@@ -432,10 +441,9 @@ mod tests {
 
         // Send the first message.
         let msg0 = Bytes::from_static(b"zero");
-        send_comm
+        let _ = send_comm
             .send(slice::from_ref(&recv_addr), 1, msg0.clone())
-            .await
-            .0?;
+            .await?;
 
         let mut msg0_received = false;
 
@@ -451,10 +459,9 @@ mod tests {
 
         // Send the second message.
         let msg1 = Bytes::from_static(b"one");
-        send_comm
+        let _ = send_comm
             .send(slice::from_ref(&recv_addr), 1, msg1.clone())
-            .await
-            .0?;
+            .await?;
 
         let mut msg1_received = false;
 
@@ -479,10 +486,10 @@ mod tests {
         let addr1 = comm1.our_connection_info();
 
         // Send a message to establish the connection
-        comm1
+        let _ = comm1
             .send(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
-            .await
-            .0?;
+            .await?;
+
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));
         // Drop `comm1` to cause connection lost.
         drop(comm1);
