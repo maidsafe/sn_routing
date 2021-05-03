@@ -20,6 +20,7 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use sn_messaging::DestInfo;
 use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
@@ -71,7 +72,10 @@ pub(crate) enum Variant {
     },
     /// Sent from a node that can't establish the trust of the contained message to its original
     /// source in order for them to provide new proof that the node would trust.
-    BouncedUntrustedMessage(Box<Message>),
+    BouncedUntrustedMessage {
+        msg: Box<Message>,
+        dest_info: DestInfo,
+    },
     /// Sent from a node that doesn't know how to handle `message` to its elders in order for them
     /// to decide what to do with it (resend with more info or discard).
     BouncedUnknownMessage {
@@ -206,9 +210,10 @@ impl Debug for Variant {
                 .field("elders_info", elders_info)
                 .field("section_key", section_key)
                 .finish(),
-            Self::BouncedUntrustedMessage(message) => f
-                .debug_tuple("BouncedUntrustedMessage")
-                .field(message)
+            Self::BouncedUntrustedMessage { msg, dest_info } => f
+                .debug_struct("BouncedUntrustedMessage")
+                .field("message", msg)
+                .field("dest_info", dest_info)
                 .finish(),
             Self::BouncedUnknownMessage { src_key, message } => f
                 .debug_struct("BouncedUnknownMessage")

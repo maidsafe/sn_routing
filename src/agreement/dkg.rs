@@ -635,7 +635,7 @@ impl DkgCommand {
                 message,
             } => {
                 let variant = Variant::DkgMessage { dkg_key, message };
-                let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
+                let message = Message::single_src(node, DstLocation::Direct, variant, None)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),
@@ -668,7 +668,7 @@ impl DkgCommand {
                     proof,
                     non_participants,
                 };
-                let message = Message::single_src(node, DstLocation::Direct, variant, None, None)?;
+                let message = Message::single_src(node, DstLocation::Direct, variant, None)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),

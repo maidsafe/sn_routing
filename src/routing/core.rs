@@ -240,6 +240,7 @@ impl Core {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
+        dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -266,12 +267,12 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                commands.extend(self.update_section_knowledge(&msg)?);
+                commands.extend(self.update_section_knowledge(&msg, dest_info)?);
                 commands.extend(self.handle_useful_message(sender, msg).await?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
-                commands.push(self.handle_untrusted_message(sender, msg)?);
+                commands.push(self.handle_untrusted_message(sender, msg, dest_info)?);
             }
             MessageStatus::Unknown => {
                 debug!("Unknown message from {:?}: {:?} ", sender, msg);
@@ -449,11 +450,27 @@ impl Core {
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
-            } => Ok(vec![self.handle_accumulate_at_src_agreement(
-                *message,
-                proof_chain,
-                proof,
-            )?]),
+            } => {
+                let dest_name = if let Some(name) = message.dst.name() {
+                    name
+                } else {
+                    error!(
+                        "Not handling AccumulateAtSrc {:?}: No dst_name found",
+                        *message
+                    );
+                    return Err(Error::InvalidDstLocation);
+                };
+                let dest_section_pk = message.dst_key;
+                Ok(vec![self.handle_accumulate_at_src_agreement(
+                    *message,
+                    proof_chain,
+                    proof,
+                    DestInfo {
+                        dest: dest_name,
+                        dest_section_pk,
+                    },
+                )?])
+            }
             Proposal::JoinsAllowed(joins_allowed) => {
                 self.joins_allowed = joins_allowed;
                 Ok(vec![])
@@ -587,7 +604,7 @@ impl Core {
 
     pub fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
         let variant = Variant::DkgFailureAgreement(proofs);
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 
@@ -631,13 +648,7 @@ impl Core {
             proof_share,
         };
 
-        let message = Message::single_src(
-            &self.node,
-            DstLocation::Direct,
-            variant,
-            None,
-            Some(*self.section.chain().last_key()),
-        )?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }
@@ -726,7 +737,7 @@ impl Core {
                 }
             }
             Variant::Relocate(_)
-            | Variant::BouncedUntrustedMessage(_)
+            | Variant::BouncedUntrustedMessage { .. }
             | Variant::BouncedUnknownMessage { .. }
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
@@ -804,12 +815,15 @@ impl Core {
                 self.handle_join_request(msg.src().peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
-            Variant::BouncedUntrustedMessage(message) => {
+            Variant::BouncedUntrustedMessage {
+                msg: bounced_msg,
+                dest_info,
+            } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
                     msg.src().peer(sender)?,
-                    msg.dst_key().copied(),
-                    *message.clone(),
+                    dest_info.dest_section_pk,
+                    *bounced_msg.clone(),
                 )?])
             }
             Variant::BouncedUnknownMessage { src_key, message } => {
@@ -976,24 +990,27 @@ impl Core {
         &self,
         sender: Option<SocketAddr>,
         msg: Message,
+        received_dest_info: DestInfo,
     ) -> Result<Command> {
         let src_name = msg.src().name();
 
         let bounce_dst_key = *self.section_key_by_name(&src_name);
+        let dest_info = DestInfo {
+            dest: src_name,
+            dest_section_pk: bounce_dst_key,
+        };
         let bounce_msg = Message::single_src(
             &self.node,
             DstLocation::Direct,
-            Variant::BouncedUntrustedMessage(Box::new(msg)),
+            Variant::BouncedUntrustedMessage {
+                msg: Box::new(msg),
+                dest_info: received_dest_info,
+            },
             None,
-            Some(bounce_dst_key),
         )?;
         let bounce_msg = bounce_msg.to_bytes();
 
         if let Some(sender) = sender {
-            let dest_info = DestInfo {
-                dest: src_name,
-                dest_section_pk: bounce_dst_key,
-            };
             Ok(Command::send_message_to_node(
                 (sender, src_name),
                 bounce_msg,
@@ -1020,7 +1037,6 @@ impl Core {
                 src_key,
                 message: msg_bytes,
             },
-            None,
             None,
         )?;
         let bounce_msg = bounce_msg.to_bytes();
@@ -1053,16 +1069,11 @@ impl Core {
     fn handle_bounced_untrusted_message(
         &self,
         sender: Peer,
-        dst_key: Option<bls::PublicKey>,
+        dst_key: bls::PublicKey,
         bounced_msg: Message,
     ) -> Result<Command> {
         let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
         let _span_guard = span.enter();
-
-        let dst_key = dst_key.ok_or_else(|| {
-            error!("missing dst key");
-            Error::InvalidMessage
-        })?;
 
         let resend_msg = match bounced_msg.variant() {
             Variant::Sync { section, network } => {
@@ -1084,7 +1095,6 @@ impl Core {
                         section,
                         network: network.clone(),
                     },
-                    None,
                     None,
                 )?
             }
@@ -1880,7 +1890,6 @@ impl Core {
                         network: self.network.clone(),
                     },
                     None,
-                    None,
                 )?;
                 let len = sync_recipients.len();
                 commands.push(Command::send_message_to_nodes(
@@ -1961,11 +1970,13 @@ impl Core {
         message: PlainMessage,
         proof_chain: SectionChain,
         proof: Proof,
+        dest_info: DestInfo,
     ) -> Result<Command> {
         let message = Message::section_src(message, proof, proof_chain)?;
         Ok(Command::HandleMessage {
             message,
             sender: None,
+            dest_info,
         })
     }
 
@@ -2100,13 +2111,8 @@ impl Core {
             member_info,
         };
 
-        let message = Message::single_src(
-            &self.node,
-            DstLocation::Direct,
-            variant,
-            Some(proof_chain),
-            None,
-        )?;
+        let message =
+            Message::single_src(&self.node, DstLocation::Direct, variant, Some(proof_chain))?;
 
         Ok(Command::send_message_to_node(
             (addr, name),
@@ -2122,8 +2128,7 @@ impl Core {
         let send = |variant, recipients: Vec<(SocketAddr, XorName)>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message =
-                Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+            let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: *self.section.chain().last_key(),
@@ -2164,8 +2169,7 @@ impl Core {
         let send = |variant, recipients: Vec<_>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message =
-                Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+            let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
 
             Ok(Command::send_message_to_nodes(
                 recipients.clone(),
@@ -2332,8 +2336,8 @@ impl Core {
             return Err(TargetSectionError::UnrecognizedSectionKey);
         }
         if bls_pk != self.section.chain().last_key() {
-            if let Ok(public_key_set) = self.public_key_set() {
-                return Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
+            return if let Ok(public_key_set) = self.public_key_set() {
+                Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
                     prefix: *self.section.prefix(),
                     pk_set: public_key_set,
                     elders: self
@@ -2343,10 +2347,10 @@ impl Core {
                         .map(|peer| (*peer.name(), *peer.addr()))
                         .collect(),
                     joins_allowed: self.joins_allowed,
-                }));
+                }))
             } else {
-                return Err(TargetSectionError::DkgInProgress);
-            }
+                Err(TargetSectionError::DkgInProgress)
+            };
         }
         Ok(())
     }
@@ -2378,13 +2382,24 @@ impl Core {
         if matches!(itinerary.src, SrcLocation::EndUser(_)) {
             return Err(Error::InvalidSrcLocation);
         }
-        if matches!(itinerary.dst, DstLocation::Direct) {
-            error!(
+        let dst_name = if let Some(name) = itinerary.dst_name() {
+            name
+        } else {
+            println!(
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
                 itinerary.src, itinerary.dst
             );
             return Err(Error::InvalidDstLocation);
-        }
+        };
+        let dest_section_pk = if let Some(key) = self.network.key_by_name(&dst_name) {
+            key
+        } else {
+            println!(
+                "Not sending user message {:?} -> {:?}: No dest_section_pk found",
+                itinerary.src, itinerary.dst
+            );
+            return Err(Error::InvalidDstLocation);
+        };
 
         let variant = Variant::UserMessage(content);
 
@@ -2399,17 +2414,16 @@ impl Core {
                 itinerary.dst,
                 variant,
                 proof_chain,
-                None,
             )?
         } else if itinerary.aggregate_at_src() {
             let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
             return self.propose(proposal);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, None, None)?
+            Message::single_src(&self.node, itinerary.dst, variant, None)?
         };
         let mut commands = vec![];
 
-        // TODO: consider removing this, we are getting duplciate msgs by it
+        // TODO: consider removing this, we are getting duplicate msgs by it
         if itinerary
             .dst
             .contains(&self.node.name(), self.section.prefix())
@@ -2417,6 +2431,10 @@ impl Core {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),
+                dest_info: DestInfo {
+                    dest: dst_name,
+                    dest_section_pk: *dest_section_pk,
+                },
             });
         }
 
@@ -2465,14 +2483,6 @@ impl Core {
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
         let proof_chain = self.create_proof_chain(&dst, additional_proof_chain_key)?;
-        let dst_key = if let Some(name) = dst.name() {
-            *self.section_key_by_name(&name)
-        } else {
-            // NOTE: `dst` is `Direct`. We use this only if the recipient is in our section, so
-            // it's OK to use our latest key as the `dst_key`.
-            *self.section.chain().last_key()
-        };
-
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
             trace!(
                 "Can't create message {:?} for accumulation at dst {:?}: {}",
@@ -2482,14 +2492,7 @@ impl Core {
             );
             err
         })?;
-        let message = Message::for_dst_accumulation(
-            key_share,
-            src,
-            dst,
-            variant,
-            proof_chain,
-            Some(dst_key),
-        )?;
+        let message = Message::for_dst_accumulation(key_share, src, dst, variant, proof_chain)?;
 
         trace!(
             "Send {:?} for accumulation at dst to {:?}",
@@ -2517,17 +2520,18 @@ impl Core {
             }
         }
 
+        let dest_info = DestInfo {
+            dest: XorName::random(),
+            dest_section_pk: *self.section.chain().last_key(),
+        };
+
         if !others.is_empty() {
-            let dest_info = DestInfo {
-                dest: XorName::random(),
-                dest_section_pk: *self.section.chain().last_key(),
-            };
             let count = others.len();
             commands.push(Command::send_message_to_nodes(
                 others,
                 count,
                 message.to_bytes(),
-                dest_info,
+                dest_info.clone(),
             ));
         }
 
@@ -2535,6 +2539,7 @@ impl Core {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message,
+                dest_info,
             });
         }
 
@@ -2574,7 +2579,7 @@ impl Core {
         variant: Variant,
         dst_pk: bls::PublicKey,
     ) -> Result<Command> {
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
         Ok(Command::send_message_to_node(
             recipient,
             message.to_bytes(),
@@ -2610,12 +2615,17 @@ impl Core {
     ////////////////////////////////////////////////////////////////////////////
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    fn update_section_knowledge(&mut self, msg: &Message) -> Result<Vec<Command>> {
+    fn update_section_knowledge(
+        &mut self,
+        msg: &Message,
+        dest_info: DestInfo,
+    ) -> Result<Vec<Command>> {
         if !self.is_elder() {
             return Ok(vec![]);
         }
 
-        let actions = lazy_messaging::process(&self.node, &self.section, &self.network, msg)?;
+        let actions =
+            lazy_messaging::process(&self.node, &self.section, &self.network, msg, dest_info)?;
         let mut commands = vec![];
 
         if let Some(msg) = actions.send {

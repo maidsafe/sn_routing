@@ -49,7 +49,7 @@ pub(crate) async fn initial(
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
@@ -78,7 +78,7 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     genesis_key: bls::PublicKey,
     relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
@@ -99,7 +99,7 @@ struct State<'a> {
     recv_rx: MessageReceiver<'a>,
     node: Node,
     // Backlog for unknown messages
-    backlog: VecDeque<(Message, SocketAddr)>,
+    backlog: VecDeque<(Message, SocketAddr, DestInfo)>,
 }
 
 impl<'a> State<'a> {
@@ -121,7 +121,7 @@ impl<'a> State<'a> {
         bootstrap_addrs: Vec<SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
         let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -294,10 +294,10 @@ impl<'a> State<'a> {
                 },
                 MessageType::Routing {
                     msg: RoutingMsg(msg_bytes),
-                    ..
+                    dest_info,
                 } => {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
-                    self.backlog_message(message, sender)
+                    self.backlog_message(message, sender, dest_info)
                 }
                 MessageType::Node { .. }
                 | MessageType::SectionInfo { .. }
@@ -346,7 +346,7 @@ impl<'a> State<'a> {
         elders: BTreeMap<XorName, SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
         let join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
@@ -447,7 +447,7 @@ impl<'a> State<'a> {
         info!("Sending {:?} to {:?}", join_request, recipients);
 
         let variant = Variant::JoinRequest(Box::new(join_request));
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
         let node_msg = RoutingMsg::new(message.to_bytes());
 
         let _ = self
@@ -574,7 +574,7 @@ impl<'a> State<'a> {
                     ));
                 }
 
-                _ => self.backlog_message(message, sender),
+                _ => self.backlog_message(message, sender, dest_info),
             }
         }
 
@@ -599,12 +599,12 @@ impl<'a> State<'a> {
         }
     }
 
-    fn backlog_message(&mut self, message: Message, sender: SocketAddr) {
+    fn backlog_message(&mut self, message: Message, sender: SocketAddr, dest_info: DestInfo) {
         while self.backlog.len() >= BACKLOG_CAPACITY {
             let _ = self.backlog.pop_front();
         }
 
-        self.backlog.push_back((message, sender))
+        self.backlog.push_back((message, sender, dest_info))
     }
 }
 
@@ -796,7 +796,6 @@ mod tests {
                     member_info,
                 },
                 Some(proof_chain),
-                None,
             )?;
 
             recv_tx.try_send((
@@ -1244,7 +1243,6 @@ mod tests {
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 None,
-                None,
             )?;
 
             recv_tx.try_send((
@@ -1267,7 +1265,6 @@ mod tests {
                     elders_info: gen_elders_info(good_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
-                None,
                 None,
             )?;
 

@@ -96,8 +96,16 @@ impl Dispatcher {
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
             Command::HandleMessage {
-                sender, message, ..
-            } => self.core.lock().await.handle_message(sender, message).await,
+                sender,
+                message,
+                dest_info,
+            } => {
+                self.core
+                    .lock()
+                    .await
+                    .handle_message(sender, message, dest_info)
+                    .await
+            }
             Command::HandleSectionInfoMsg {
                 sender,
                 message,
@@ -293,9 +301,10 @@ impl Dispatcher {
 
         let commands = backlog
             .into_iter()
-            .map(|(message, sender)| Command::HandleMessage {
+            .map(|(message, sender, dest_info)| Command::HandleMessage {
                 message,
                 sender: Some(sender),
+                dest_info,
             })
             .collect();
         Ok(commands)

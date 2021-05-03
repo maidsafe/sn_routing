@@ -139,12 +139,13 @@ impl Routing {
         let event_stream = EventStream::new(event_rx);
 
         // Process message backlog
-        for (message, sender) in backlog {
+        for (message, sender, dest_info) in backlog {
             dispatcher
                 .clone()
                 .handle_commands(Command::HandleMessage {
                     message,
                     sender: Some(sender),
+                    dest_info,
                 })
                 .await?;
         }
@@ -509,12 +510,13 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
         }
         MessageType::Routing {
             msg: RoutingMsg(msg_bytes),
-            ..
+            dest_info,
         } => match Message::from_bytes(Bytes::from(msg_bytes)) {
             Ok(message) => {
                 let command = Command::HandleMessage {
                     message,
                     sender: Some(sender),
+                    dest_info,
                 };
                 let _ = task::spawn(dispatcher.handle_commands(command));
             }

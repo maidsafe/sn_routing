@@ -37,6 +37,7 @@ pub(crate) enum Command {
     HandleMessage {
         sender: Option<SocketAddr>,
         message: Message,
+        dest_info: DestInfo,
     },
     /// Handle network info message.
     HandleSectionInfoMsg {
@@ -128,11 +129,14 @@ impl Debug for Command {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::HandleMessage {
-                sender, message, ..
+                sender,
+                message,
+                dest_info,
             } => f
                 .debug_struct("HandleMessage")
                 .field("sender", sender)
                 .field("message", message)
+                .field("dest_info", dest_info)
                 .finish(),
             Self::HandleSectionInfoMsg {
                 sender,
