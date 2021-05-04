@@ -120,7 +120,7 @@ impl Comm {
             .await
             .map_err(|err| {
                 error!("Sending to {:?} failed with {}", recipient, err);
-                Error::FailedSend(*recipient)
+                Error::FailedSend(recipient.0, recipient.1)
             })
     }
 
@@ -164,8 +164,7 @@ impl Comm {
         msg: MessageType,
     ) -> Result<SendStatus> {
         trace!(
-            "Sending message ({} bytes) to {} of {:?}",
-            msg.len(),
+            "Sending message to {} of {:?}",
             delivery_group_size,
             recipients
         );
@@ -445,8 +444,6 @@ mod tests {
                 message.clone(),
             )
             .await?;
-
-        assert_eq!(peer.rx.recv().await, Some(message));
 
         if let Some(bytes) = peer.rx.recv().await {
             message.update_dest_info(None, Some(peer._name));

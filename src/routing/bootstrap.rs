@@ -14,6 +14,7 @@ use crate::{
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
     relocation::{RelocatePayload, SignedRelocateDetails},
+    routing::comm::SendStatus,
     section::{EldersInfo, Section, SectionChain},
     FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
@@ -661,20 +662,19 @@ impl<'a> MessageReceiver<'a> {
 async fn send_messages(
     mut rx: mpsc::Receiver<(MessageType, Vec<(SocketAddr, XorName)>)>,
     comm: &Comm,
-) {
+) -> Result<()> {
     while let Some((message, recipients)) = rx.recv().await {
         match comm
             .send(&recipients, recipients.len(), message.clone())
-            .await
-            .0
+            .await?
         {
-            Ok(_) => {}
-            Err(error) => error!(
-                "Failed to send message {:?} to {:?}: {}",
-                message, recipients, error
-            ),
+            SendStatus::AllRecipients | SendStatus::MinDeliveryGroupSizeReached(_) => {}
+            SendStatus::MinDeliveryGroupSizeFailed(recipients) => {
+                error!("Failed to send message {:?} to {:?}", message, recipients,)
+            }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
