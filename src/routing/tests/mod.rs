@@ -117,7 +117,6 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         new_node_name = XorName::from(random_pk);
     }
 
-    // new_node_name = bad_prefix.substituted_in(rand::random());
     let new_node_addr = gen_addr();
 
     let message = SectionInfoMsg::GetSectionQuery(random_pk);
@@ -1689,13 +1688,11 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn node_message_to_self() -> Result<()> {
     message_to_self(MessageDst::Node).await
 }
 
 #[tokio::test]
-#[ignore]
 async fn section_message_to_self() -> Result<()> {
     message_to_self(MessageDst::Section).await
 }
@@ -1707,15 +1704,15 @@ enum MessageDst {
 
 async fn message_to_self(dst: MessageDst) -> Result<()> {
     let node = create_node(MIN_ADULT_AGE);
-    let node_name = node.name();
     let peer = node.peer();
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
+    let section_name = XorName::random();
 
     let src = SrcLocation::Node(*peer.name());
     let dst = match dst {
         MessageDst::Node => DstLocation::Node(*peer.name()),
-        MessageDst::Section => DstLocation::Section(rand::random()),
+        MessageDst::Section => DstLocation::Section(section_name),
     };
     let content = Bytes::from_static(b"hello");
 
@@ -1735,7 +1732,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
         assert_eq!(sender.as_ref(), Some(peer.addr()));
         assert_eq!(message.src().src_location(), src);
         assert_eq!(message.dst(), &dst);
-        assert_eq!(dest_info.dest, node_name);
+        assert_eq!(dest_info.dest, section_name);
         assert_matches!(
             message.variant(),
             Variant::UserMessage(actual_content) if actual_content == &content

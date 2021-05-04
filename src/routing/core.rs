@@ -2385,21 +2385,14 @@ impl Core {
         let dst_name = if let Some(name) = itinerary.dst_name() {
             name
         } else {
-            println!(
+            trace!(
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
-                itinerary.src, itinerary.dst
+                itinerary.src,
+                itinerary.dst
             );
             return Err(Error::InvalidDstLocation);
         };
-        let dest_section_pk = if let Some(key) = self.network.key_by_name(&dst_name) {
-            key
-        } else {
-            println!(
-                "Not sending user message {:?} -> {:?}: No dest_section_pk found",
-                itinerary.src, itinerary.dst
-            );
-            return Err(Error::InvalidDstLocation);
-        };
+        let dest_section_pk = self.section_key_by_name(&dst_name);
 
         let variant = Variant::UserMessage(content);
 
