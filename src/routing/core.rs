@@ -2186,7 +2186,7 @@ impl Core {
 
         let adults: Vec<_> = self
             .section
-            .adults()
+            .live_adults()
             .map(|peer| (*peer.addr(), *peer.name()))
             .collect();
 
