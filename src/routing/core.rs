@@ -439,14 +439,14 @@ impl Core {
             Proposal::OurElders(elders_info) => {
                 self.handle_our_elders_agreement(elders_info, proof)
             }
-            Proposal::TheirKey { prefix, key } => {
-                self.handle_their_key_agreement(prefix, key, proof);
-                Ok(vec![])
-            }
-            Proposal::TheirKnowledge { prefix, key } => {
-                self.handle_their_knowledge_agreement(prefix, key, proof);
-                Ok(vec![])
-            }
+            // Proposal::TheirKey { prefix, key } => {
+            //     self.handle_their_key_agreement(prefix, key, proof);
+            //     Ok(vec![])
+            // }
+            // Proposal::TheirKnowledge { prefix, key } => {
+            //     self.handle_their_knowledge_agreement(prefix, key, proof);
+            //     Ok(vec![])
+            // }
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
@@ -742,6 +742,10 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
+            | Variant::SrcAhead
+            | Variant::SrcOutdated
+            | Variant::DstAhead(_)
+            | Variant::DstOutdated
             | Variant::ResourceChallenge { .. } => {}
         }
 
@@ -826,6 +830,10 @@ impl Core {
                     *bounced_msg.clone(),
                 )?])
             }
+            Variant::SrcAhead => Ok(vec![]),
+            Variant::SrcOutdated => Ok(vec![]),
+            Variant::DstAhead(_chain) => Ok(vec![]),
+            Variant::DstOutdated => Ok(vec![]),
             Variant::BouncedUnknownMessage { src_key, message } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_bounced_unknown_message(
@@ -1169,26 +1177,26 @@ impl Core {
 
     fn handle_other_section(
         &self,
-        elders_info: EldersInfo,
-        src_key: bls::PublicKey,
+        _elders_info: EldersInfo,
+        _src_key: bls::PublicKey,
     ) -> Result<Vec<Command>> {
-        let mut commands = vec![];
+        let commands = vec![];
 
-        if !self.network.has_key(&src_key) {
-            commands.extend(self.propose(Proposal::TheirKey {
-                prefix: elders_info.prefix,
-                key: src_key,
-            })?);
-        } else {
-            trace!(
-                "Ignore not new section key of {:?}: {:?}",
-                elders_info,
-                src_key
-            );
-            return Ok(commands);
-        }
+        // if !self.network.has_key(&src_key) {
+        //     commands.extend(self.propose(Proposal::TheirKey {
+        //         prefix: elders_info.prefix,
+        //         key: src_key,
+        //     })?);
+        // } else {
+        //     trace!(
+        //         "Ignore not new section key of {:?}: {:?}",
+        //         elders_info,
+        //         src_key
+        //     );
+        //     return Ok(commands);
+        // }
 
-        commands.extend(self.propose(Proposal::SectionInfo(elders_info))?);
+        // commands.extend(self.propose(Proposal::SectionInfo(elders_info))?);
 
         Ok(commands)
     }
@@ -2282,12 +2290,15 @@ impl Core {
 
     // Send message over the network.
     pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
-        let (targets, dg_size, dest_pk) = delivery_group::delivery_targets(
+        let (targets, dg_size, _) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
             &self.section,
             &self.network,
         )?;
+
+        let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
+        let dest_pk = self.section_key_by_name(&target_name).clone();
 
         let targets: Vec<_> = targets
             .into_iter()
@@ -2621,7 +2632,7 @@ impl Core {
             lazy_messaging::process(&self.node, &self.section, &self.network, msg, dest_info)?;
         let mut commands = vec![];
 
-        if let Some(msg) = actions.send {
+        for msg in actions.send {
             commands.extend(self.relay_message(&msg)?);
         }
 

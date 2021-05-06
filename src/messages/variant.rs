@@ -119,6 +119,10 @@ pub(crate) enum Variant {
         nonce: [u8; 32],
         nonce_signature: Signature,
     },
+    DstAhead(SectionChain),
+    DstOutdated,
+    SrcAhead,
+    SrcOutdated,
     /// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.
     ConnectivityComplaint(XorName),
 }
@@ -264,6 +268,10 @@ impl Debug for Variant {
                 .field("difficulty", difficulty)
                 .finish(),
             Self::ConnectivityComplaint(name) => write!(f, "ConnectivityComplaint({:?})", name),
+            Self::DstAhead(_) => write!(f, "DstAhead"),
+            Self::DstOutdated => write!(f, "DstOutdated"),
+            Self::SrcAhead => write!(f, "SrcAhead"),
+            Self::SrcOutdated => write!(f, "SrcOutdated"),
         }
     }
 }
