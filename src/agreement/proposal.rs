@@ -14,7 +14,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
-use xor_name::{Prefix, XorName};
+use xor_name::XorName;
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -51,17 +51,17 @@ pub(crate) enum Proposal {
     // the same time as a single atomic operation without needing to cache anything.
     OurElders(Proven<SectionAuthorityProvider>),
 
-    // Proposal to update other section key.
-    TheirKey {
-        prefix: Prefix,
-        key: bls::PublicKey,
-    },
-
-    // Proposal to update other section's knowledge of our section.
-    TheirKnowledge {
-        prefix: Prefix,
-        key: bls::PublicKey,
-    },
+    // // Proposal to update other section key.
+    // TheirKey {
+    //     prefix: Prefix,
+    //     key: bls::PublicKey,
+    // },
+    //
+    // // Proposal to update other section's knowledge of our section.
+    // TheirKnowledge {
+    //     prefix: Prefix,
+    //     key: bls::PublicKey,
+    // },
 
     // Proposal to accumulate the message at the source (that is, our section) and then send it to
     // its destination.
@@ -107,8 +107,8 @@ impl<'a> Serialize for SignableView<'a> {
             Proposal::Offline(member_info) => member_info.serialize(serializer),
             Proposal::SectionInfo(info) => info.serialize(serializer),
             Proposal::OurElders(info) => info.proof.public_key.serialize(serializer),
-            Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
-            Proposal::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
+            // Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
+            // Proposal::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
             Proposal::AccumulateAtSrc { message, .. } => {
                 message.as_signable().serialize(serializer)
             }
@@ -151,6 +151,7 @@ mod tests {
     use std::fmt::Debug;
 
     #[test]
+    #[ignore]
     fn serialize_for_signing() -> Result<()> {
         // Proposal::SectionInfo
         let (section_auth, _) =
@@ -168,13 +169,13 @@ mod tests {
         // Proposal::TheirKey
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
-        let proposal = Proposal::TheirKey { prefix, key };
+        // let proposal = Proposal::TheirKey { prefix, key };
         verify_serialize_for_signing(&proposal, &(prefix, key))?;
 
         // Proposal::TheirKnowledge
         let prefix = gen_prefix();
         let key = bls::SecretKey::random().public_key();
-        let proposal = Proposal::TheirKnowledge { prefix, key };
+        // let proposal = Proposal::TheirKnowledge { prefix, key };
         verify_serialize_for_signing(&proposal, &(prefix, key))?;
 
         Ok(())

@@ -104,7 +104,7 @@ impl Core {
             lazy_messaging::process(&self.node, &self.section, &self.network, msg, dest_info)?;
         let mut commands = vec![];
 
-        if let Some(msg) = actions.send {
+        for msg in actions.send {
             commands.extend(self.relay_message(&msg)?);
         }
 

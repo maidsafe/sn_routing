@@ -45,14 +45,14 @@ impl Core {
             Proposal::OurElders(section_auth) => {
                 self.handle_our_elders_agreement(section_auth, proof)
             }
-            Proposal::TheirKey { prefix, key } => {
-                self.handle_their_key_agreement(prefix, key, proof);
-                Ok(vec![])
-            }
-            Proposal::TheirKnowledge { prefix, key } => {
-                self.handle_their_knowledge_agreement(prefix, key, proof);
-                Ok(vec![])
-            }
+            // Proposal::TheirKey { prefix, key } => {
+            //     self.handle_their_key_agreement(prefix, key, proof);
+            //     Ok(vec![])
+            // }
+            // Proposal::TheirKnowledge { prefix, key } => {
+            //     self.handle_their_knowledge_agreement(prefix, key, proof);
+            //     Ok(vec![])
+            // }
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
@@ -286,11 +286,13 @@ impl Core {
         self.update_state(snapshot)
     }
 
+    #[allow(unused)]
     fn handle_their_key_agreement(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
         let key = Proven::new((prefix, key), proof);
         let _ = self.network.update_their_key(key);
     }
 
+    #[allow(unused)]
     fn handle_their_knowledge_agreement(
         &mut self,
         prefix: Prefix,
