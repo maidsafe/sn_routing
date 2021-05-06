@@ -143,6 +143,7 @@ impl Network {
     }
 
     /// Updates the entry in `keys` for `prefix` to the latest known key.
+    #[allow(unused)]
     pub fn update_their_key(&mut self, new_key: Proven<(Prefix, bls::PublicKey)>) -> bool {
         // TODO: verify against section chain
 
@@ -168,6 +169,7 @@ impl Network {
             .map(|entry| (&entry.value.0, &entry.value.1))
     }
 
+    #[allow(unused)]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
         self.keys.iter().any(|entry| entry.value.1 == *key)
     }
@@ -209,6 +211,7 @@ impl Network {
     /// Updates the key of our section that is known by some other section.
     /// The passed in proven tuple consist of the prefix of the section whose knowledge we are
     /// updaing and the key of our section we are updating it to.
+    #[allow(unused)]
     pub fn update_knowledge(&mut self, knowledge: Proven<(Prefix, bls::PublicKey)>) {
         trace!(
             "update knowledge of section ({:b}) about our section to {:?}",

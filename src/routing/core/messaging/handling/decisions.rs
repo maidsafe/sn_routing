@@ -83,6 +83,10 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
+            | Variant::SrcAhead
+            | Variant::SrcOutdated
+            | Variant::DstAhead(_)
+            | Variant::DstOutdated
             | Variant::ResourceChallenge { .. } => {}
         }
 
