@@ -16,7 +16,7 @@ use crate::{
     Error,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
-use sn_messaging::{DstLocation, MessageType};
+use sn_messaging::DstLocation;
 use std::{collections::BTreeSet, iter, net::SocketAddr, slice};
 use xor_name::XorName;
 
@@ -29,7 +29,7 @@ impl Core {
         trace!("Received DkgStart for {:?}", new_elders_info);
         self.dkg_voter
             .start(&self.node.keypair, dkg_key, new_elders_info)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     pub(crate) fn handle_dkg_message(
@@ -42,7 +42,7 @@ impl Core {
 
         self.dkg_voter
             .process_message(&self.node.keypair, &dkg_key, message)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     pub(crate) fn handle_dkg_failure_observation(
@@ -53,7 +53,7 @@ impl Core {
     ) -> Result<Vec<Command>> {
         self.dkg_voter
             .process_failure(&dkg_key, non_participants, proof)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     pub(crate) fn handle_dkg_failure_agreement(
@@ -125,30 +125,46 @@ impl Core {
         }
     }
 
-    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Option<Command> {
-        if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
-            debug!("Lost connection to {}", peer);
+    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
+        let name = if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
+            debug!("Lost connection to known peer {}", peer);
+            *peer.name()
         } else {
             if let Some(end_user) = self.get_enduser_by_addr(&addr) {
                 debug!("Lost connection to client {:?}", end_user);
             } else {
                 debug!("Lost connection to unknown peer {}", addr);
             }
-            return None;
-        }
+            return Ok(vec![]);
+        };
 
         if !self.is_elder() {
-            return None;
+            // When self is not an elder, then the peer has to be an elder, and we shall complaint
+            // the lost to other elders.
+            let variant = Variant::ConnectivityComplaint(name);
+            let recipients: Vec<_> = self
+                .section
+                .proven_authority_provider()
+                .value
+                .peers()
+                .filter(|peer| *peer.name() != name)
+                .collect();
+            trace!(
+                "Casting connectivity complaint against {:?} {:?}",
+                name,
+                recipients
+            );
+
+            return self.send_message_for_dst_accumulation(
+                self.node.name(),
+                DstLocation::Direct,
+                variant,
+                None,
+                &recipients,
+            );
         }
 
-        // Try to send a "ping" message to probe the peer connection. If it succeeds, the
-        // connection loss was just temporary. Otherwise the peer is assumed lost and we will
-        // propose it offline.
-        Some(Command::SendMessage {
-            recipients: vec![addr],
-            delivery_group_size: 1,
-            message: MessageType::Ping,
-        })
+        self.propose_offline(name)
     }
 
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {

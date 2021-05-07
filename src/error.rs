@@ -13,6 +13,7 @@ use crate::{
 };
 use std::net::SocketAddr;
 use thiserror::Error;
+use xor_name::XorName;
 
 /// The type returned by the sn_routing message handling methods.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -47,8 +48,8 @@ pub enum Error {
     InvalidSignatureShare,
     #[error("The secret key share is missing.")]
     MissingSecretKeyShare,
-    #[error("Failed to send a message to {0}")]
-    FailedSend(SocketAddr),
+    #[error("Failed to send a message to {0}, {1}")]
+    FailedSend(SocketAddr, XorName),
     #[error("Connection closed locally")]
     ConnectionClosed,
     #[error("Invalid section chain: {0}")]

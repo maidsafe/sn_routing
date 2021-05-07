@@ -23,7 +23,7 @@ use bytes::Bytes;
 use sn_data_types::PublicKey as EndUserPK;
 use sn_messaging::{
     section_info::{Error as TargetSectionError, SectionInfo},
-    DstLocation, EndUser, Itinerary, SrcLocation,
+    DestInfo, EndUser, Itinerary, SrcLocation,
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
@@ -142,7 +142,7 @@ impl Core {
 
     // Send message over the network.
     pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
-        let (targets, dg_size) = delivery_group::delivery_targets(
+        let (targets, dg_size, dest_pk) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
             &self.section,
@@ -166,8 +166,19 @@ impl Core {
             msg.proof_chain().ok()
         );
 
-        let targets: Vec<_> = targets.into_iter().map(|node| *node.addr()).collect();
-        let command = Command::send_message_to_nodes(&targets, dg_size, msg.to_bytes());
+        let targets: Vec<_> = targets
+            .into_iter()
+            .map(|node| (*node.addr(), *node.name()))
+            .collect();
+        let command = Command::send_message_to_nodes(
+            targets,
+            dg_size,
+            msg.to_bytes(),
+            DestInfo {
+                dest: XorName::random(),
+                dest_section_pk: dest_pk,
+            },
+        );
 
         Ok(Some(command))
     }
@@ -188,26 +199,21 @@ impl Core {
             return Err(TargetSectionError::UnrecognizedSectionKey);
         }
         if bls_pk != self.section.chain().last_key() {
-            if let Ok(public_key_set) = self.public_key_set() {
-                return Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
+            return if let Ok(public_key_set) = self.public_key_set() {
+                Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
                     prefix: *self.section.prefix(),
                     pk_set: public_key_set,
-                    elders: self
-                        .section
-                        .authority_provider()
-                        .peers()
-                        .map(|peer| (*peer.name(), *peer.addr()))
-                        .collect(),
+                    elders: self.section.proven_authority_provider().value.elders(),
                     joins_allowed: self.joins_allowed,
-                }));
+                }))
             } else {
-                return Err(TargetSectionError::DkgInProgress);
-            }
+                Err(TargetSectionError::DkgInProgress)
+            };
         }
         Ok(())
     }
 
-    pub fn send_user_message(
+    pub async fn send_user_message(
         &mut self,
         itinerary: Itinerary,
         content: Bytes,
@@ -225,13 +231,17 @@ impl Core {
         if matches!(itinerary.src, SrcLocation::EndUser(_)) {
             return Err(Error::InvalidSrcLocation);
         }
-        if matches!(itinerary.dst, DstLocation::Direct) {
-            error!(
+        let dst_name = if let Some(name) = itinerary.dst_name() {
+            name
+        } else {
+            trace!(
                 "Not sending user message {:?} -> {:?}: direct dst not supported",
-                itinerary.src, itinerary.dst
+                itinerary.src,
+                itinerary.dst
             );
             return Err(Error::InvalidDstLocation);
-        }
+        };
+        let dest_section_pk = self.section_key_by_name(&dst_name);
 
         let variant = Variant::UserMessage(content);
 
@@ -246,17 +256,16 @@ impl Core {
                 itinerary.dst,
                 variant,
                 proof_chain,
-                None,
             )?
         } else if itinerary.aggregate_at_src() {
             let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
             return self.propose(proposal);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, None, None)?
+            Message::single_src(&self.node, itinerary.dst, variant, None)?
         };
         let mut commands = vec![];
 
-        // TODO: consider removing this, we are getting duplciate msgs by it
+        // TODO: consider removing this, we are getting duplicate msgs by it
         if itinerary
             .dst
             .contains(&self.node.name(), self.section.prefix())
@@ -264,6 +273,10 @@ impl Core {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message: msg.clone(),
+                dest_info: DestInfo {
+                    dest: dst_name,
+                    dest_section_pk: *dest_section_pk,
+                },
             });
         }
 

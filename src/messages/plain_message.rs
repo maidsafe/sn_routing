@@ -28,7 +28,6 @@ impl PlainMessage {
     pub fn as_signable(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
-            dst_key: Some(&self.dst_key),
             variant: &self.variant,
         }
     }

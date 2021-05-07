@@ -7,8 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Comm, Command, Core};
-use crate::routing::comm::SendStatus;
-use crate::{error::Result, event::Event, relocation::SignedRelocateDetails, Error};
+use crate::{
+    error::Result, event::Event, relocation::SignedRelocateDetails, routing::comm::SendStatus,
+    Error, XorName,
+};
 use sn_messaging::MessageType;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -93,26 +95,34 @@ impl Dispatcher {
 
     async fn try_handle_command(&self, command: Command) -> Result<Vec<Command>> {
         match command {
-            Command::HandleMessage { sender, message } => {
-                self.core.lock().await.handle_message(sender, message).await
+            Command::HandleMessage {
+                sender,
+                message,
+                dest_info,
+            } => {
+                self.core
+                    .lock()
+                    .await
+                    .handle_message(sender, message, dest_info)
+                    .await
             }
-            Command::HandleSectionInfoMsg { sender, message } => Ok(self
+            Command::HandleSectionInfoMsg {
+                sender,
+                message,
+                dest_info,
+            } => Ok(self
                 .core
                 .lock()
                 .await
-                .handle_section_info_msg(sender, message)
+                .handle_section_info_msg(sender, message, dest_info)
                 .await),
             Command::HandleTimeout(token) => self.core.lock().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
                 self.core.lock().await.handle_agreement(proposal, proof)
             }
-            Command::HandleConnectionLost(addr) => Ok(self
-                .core
-                .lock()
-                .await
-                .handle_connection_lost(addr)
-                .into_iter()
-                .collect()),
+            Command::HandleConnectionLost(addr) => {
+                self.core.lock().await.handle_connection_lost(addr)
+            }
             Command::HandlePeerLost(addr) => self.core.lock().await.handle_peer_lost(&addr),
             Command::HandleDkgOutcome {
                 section_auth,
@@ -140,11 +150,13 @@ impl Dispatcher {
                 itinerary,
                 content,
                 additional_proof_chain_key,
-            } => self.core.lock().await.send_user_message(
-                itinerary,
-                content,
-                additional_proof_chain_key.as_ref(),
-            ),
+            } => {
+                self.core
+                    .lock()
+                    .await
+                    .send_user_message(itinerary, content, additional_proof_chain_key.as_ref())
+                    .await
+            }
             Command::ScheduleTimeout { duration, token } => Ok(self
                 .handle_schedule_timeout(duration, token)
                 .await
@@ -185,17 +197,15 @@ impl Dispatcher {
 
     async fn send_message(
         &self,
-        recipients: &[SocketAddr],
+        recipients: &[(SocketAddr, XorName)],
         delivery_group_size: usize,
         message: MessageType,
     ) -> Result<Vec<Command>> {
-        let msg_bytes = message.serialize()?;
-
         let cmds = match message {
-            MessageType::Ping | MessageType::NodeMessage(_) => {
+            MessageType::Ping(_) | MessageType::Node { .. } | MessageType::Routing { .. } => {
                 let status = self
                     .comm
-                    .send(recipients, delivery_group_size, msg_bytes)
+                    .send(recipients, delivery_group_size, message)
                     .await?;
                 match status {
                     SendStatus::MinDeliveryGroupSizeReached(failed_recipients)
@@ -209,11 +219,11 @@ impl Dispatcher {
                 }
                 .map_err(|e: Error| e)?
             }
-            MessageType::ClientMessage(_) => {
+            MessageType::Client { .. } => {
                 for recipient in recipients {
                     if self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await
                         .is_err()
                     {
@@ -222,16 +232,16 @@ impl Dispatcher {
                             recipient,
                             message
                         );
-                        self.send_event(Event::ClientLost(*recipient)).await;
+                        self.send_event(Event::ClientLost(recipient.0)).await;
                     }
                 }
                 vec![]
             }
-            MessageType::SectionInfo(_) => {
+            MessageType::SectionInfo { .. } => {
                 for recipient in recipients {
                     let _ = self
                         .comm
-                        .send_on_existing_connection(recipient, msg_bytes.clone())
+                        .send_on_existing_connection(*recipient, message.clone())
                         .await;
                 }
                 vec![]
@@ -289,9 +299,10 @@ impl Dispatcher {
 
         let commands = backlog
             .into_iter()
-            .map(|(message, sender)| Command::HandleMessage {
+            .map(|(message, sender, dest_info)| Command::HandleMessage {
                 message,
                 sender: Some(sender),
+                dest_info,
             })
             .collect();
         Ok(commands)

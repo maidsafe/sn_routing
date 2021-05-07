@@ -1,4 +1,4 @@
-// Copyright 2020 MaidSafe.net limited.
+// Copyright 2021 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
-    Comm, Command, Core, Dispatcher,
-};
+use super::{Comm, Command, Core, Dispatcher};
+use crate::agreement::test_utils::{prove, proven};
+use crate::agreement::{Proposal, Proven};
+use crate::routing::core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY};
 use crate::{
-    agreement::{test_utils::*, Proposal, Proven},
     crypto,
     event::Event,
     messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
@@ -30,11 +29,12 @@ use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
+use sn_data_types::{Keypair, PublicKey};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
-    node::NodeMessage,
+    node::RoutingMsg,
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
-    DstLocation, MessageType, SrcLocation,
+    DestInfo, DstLocation, MessageType, SrcLocation,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -56,13 +56,18 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         gen_addr(),
     );
+    let new_node_name = new_node.name();
 
-    let message = SectionInfoMsg::GetSectionQuery(new_node.name());
+    let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(new_node.keypair.public));
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node.addr,
             message,
+            dest_info: DestInfo {
+                dest: new_node_name,
+                dest_section_pk: bls::SecretKey::random().public_key(),
+            },
         })
         .await?
         .into_iter();
@@ -71,11 +76,11 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::SectionInfo(message), ..
-        }) => (recipients, message)
+            message: MessageType::SectionInfo{ msg, .. }, ..
+        }) => (recipients, msg)
     );
 
-    assert_eq!(recipients, [new_node.addr]);
+    assert_eq!(recipients, [(new_node.addr, new_node.name())]);
 
     assert_matches!(
         message,
@@ -88,26 +93,43 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 #[tokio::test]
 async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let good_prefix = Prefix::default().pushed(false);
-    let bad_prefix = Prefix::default().pushed(true);
 
     let sk_set = SecretKeySet::random();
     let (section_auth, _) = gen_section_authority_provider(good_prefix, ELDER_SIZE);
-    let elders_addrs = section_auth.addrs();
+    let elders_addrs: Vec<_> = section_auth
+        .elders()
+        .iter()
+        .map(|(name, addr)| (*name, *addr))
+        .collect();
     let (section, _) = create_section(&sk_set, &section_auth)?;
 
     let node = create_node(MIN_ADULT_AGE);
     let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
-    let new_node_name = bad_prefix.substituted_in(rand::random());
+    let mut rng = rand::thread_rng();
+    let mut keypair = Keypair::new_ed25519(&mut rng);
+    let mut random_pk = keypair.public_key();
+    let mut new_node_name = XorName::from(random_pk);
+
+    while new_node_name.bit(0) {
+        keypair = Keypair::new_ed25519(&mut rng);
+        random_pk = keypair.public_key();
+        new_node_name = XorName::from(random_pk);
+    }
+
     let new_node_addr = gen_addr();
 
-    let message = SectionInfoMsg::GetSectionQuery(new_node_name);
+    let message = SectionInfoMsg::GetSectionQuery(random_pk);
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
             sender: new_node_addr,
             message,
+            dest_info: DestInfo {
+                dest: new_node_name,
+                dest_section_pk: bls::SecretKey::random().public_key(),
+            },
         })
         .await?
         .into_iter();
@@ -116,11 +138,11 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         commands.next(),
         Some(Command::SendMessage {
             recipients,
-            message: MessageType::SectionInfo(message), ..
-        }) => (recipients, message)
+            message: MessageType::SectionInfo { msg, .. }, ..
+        }) => (recipients, msg)
     );
 
-    assert_eq!(recipients, [new_node_addr]);
+    assert_eq!(recipients, [(new_node_addr, new_node_name)]);
     assert_matches!(
         message,
         SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
@@ -138,6 +160,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node(FIRST_SECTION_MIN_AGE);
+    let node_name = node.name();
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -156,19 +179,22 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
             resource_proof_response: None,
         })),
         None,
-        None,
     )?;
     let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: section_key,
+            },
         })
         .await?
         .into_iter();
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message: MessageType::NodeMessage(NodeMessage(message)), .. }) => message
+        Some(Command::SendMessage { message: MessageType::Routing { msg: RoutingMsg(message), .. }, .. }) => message
     );
     let response_message = Message::from_bytes(Bytes::from(response_message))?;
 
@@ -183,6 +209,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 #[tokio::test]
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let node = create_node(FIRST_SECTION_MIN_AGE);
+    let node_name = node.name();
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -215,13 +242,16 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
             }),
         })),
         None,
-        None,
     )?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(new_node.addr),
             message,
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: section_key,
+            },
         })
         .await?
         .into_iter();
@@ -259,6 +289,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let (section, section_key_share) = create_section(&sk_set, &section_auth)?;
     let node = nodes.remove(0);
+    let node_name = node.name();
     let state = Core::new(
         node,
         section,
@@ -269,7 +300,9 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let relocated_node_old_keypair =
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
-    let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
+    let relocated_node_old_name = XorName::from(sn_data_types::PublicKey::from(
+        relocated_node_old_keypair.public,
+    ));
     let relocated_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
         gen_addr(),
@@ -316,13 +349,16 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
             resource_proof_response: None,
         })),
         None,
-        None,
     )?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
             sender: Some(relocated_node.addr),
             message: join_request,
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: section_key,
+            },
         })
         .await?;
 
@@ -356,7 +392,7 @@ async fn aggregate_proposals() -> Result<()> {
     let (section, section_key_share) = create_section(&sk_set, &section_auth)?;
     let state = Core::new(
         nodes[0].clone(),
-        section,
+        section.clone(),
         Some(section_key_share),
         mpsc::unbounded_channel().0,
     );
@@ -380,13 +416,16 @@ async fn aggregate_proposals() -> Result<()> {
                 proof_share,
             },
             None,
-            None,
         )?;
 
         let commands = dispatcher
             .handle_command(Command::HandleMessage {
                 message,
-                sender: Some(nodes[0].addr),
+                sender: Some(nodes[index].addr),
+                dest_info: DestInfo {
+                    dest: nodes[0].name(),
+                    dest_section_pk: *section.chain().last_key(),
+                },
             })
             .await?;
         assert!(commands.is_empty());
@@ -405,12 +444,15 @@ async fn aggregate_proposals() -> Result<()> {
             proof_share,
         },
         None,
-        None,
     )?;
     let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
             message,
             sender: Some(nodes[THRESHOLD].addr),
+            dest_info: DestInfo {
+                dest: nodes[0].name(),
+                dest_section_pk: *section.chain().last_key(),
+            },
         })
         .await?
         .into_iter();
@@ -517,7 +559,11 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -532,8 +578,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
             .filter(|peer| *peer.name() != node_name)
-            .map(Peer::addr)
-            .copied()
+            .map(|peer| (*peer.addr(), *peer.name()))
             .collect();
         assert_eq!(recipients, expected_dkg_start_recipients);
 
@@ -573,7 +618,11 @@ async fn handle_online_command(
         let (message, recipients) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (Message::from_bytes(Bytes::from(msg_bytes))?, recipients),
             _ => continue,
@@ -585,7 +634,7 @@ async fn handle_online_command(
                 ..
             } => {
                 assert_eq!(proven_section_auth.value, *section_auth);
-                assert_eq!(recipients, [*peer.addr()]);
+                assert_eq!(recipients, [(*peer.addr(), *peer.name())]);
                 status.node_approval_sent = true;
             }
             Variant::Relocate(details) => {
@@ -593,7 +642,7 @@ async fn handle_online_command(
                     continue;
                 }
 
-                assert_eq!(recipients, [*peer.addr()]);
+                assert_eq!(recipients, [(*peer.addr(), *peer.name())]);
 
                 status.relocate_details = Some(details.clone());
             }
@@ -759,7 +808,11 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -780,8 +833,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
             .filter(|peer| *peer.name() != node_name)
-            .map(Peer::addr)
-            .copied()
+            .map(|peer| (*peer.addr(), *peer.name()))
             .collect();
         assert_eq!(recipients, expected_dkg_start_recipients);
 
@@ -848,7 +900,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
-    let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Core::new(node, section.clone(), None, mpsc::unbounded_channel().0);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk1 = bls::SecretKey::random();
@@ -875,6 +927,10 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         .handle_command(Command::HandleMessage {
             message: original_message.clone(),
             sender,
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: *section.chain().last_key(),
+            },
         })
         .await?;
 
@@ -883,7 +939,11 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     for command in commands {
         let (recipients, message) = if let Command::SendMessage {
             recipients,
-            message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+            message:
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
+                    ..
+                },
             ..
         } = command
         {
@@ -892,10 +952,16 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
             continue;
         };
 
-        if let Variant::BouncedUntrustedMessage(bounced_message) = message.variant() {
-            assert_eq!(recipients, expected_recipients);
-            assert_eq!(**bounced_message, original_message);
-            assert_eq!(message.dst_key(), Some(&pk0));
+        if let Variant::BouncedUntrustedMessage { msg, dest_info } = message.variant() {
+            assert_eq!(
+                recipients
+                    .into_iter()
+                    .map(|recp| recp.0)
+                    .collect::<Vec<_>>(),
+                expected_recipients
+            );
+            assert_eq!(**msg, original_message);
+            assert_eq!(dest_info.dest_section_pk, pk0);
 
             bounce_sent = true;
         }
@@ -926,6 +992,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
     let node = nodes.remove(0);
+    let node_name = node.name();
 
     // Create the original message whose bounce we want to test. Attach a proof that starts
     // at `pk1`.
@@ -963,19 +1030,26 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
+    let dest_info = DestInfo {
+        dest: node_name,
+        dest_section_pk: pk0,
+    };
     // Create the bounced message, indicating the last key the peer knows is `pk0`
     let bounced_message = Message::single_src(
         &other_node,
         DstLocation::Direct,
-        Variant::BouncedUntrustedMessage(Box::new(original_message)),
+        Variant::BouncedUntrustedMessage {
+            msg: Box::new(original_message),
+            dest_info: dest_info.clone(),
+        },
         None,
-        Some(pk0),
     )?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: bounced_message,
             sender: Some(other_node.addr),
+            dest_info,
         })
         .await?;
 
@@ -985,7 +1059,11 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -993,7 +1071,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
         match message.variant() {
             Variant::UserMessage(content) => {
-                assert_eq!(recipients, [other_node.addr]);
+                assert_eq!(recipients, [(other_node.addr, other_node.name())]);
                 assert_eq!(*content, original_message_content);
                 assert_eq!(*message.proof_chain()?, chain);
 
@@ -1028,6 +1106,7 @@ async fn handle_sync() -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = nodes.remove(0);
+    let node_name = node.name();
     let state = Core::new(node, old_section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1059,10 +1138,9 @@ async fn handle_sync() -> Result<()> {
         &old_node,
         DstLocation::Direct,
         Variant::Sync {
-            section: new_section,
+            section: new_section.clone(),
             network: Network::new(),
         },
-        None,
         None,
     )?;
 
@@ -1071,6 +1149,10 @@ async fn handle_sync() -> Result<()> {
         .handle_command(Command::HandleMessage {
             message,
             sender: Some(old_node.addr),
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: *new_section.chain().last_key(),
+            },
         })
         .await?;
 
@@ -1115,6 +1197,7 @@ async fn handle_untrusted_sync() -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node(MIN_ADULT_AGE);
+    let node_name = node.name();
     let state = Core::new(node, old_section, None, event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1123,10 +1206,9 @@ async fn handle_untrusted_sync() -> Result<()> {
         &sender,
         DstLocation::Direct,
         Variant::Sync {
-            section: new_section,
+            section: new_section.clone(),
             network: Network::new(),
         },
-        None,
         None,
     )?;
 
@@ -1134,6 +1216,10 @@ async fn handle_untrusted_sync() -> Result<()> {
         .handle_command(Command::HandleMessage {
             message: orig_message.clone(),
             sender: Some(sender.addr),
+            dest_info: DestInfo {
+                dest: node_name,
+                dest_section_pk: *new_section.chain().last_key(),
+            },
         })
         .await?;
 
@@ -1143,16 +1229,20 @@ async fn handle_untrusted_sync() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
         match message.variant() {
-            Variant::BouncedUntrustedMessage(bounced_message) => {
-                assert_eq!(**bounced_message, orig_message);
-                assert_eq!(recipients, [sender.addr]);
+            Variant::BouncedUntrustedMessage { msg, .. } => {
+                assert_eq!(**msg, orig_message);
+                assert_eq!(recipients, [(sender.addr, sender.name())]);
                 bounce_sent = true;
             }
             _ => continue,
@@ -1191,6 +1281,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 
     let (event_tx, _) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
+    let node_name = node.name();
     let section_key_share = create_section_key_share(&sk2_set, 0);
     let state = Core::new(
         node.clone(),
@@ -1208,22 +1299,29 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
             network: Network::new(),
         },
         None,
-        None,
     )?;
+
+    let dest_info = DestInfo {
+        dest: node_name,
+        dest_section_pk: pk0,
+    };
 
     let sender = create_node(MIN_ADULT_AGE);
     let bounced_message = Message::single_src(
         &sender,
         DstLocation::Node(node.name()),
-        Variant::BouncedUntrustedMessage(Box::new(orig_message)),
+        Variant::BouncedUntrustedMessage {
+            msg: Box::new(orig_message),
+            dest_info: dest_info.clone(),
+        },
         None,
-        Some(pk0),
     )?;
 
     let commands = dispatcher
         .handle_command(Command::HandleMessage {
             message: bounced_message,
             sender: Some(sender.addr),
+            dest_info,
         })
         .await?;
 
@@ -1233,7 +1331,11 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -1241,7 +1343,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 
         match message.variant() {
             Variant::Sync { section, .. } => {
-                assert_eq!(recipients, [sender.addr]);
+                assert_eq!(recipients, [(sender.addr, sender.name())]);
                 assert!(section.chain().has_key(&pk0));
                 message_resent = true;
             }
@@ -1304,13 +1406,22 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
         };
 
-        if recipients != [*relocated_peer.addr()] {
+        if recipients
+            .into_iter()
+            .map(|recp| recp.0)
+            .collect::<Vec<_>>()
+            != [*relocated_peer.addr()]
+        {
             continue;
         }
         match relocated_peer_role {
@@ -1361,11 +1472,12 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     let peer = node.peer();
     let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
+    let section_name = XorName::random();
 
     let src = SrcLocation::Node(*peer.name());
     let dst = match dst {
         MessageDst::Node => DstLocation::Node(*peer.name()),
-        MessageDst::Section => DstLocation::Section(rand::random()),
+        MessageDst::Section => DstLocation::Section(section_name),
     };
     let content = Bytes::from_static(b"hello");
 
@@ -1381,10 +1493,11 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
         })
         .await?;
 
-    assert_matches!(&commands[..], [Command::HandleMessage { sender, message }] => {
+    assert_matches!(&commands[..], [Command::HandleMessage { sender, message, dest_info }] => {
         assert_eq!(sender.as_ref(), Some(peer.addr()));
         assert_eq!(message.src().src_location(), src);
         assert_eq!(message.dst(), &dst);
+        assert_eq!(dest_info.dest, section_name);
         assert_matches!(
             message.variant(),
             Variant::UserMessage(actual_content) if actual_content == &content
@@ -1461,7 +1574,11 @@ async fn handle_elders_update() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -1485,10 +1602,10 @@ async fn handle_elders_update() -> Result<()> {
 
     let sync_expected_recipients: HashSet<_> = other_elder_peers
         .into_iter()
-        .map(|peer| *peer.addr())
-        .chain(iter::once(*promoted_peer.addr()))
-        .chain(iter::once(*demoted_peer.addr()))
-        .chain(iter::once(*adult_peer.addr()))
+        .map(|peer| (*peer.addr(), *peer.name()))
+        .chain(iter::once((*promoted_peer.addr(), *promoted_peer.name())))
+        .chain(iter::once((*demoted_peer.addr(), *demoted_peer.name())))
+        .chain(iter::once((*adult_peer.addr(), *adult_peer.name())))
         .collect();
 
     assert_eq!(sync_actual_recipients, sync_expected_recipients);
@@ -1586,7 +1703,11 @@ async fn handle_demote_during_split() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message: MessageType::NodeMessage(NodeMessage(msg_bytes)),
+                message:
+                    MessageType::Routing {
+                        msg: RoutingMsg(msg_bytes),
+                        ..
+                    },
                 ..
             } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
             _ => continue,
@@ -1600,13 +1721,14 @@ async fn handle_demote_during_split() -> Result<()> {
     let expected_sync_recipients = if prefix0.matches(&node_name) {
         peers_a
             .iter()
-            .map(Peer::addr)
-            .chain(iter::once(peer_c.addr()))
-            .copied()
+            .map(|peer| (*peer.addr(), *peer.name()))
+            .chain(iter::once((*peer_c.addr(), *peer_c.name())))
             .collect()
     } else {
-        // prefix1
-        peers_b.iter().map(Peer::addr).copied().collect()
+        peers_b
+            .iter()
+            .map(|peer| (*peer.addr(), *peer.name()))
+            .collect()
     };
 
     assert_eq!(sync_recipients, expected_sync_recipients);

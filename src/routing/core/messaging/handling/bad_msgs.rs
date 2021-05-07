@@ -6,8 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::net::SocketAddr;
-
 use super::Core;
 use crate::{
     messages::{Message, Variant},
@@ -15,7 +13,8 @@ use crate::{
     routing::command::Command,
     Error, Result,
 };
-use sn_messaging::DstLocation;
+use sn_messaging::{DestInfo, DstLocation};
+use std::net::SocketAddr;
 
 // Bad msgs
 impl Core {
@@ -25,21 +24,28 @@ impl Core {
         &self,
         sender: Option<SocketAddr>,
         msg: Message,
+        received_dest_info: DestInfo,
     ) -> Result<Command> {
-        let dest = msg.src().name();
-        let bounce_dst_key = *self.section_key_by_name(&dest);
+        let src_name = msg.src().name();
+        let bounce_dst_key = *self.section_key_by_name(&src_name);
+        let dest_info = DestInfo {
+            dest: src_name,
+            dest_section_pk: bounce_dst_key,
+        };
         let bounce_msg = Message::single_src(
             &self.node,
             DstLocation::Direct,
-            Variant::BouncedUntrustedMessage(Box::new(msg)),
+            Variant::BouncedUntrustedMessage {
+                msg: Box::new(msg),
+                dest_info: received_dest_info,
+            },
             None,
-            Some(bounce_dst_key),
         )?;
 
         let bounce_msg_bytes = bounce_msg.to_bytes();
 
         let cmd = if let Some(sender) = sender {
-            Command::send_message_to_node(&sender, bounce_msg_bytes)
+            Command::send_message_to_node((sender, src_name), bounce_msg_bytes, dest_info)
         } else {
             self.send_message_to_our_elders(bounce_msg_bytes)
         };
@@ -50,16 +56,11 @@ impl Core {
     pub(crate) fn handle_bounced_untrusted_message(
         &self,
         sender: Peer,
-        dst_key: Option<bls::PublicKey>,
+        dst_key: bls::PublicKey,
         bounced_msg: Message,
     ) -> Result<Command> {
         let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
         let _span_guard = span.enter();
-
-        let dst_key = dst_key.ok_or_else(|| {
-            error!("missing dst key");
-            Error::InvalidMessage
-        })?;
 
         let resend_msg = match bounced_msg.variant() {
             Variant::Sync { section, network } => {
@@ -82,7 +83,6 @@ impl Core {
                         network: network.clone(),
                     },
                     None,
-                    None,
                 )?
             }
             _ => bounced_msg
@@ -93,10 +93,15 @@ impl Core {
                 })?,
         };
 
+        let dest_info = DestInfo {
+            dest: *sender.name(),
+            dest_section_pk: dst_key,
+        };
         trace!("resending with extended proof");
         Ok(Command::send_message_to_node(
-            sender.addr(),
+            (*sender.addr(), *sender.name()),
             resend_msg.to_bytes(),
+            dest_info,
         ))
     }
 }

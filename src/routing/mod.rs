@@ -41,10 +41,10 @@ use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
 use sn_messaging::{
-    client::Message as ClientMessage,
-    node::NodeMessage,
+    client::ClientMsg,
+    node::RoutingMsg,
     section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
-    DstLocation, EndUser, Itinerary, MessageType, WireMsg,
+    DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
 use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -96,7 +96,7 @@ impl Routing {
         let keypair = config.keypair.unwrap_or_else(|| {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
         });
-        let node_name = crypto::name(&keypair.public);
+        let node_name = XorName::from(sn_data_types::PublicKey::from(keypair.public));
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
@@ -104,7 +104,7 @@ impl Routing {
         let (state, comm, backlog) = if config.first {
             // Genesis node having a fix age of 255.
             let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
-            let node_name = crypto::name(&keypair.public);
+            let node_name = XorName::from(sn_data_types::PublicKey::from(keypair.public));
 
             info!("{} Starting a new network as the genesis node.", node_name);
 
@@ -149,12 +149,13 @@ impl Routing {
         let event_stream = EventStream::new(event_rx);
 
         // Process message backlog
-        for (message, sender) in backlog {
+        for (message, sender, dest_info) in backlog {
             dispatcher
                 .clone()
                 .handle_commands(Command::HandleMessage {
                     message,
                     sender: Some(sender),
+                    dest_info,
                 })
                 .await?;
         }
@@ -382,7 +383,7 @@ impl Routing {
                         public_key, socket_addr
                     );
                     return self
-                        .send_message_to_client(socket_addr, ClientMessage::from(content)?)
+                        .send_message_to_client(socket_addr, ClientMsg::from(content)?)
                         .await;
                 } else {
                     debug!(
@@ -409,12 +410,36 @@ impl Routing {
     async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
-        message: ClientMessage,
+        message: ClientMsg,
     ) -> Result<()> {
+        let end_user = self
+            .dispatcher
+            .core
+            .lock()
+            .await
+            .get_enduser_by_addr(&recipient)
+            .copied();
+        let end_user_pk = match end_user {
+            Some(end_user) => match end_user {
+                EndUser::AllClients(pk) => pk,
+                EndUser::Client { public_key, .. } => public_key,
+            },
+            None => {
+                error!("No client end user known of to send ");
+                return Ok(());
+            }
+        };
+        let user_xor_name = XorName::from(end_user_pk);
         let command = Command::SendMessage {
-            recipients: vec![recipient],
+            recipients: vec![(recipient, user_xor_name)],
             delivery_group_size: 1,
-            message: MessageType::ClientMessage(message),
+            message: MessageType::Client {
+                msg: message,
+                dest_info: DestInfo {
+                    dest: user_xor_name,
+                    dest_section_pk: *self.section_chain().await.last_key(),
+                },
+            },
         };
         self.dispatcher.clone().handle_commands(command).await
     }
@@ -481,28 +506,41 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     };
 
     match message_type {
-        MessageType::Ping => {
+        MessageType::Ping(_) => {
             // Pings are not handled
         }
-        MessageType::SectionInfo(message) => {
-            let command = Command::HandleSectionInfoMsg { sender, message };
+        MessageType::SectionInfo { msg, dest_info } => {
+            let command = Command::HandleSectionInfoMsg {
+                sender,
+                message: msg,
+                dest_info,
+            };
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
-        MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
-            match Message::from_bytes(Bytes::from(msg_bytes)) {
-                Ok(message) => {
-                    let command = Command::HandleMessage {
-                        message,
-                        sender: Some(sender),
-                    };
-                    let _ = task::spawn(dispatcher.handle_commands(command));
-                }
-                Err(error) => {
-                    error!("Failed to deserialize node message: {}", error);
-                }
+        MessageType::Routing {
+            msg: RoutingMsg(msg_bytes),
+            dest_info,
+        } => match Message::from_bytes(Bytes::from(msg_bytes)) {
+            Ok(message) => {
+                let command = Command::HandleMessage {
+                    message,
+                    sender: Some(sender),
+                    dest_info,
+                };
+                let _ = task::spawn(dispatcher.handle_commands(command));
             }
+            Err(error) => {
+                error!("Failed to deserialize node message: {}", error);
+            }
+        },
+        MessageType::Node {
+            msg: _,
+            dest_info: _,
+            src_section_pk: _,
+        } => {
+            unimplemented!()
         }
-        MessageType::ClientMessage(message) => {
+        MessageType::Client { msg, dest_info } => {
             let end_user = dispatcher
                 .core
                 .lock()
@@ -512,24 +550,35 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             let end_user = match end_user {
                 Some(end_user) => end_user,
                 None => {
+                    // TODO: Update to handle messages, w/ added PK to all msgs...?
+
                     // we are not yet bootstrapped, todo: inform enduser in a better way of this
+
+                    let dest = dest_info.dest;
+                    let client_pk = dest_info.dest_section_pk;
                     let command = Command::SendMessage {
-                        recipients: vec![sender],
+                        recipients: vec![(sender, dest)],
                         delivery_group_size: 1,
-                        message: MessageType::SectionInfo(SectionInfoMsg::RegisterEndUserError(
-                            TargetSectionError::InvalidBootstrap(format!(
-                                "No enduser found for {} and msg {:?}",
-                                sender, message
-                            )),
-                        )),
+                        message: MessageType::SectionInfo {
+                            msg: SectionInfoMsg::RegisterEndUserError(
+                                TargetSectionError::InvalidBootstrap(format!(
+                                    "No enduser found for {} and msg {:?}",
+                                    sender, msg
+                                )),
+                            ),
+                            dest_info: DestInfo {
+                                dest,
+                                dest_section_pk: client_pk,
+                            },
+                        },
                     };
                     let _ = task::spawn(dispatcher.handle_commands(command));
                     return;
                 }
             };
 
-            let event = Event::ClientMessageReceived {
-                msg: Box::new(message),
+            let event = Event::ClientMsgReceived {
+                msg: Box::new(msg),
                 user: end_user,
             };
 

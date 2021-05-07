@@ -9,7 +9,7 @@
 use std::cmp;
 
 use bls_signature_aggregator::Proof;
-use sn_messaging::DstLocation;
+use sn_messaging::{DestInfo, DstLocation};
 use xor_name::{Prefix, XorName};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     messages::{Message, PlainMessage, Variant},
     routing::command::Command,
     section::{MemberInfo, PeerState, SectionAuthorityProvider},
-    Event, SectionChain, MIN_AGE,
+    Error, Event, SectionChain, MIN_AGE,
 };
 
 use super::Core;
@@ -56,11 +56,27 @@ impl Core {
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,
-            } => Ok(vec![self.handle_accumulate_at_src_agreement(
-                *message,
-                proof_chain,
-                proof,
-            )?]),
+            } => {
+                let dest_name = if let Some(name) = message.dst.name() {
+                    name
+                } else {
+                    error!(
+                        "Not handling AccumulateAtSrc {:?}: No dst_name found",
+                        *message
+                    );
+                    return Err(Error::InvalidDstLocation);
+                };
+                let dest_section_pk = message.dst_key;
+                Ok(vec![self.handle_accumulate_at_src_agreement(
+                    *message,
+                    proof_chain,
+                    proof,
+                    DestInfo {
+                        dest: dest_name,
+                        dest_section_pk,
+                    },
+                )?])
+            }
             Proposal::JoinsAllowed(joins_allowed) => {
                 self.joins_allowed = joins_allowed;
                 Ok(vec![])
@@ -183,7 +199,7 @@ impl Core {
 
         let equal_or_extension = section_auth.prefix() == *self.section.prefix()
             || section_auth.prefix().is_extension_of(self.section.prefix());
-        let section_auth = Proven::new(section_auth, proof);
+        let section_auth = Proven::new(section_auth, proof.clone());
 
         if equal_or_extension {
             // Our section of sub-section
@@ -200,7 +216,7 @@ impl Core {
                 .iter()
                 .flat_map(|info| info.peers())
                 .filter(|peer| !self.section.is_elder(peer.name()))
-                .map(|peer| *peer.addr())
+                .map(|peer| (*peer.addr(), *peer.name()))
                 .collect();
             if !sync_recipients.is_empty() {
                 let sync_message = Message::single_src(
@@ -211,12 +227,16 @@ impl Core {
                         network: self.network.clone(),
                     },
                     None,
-                    None,
                 )?;
+                let len = sync_recipients.len();
                 commands.push(Command::send_message_to_nodes(
-                    &sync_recipients,
-                    sync_recipients.len(),
+                    sync_recipients,
+                    len,
                     sync_message.to_bytes(),
+                    DestInfo {
+                        dest: XorName::random(),
+                        dest_section_pk: proof.public_key,
+                    },
                 ));
             }
 
@@ -286,12 +306,14 @@ impl Core {
         message: PlainMessage,
         proof_chain: SectionChain,
         proof: Proof,
+        dest_info: DestInfo,
     ) -> Result<Command> {
         let message = Message::section_src(message, proof, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,
             sender: None,
+            dest_info,
         })
     }
 }

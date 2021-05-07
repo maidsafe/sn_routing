@@ -14,19 +14,20 @@ use crate::{
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
     node::Node,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    section::{
-        Section, SectionAuthorityProvider, SectionChain, FIRST_SECTION_MAX_AGE,
-        FIRST_SECTION_MIN_AGE,
-    },
+    routing::comm::SendStatus,
+    section::{Section, SectionAuthorityProvider, SectionChain},
+    FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
 use bytes::Bytes;
 use futures::future;
+use itertools::Itertools;
 use rand::seq::IteratorRandom;
 use resource_proof::ResourceProof;
+use sn_data_types::PublicKey;
 use sn_messaging::{
-    node::NodeMessage,
+    node::RoutingMsg,
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
-    DstLocation, MessageType, WireMsg,
+    DestInfo, DstLocation, MessageType, WireMsg,
 };
 use std::{
     collections::{BTreeMap, HashSet, VecDeque},
@@ -49,7 +50,7 @@ pub(crate) async fn initial(
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
@@ -78,7 +79,7 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     genesis_key: bls::PublicKey,
     relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
@@ -94,18 +95,18 @@ pub(crate) async fn relocate(
 
 struct State<'a> {
     // Sender for outgoing messages.
-    send_tx: mpsc::Sender<(MessageType, Vec<SocketAddr>)>,
+    send_tx: mpsc::Sender<(MessageType, Vec<(SocketAddr, XorName)>)>,
     // Receiver for incoming messages.
     recv_rx: MessageReceiver<'a>,
     node: Node,
     // Backlog for unknown messages
-    backlog: VecDeque<(Message, SocketAddr)>,
+    backlog: VecDeque<(Message, SocketAddr, DestInfo)>,
 }
 
 impl<'a> State<'a> {
     fn new(
         node: Node,
-        send_tx: mpsc::Sender<(MessageType, Vec<SocketAddr>)>,
+        send_tx: mpsc::Sender<(MessageType, Vec<(SocketAddr, XorName)>)>,
         recv_rx: MessageReceiver<'a>,
     ) -> Self {
         Self {
@@ -121,7 +122,7 @@ impl<'a> State<'a> {
         bootstrap_addrs: Vec<SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
         let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -134,7 +135,7 @@ impl<'a> State<'a> {
                 .unwrap_or(FIRST_SECTION_MAX_AGE);
 
             let new_keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
-            let new_name = crypto::name(&new_keypair.public);
+            let new_name = XorName::from(sn_data_types::PublicKey::from(new_keypair.public));
 
             info!("Setting name to {}", new_name);
             self.node = Node::new(new_keypair, self.node.addr);
@@ -165,7 +166,8 @@ impl<'a> State<'a> {
             self.send_get_section_request(mem::take(&mut bootstrap_addrs), relocate_details)
                 .await?;
 
-            let (response, sender) = self.receive_get_section_response(relocate_details).await?;
+            let (response, sender, _dest_info) =
+                self.receive_get_section_response(relocate_details).await?;
 
             match response {
                 GetSectionResponse::Success(SectionInfo {
@@ -189,7 +191,7 @@ impl<'a> State<'a> {
                 }
                 GetSectionResponse::Redirect(mut new_bootstrap_addrs) => {
                     // Ignore already used addresses
-                    new_bootstrap_addrs.retain(|addr| !used_addrs.contains(addr));
+                    new_bootstrap_addrs.retain(|addr| !used_addrs.contains(&addr.1));
 
                     if new_bootstrap_addrs.is_empty() {
                         debug!("Bootstrapping redirected to the same set of peers we already contacted - ignoring");
@@ -198,7 +200,11 @@ impl<'a> State<'a> {
                             "Bootstrapping redirected to another set of peers: {:?}",
                             new_bootstrap_addrs,
                         );
-                        bootstrap_addrs = new_bootstrap_addrs;
+                        bootstrap_addrs = new_bootstrap_addrs
+                            .iter()
+                            .map(|(_, addr)| addr)
+                            .cloned()
+                            .collect();
                     }
                 }
                 GetSectionResponse::SectionInfoUpdate(error) => {
@@ -219,16 +225,38 @@ impl<'a> State<'a> {
 
         debug!("Sending GetSectionQuery to {:?}", recipients);
 
-        let destination = match relocate_details {
-            Some(details) => *details.destination()?,
-            None => self.node.name(),
+        let (dest_pk, dest_xorname): (PublicKey, XorName) = match relocate_details {
+            Some(details) => (
+                PublicKey::from(details.relocate_details()?.destination_key),
+                *details.destination()?,
+            ),
+            None => (PublicKey::from(self.node.keypair.public), self.node.name()),
         };
 
-        let message = SectionInfoMsg::GetSectionQuery(destination);
+        let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(self.node.keypair.public));
 
+        // Group up with our XorName as we do not know their name yet.
+        let recipients = recipients
+            .iter()
+            .map(|addr| (*addr, dest_xorname))
+            .collect();
+
+        let dest_info = DestInfo {
+            dest: dest_xorname,
+            dest_section_pk: PublicKey::bls(&dest_pk).unwrap_or_else(|| {
+                // Create a random PK as we'll be getting the right one with the response
+                bls::SecretKey::random().public_key()
+            }),
+        };
         let _ = self
             .send_tx
-            .send((MessageType::SectionInfo(message), recipients))
+            .send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info,
+                },
+                recipients,
+            ))
             .await;
 
         Ok(())
@@ -237,7 +265,7 @@ impl<'a> State<'a> {
     async fn receive_get_section_response(
         &mut self,
         relocate_details: Option<&SignedRelocateDetails>,
-    ) -> Result<(GetSectionResponse, SocketAddr)> {
+    ) -> Result<(GetSectionResponse, SocketAddr, DestInfo)> {
         let destination = match relocate_details {
             Some(details) => *details.destination()?,
             None => self.node.name(),
@@ -245,31 +273,37 @@ impl<'a> State<'a> {
 
         while let Some((message, sender)) = self.recv_rx.next().await {
             match message {
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionResponse(response)) => {
-                    match response {
-                        GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
-                            error!("Invalid GetSectionResponse::Redirect: missing peers");
-                            continue;
-                        }
-                        GetSectionResponse::Success(SectionInfo { prefix, .. })
-                            if !prefix.matches(&destination) =>
-                        {
-                            error!("Invalid GetSectionResponse::Success: bad prefix");
-                            continue;
-                        }
-                        GetSectionResponse::Redirect(_)
-                        | GetSectionResponse::Success { .. }
-                        | GetSectionResponse::SectionInfoUpdate(_) => {
-                            return Ok((response, sender))
-                        }
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionResponse(response),
+                    dest_info,
+                } => match response {
+                    GetSectionResponse::Redirect(addrs) if addrs.is_empty() => {
+                        error!("Invalid GetSectionResponse::Redirect: missing peers");
+                        continue;
                     }
-                }
-                MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
+                    GetSectionResponse::Success(SectionInfo { prefix, .. })
+                        if !prefix.matches(&destination) =>
+                    {
+                        error!("Invalid GetSectionResponse::Success: bad prefix");
+                        continue;
+                    }
+                    GetSectionResponse::Redirect(_)
+                    | GetSectionResponse::Success { .. }
+                    | GetSectionResponse::SectionInfoUpdate(_) => {
+                        return Ok((response, sender, dest_info))
+                    }
+                },
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
+                    dest_info,
+                } => {
                     let message = Message::from_bytes(Bytes::from(msg_bytes))?;
-                    self.backlog_message(message, sender)
+                    self.backlog_message(message, sender, dest_info)
                 }
-                MessageType::SectionInfo(_) | MessageType::ClientMessage(_) | MessageType::Ping => {
-                }
+                MessageType::Node { .. }
+                | MessageType::SectionInfo { .. }
+                | MessageType::Client { .. }
+                | MessageType::Ping(_) => {}
             }
         }
 
@@ -294,7 +328,7 @@ impl<'a> State<'a> {
 
         let age = relocate_details.relocate_details()?.age;
         let new_keypair = crypto::gen_keypair(&name_prefix.range_inclusive(), age);
-        let new_name = crypto::name(&new_keypair.public);
+        let new_name = XorName::from(PublicKey::from(new_keypair.public));
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
 
@@ -306,24 +340,28 @@ impl<'a> State<'a> {
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
     // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
-    // completing the bootstrap. If it is `Challenge`, carries out a resource proof calculation.
+    // completing the bootstrap. If it is a `Challenge`, carry out resource proof calculation.
     async fn join(
         mut self,
         mut section_key: bls::PublicKey,
         elders: BTreeMap<XorName, SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr)>)> {
+    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
         let join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
             resource_proof_response: None,
         };
-        let recipients = elders.into_iter().map(|(_, addr)| addr).collect();
-        self.send_join_requests(join_request, recipients).await?;
+        let recipients = elders
+            .into_iter()
+            .map(|(name, addr)| (addr, name))
+            .collect_vec();
+        self.send_join_requests(join_request, recipients, section_key)
+            .await?;
 
         loop {
-            let (response, sender) = self
+            let (response, sender, dest_info) = self
                 .receive_join_response(genesis_key.as_ref(), relocate_payload.as_ref())
                 .await?;
 
@@ -358,7 +396,12 @@ impl<'a> State<'a> {
                             relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
-                        self.send_join_requests(join_request, section_auth.addrs())
+                        let recipients = section_auth
+                            .elders()
+                            .iter()
+                            .map(|(addr, name)| (*name, *addr))
+                            .collect();
+                        self.send_join_requests(join_request, recipients, section_key)
                             .await?;
                     } else {
                         warn!(
@@ -388,8 +431,9 @@ impl<'a> State<'a> {
                             nonce_signature,
                         }),
                     };
-                    let recipients = vec![sender];
-                    self.send_join_requests(join_request, recipients).await?;
+                    let recipients = vec![(sender, dest_info.dest)];
+                    self.send_join_requests(join_request, recipients, section_key)
+                        .await?;
                 }
             }
         }
@@ -398,17 +442,28 @@ impl<'a> State<'a> {
     async fn send_join_requests(
         &mut self,
         join_request: JoinRequest,
-        recipients: Vec<SocketAddr>,
+        recipients: Vec<(SocketAddr, XorName)>,
+        section_key: bls::PublicKey,
     ) -> Result<()> {
         info!("Sending {:?} to {:?}", join_request, recipients);
 
         let variant = Variant::JoinRequest(Box::new(join_request));
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
-        let node_msg = NodeMessage::new(message.to_bytes());
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+        let node_msg = RoutingMsg::new(message.to_bytes());
 
         let _ = self
             .send_tx
-            .send((MessageType::NodeMessage(node_msg), recipients))
+            .send((
+                MessageType::Routing {
+                    msg: node_msg,
+                    dest_info: DestInfo {
+                        // Will be overridden while sending to multiple elders
+                        dest: XorName::random(),
+                        dest_section_pk: section_key,
+                    },
+                },
+                recipients,
+            ))
             .await;
 
         Ok(())
@@ -418,15 +473,17 @@ impl<'a> State<'a> {
         &mut self,
         expected_genesis_key: Option<&bls::PublicKey>,
         relocate_payload: Option<&RelocatePayload>,
-    ) -> Result<(JoinResponse, SocketAddr)> {
+    ) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
-            let message = match message {
-                MessageType::NodeMessage(NodeMessage(msg_bytes)) => {
-                    Message::from_bytes(Bytes::from(msg_bytes))?
-                }
-                MessageType::Ping | MessageType::ClientMessage(_) | MessageType::SectionInfo(_) => {
-                    continue
-                }
+            let (message, dest_info) = match message {
+                MessageType::Routing {
+                    msg: RoutingMsg(msg_bytes),
+                    dest_info,
+                } => (Message::from_bytes(Bytes::from(msg_bytes))?, dest_info),
+                MessageType::Node { .. }
+                | MessageType::Ping(_)
+                | MessageType::Client { .. }
+                | MessageType::SectionInfo { .. } => continue,
             };
 
             match message.variant() {
@@ -444,6 +501,7 @@ impl<'a> State<'a> {
                             section_key: *section_key,
                         },
                         sender,
+                        dest_info,
                     ));
                 }
                 Variant::ResourceChallenge {
@@ -469,6 +527,7 @@ impl<'a> State<'a> {
                             nonce_signature: *nonce_signature,
                         },
                         sender,
+                        dest_info,
                     ));
                 }
                 Variant::NodeApproval {
@@ -512,10 +571,11 @@ impl<'a> State<'a> {
                             section_chain,
                         },
                         sender,
+                        dest_info,
                     ));
                 }
 
-                _ => self.backlog_message(message, sender),
+                _ => self.backlog_message(message, sender, dest_info),
             }
         }
 
@@ -540,12 +600,12 @@ impl<'a> State<'a> {
         }
     }
 
-    fn backlog_message(&mut self, message: Message, sender: SocketAddr) {
+    fn backlog_message(&mut self, message: Message, sender: SocketAddr, dest_info: DestInfo) {
         while self.backlog.len() >= BACKLOG_CAPACITY {
             let _ = self.backlog.pop_front();
         }
 
-        self.backlog.push_back((message, sender))
+        self.backlog.push_back((message, sender, dest_info))
     }
 }
 
@@ -599,18 +659,22 @@ impl<'a> MessageReceiver<'a> {
 }
 
 // Keep reading messages from `rx` and send them using `comm`.
-async fn send_messages(mut rx: mpsc::Receiver<(MessageType, Vec<SocketAddr>)>, comm: &Comm) {
+async fn send_messages(
+    mut rx: mpsc::Receiver<(MessageType, Vec<(SocketAddr, XorName)>)>,
+    comm: &Comm,
+) -> Result<()> {
     while let Some((message, recipients)) = rx.recv().await {
-        match message.serialize() {
-            Ok(msg_bytes) => {
-                let _ = comm.send(&recipients, recipients.len(), msg_bytes).await;
+        match comm
+            .send(&recipients, recipients.len(), message.clone())
+            .await?
+        {
+            SendStatus::AllRecipients | SendStatus::MinDeliveryGroupSizeReached(_) => {}
+            SendStatus::MinDeliveryGroupSizeFailed(recipients) => {
+                error!("Failed to send message {:?} to {:?}", message, recipients,)
             }
-            Err(error) => error!(
-                "Failed to send message {:?} to {:?}: {}",
-                message, recipients, error
-            ),
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -671,9 +735,11 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, [bootstrap_addr]);
-            assert_matches!(message, MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(name)) => {
-                assert_eq!(name, *peer.name());
+            let bootstrap_addrs: Vec<SocketAddr> =
+                recipients.iter().map(|(addr, _name)| *addr).collect();
+            assert_eq!(bootstrap_addrs, [bootstrap_addr]);
+            assert_matches!(message, MessageType::SectionInfo{ msg: SectionInfoMsg::GetSectionQuery(name), .. } => {
+                assert_eq!(XorName::from(name), *peer.name());
             });
 
             let infrastructure_info = SectionInfo {
@@ -689,17 +755,34 @@ mod tests {
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: *peer.name(),
+                        dest_section_pk: pk,
+                    },
+                },
+                bootstrap_addr,
+            ))?;
 
             // Receive JoinRequest
             let (message, recipients) = send_rx
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) =>
-                Message::from_bytes(Bytes::from(bytes))?);
+            let (message, dest_info) = assert_matches!(message, MessageType::Routing { msg: RoutingMsg(bytes), dest_info } =>
+                (Message::from_bytes(Bytes::from(bytes))?, dest_info));
 
-            itertools::assert_equal(recipients, section_auth.addrs());
+            assert_eq!(dest_info.dest_section_pk, pk);
+            itertools::assert_equal(
+                recipients,
+                section_auth
+                    .elders()
+                    .iter()
+                    .map(|(name, addr)| (*addr, *name))
+                    .collect::<Vec<_>>(),
+            );
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
                 assert!(request.relocate_payload.is_none());
@@ -718,11 +801,16 @@ mod tests {
                     member_info,
                 },
                 Some(proof_chain),
-                None,
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
+                    dest_info: DestInfo {
+                        dest: *peer.name(),
+                        dest_section_pk: pk,
+                    },
+                },
                 bootstrap_addr,
             ))?;
 
@@ -754,29 +842,50 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let name = node.name();
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
-        let test_task = async {
+        let test_task = async move {
             // Receive GetSectionQuery
             let (message, recipients) = send_rx
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, vec![bootstrap_node.addr]);
+            assert_eq!(
+                recipients
+                    .into_iter()
+                    .map(|peer| peer.0)
+                    .collect::<Vec<_>>(),
+                vec![bootstrap_node.addr]
+            );
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             // Send GetSectionResponse::Redirect
-            let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+            let new_bootstrap_addrs: Vec<_> = (0..ELDER_SIZE)
+                .map(|_| (XorName::random(), gen_addr()))
+                .collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(
                 new_bootstrap_addrs.clone(),
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             // Receive new GetSectionQuery
@@ -785,10 +894,22 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
-            assert_eq!(recipients, new_bootstrap_addrs);
+            assert_eq!(
+                recipients
+                    .into_iter()
+                    .map(|peer| peer.0)
+                    .collect::<Vec<_>>(),
+                new_bootstrap_addrs
+                    .into_iter()
+                    .map(|(_, addr)| addr)
+                    .collect::<Vec<_>>()
+            );
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             Ok(())
@@ -818,6 +939,7 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
         let mut state = State::new(node, send_tx, recv_rx);
 
         let bootstrap_task = state.bootstrap(vec![bootstrap_node.addr], None);
@@ -829,18 +951,41 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(vec![]));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
-            let addrs = (0..ELDER_SIZE).map(|_| gen_addr()).collect();
+            let addrs = (0..ELDER_SIZE)
+                .map(|_| (XorName::random(), gen_addr()))
+                .collect();
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             let (message, _) = send_rx
@@ -850,7 +995,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             Ok(())
@@ -878,11 +1026,14 @@ mod tests {
 
         let sk_set = SecretKeySet::random();
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let node = Node::new(
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+
+        let node_name = node.name();
 
         let mut state = State::new(node, send_tx, recv_rx);
 
@@ -898,7 +1049,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let infrastructure_info = SectionInfo {
@@ -914,7 +1068,16 @@ mod tests {
             let message = SectionInfoMsg::GetSectionResponse(GetSectionResponse::Success(
                 infrastructure_info,
             ));
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: pk,
+                    },
+                },
+                bootstrap_addr,
+            ))?;
 
             Ok(())
         };
@@ -943,12 +1106,13 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);
             let p1 = Prefix::default().pushed(true);
 
-            if node.name().bit(0) {
+            if node_name.bit(0) {
                 (p1, p0)
             } else {
                 (p0, p1)
@@ -969,7 +1133,10 @@ mod tests {
 
             assert_matches!(
                 message,
-                MessageType::SectionInfo(SectionInfoMsg::GetSectionQuery(_))
+                MessageType::SectionInfo {
+                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    ..
+                }
             );
 
             let infrastructure_info = SectionInfo {
@@ -985,7 +1152,16 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
             task::yield_now().await;
 
             let infrastructure_info = SectionInfo {
@@ -1001,7 +1177,16 @@ mod tests {
                 infrastructure_info,
             ));
 
-            recv_tx.try_send((MessageType::SectionInfo(message), bootstrap_node.addr))?;
+            recv_tx.try_send((
+                MessageType::SectionInfo {
+                    msg: message,
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: bls::SecretKey::random().public_key(),
+                    },
+                },
+                bootstrap_node.addr,
+            ))?;
 
             Ok(())
         };
@@ -1025,6 +1210,7 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
+        let node_name = node.name();
 
         let (good_prefix, bad_prefix) = {
             let p0 = Prefix::default().pushed(false);
@@ -1049,9 +1235,9 @@ mod tests {
             let (message, _) = send_rx
                 .recv()
                 .await
-                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+                .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
@@ -1063,11 +1249,16 @@ mod tests {
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 None,
-                None,
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: section_key,
+                    },
+                },
                 bootstrap_node.addr,
             ))?;
             task::yield_now().await;
@@ -1081,20 +1272,25 @@ mod tests {
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 None,
-                None,
             )?;
 
             recv_tx.try_send((
-                MessageType::NodeMessage(NodeMessage::new(message.to_bytes())),
+                MessageType::Routing {
+                    msg: RoutingMsg::new(message.to_bytes()),
+                    dest_info: DestInfo {
+                        dest: node_name,
+                        dest_section_pk: section_key,
+                    },
+                },
                 bootstrap_node.addr,
             ))?;
 
             let (message, _) = send_rx
                 .recv()
                 .await
-                .ok_or_else(|| anyhow!("NodeMessage was not received"))?;
+                .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::NodeMessage(NodeMessage(bytes)) => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())

@@ -58,6 +58,10 @@ impl Core {
             nonce_signature: crypto::sign(&serialized, &self.node.keypair),
         };
 
-        self.send_direct_message(peer.addr(), response)
+        self.send_direct_message(
+            (*peer.addr(), *peer.name()),
+            response,
+            *self.section.chain().last_key(),
+        )
     }
 }
