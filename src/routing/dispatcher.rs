@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{bootstrap, Comm, Command, Core};
-use crate::{error::Result, event::Event, relocation::SignedRelocateDetails};
+use crate::routing::comm::SendStatus;
+use crate::{error::Result, event::Event, relocation::SignedRelocateDetails, Error};
 use sn_messaging::MessageType;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -191,14 +192,23 @@ impl Dispatcher {
         let msg_bytes = message.serialize()?;
 
         let cmds = match message {
-            MessageType::Ping | MessageType::NodeMessage(_) => self
-                .comm
-                .send(recipients, delivery_group_size, msg_bytes)
-                .await
-                .1
-                .into_iter()
-                .map(Command::HandlePeerLost)
-                .collect(),
+            MessageType::Ping | MessageType::NodeMessage(_) => {
+                let status = self
+                    .comm
+                    .send(recipients, delivery_group_size, msg_bytes)
+                    .await?;
+                match status {
+                    SendStatus::MinDeliveryGroupSizeReached(failed_recipients)
+                    | SendStatus::MinDeliveryGroupSizeFailed(failed_recipients) => {
+                        Ok(failed_recipients
+                            .into_iter()
+                            .map(Command::HandlePeerLost)
+                            .collect())
+                    }
+                    _ => Ok(vec![]),
+                }
+                .map_err(|e: Error| e)?
+            }
             MessageType::ClientMessage(_) => {
                 for recipient in recipients {
                     if self

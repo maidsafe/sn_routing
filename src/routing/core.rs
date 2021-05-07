@@ -1105,7 +1105,7 @@ impl Core {
             };
             if recipients.is_empty() {
                 trace!("Cannot route user message, recipient list empty: {:?}", msg);
-                return Err(Error::CannotRoute);
+                return Err(Error::EmptyRecipientList);
             };
             trace!("sending user message {:?} to client {:?}", msg, recipients);
             return Ok(vec![Command::SendMessage {
