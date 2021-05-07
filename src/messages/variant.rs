@@ -72,14 +72,6 @@ pub(crate) enum Variant {
     /// Sent from a node that can't establish the trust of the contained message to its original
     /// source in order for them to provide new proof that the node would trust.
     BouncedUntrustedMessage(Box<Message>),
-    /// Sent from a node that doesn't know how to handle `message` to its elders in order for them
-    /// to decide what to do with it (resend with more info or discard).
-    BouncedUnknownMessage {
-        /// The last section key of the sender.
-        src_key: bls::PublicKey,
-        /// The serialized original message.
-        message: Bytes,
-    },
     /// Sent to the new elder candidates to start the DKG process.
     DkgStart {
         /// The identifier of the DKG session to start.
@@ -212,11 +204,6 @@ impl Debug for Variant {
             Self::BouncedUntrustedMessage(message) => f
                 .debug_tuple("BouncedUntrustedMessage")
                 .field(message)
-                .finish(),
-            Self::BouncedUnknownMessage { src_key, message } => f
-                .debug_struct("BouncedUnknownMessage")
-                .field("src_key", src_key)
-                .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
             Self::DkgStart {
                 dkg_key,

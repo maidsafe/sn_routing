@@ -75,10 +75,6 @@ impl Core {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
                 commands.push(self.handle_untrusted_message(sender, msg)?);
             }
-            MessageStatus::Unknown => {
-                debug!("Unknown message from {:?}: {:?} ", sender, msg);
-                commands.push(self.handle_unknown_message(sender, msg.to_bytes())?);
-            }
             MessageStatus::Useless => {
                 debug!("Useless message from {:?}: {:?}", sender, msg);
             }
@@ -292,14 +288,6 @@ impl Core {
                     msg.dst_key().copied(),
                     *message.clone(),
                 )?])
-            }
-            Variant::BouncedUnknownMessage { src_key, message } => {
-                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                self.handle_bounced_unknown_message(
-                    msg.src().peer(sender)?,
-                    message.clone(),
-                    src_key,
-                )
             }
             Variant::DkgStart {
                 dkg_key,

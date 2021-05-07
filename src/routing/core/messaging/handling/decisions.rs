@@ -13,7 +13,7 @@ use xor_name::XorName;
 use super::Core;
 use crate::{
     agreement::Proposal,
-    messages::{JoinRequest, Message, MessageStatus, Variant},
+    messages::{Message, MessageStatus, Variant},
     relocation::RelocatePromise,
     Result,
 };
@@ -24,16 +24,21 @@ impl Core {
         match msg.variant() {
             Variant::OtherSection { .. } | Variant::ConnectivityComplaint(_) => {
                 if !self.is_elder() {
-                    return Ok(MessageStatus::Unknown);
+                    return Ok(MessageStatus::Useless);
                 }
             }
             Variant::UserMessage(_) => {
-                if !self.should_handle_user_message(msg.dst()) {
-                    return Ok(MessageStatus::Unknown);
+                // If elder, always handle UserMessage, otherwise
+                // handle it only if addressed directly to us as a node.
+                if !self.is_elder() && *msg.dst() != DstLocation::Node(self.node.name()) {
+                    return Ok(MessageStatus::Useless);
                 }
             }
             Variant::JoinRequest(req) => {
-                if !self.should_handle_join_request(req) {
+                // Ignore `JoinRequest` if we are not elder unless the join request
+                // is outdated in which case we reply with `BootstrapResponse::Join`
+                // with the up-to-date info (see `handle_join_request`).
+                if !self.is_elder() && req.section_key == *self.section.chain().last_key() {
                     // Note: We don't bounce this message because the current bounce-resend
                     // mechanism wouldn't preserve the original SocketAddr which is needed for
                     // properly handling this message.
@@ -75,7 +80,6 @@ impl Core {
             }
             Variant::Relocate(_)
             | Variant::BouncedUntrustedMessage(_)
-            | Variant::BouncedUnknownMessage { .. }
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
@@ -119,7 +123,7 @@ impl Core {
                 {
                     None
                 } else {
-                    Some(MessageStatus::Unknown)
+                    Some(MessageStatus::Untrusted)
                 }
             }
         }
@@ -142,24 +146,11 @@ impl Core {
             if !self.is_elder() || self.section.is_elder(&promise.name) {
                 // If we are not elder, maybe we just haven't processed our promotion yet.
                 // If they are still elder, maybe we just haven't processed their demotion yet.
-                //
-                // In both cases, bounce the message and try again on resend (if any).
-                return Some(MessageStatus::Unknown);
+                // If otherwise they are still elder, maybe we just haven't processed their demotion yet.
+                return Some(MessageStatus::Useless);
             }
         }
 
         None
-    }
-
-    // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
-    // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
-    pub(crate) fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
-        self.is_elder() || req.section_key != *self.section.chain().last_key()
-    }
-
-    // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
-    // as a node.
-    pub(crate) fn should_handle_user_message(&self, dst: &DstLocation) -> bool {
-        self.is_elder() || dst == &DstLocation::Node(self.node.name())
     }
 }
