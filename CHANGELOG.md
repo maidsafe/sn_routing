@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.66.1](https://github.com/maidsafe/sn_routing/compare/v0.66.0...v0.66.1) (2021-05-07)
+
+
+### Bug Fixes
+
+* resolve failing tests after SectionAuthProvider refactor ([99d5d28](https://github.com/maidsafe/sn_routing/commit/99d5d283f5977f1d1d16a8789290c454cce1f49a))
+
 ## [0.66.0](https://github.com/maidsafe/sn_routing/compare/v0.65.3...v0.66.0) (2021-05-06)
 
 
