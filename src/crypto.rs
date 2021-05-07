@@ -82,7 +82,7 @@ pub(crate) mod test_utils {
             let secret = SecretKey::from_bytes(&bytes[..]).unwrap();
             let public = PublicKey::from(&secret);
 
-            Keypair { public, secret }
+            Keypair { secret, public }
         })
     }
 }

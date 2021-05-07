@@ -154,15 +154,11 @@ impl Core {
 
             let sibling_elders = if new.prefix != old.prefix {
                 if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
-                    if let Some(info) = self.network.get(&new.prefix.sibling()) {
-                        Some(Elders {
-                            prefix: new.prefix.sibling(),
-                            key: *sibling_key,
-                            elders: info.elders.keys().copied().collect(),
-                        })
-                    } else {
-                        None
-                    }
+                    self.network.get(&new.prefix.sibling()).map(|info| Elders {
+                        prefix: new.prefix.sibling(),
+                        key: *sibling_key,
+                        elders: info.elders.keys().copied().collect(),
+                    })
                 } else {
                     None
                 }
