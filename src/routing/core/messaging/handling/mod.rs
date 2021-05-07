@@ -72,8 +72,8 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                commands.extend(self.update_section_knowledge(&msg, dest_info)?);
-                commands.extend(self.handle_useful_message(sender, msg).await?);
+                commands.extend(self.check_for_entropy(&msg, dest_info.clone())?);
+                commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -279,6 +279,7 @@ impl Core {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
+        dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
 
@@ -290,8 +291,14 @@ impl Core {
         let src_name = msg.src().name();
 
         match msg.variant() {
-            Variant::OtherSection { section_auth, .. } => {
-                self.handle_other_section(section_auth.value.clone(), *msg.proof_chain_last_key()?)
+            Variant::SectionKnowledge { src_info, msg } => {
+                let src_info = src_info.clone();
+                self.update_section_knowledge(src_info.0, src_info.1);
+                Ok(vec![Command::HandleMessage {
+                    sender,
+                    message: *msg.clone(),
+                    dest_info,
+                }])
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
@@ -323,16 +330,26 @@ impl Core {
                     *bounced_msg.clone(),
                 )?])
             }
-            Variant::SrcAhead => Ok(vec![]),
-            Variant::SrcOutdated => Ok(vec![]),
+            Variant::SrcAhead {
+                key,
+                msg: returned_msg,
+            } => {
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
+                Ok(vec![self.handle_src_ahead(
+                    *key,
+                    returned_msg.clone(),
+                    sender,
+                    src_name,
+                    msg.src().src_location().to_dst(),
+                )?])
+            }
             Variant::DstAhead(_chain) => Ok(vec![]),
-            Variant::DstOutdated => Ok(vec![]),
             Variant::DkgStart {
                 dkg_key,
                 elders_info,
             } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DkgMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
+                self.handle_dkg_message(*dkg_key, message.clone(), src_name)
             }
             Variant::DkgFailureObservation {
                 dkg_key,
@@ -388,6 +405,34 @@ impl Core {
         }
     }
 
+    fn handle_src_ahead(
+        &self,
+        key: bls::PublicKey,
+        msg: Box<Message>,
+        sender: SocketAddr,
+        src_name: XorName,
+        dst_location: DstLocation,
+    ) -> Result<Command> {
+        let chain = self.section.chain();
+        let truncated_key = chain.get_proof_chain_to_current(&key)?;
+        let section_auth = self.section.proven_authority_provider();
+        let variant = Variant::SectionKnowledge {
+            src_info: (section_auth.clone(), truncated_key),
+            msg,
+        };
+
+        let msg = Message::single_src(self.node(), dst_location, variant, None)?;
+        let key = self.section_key_by_name(&src_name);
+        Ok(Command::send_message_to_node(
+            (sender, src_name),
+            msg.to_bytes(),
+            DestInfo {
+                dest: src_name,
+                dest_section_pk: *key,
+            },
+        ))
+    }
+
     pub(crate) fn verify_message(&self, msg: &Message) -> Result<bool> {
         let known_keys = self
             .section
@@ -404,32 +449,6 @@ impl Core {
                 Err(error)
             }
         }
-    }
-
-    pub(crate) fn handle_other_section(
-        &self,
-        _section_auth: SectionAuthorityProvider,
-        _src_key: bls::PublicKey,
-    ) -> Result<Vec<Command>> {
-        let commands = vec![];
-
-        // if !self.network.has_key(&src_key) {
-        //     commands.extend(self.propose(Proposal::TheirKey {
-        //         prefix: section_auth.prefix,
-        //         key: src_key,
-        //     })?);
-        // } else {
-        //     trace!(
-        //         "Ignore not new section key of {:?}: {:?}",
-        //         section_auth,
-        //         src_key
-        //     );
-        //     return Ok(commands);
-        // }
-
-        // commands.extend(self.propose(Proposal::SectionInfo(section_auth))?);
-
-        Ok(commands)
     }
 
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {

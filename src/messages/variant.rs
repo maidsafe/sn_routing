@@ -32,13 +32,15 @@ use xor_name::XorName;
 /// Message variant
 pub(crate) enum Variant {
     /// Inform other sections about our section or vice-versa.
-    OtherSection {
-        /// `SectionAuthorityProvider` of the sender's section, with the proof chain.
-        section_auth: Proven<SectionAuthorityProvider>,
-        /// Nonce that is derived from the incoming message that triggered sending this
-        /// message. It's purpose is to make sure that `OtherSection`s that are identical
-        /// but triggered by different messages are not filtered out.
-        nonce: MessageHash,
+    SectionKnowledge {
+        /// `SectionAuthorityProvider` and `SectionChain` of the sender's section, with the proof chain.
+        src_info: (Proven<SectionAuthorityProvider>, SectionChain),
+        /// Message
+        msg: Box<Message>,
+        // Nonce that is derived from the incoming message that triggered sending this
+        // message. It's purpose is to make sure that `OtherSection`s that are identical
+        // but triggered by different messages are not filtered out.
+        // nonce: MessageHash,
     },
     /// User-facing message
     UserMessage(Bytes),
@@ -111,10 +113,19 @@ pub(crate) enum Variant {
         nonce: [u8; 32],
         nonce_signature: Signature,
     },
+    /// Message sent by dst to indicate that Src is ahead in knowledge.
+    /// A follow-up reply will be sent by Src with SectionKnowledge
+    SrcAhead {
+        key: bls::PublicKey,
+        msg: Box<Message>,
+    },
+    /// Message sent by dst to indicate that sender is lagging on knowledge and shares it.
+    // SrcOutdated(Variant),
+    /// Message sent by dst to indicate that the Dst is ahead on knowledge and shares it.
     DstAhead(SectionChain),
-    DstOutdated,
-    SrcAhead,
-    SrcOutdated,
+    /// Message sent by dst to indicate that Dst is outdated in knowledge.
+    /// A follow-up reply will be sent by src with SectionKnowledge.
+    // DstOutdated,
     /// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.
     ConnectivityComplaint(XorName),
 }
@@ -147,15 +158,6 @@ impl Variant {
                 proof_chain
             }
             Self::Sync { section, .. } => section.chain(),
-            Self::OtherSection { section_auth, .. } => {
-                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
-
-                if !section_auth.verify(proof_chain) {
-                    return Err(Error::InvalidMessage);
-                }
-
-                proof_chain
-            }
             _ => return Ok(VerifyStatus::Full),
         };
 
@@ -170,14 +172,7 @@ impl Variant {
 impl Debug for Variant {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::OtherSection {
-                section_auth,
-                nonce,
-            } => f
-                .debug_struct("OtherSection")
-                .field("section_auth", section_auth)
-                .field("nonce", nonce)
-                .finish(),
+            Self::SectionKnowledge { .. } => f.debug_struct("SectionKnowledge").finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval {
                 genesis_key,
@@ -259,9 +254,7 @@ impl Debug for Variant {
                 .finish(),
             Self::ConnectivityComplaint(name) => write!(f, "ConnectivityComplaint({:?})", name),
             Self::DstAhead(_) => write!(f, "DstAhead"),
-            Self::DstOutdated => write!(f, "DstOutdated"),
-            Self::SrcAhead => write!(f, "SrcAhead"),
-            Self::SrcOutdated => write!(f, "SrcOutdated"),
+            Self::SrcAhead { .. } => write!(f, "SrcAhead"),
         }
     }
 }

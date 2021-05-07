@@ -15,7 +15,7 @@ use super::{
     enduser_registry::EndUserRegistry, lazy_messaging, split_barrier::SplitBarrier,
 };
 use crate::{
-    agreement::{DkgVoter, Proposal, ProposalAggregator},
+    agreement::{DkgVoter, Proposal, ProposalAggregator, Proven},
     error::Result,
     event::{Elders, Event, NodeElderChange},
     message_filter::MessageFilter,
@@ -23,7 +23,8 @@ use crate::{
     network::Network,
     node::Node,
     relocation::RelocateState,
-    section::{Section, SectionKeyShare, SectionKeysProvider},
+    section::{Section, SectionAuthorityProvider, SectionKeyShare, SectionKeysProvider},
+    SectionChain,
 };
 use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
@@ -90,12 +91,7 @@ impl Core {
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
 
-    // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub(crate) fn update_section_knowledge(
-        &mut self,
-        msg: &Message,
-        dest_info: DestInfo,
-    ) -> Result<Vec<Command>> {
+    fn check_for_entropy(&mut self, msg: &Message, dest_info: DestInfo) -> Result<Vec<Command>> {
         if !self.is_elder() {
             return Ok(vec![]);
         }
@@ -127,6 +123,30 @@ impl Core {
                 .keys()
                 .copied()
                 .collect(),
+        }
+    }
+
+    pub(crate) fn update_section_knowledge(
+        &mut self,
+        section_auth: Proven<SectionAuthorityProvider>,
+        section_chain: SectionChain,
+    ) {
+        let prefix = section_auth.value.prefix;
+        if self
+            .network
+            .update_their_key((prefix, *section_chain.last_key()))
+        {
+            info!("Keys updated for Prefix: {:?}", prefix);
+        } else {
+            info!("Nothing to update, Keys are still the same");
+        }
+        if self
+            .network
+            .update_section(section_auth, None, &section_chain)
+        {
+            info!("Neighbour section knowledge updated: {:?}", prefix);
+        } else {
+            warn!("Neighbour section update failed");
         }
     }
 

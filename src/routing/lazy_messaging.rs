@@ -44,27 +44,21 @@ pub(crate) fn process(
                         node,
                         section,
                         network,
-                        Variant::SrcAhead,
+                        Variant::SrcAhead {
+                            key: *key,
+                            msg: Box::new(msg.clone()),
+                        },
                         DstLocation::Node(src_name),
                     )?;
                     actions.send.push(msg);
-                    // send_other_section = true;
                 }
                 Ordering::Less => {
-                    // TODO: Send our knowledge to Src. SrcOutdated
+                    trace!("Anti-Entropy: Src is lagging and needs to update himself. Do nothing as he will update himself");
                 }
                 Ordering::Equal => {}
             }
         }
     }
-
-    // TODO: Check if Src has an advanced key than us.
-    // i.e. check if we are lagging ourselves
-
-    // let src_prefix = network
-    //     .section_by_name(&src_name)
-    //     .1
-    //     .map(|info| &info.prefix);
 
     match section
         .chain()
@@ -72,15 +66,7 @@ pub(crate) fn process(
     {
         Ordering::Greater => {
             // Their knowledge of our section is newer than what we have stored - update it.
-            trace!("Anti-Entropy: We, the dst are outdated. Source has an greater key of ours");
-            let msg = create_other_section_message(
-                node,
-                section,
-                network,
-                Variant::DstOutdated,
-                DstLocation::Node(src_name),
-            )?;
-            actions.send.push(msg)
+            trace!("Anti-Entropy: We, the dst are outdated. Source has an greater key than ours. Do nothing as we'll updated ourself soon");
         }
         Ordering::Less => {
             trace!("Anti-Entropy: Source's knowledge of our key is outdated");
@@ -109,7 +95,7 @@ fn create_other_section_message(
 ) -> Result<Message> {
     let dst_knowledge = dst
         .name()
-        .and_then(|dst| network.knowledge_by_name(&dst))
+        .and_then(|dst| network.key_by_name(&dst))
         .unwrap_or_else(|| section.chain().root_key());
     let proof_chain = section
         .chain()
@@ -270,33 +256,33 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    #[ignore]
-    fn outdated_knowledge() -> Result<()> {
-        let mut env = Env::new(2)?;
+    // #[test]
+    // #[ignore]
+    // fn outdated_knowledge() -> Result<()> {
+    //     let mut env = Env::new(2)?;
 
-        let knowledge = proven(
-            &env.our_sk,
-            (env.their_prefix, *env.section.chain().root_key()),
-        )?;
-        env.network.update_knowledge(knowledge);
+    //     let knowledge = proven(
+    //         &env.our_sk,
+    //         (env.their_prefix, *env.section.chain().root_key()),
+    //     )?;
+    //     env.network.update_knowledge(knowledge);
 
-        let proof_chain = SectionChain::new(env.their_sk.public_key());
-        let msg = env.create_message(&env.their_prefix, proof_chain)?;
-        let dest_info = DestInfo {
-            dest: XorName::random(),
-            dest_section_pk: *env.section.chain().last_key(),
-        };
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+    //     let proof_chain = SectionChain::new(env.their_sk.public_key());
+    //     let msg = env.create_message(&env.their_prefix, proof_chain)?;
+    //     let dest_info = DestInfo {
+    //         dest: XorName::random(),
+    //         dest_section_pk: *env.section.chain().last_key(),
+    //     };
+    //     let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
 
-        assert_eq!(actions.send, vec![]);
-        // assert_matches!(&actions.propose, Some(Proposal::TheirKnowledge { prefix, key }) => {
-        //     assert_eq!(prefix, &env.their_prefix);
-        //     assert_eq!(key, env.section.chain().last_key());
-        // });
+    //     assert_eq!(actions.send, vec![]);
+    //     // assert_matches!(&actions.propose, Some(Proposal::TheirKnowledge { prefix, key }) => {
+    //     //     assert_eq!(prefix, &env.their_prefix);
+    //     //     assert_eq!(key, env.section.chain().last_key());
+    //     // });
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     struct Env {
         node: Node,
@@ -327,11 +313,10 @@ mod tests {
 
             let their_sk = bls::SecretKey::random();
             let their_pk = their_sk.public_key();
-            let key1 = proven(&our_sk, (prefix1, their_pk))?;
 
             let mut network = Network::new();
             assert!(network.update_section(section_auth1, None, section.chain()));
-            assert!(network.update_their_key(key1));
+            assert!(network.update_their_key((prefix1, their_pk)));
 
             Ok(Self {
                 node,
