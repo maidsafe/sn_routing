@@ -22,7 +22,7 @@ use crate::{
 impl Core {
     pub(crate) fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant() {
-            Variant::OtherSection { .. } | Variant::ConnectivityComplaint(_) => {
+            Variant::SectionKnowledge { .. } | Variant::ConnectivityComplaint(_) => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Useless);
                 }
@@ -83,10 +83,8 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
-            | Variant::SrcAhead
-            | Variant::SrcOutdated
+            | Variant::SrcAhead { .. }
             | Variant::DstAhead(_)
-            | Variant::DstOutdated
             | Variant::ResourceChallenge { .. } => {}
         }
 

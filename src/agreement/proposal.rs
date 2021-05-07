@@ -149,6 +149,7 @@ mod tests {
     use anyhow::Result;
     use rand::Rng;
     use std::fmt::Debug;
+    use xor_name::Prefix;
 
     #[test]
     #[ignore]

@@ -10,7 +10,7 @@ use std::cmp;
 
 use bls_signature_aggregator::Proof;
 use sn_messaging::{DestInfo, DstLocation};
-use xor_name::{Prefix, XorName};
+use xor_name::XorName;
 
 use crate::{
     agreement::{Proposal, Proven},
@@ -284,23 +284,6 @@ impl Core {
         }
 
         self.update_state(snapshot)
-    }
-
-    #[allow(unused)]
-    fn handle_their_key_agreement(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
-        let key = Proven::new((prefix, key), proof);
-        let _ = self.network.update_their_key(key);
-    }
-
-    #[allow(unused)]
-    fn handle_their_knowledge_agreement(
-        &mut self,
-        prefix: Prefix,
-        knowledge: bls::PublicKey,
-        proof: Proof,
-    ) {
-        let knowledge = Proven::new((prefix, knowledge), proof);
-        self.network.update_knowledge(knowledge)
     }
 
     fn handle_accumulate_at_src_agreement(

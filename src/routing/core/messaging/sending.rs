@@ -150,7 +150,7 @@ impl Core {
         // We need to construct a proof that would be trusted by the destination section.
         let known_key = self
             .network
-            .knowledge_by_name(&details.destination)
+            .key_by_name(&details.destination)
             .unwrap_or_else(|| self.section.chain().root_key());
 
         let src = details.pub_id;
@@ -347,7 +347,7 @@ impl Core {
         // the actual last key of the resulting proof chain because it's the key that will be used
         // to sign the message.
         let additional_key = additional_key
-            .or_else(|| self.network.knowledge_by_name(&dst.name()?))
+            .or_else(|| self.network.key_by_name(&dst.name()?))
             .filter(|key| self.section.chain().cmp_by_position(key, &last_key) == Ordering::Less);
 
         Ok(self

@@ -150,7 +150,7 @@ impl Core {
         )?;
 
         let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
-        let dest_pk = self.section_key_by_name(&target_name).clone();
+        let dest_pk = *self.section_key_by_name(&target_name);
 
         let targets: Vec<_> = targets
             .into_iter()

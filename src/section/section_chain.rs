@@ -107,6 +107,22 @@ impl SectionChain {
         Ok(())
     }
 
+    /// Creates a sub-chain from given `from` and `to` keys.
+    /// Returns `Error::KeyNotFound` if the given keys are not present in the chain.
+    pub fn get_proof_chain(
+        &self,
+        from_key: &bls::PublicKey,
+        to_key: &bls::PublicKey,
+    ) -> Result<Self, Error> {
+        self.minimize(vec![from_key, to_key])
+    }
+
+    /// Creates a sub-chain from a given key to the end.
+    /// Returns `Error::KeyNotFound` if the given from key is not present in the chain.
+    pub fn get_proof_chain_to_current(&self, from_key: &bls::PublicKey) -> Result<Self, Error> {
+        self.minimize(vec![from_key, self.last_key()])
+    }
+
     /// Creates a minimal sub-chain of `self` that contains all `required_keys`.
     /// Returns `Error::KeyNotFound` if some of `required_keys` is not present in `self`.
     ///
@@ -356,7 +372,8 @@ impl SectionChain {
         insert_at + 1
     }
 
-    fn index_of(&self, key: &bls::PublicKey) -> Option<usize> {
+    /// Returns the index of the given key. Returns `None` if not present.
+    pub fn index_of(&self, key: &bls::PublicKey) -> Option<usize> {
         self.keys()
             .rev()
             .position(|existing_key| existing_key == key)

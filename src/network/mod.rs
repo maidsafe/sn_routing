@@ -26,9 +26,7 @@ pub struct Network {
     // Other sections: maps section prefixes to their latest signed section authority providers.
     sections: PrefixMap<OtherSection>,
     // BLS public keys of known sections excluding ours.
-    keys: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
-    // Our section keys that are trusted by other sections.
-    knowledge: PrefixMap<Proven<(Prefix, bls::PublicKey)>>,
+    keys: PrefixMap<(Prefix, bls::PublicKey)>,
 }
 
 impl Network {
@@ -36,7 +34,6 @@ impl Network {
         Self {
             sections: PrefixMap::new(),
             keys: PrefixMap::new(),
-            knowledge: PrefixMap::new(),
         }
     }
 
@@ -97,15 +94,7 @@ impl Network {
         }
 
         for entry in other.keys {
-            if entry.verify(section_chain) {
-                let _ = self.keys.insert(entry);
-            }
-        }
-
-        for entry in other.knowledge {
-            if entry.verify(section_chain) {
-                let _ = self.knowledge.insert(entry);
-            }
+            let _ = self.keys.insert(entry);
         }
     }
 
@@ -144,16 +133,12 @@ impl Network {
 
     /// Updates the entry in `keys` for `prefix` to the latest known key.
     #[allow(unused)]
-    pub fn update_their_key(&mut self, new_key: Proven<(Prefix, bls::PublicKey)>) -> bool {
+    pub fn update_their_key(&mut self, new_key: (Prefix, bls::PublicKey)) -> bool {
         // TODO: verify against section chain
 
-        trace!(
-            "update key for {:?}: {:?}",
-            new_key.value.0,
-            new_key.value.1
-        );
+        trace!("update key for {:?}: {:?}", new_key.0, new_key.1);
 
-        if let Some(old) = self.keys.insert(new_key.clone()) {
+        if let Some(old) = self.keys.insert(new_key) {
             if old == new_key {
                 return false;
             }
@@ -164,19 +149,17 @@ impl Network {
 
     /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
-        self.keys
-            .iter()
-            .map(|entry| (&entry.value.0, &entry.value.1))
+        self.keys.iter().map(|entry| (&entry.0, &entry.1))
     }
 
     #[allow(unused)]
     pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.iter().any(|entry| entry.value.1 == *key)
+        self.keys.iter().any(|entry| entry.1 == *key)
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys.get_matching(name).map(|entry| &entry.value.1)
+        self.keys.get_matching(name).map(|entry| &entry.1)
     }
 
     /// Returns the latest known key for a section with `prefix`.
@@ -184,7 +167,7 @@ impl Network {
     pub fn key_by_prefix(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
         self.keys
             .get_equal_or_ancestor(prefix)
-            .map(|entry| &entry.value.1)
+            .map(|entry| &entry.1)
     }
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
@@ -194,32 +177,11 @@ impl Network {
         name: &XorName,
     ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
         (
-            self.keys.get_matching(name).map(|entry| &entry.value.1),
+            self.keys.get_matching(name).map(|entry| &entry.1),
             self.sections
                 .get_matching(name)
                 .map(|entry| &entry.section_auth.value),
         )
-    }
-
-    /// Returns the public key in our chain that will be trusted by the given name.
-    pub fn knowledge_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.knowledge
-            .get_matching(name)
-            .map(|entry| &entry.value.1)
-    }
-
-    /// Updates the key of our section that is known by some other section.
-    /// The passed in proven tuple consist of the prefix of the section whose knowledge we are
-    /// updaing and the key of our section we are updating it to.
-    #[allow(unused)]
-    pub fn update_knowledge(&mut self, knowledge: Proven<(Prefix, bls::PublicKey)>) {
-        trace!(
-            "update knowledge of section ({:b}) about our section to {:?}",
-            knowledge.value.0,
-            knowledge.value.1,
-        );
-
-        let _ = self.knowledge.insert(knowledge);
     }
 
     /// Returns network statistics.
@@ -379,28 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn update_their_knowledge_after_split_from_one_sibling() {
-        let pk1 = gen_key();
-        let pk2 = gen_key();
-
-        update_their_knowledge_and_check(
-            vec![("1", pk1), ("10", pk2)],
-            vec![("10", pk2), ("11", pk1)],
-        )
-    }
-
-    #[test]
-    fn update_their_knowledge_after_split_from_both_siblings() {
-        let pk1 = gen_key();
-        let pk2 = gen_key();
-
-        update_their_knowledge_and_check(
-            vec![("1", pk1), ("10", pk2), ("11", pk2)],
-            vec![("10", pk2), ("11", pk2)],
-        )
-    }
-
-    #[test]
     fn closest() {
         let sk = bls::SecretKey::random();
         let chain = SectionChain::new(sk.public_key());
@@ -435,15 +375,11 @@ mod tests {
         updates: Vec<(&str, &bls::PublicKey)>,
         expected: Vec<(&str, &bls::PublicKey)>,
     ) {
-        let sk = bls::SecretKey::random();
-
         let mut map = Network::new();
 
         for (prefix, key) in updates {
             let prefix = prefix.parse().unwrap();
-            let proof = agreement::test_utils::prove(&sk, &(&prefix, key)).unwrap();
-            let proven = Proven::new((prefix, *key), proof);
-            let _ = map.update_their_key(proven);
+            let _ = map.update_their_key((prefix, *key));
         }
 
         let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
@@ -452,34 +388,6 @@ mod tests {
             .map(|(prefix, key)| (prefix.parse().unwrap(), key))
             .collect();
         assert_eq!(actual, expected);
-    }
-
-    // Perform a series of updates to `knowledge`, then verify that the known keys for the given
-    // dst locations are as expected.
-    //
-    // - `updates` - pairs of (prefix, key) to pass to `update_knowledge`
-    // - `expected_trusted_keys` - pairs of (prefix, key) where the dst location name is
-    //   generated such that it matches `prefix` and `key` is the expected trusted key.
-    fn update_their_knowledge_and_check(
-        updates: Vec<(&str, bls::PublicKey)>,
-        expected_trusted_keys: Vec<(&str, bls::PublicKey)>,
-    ) {
-        let sk = bls::SecretKey::random();
-
-        let mut map = Network::new();
-
-        for (prefix_str, key) in updates {
-            let prefix = prefix_str.parse().unwrap();
-            let payload = agreement::test_utils::proven(&sk, (prefix, key)).unwrap();
-            map.update_knowledge(payload);
-        }
-
-        for (dst_name_prefix_str, expected_key) in expected_trusted_keys {
-            let dst_name_prefix: Prefix = dst_name_prefix_str.parse().unwrap();
-            let dst_name = dst_name_prefix.substituted_in(rand::random());
-
-            assert_eq!(map.knowledge_by_name(&dst_name), Some(&expected_key));
-        }
     }
 
     fn gen_proven_section_auth(
