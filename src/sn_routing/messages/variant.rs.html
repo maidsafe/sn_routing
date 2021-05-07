@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/messages/variant.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>variant.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/messages/variant.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>variant.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -306,6 +306,9 @@
 <span id="305">305</span>
 <span id="306">306</span>
 <span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -322,7 +325,7 @@
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
     <span class="ident">relocation</span>::{<span class="ident">RelocateDetails</span>, <span class="ident">RelocatePayload</span>, <span class="ident">RelocatePromise</span>},
-    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionChain</span>},
+    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
@@ -341,8 +344,8 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Variant</span> {
     <span class="doccomment">/// Inform other sections about our section or vice-versa.</span>
     <span class="ident">OtherSection</span> {
-        <span class="doccomment">/// `EldersInfo` of the sender&#39;s section, with the proof chain.</span>
-        <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
+        <span class="doccomment">/// `SectionAuthorityProvider` of the sender&#39;s section, with the proof chain.</span>
+        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Nonce that is derived from the incoming message that triggered sending this</span>
         <span class="doccomment">/// message. It&#39;s purpose is to make sure that `OtherSection`s that are identical</span>
         <span class="doccomment">/// but triggered by different messages are not filtered out.</span>
@@ -354,7 +357,7 @@
     <span class="doccomment">/// section.</span>
     <span class="ident">NodeApproval</span> {
         <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-        <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
+        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="ident">member_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Message sent to all members to update them about the state of our section.</span>
@@ -375,7 +378,7 @@
     <span class="ident">JoinRequest</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">JoinRequest</span><span class="op">&gt;</span>),
     <span class="doccomment">/// Response to outdated JoinRequest</span>
     <span class="ident">JoinRetry</span> {
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     },
     <span class="doccomment">/// Sent from a node that can&#39;t establish the trust of the contained message to its original</span>
@@ -394,7 +397,7 @@
         <span class="doccomment">/// The identifier of the DKG session to start.</span>
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="doccomment">/// The DKG particpants.</span>
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
     },
     <span class="doccomment">/// Message exchanged for DKG process.</span>
     <span class="ident">DkgMessage</span> {
@@ -439,13 +442,13 @@
     {
         <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span> {
             <span class="self">Self</span>::<span class="ident">NodeApproval</span> {
-                <span class="ident">elders_info</span>,
+                <span class="ident">section_auth</span>,
                 <span class="ident">member_info</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">proof_chain</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
 
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
                 }
 
@@ -456,10 +459,10 @@
                 <span class="ident">proof_chain</span>
             }
             <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">section</span>.<span class="ident">chain</span>(),
-            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">section_auth</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">proof_chain</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
 
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
                 }
 
@@ -479,25 +482,28 @@
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Variant</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, <span class="ident">nonce</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+            <span class="self">Self</span>::<span class="ident">OtherSection</span> {
+                <span class="ident">section_auth</span>,
+                <span class="ident">nonce</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;OtherSection&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;nonce&quot;</span>, <span class="ident">nonce</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">UserMessage</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;UserMessage({:10})&quot;</span>, <span class="ident">HexFmt</span>(<span class="ident">payload</span>)),
             <span class="self">Self</span>::<span class="ident">NodeApproval</span> {
                 <span class="ident">genesis_key</span>,
-                <span class="ident">elders_info</span>,
+                <span class="ident">section_auth</span>,
                 <span class="ident">member_info</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;NodeApproval&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;genesis_key&quot;</span>, <span class="ident">genesis_key</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;member_info&quot;</span>, <span class="ident">member_info</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;Sync&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">section</span>.<span class="ident">elders_info</span>())
+                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section</span>.<span class="ident">authority_provider</span>())
                 .<span class="ident">field</span>(<span class="string">&quot;section_key&quot;</span>, <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>())
                 .<span class="ident">field</span>(
                     <span class="string">&quot;other_prefixes&quot;</span>,
@@ -508,11 +514,11 @@
             <span class="self">Self</span>::<span class="ident">RelocatePromise</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;RelocatePromise({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">JoinRequest</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;JoinRequest({:?})&quot;</span>, <span class="ident">payload</span>),
             <span class="self">Self</span>::<span class="ident">JoinRetry</span> {
-                <span class="ident">elders_info</span>,
+                <span class="ident">section_auth</span>,
                 <span class="ident">section_key</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;JoinRetry&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;section_key&quot;</span>, <span class="ident">section_key</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
@@ -526,11 +532,11 @@
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
-                <span class="ident">elders_info</span>,
+                <span class="ident">section_auth</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DkgStart&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="ident">dkg_key</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DkgMessage&quot;</span>)
@@ -615,5 +621,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing"></div>
-    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>

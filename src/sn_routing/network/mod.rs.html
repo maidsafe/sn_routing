@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/network/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/network/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -485,6 +485,9 @@
 <span id="484">484</span>
 <span id="485">485</span>
 <span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -501,7 +504,7 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::{<span class="ident">verify_proof</span>, <span class="ident">Proof</span>, <span class="ident">Proven</span>},
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionChain</span>},
+    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
 };
 
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
@@ -511,7 +514,7 @@
 <span class="doccomment">/// Container for storing information about other sections in the network.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Network</span> {
-    <span class="comment">// Other sections: maps section prefixes to their latest signed elders infos.</span>
+    <span class="comment">// Other sections: maps section prefixes to their latest signed section authority providers.</span>
     <span class="ident">sections</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">OtherSection</span><span class="op">&gt;</span>,
     <span class="comment">// BLS public keys of known sections excluding ours.</span>
     <span class="ident">keys</span>: <span class="ident">PrefixMap</span><span class="op">&lt;</span><span class="ident">Proven</span><span class="op">&lt;</span>(<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -530,42 +533,42 @@
 
     <span class="doccomment">/// Returns the known section that is closest to the given name, regardless of whether `name`</span>
     <span class="doccomment">/// belongs in that section or not.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">closest</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">closest</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">all</span>()
             .<span class="ident">min_by</span>(<span class="op">|</span><span class="ident">lhs</span>, <span class="ident">rhs</span><span class="op">|</span> <span class="ident">lhs</span>.<span class="ident">prefix</span>.<span class="ident">cmp_distance</span>(<span class="kw-2">&amp;</span><span class="ident">rhs</span>.<span class="ident">prefix</span>, <span class="ident">name</span>))
     }
 
     <span class="doccomment">/// Returns iterator over all known sections.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> {
-        <span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">elders_info</span>.<span class="ident">value</span>)
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> {
+        <span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>)
     }
 
-    <span class="doccomment">/// Get `EldersInfo` of a known section with the given prefix.</span>
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Get `SectionAuthorityProvider` of a known section with the given prefix.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sections</span>
             .<span class="ident">get</span>(<span class="ident">prefix</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">elders_info</span>.<span class="ident">value</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">info</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>)
     }
 
     <span class="doccomment">/// Returns prefixes of all known sections.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">prefixes</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Prefix</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Clone</span> {
-        <span class="self">self</span>.<span class="ident">all</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">elders_info</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">elders_info</span>.<span class="ident">prefix</span>)
+        <span class="self">self</span>.<span class="ident">all</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">section_auth</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">section_auth</span>.<span class="ident">prefix</span>)
     }
 
     <span class="doccomment">/// Returns all elders from all known sections.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">all</span>().<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">values</span>())
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">elders</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;_</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">Peer</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span> {
+        <span class="self">self</span>.<span class="ident">all</span>().<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peers</span>())
     }
 
     <span class="doccomment">/// Returns a `Peer` of an elder from a known section.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_elder</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Peer</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sections</span>
             .<span class="ident">get_matching</span>(<span class="ident">name</span>)<span class="question-mark">?</span>
-            .<span class="ident">elders_info</span>
+            .<span class="ident">section_auth</span>
             .<span class="ident">value</span>
             .<span class="ident">elders</span>
             .<span class="ident">get</span>(<span class="ident">name</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">addr</span><span class="op">|</span> <span class="ident">Peer</span>::<span class="ident">new</span>(<span class="kw-2">*</span><span class="ident">name</span>, <span class="kw-2">*</span><span class="ident">addr</span>))
     }
 
     <span class="doccomment">/// Merge two `Network`s into one.</span>
@@ -595,7 +598,7 @@
 
     <span class="doccomment">/// Update the info about a section.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// If this is for our sibling section, then `elders_info` is signed by them and so the signing</span>
+    <span class="doccomment">/// If this is for our sibling section, then `section_auth` is signed by them and so the signing</span>
     <span class="doccomment">/// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an</span>
     <span class="doccomment">/// additional `key_proof` which signs it using a key that is present in `section_chain`.</span>
     <span class="doccomment">///</span>
@@ -604,12 +607,12 @@
     <span class="doccomment">/// needed in that case.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_section</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
+        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="ident">key_proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
         <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SectionChain</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">OtherSection</span> {
-            <span class="ident">elders_info</span>: <span class="ident">elders_info</span>.<span class="ident">clone</span>(),
+            <span class="ident">section_auth</span>: <span class="ident">section_auth</span>.<span class="ident">clone</span>(),
             <span class="ident">key_proof</span>,
         };
 
@@ -618,7 +621,7 @@
         }
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">old</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">insert</span>(<span class="ident">info</span>) {
-            <span class="kw">if</span> <span class="ident">old</span>.<span class="ident">elders_info</span> <span class="op">=</span><span class="op">=</span> <span class="ident">elders_info</span> {
+            <span class="kw">if</span> <span class="ident">old</span>.<span class="ident">section_auth</span> <span class="op">=</span><span class="op">=</span> <span class="ident">section_auth</span> {
                 <span class="kw">return</span> <span class="bool-val">false</span>;
             }
         }
@@ -669,17 +672,17 @@
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>)
     }
 
-    <span class="doccomment">/// Returns the elders_info and the latest known key for the prefix that matches `name`,</span>
+    <span class="doccomment">/// Returns the section_auth and the latest known key for the prefix that matches `name`,</span>
     <span class="doccomment">/// excluding self section.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">section_by_name</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>) {
         (
             <span class="self">self</span>.<span class="ident">keys</span>.<span class="ident">get_matching</span>(<span class="ident">name</span>).<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">value</span>.<span class="number">1</span>),
             <span class="self">self</span>.<span class="ident">sections</span>
                 .<span class="ident">get_matching</span>(<span class="ident">name</span>)
-                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">elders_info</span>.<span class="ident">value</span>),
+                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>),
         )
     }
 
@@ -704,7 +707,7 @@
     }
 
     <span class="doccomment">/// Returns network statistics.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">network_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our</span>: <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">NetworkStats</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">network_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our</span>: <span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">NetworkStats</span> {
         <span class="kw">let</span> (<span class="ident">known_elders</span>, <span class="ident">total_elders</span>, <span class="ident">total_elders_exact</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">network_elder_counts</span>(<span class="ident">our</span>);
 
         <span class="ident">NetworkStats</span> {
@@ -719,7 +722,7 @@
     <span class="comment">//</span>
     <span class="comment">// Return (known, total, exact), where `exact` indicates whether `total` is an exact number of</span>
     <span class="comment">// an estimate.</span>
-    <span class="kw">fn</span> <span class="ident">network_elder_counts</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our</span>: <span class="kw-2">&amp;</span><span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">bool</span>) {
+    <span class="kw">fn</span> <span class="ident">network_elder_counts</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our</span>: <span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">bool</span>) {
         <span class="kw">let</span> <span class="ident">known_prefixes</span> <span class="op">=</span> <span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="ident">our</span>.<span class="ident">prefix</span>).<span class="ident">chain</span>(<span class="self">self</span>.<span class="ident">prefixes</span>());
         <span class="kw">let</span> <span class="ident">is_exact</span> <span class="op">=</span> <span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">is_covered_by</span>(<span class="ident">known_prefixes</span>.<span class="ident">clone</span>());
 
@@ -741,7 +744,7 @@
     <span class="comment">// If this is signed by our section, then `key_proof` is `None`. If this is signed by our</span>
     <span class="comment">// sibling section, then `key_proof` contains the proof of the signing key itself signed by our</span>
     <span class="comment">// section.</span>
-    <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
+    <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
     <span class="ident">key_proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
 }
 
@@ -749,17 +752,17 @@
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SectionChain</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key_proof</span> {
             <span class="ident">section_chain</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">key_proof</span>.<span class="ident">public_key</span>)
-                <span class="op">&amp;&amp;</span> <span class="ident">verify_proof</span>(<span class="ident">key_proof</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">elders_info</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>)
-                <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">elders_info</span>.<span class="ident">self_verify</span>()
+                <span class="op">&amp;&amp;</span> <span class="ident">verify_proof</span>(<span class="ident">key_proof</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>)
+                <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">self_verify</span>()
         } <span class="kw">else</span> {
-            <span class="self">self</span>.<span class="ident">elders_info</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>)
+            <span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>)
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">Prefix</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">OtherSection</span> {
     <span class="kw">fn</span> <span class="ident">borrow</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Prefix</span> {
-        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span>
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>
     }
 }
 
@@ -892,8 +895,8 @@
 
         <span class="comment">// Create map containing sections (00), (01) and (10)</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">map</span> <span class="op">=</span> <span class="ident">Network</span>::<span class="ident">new</span>();
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_section</span>(<span class="ident">gen_proven_elders_info</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p01</span>), <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span><span class="ident">chain</span>);
-        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_section</span>(<span class="ident">gen_proven_elders_info</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p10</span>), <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span><span class="ident">chain</span>);
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_section</span>(<span class="ident">gen_proven_section_auth</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p01</span>), <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span><span class="ident">chain</span>);
+        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">update_section</span>(<span class="ident">gen_proven_section_auth</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">p10</span>), <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span><span class="ident">chain</span>);
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
         <span class="kw">let</span> <span class="ident">n01</span> <span class="op">=</span> <span class="ident">p01</span>.<span class="ident">substituted_in</span>(<span class="ident">rng</span>.<span class="ident">gen</span>());
@@ -963,9 +966,12 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">gen_proven_elders_info</span>(<span class="ident">sk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKey</span>, <span class="ident">prefix</span>: <span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> (<span class="ident">elders_info</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_elders_info</span>(<span class="ident">prefix</span>, <span class="number">5</span>);
-        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">elders_info</span>).<span class="ident">unwrap</span>()
+    <span class="kw">fn</span> <span class="ident">gen_proven_section_auth</span>(
+        <span class="ident">sk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">SecretKey</span>,
+        <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> (<span class="ident">section_auth</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix</span>, <span class="number">5</span>);
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">section_auth</span>).<span class="ident">unwrap</span>()
     }
 
     <span class="kw">fn</span> <span class="ident">gen_key</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bls</span>::<span class="ident">PublicKey</span> {
@@ -973,5 +979,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing"></div>
-    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>

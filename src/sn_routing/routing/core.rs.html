@@ -1,5 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/core.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>core.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">   1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/routing/core.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>core.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../sn_routing/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
 <span id="4">   4</span>
@@ -2492,6 +2492,26 @@
 <span id="2491">2491</span>
 <span id="2492">2492</span>
 <span id="2493">2493</span>
+<span id="2494">2494</span>
+<span id="2495">2495</span>
+<span id="2496">2496</span>
+<span id="2497">2497</span>
+<span id="2498">2498</span>
+<span id="2499">2499</span>
+<span id="2500">2500</span>
+<span id="2501">2501</span>
+<span id="2502">2502</span>
+<span id="2503">2503</span>
+<span id="2504">2504</span>
+<span id="2505">2505</span>
+<span id="2506">2506</span>
+<span id="2507">2507</span>
+<span id="2508">2508</span>
+<span id="2509">2509</span>
+<span id="2510">2510</span>
+<span id="2511">2511</span>
+<span id="2512">2512</span>
+<span id="2513">2513</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -2515,7 +2535,7 @@
     },
     <span class="ident">crypto</span>, <span class="ident">delivery_group</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">event</span>::{<span class="ident">Event</span>, <span class="ident">NodeElderChange</span>},
+    <span class="ident">event</span>::{<span class="ident">Elders</span>, <span class="ident">Event</span>, <span class="ident">NodeElderChange</span>},
     <span class="ident">message_filter</span>::<span class="ident">MessageFilter</span>,
     <span class="ident">messages</span>::{
         <span class="ident">JoinRequest</span>, <span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">MessageStatus</span>, <span class="ident">PlainMessage</span>, <span class="ident">ResourceProofResponse</span>,
@@ -2529,7 +2549,7 @@
         <span class="ident">SignedRelocateDetails</span>,
     },
     <span class="ident">section</span>::{
-        <span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">Section</span>, <span class="ident">SectionChain</span>, <span class="ident">SectionKeyShare</span>,
+        <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">Section</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>, <span class="ident">SectionKeyShare</span>,
         <span class="ident">SectionKeysProvider</span>, <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
     },
     <span class="ident">ELDER_SIZE</span>,
@@ -2694,11 +2714,11 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">matching_section</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>) {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="ident">name</span>) {
             (
                 <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()),
-                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>()),
+                <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>()),
             )
         } <span class="kw">else</span> {
             <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">section_by_name</span>(<span class="ident">name</span>)
@@ -2791,11 +2811,11 @@
                     (<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>), <span class="self">self</span>.<span class="ident">public_key_set</span>())
                 {
                     <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span>(<span class="ident">SectionInfo</span> {
-                        <span class="ident">prefix</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">prefix</span>,
+                        <span class="ident">prefix</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">prefix</span>,
                         <span class="ident">pk_set</span>,
                         <span class="ident">elders</span>: <span class="self">self</span>
                             .<span class="ident">section</span>
-                            .<span class="ident">elders_info</span>()
+                            .<span class="ident">authority_provider</span>()
                             .<span class="ident">peers</span>()
                             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                             .<span class="ident">collect</span>(),
@@ -2807,8 +2827,8 @@
                     <span class="kw">let</span> <span class="ident">section</span> <span class="op">=</span> <span class="self">self</span>
                         .<span class="ident">network</span>
                         .<span class="ident">closest</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>)
-                        .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>());
-                    <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> <span class="ident">section</span>.<span class="ident">peers</span>().<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>).<span class="ident">copied</span>().<span class="ident">collect</span>();
+                        .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>());
+                    <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> <span class="ident">section</span>.<span class="ident">elders</span>.<span class="ident">values</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
                     <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="ident">addrs</span>)
                 };
 
@@ -2898,11 +2918,11 @@
                 <span class="ident">their_knowledge</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_online_agreement</span>(<span class="ident">member_info</span>, <span class="ident">previous_name</span>, <span class="ident">their_knowledge</span>, <span class="ident">proof</span>),
             <span class="ident">Proposal</span>::<span class="ident">Offline</span>(<span class="ident">member_info</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_offline_agreement</span>(<span class="ident">member_info</span>, <span class="ident">proof</span>),
-            <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_section_info_agreement</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>)
+            <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">handle_section_info_agreement</span>(<span class="ident">section_auth</span>, <span class="ident">proof</span>)
             }
-            <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">elders_info</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_our_elders_agreement</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>)
+            <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">handle_our_elders_agreement</span>(<span class="ident">section_auth</span>, <span class="ident">proof</span>)
             }
             <span class="ident">Proposal</span>::<span class="ident">TheirKey</span> { <span class="ident">prefix</span>, <span class="ident">key</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_their_key_agreement</span>(<span class="ident">prefix</span>, <span class="ident">key</span>, <span class="ident">proof</span>);
@@ -2968,11 +2988,9 @@
             <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">ConnectivityComplaint</span>(<span class="ident">name</span>);
             <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">section</span>
-                .<span class="ident">elders_info</span>()
-                .<span class="ident">elders</span>
-                .<span class="ident">values</span>()
+                .<span class="ident">authority_provider</span>()
+                .<span class="ident">peers</span>()
                 .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">name</span>)
-                .<span class="ident">copied</span>()
                 .<span class="ident">collect</span>();
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Casting connectivity complaint against {:?} {:?}&quot;</span>,
@@ -3001,10 +3019,9 @@
         <span class="comment">// triggering a chain of further `Offline` proposals.</span>
         <span class="kw">let</span> <span class="ident">elders</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
-            .<span class="ident">elders_info</span>()
+            .<span class="ident">authority_provider</span>()
             .<span class="ident">peers</span>()
             .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="op">!</span><span class="ident">names</span>.<span class="ident">contains</span>(<span class="ident">peer</span>.<span class="ident">name</span>()))
-            .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
         <span class="kw">for</span> <span class="ident">name</span> <span class="kw">in</span> <span class="ident">names</span>.<span class="ident">iter</span>() {
@@ -3020,11 +3037,11 @@
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_dkg_outcome</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">key_share</span>: <span class="ident">SectionKeyShare</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">proposal</span> <span class="op">=</span> <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>);
-        <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">peers</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">proposal</span> <span class="op">=</span> <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>);
+        <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">peers</span>().<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">send_proposal_with</span>(<span class="kw-2">&amp;</span><span class="ident">recipients</span>, <span class="ident">proposal</span>, <span class="kw-2">&amp;</span><span class="ident">key_share</span>);
 
         <span class="kw">let</span> <span class="ident">public_key</span> <span class="op">=</span> <span class="ident">key_share</span>.<span class="ident">public_key_set</span>.<span class="ident">public_key</span>();
@@ -3046,7 +3063,7 @@
 
     <span class="comment">// Send proposal to all our elders.</span>
     <span class="kw">fn</span> <span class="ident">propose</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">proposal</span>: <span class="ident">Proposal</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">elders</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">peers</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">elders</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">peers</span>().<span class="ident">collect</span>();
         <span class="self">self</span>.<span class="ident">send_proposal</span>(<span class="kw-2">&amp;</span><span class="ident">elders</span>, <span class="ident">proposal</span>)
     }
 
@@ -3139,8 +3156,8 @@
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">DkgStart</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
+            <span class="ident">Variant</span>::<span class="ident">DkgStart</span> { <span class="ident">section_auth</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }
@@ -3226,8 +3243,8 @@
         };
 
         <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">variant</span>() {
-            <span class="ident">Variant</span>::<span class="ident">OtherSection</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_other_section</span>(<span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">clone</span>(), <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>()<span class="question-mark">?</span>)
+            <span class="ident">Variant</span>::<span class="ident">OtherSection</span> { <span class="ident">section_auth</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">handle_other_section</span>(<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">clone</span>(), <span class="kw-2">*</span><span class="ident">msg</span>.<span class="ident">proof_chain_last_key</span>()<span class="question-mark">?</span>)
             }
             <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_sync</span>(<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="ident">network</span>.<span class="ident">clone</span>())
@@ -3266,8 +3283,8 @@
             }
             <span class="ident">Variant</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
-                <span class="ident">elders_info</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>()),
+                <span class="ident">section_auth</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">section_auth</span>.<span class="ident">clone</span>()),
             <span class="ident">Variant</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_dkg_message</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">message</span>.<span class="ident">clone</span>(), <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">name</span>())
             }
@@ -3336,14 +3353,14 @@
         <span class="ident">proof_share</span>: <span class="kw-2">&amp;</span><span class="ident">ProofShare</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">MessageStatus</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">proposal</span> {
-            <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>)
-                <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
-                    <span class="op">|</span><span class="op">|</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">=</span><span class="op">&gt;</span>
+            <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>)
+                <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
+                    <span class="op">|</span><span class="op">|</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()) <span class="op">=</span><span class="op">&gt;</span>
             {
                 <span class="comment">// This `SectionInfo` is proposed by the DKG participants and is signed by the new</span>
                 <span class="comment">// key created by the DKG so we don&#39;t know it yet. We only require the sender of the</span>
                 <span class="comment">// proposal to be one of the DKG participants.</span>
-                <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="ident">sender</span>) {
+                <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="ident">sender</span>) {
                     <span class="prelude-val">None</span>
                 } <span class="kw">else</span> {
                     <span class="prelude-val">Some</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>)
@@ -3454,7 +3471,7 @@
         <span class="comment">// explosion.</span>
         <span class="kw">let</span> <span class="ident">our_elder_sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">filter</span>(<span class="op">|</span><span class="ident">sender</span><span class="op">|</span> {
             <span class="self">self</span>.<span class="ident">section</span>
-                .<span class="ident">elders_info</span>()
+                .<span class="ident">authority_provider</span>()
                 .<span class="ident">peers</span>()
                 .<span class="ident">any</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">addr</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">sender</span>)
         });
@@ -3562,26 +3579,26 @@
 
     <span class="kw">fn</span> <span class="ident">handle_other_section</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">src_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">network</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">src_key</span>) {
             <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">TheirKey</span> {
-                <span class="ident">prefix</span>: <span class="ident">elders_info</span>.<span class="ident">prefix</span>,
+                <span class="ident">prefix</span>: <span class="ident">section_auth</span>.<span class="ident">prefix</span>,
                 <span class="ident">key</span>: <span class="ident">src_key</span>,
             })<span class="question-mark">?</span>);
         } <span class="kw">else</span> {
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Ignore not new section key of {:?}: {:?}&quot;</span>,
-                <span class="ident">elders_info</span>,
+                <span class="ident">section_auth</span>,
                 <span class="ident">src_key</span>
             );
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
-        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">elders_info</span>))<span class="question-mark">?</span>);
+        <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>))<span class="question-mark">?</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
     }
@@ -3637,8 +3654,8 @@
 
         <span class="kw">let</span> <span class="ident">snapshot</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state_snapshot</span>();
         <span class="macro">trace</span><span class="macro">!</span>(
-            <span class="string">&quot;Updating knowledge of own section \n    elders: {:?} \n    members: {:?}&quot;</span>,
-            <span class="ident">section</span>.<span class="ident">elders_info</span>(),
+            <span class="string">&quot;Updating knowledge of own section \n    authority_provider: {:?} \n    members: {:?}&quot;</span>,
+            <span class="ident">section</span>.<span class="ident">authority_provider</span>(),
             <span class="ident">section</span>.<span class="ident">members</span>()
         );
         <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">merge</span>(<span class="ident">section</span>)<span class="question-mark">?</span>;
@@ -3688,9 +3705,9 @@
 
         <span class="kw">let</span> <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
-            .<span class="ident">elders_info</span>()
-            .<span class="ident">peers</span>()
-            .<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>)
+            .<span class="ident">authority_provider</span>()
+            .<span class="ident">elders</span>
+            .<span class="ident">values</span>()
             .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
 
@@ -3782,7 +3799,7 @@
 
         <span class="kw">if</span> <span class="ident">join_request</span>.<span class="ident">section_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>() {
             <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinRetry</span> {
-                <span class="ident">elders_info</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">clone</span>(),
+                <span class="ident">section_auth</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">clone</span>(),
                 <span class="ident">section_key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
             };
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
@@ -3945,11 +3962,11 @@
     <span class="kw">fn</span> <span class="ident">handle_dkg_start</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
-        <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">new_section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {}&quot;</span>, <span class="ident">new_elders_info</span>);
+        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {}&quot;</span>, <span class="ident">new_section_auth</span>);
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
-            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">new_elders_info</span>)
+            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">new_section_auth</span>)
             .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
     }
 
@@ -3990,13 +4007,13 @@
             .<span class="ident">peer</span>;
 
         <span class="kw">let</span> <span class="ident">generation</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">main_branch_len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="self">self</span>
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
             .<span class="ident">into_iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">elders_info</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">elders_info</span>, <span class="ident">generation</span>));
-        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">elders_info</span>) <span class="op">=</span> <span class="ident">elders_info</span> {
-            <span class="ident">elders_info</span>
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">section_auth</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">section_auth</span>, <span class="ident">generation</span>));
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">section_auth</span>) <span class="op">=</span> <span class="ident">section_auth</span> {
+            <span class="ident">section_auth</span>
         } <span class="kw">else</span> {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore DKG failure agreement with invalid proofs or outdated participants&quot;</span>,);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
@@ -4005,18 +4022,18 @@
         <span class="kw">if</span> <span class="ident">proofs</span>.<span class="ident">non_participants</span>.<span class="ident">is_empty</span>() {
             <span class="comment">// The DKG failure is a corrupted one due to lagging.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
-                <span class="string">&quot;Received DKG failure agreement of corrupted result - restarting: {}&quot;</span>,
-                <span class="ident">elders_info</span>
+                <span class="string">&quot;Received DKG failure agreement - restarting: {}&quot;</span>,
+                <span class="ident">section_auth</span>
             );
 
-            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">elders_info</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
+            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">section_auth</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
         } <span class="kw">else</span> {
             <span class="comment">// The DKG failure is regarding non_participants, i.e. potential unresponsive node.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}&quot;</span>,
                 <span class="ident">proofs</span>.<span class="ident">non_participants</span>,
                 <span class="ident">generation</span>,
-                <span class="ident">elders_info</span>
+                <span class="ident">section_auth</span>
             );
             <span class="self">self</span>.<span class="ident">cast_offline_proposals</span>(<span class="kw-2">&amp;</span><span class="ident">proofs</span>.<span class="ident">non_participants</span>)
         }
@@ -4066,7 +4083,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="comment">// Do not carry out relocation when there is not enough elder nodes.</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">ELDER_SIZE</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">ELDER_SIZE</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
@@ -4231,20 +4248,20 @@
 
     <span class="kw">fn</span> <span class="ident">handle_section_info_agreement</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">let</span> <span class="ident">equal_or_extension</span> <span class="op">=</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
-            <span class="op">|</span><span class="op">|</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>(<span class="ident">elders_info</span>, <span class="ident">proof</span>);
+        <span class="kw">let</span> <span class="ident">equal_or_extension</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span> <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
+            <span class="op">|</span><span class="op">|</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>.<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>, <span class="ident">proof</span>);
 
         <span class="kw">if</span> <span class="ident">equal_or_extension</span> {
             <span class="comment">// Our section of sub-section</span>
 
             <span class="kw">let</span> <span class="ident">infos</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>());
-            <span class="kw">if</span> <span class="op">!</span><span class="ident">infos</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>.<span class="ident">value</span>) {
+            <span class="kw">if</span> <span class="op">!</span><span class="ident">infos</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">section_auth</span>.<span class="ident">value</span>) {
                 <span class="comment">// SectionInfo out of date, ignore.</span>
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
             }
@@ -4255,8 +4272,7 @@
                 .<span class="ident">iter</span>()
                 .<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peers</span>())
                 .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">is_elder</span>(<span class="ident">peer</span>.<span class="ident">name</span>()))
-                .<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>)
-                .<span class="ident">copied</span>()
+                .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>())
                 .<span class="ident">collect</span>();
             <span class="kw">if</span> <span class="op">!</span><span class="ident">sync_recipients</span>.<span class="ident">is_empty</span>() {
                 <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
@@ -4277,20 +4293,17 @@
             }
 
             <span class="comment">// Send the `OurElder` proposal to all of the to-be-elders so it&#39;s aggregated by them.</span>
-            <span class="kw">let</span> <span class="ident">our_elders_recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">infos</span>
-                .<span class="ident">iter</span>()
-                .<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peers</span>())
-                .<span class="ident">copied</span>()
-                .<span class="ident">collect</span>();
+            <span class="kw">let</span> <span class="ident">our_elders_recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span>
+                <span class="ident">infos</span>.<span class="ident">iter</span>().<span class="ident">flat_map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peers</span>()).<span class="ident">collect</span>();
             <span class="ident">commands</span>.<span class="ident">extend</span>(
-                <span class="self">self</span>.<span class="ident">send_proposal</span>(<span class="kw-2">&amp;</span><span class="ident">our_elders_recipients</span>, <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">elders_info</span>))<span class="question-mark">?</span>,
+                <span class="self">self</span>.<span class="ident">send_proposal</span>(<span class="kw-2">&amp;</span><span class="ident">our_elders_recipients</span>, <span class="ident">Proposal</span>::<span class="ident">OurElders</span>(<span class="ident">section_auth</span>))<span class="question-mark">?</span>,
             );
         } <span class="kw">else</span> {
             <span class="comment">// Other section</span>
 
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">network</span>
-                .<span class="ident">update_section</span>(<span class="ident">elders_info</span>, <span class="prelude-val">None</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>());
+                .<span class="ident">update_section</span>(<span class="ident">section_auth</span>, <span class="prelude-val">None</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>());
         }
 
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
@@ -4298,25 +4311,27 @@
 
     <span class="kw">fn</span> <span class="ident">handle_our_elders_agreement</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span>,
+        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="ident">key_proof</span>: <span class="ident">Proof</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">updates</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">split_barrier</span>
-            .<span class="ident">process</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(), <span class="ident">elders_info</span>, <span class="ident">key_proof</span>);
+            .<span class="ident">process</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(), <span class="ident">section_auth</span>, <span class="ident">key_proof</span>);
         <span class="kw">if</span> <span class="ident">updates</span>.<span class="ident">is_empty</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
         <span class="kw">let</span> <span class="ident">snapshot</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state_snapshot</span>();
 
-        <span class="kw">for</span> (<span class="ident">elders_info</span>, <span class="ident">key_proof</span>) <span class="kw">in</span> <span class="ident">updates</span> {
-            <span class="kw">if</span> <span class="ident">elders_info</span>.<span class="ident">value</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_elders</span>(<span class="ident">elders_info</span>, <span class="ident">key_proof</span>);
+        <span class="kw">for</span> (<span class="ident">section_auth</span>, <span class="ident">key_proof</span>) <span class="kw">in</span> <span class="ident">updates</span> {
+            <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_elders</span>(<span class="ident">section_auth</span>, <span class="ident">key_proof</span>);
             } <span class="kw">else</span> {
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span>
-                    <span class="self">self</span>.<span class="ident">network</span>
-                        .<span class="ident">update_section</span>(<span class="ident">elders_info</span>, <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>), <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>());
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">update_section</span>(
+                    <span class="ident">section_auth</span>,
+                    <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>),
+                    <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>(),
+                );
             }
         }
 
@@ -4379,7 +4394,7 @@
                     <span class="string">&quot;Section updated: prefix: ({:b}), key: {:?}, elders: {}&quot;</span>,
                     <span class="ident">new</span>.<span class="ident">prefix</span>,
                     <span class="ident">new</span>.<span class="ident">last_key</span>,
-                    <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">peers</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>)
+                    <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">peers</span>().<span class="ident">format</span>(<span class="string">&quot;, &quot;</span>)
                 );
 
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section_keys_provider</span>.<span class="ident">has_key_share</span>() {
@@ -4396,8 +4411,20 @@
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">send_sync</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(), <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>);
             }
 
-            <span class="kw">let</span> <span class="ident">sibling_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new</span>.<span class="ident">prefix</span> <span class="op">!</span><span class="op">=</span> <span class="ident">old</span>.<span class="ident">prefix</span> {
-                <span class="self">self</span>.<span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="ident">new</span>.<span class="ident">prefix</span>.<span class="ident">sibling</span>()).<span class="ident">copied</span>()
+            <span class="kw">let</span> <span class="ident">sibling_elders</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new</span>.<span class="ident">prefix</span> <span class="op">!</span><span class="op">=</span> <span class="ident">old</span>.<span class="ident">prefix</span> {
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sibling_key</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="ident">new</span>.<span class="ident">prefix</span>.<span class="ident">sibling</span>()) {
+                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">info</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">new</span>.<span class="ident">prefix</span>.<span class="ident">sibling</span>()) {
+                        <span class="prelude-val">Some</span>(<span class="ident">Elders</span> {
+                            <span class="ident">prefix</span>: <span class="ident">new</span>.<span class="ident">prefix</span>.<span class="ident">sibling</span>(),
+                            <span class="ident">key</span>: <span class="kw-2">*</span><span class="ident">sibling_key</span>,
+                            <span class="ident">elders</span>: <span class="ident">info</span>.<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">copied</span>().<span class="ident">collect</span>(),
+                        })
+                    } <span class="kw">else</span> {
+                        <span class="prelude-val">None</span>
+                    }
+                } <span class="kw">else</span> {
+                    <span class="prelude-val">None</span>
+                }
             } <span class="kw">else</span> {
                 <span class="prelude-val">None</span>
             };
@@ -4414,11 +4441,21 @@
                 <span class="ident">NodeElderChange</span>::<span class="prelude-val">None</span>
             };
 
-            <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">EldersChanged</span> {
+            <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> <span class="ident">Elders</span> {
                 <span class="ident">prefix</span>: <span class="ident">new</span>.<span class="ident">prefix</span>,
                 <span class="ident">key</span>: <span class="ident">new</span>.<span class="ident">last_key</span>,
-                <span class="ident">sibling_key</span>,
-                <span class="ident">elders</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>().<span class="ident">elders</span>.<span class="ident">keys</span>().<span class="ident">copied</span>().<span class="ident">collect</span>(),
+                <span class="ident">elders</span>: <span class="self">self</span>
+                    .<span class="ident">section</span>
+                    .<span class="ident">authority_provider</span>()
+                    .<span class="ident">elders</span>
+                    .<span class="ident">keys</span>()
+                    .<span class="ident">copied</span>()
+                    .<span class="ident">collect</span>(),
+            };
+
+            <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">EldersChanged</span> {
+                <span class="ident">elders</span>,
+                <span class="ident">sibling_elders</span>,
                 <span class="ident">self_status_change</span>,
             });
         }
@@ -4478,7 +4515,7 @@
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
             <span class="ident">genesis_key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">genesis_key</span>(),
-            <span class="ident">elders_info</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_elders_info</span>().<span class="ident">clone</span>(),
+            <span class="ident">section_auth</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_authority_provider</span>().<span class="ident">clone</span>(),
             <span class="ident">member_info</span>,
         };
 
@@ -4604,31 +4641,31 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">send_dkg_start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">send_dkg_start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// Send to all participants.</span>
-        <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">values</span>().<span class="ident">copied</span>().<span class="ident">collect</span>();
-        <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">elders_info</span>, <span class="kw-2">&amp;</span><span class="ident">recipients</span>)
+        <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">peers</span>().<span class="ident">collect</span>();
+        <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">section_auth</span>, <span class="kw-2">&amp;</span><span class="ident">recipients</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">send_dkg_start_to</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">Peer</span>],
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">src_prefix</span> <span class="op">=</span> <span class="ident">elders_info</span>.<span class="ident">prefix</span>;
+        <span class="kw">let</span> <span class="ident">src_prefix</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>;
         <span class="kw">let</span> <span class="ident">generation</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">main_branch_len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">dkg_key</span> <span class="op">=</span> <span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">elders_info</span>, <span class="ident">generation</span>);
+        <span class="kw">let</span> <span class="ident">dkg_key</span> <span class="op">=</span> <span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">section_auth</span>, <span class="ident">generation</span>);
 
         <span class="macro">trace</span><span class="macro">!</span>(
             <span class="string">&quot;Send DkgStart for {} with {:?} to {:?}&quot;</span>,
-            <span class="ident">elders_info</span>,
+            <span class="ident">section_auth</span>,
             <span class="ident">dkg_key</span>,
             <span class="ident">recipients</span>
         );
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DkgStart</span> {
             <span class="ident">dkg_key</span>,
-            <span class="ident">elders_info</span>,
+            <span class="ident">section_auth</span>,
         };
 
         <span class="self">self</span>.<span class="ident">send_message_for_dst_accumulation</span>(
@@ -4675,10 +4712,13 @@
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_key_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bls_pk</span>: <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">TargetSectionError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">elders_candidates</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>());
-        <span class="comment">// Whenever there is EldersInfo change candidate, it is considered as having ongoing DKG.</span>
+        <span class="comment">// Whenever there is a elders candidate, it is considered as having ongoing DKG.</span>
         <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_candidates</span>.<span class="ident">is_empty</span>() {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Non empty elder candidates {:?}&quot;</span>, <span class="ident">elders_candidates</span>);
-            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Current erlders_info {:?}&quot;</span>, <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>());
+            <span class="macro">trace</span><span class="macro">!</span>(
+                <span class="string">&quot;Current authority_provider {:?}&quot;</span>,
+                <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>()
+            );
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">TargetSectionError</span>::<span class="ident">DkgInProgress</span>);
         }
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">has_key</span>(<span class="ident">bls_pk</span>) {
@@ -4691,7 +4731,7 @@
                     <span class="ident">pk_set</span>: <span class="ident">public_key_set</span>,
                     <span class="ident">elders</span>: <span class="self">self</span>
                         .<span class="ident">section</span>
-                        .<span class="ident">elders_info</span>()
+                        .<span class="ident">authority_provider</span>()
                         .<span class="ident">peers</span>()
                         .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                         .<span class="ident">collect</span>(),
@@ -4925,9 +4965,9 @@
     <span class="kw">fn</span> <span class="ident">send_message_to_our_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msg</span>: <span class="ident">Bytes</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Command</span> {
         <span class="kw">let</span> <span class="ident">targets</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
-            .<span class="ident">elders_info</span>()
-            .<span class="ident">peers</span>()
-            .<span class="ident">map</span>(<span class="ident">Peer</span>::<span class="ident">addr</span>)
+            .<span class="ident">authority_provider</span>()
+            .<span class="ident">elders</span>
+            .<span class="ident">values</span>()
             .<span class="ident">copied</span>()
             .<span class="ident">collect</span>();
         <span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(<span class="kw-2">&amp;</span><span class="ident">targets</span>, <span class="ident">targets</span>.<span class="ident">len</span>(), <span class="ident">msg</span>)
@@ -4976,7 +5016,7 @@
 
     <span class="kw">fn</span> <span class="ident">print_network_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">network</span>
-            .<span class="ident">network_stats</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">elders_info</span>())
+            .<span class="ident">network_stats</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>())
             .<span class="ident">print</span>()
     }
 }
@@ -4987,5 +5027,5 @@
     <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing"></div>
-    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>
