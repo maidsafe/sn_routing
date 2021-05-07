@@ -452,9 +452,6 @@ pub enum MessageStatus {
     Useless,
     /// Message trust can't be established.
     Untrusted,
-    /// We don't know how to handle the message because we are not in the right state (e.g. it
-    /// needs elder but we are not)
-    Unknown,
 }
 
 #[derive(Debug, Error)]
