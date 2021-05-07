@@ -267,8 +267,8 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                commands.extend(self.update_section_knowledge(&msg, dest_info)?);
-                commands.extend(self.handle_useful_message(sender, msg).await?);
+                commands.extend(self.check_for_entropy(&msg, dest_info.clone())?);
+                commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -685,7 +685,7 @@ impl Core {
 
     fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
         match msg.variant() {
-            Variant::OtherSection { .. } | Variant::ConnectivityComplaint(_) => {
+            Variant::SectionKnowledge { .. } | Variant::ConnectivityComplaint(_) => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Unknown);
                 }
@@ -742,10 +742,8 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
-            | Variant::SrcAhead
-            | Variant::SrcOutdated
+            | Variant::SrcAhead { .. }
             | Variant::DstAhead(_)
-            | Variant::DstOutdated
             | Variant::ResourceChallenge { .. } => {}
         }
 
@@ -786,6 +784,7 @@ impl Core {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
+        dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         self.msg_filter.insert_incoming(&msg);
 
@@ -797,8 +796,14 @@ impl Core {
         let src_name = msg.src().name();
 
         match msg.variant() {
-            Variant::OtherSection { elders_info, .. } => {
-                self.handle_other_section(elders_info.value.clone(), *msg.proof_chain_last_key()?)
+            Variant::SectionKnowledge { src_info, msg } => {
+                let src_info = src_info.clone();
+                self.update_section_knowledge(src_info.0, src_info.1);
+                Ok(vec![Command::HandleMessage {
+                    sender,
+                    message: *msg.clone(),
+                    dest_info,
+                }])
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
@@ -830,10 +835,20 @@ impl Core {
                     *bounced_msg.clone(),
                 )?])
             }
-            Variant::SrcAhead => Ok(vec![]),
-            Variant::SrcOutdated => Ok(vec![]),
+            Variant::SrcAhead {
+                key,
+                msg: returned_msg,
+            } => {
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
+                Ok(vec![self.handle_src_ahead(
+                    *key,
+                    returned_msg.clone(),
+                    sender,
+                    src_name,
+                    msg.src().src_location().to_dst(),
+                )?])
+            }
             Variant::DstAhead(_chain) => Ok(vec![]),
-            Variant::DstOutdated => Ok(vec![]),
             Variant::BouncedUnknownMessage { src_key, message } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_bounced_unknown_message(
@@ -847,7 +862,7 @@ impl Core {
                 elders_info,
             } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
             Variant::DkgMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), msg.src().name())
+                self.handle_dkg_message(*dkg_key, message.clone(), src_name)
             }
             Variant::DkgFailureObservation {
                 dkg_key,
@@ -901,6 +916,34 @@ impl Core {
                 Ok(vec![])
             }
         }
+    }
+
+    fn handle_src_ahead(
+        &self,
+        key: bls::PublicKey,
+        msg: Box<Message>,
+        sender: SocketAddr,
+        src_name: XorName,
+        dst_location: DstLocation,
+    ) -> Result<Command> {
+        let chain = self.section.chain();
+        let truncated_key = chain.get_proof_chain_to_current(&key)?;
+        let elders_info = self.section.proven_elders_info();
+        let variant = Variant::SectionKnowledge {
+            src_info: (elders_info.clone(), truncated_key),
+            msg,
+        };
+
+        let msg = Message::single_src(self.node(), dst_location, variant, None)?;
+        let key = self.section_key_by_name(&src_name);
+        Ok(Command::send_message_to_node(
+            (sender, src_name),
+            msg.to_bytes(),
+            DestInfo {
+                dest: src_name,
+                dest_section_pk: *key,
+            },
+        ))
     }
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
@@ -1173,32 +1216,6 @@ impl Core {
                 },
             ),
         ])
-    }
-
-    fn handle_other_section(
-        &self,
-        _elders_info: EldersInfo,
-        _src_key: bls::PublicKey,
-    ) -> Result<Vec<Command>> {
-        let commands = vec![];
-
-        // if !self.network.has_key(&src_key) {
-        //     commands.extend(self.propose(Proposal::TheirKey {
-        //         prefix: elders_info.prefix,
-        //         key: src_key,
-        //     })?);
-        // } else {
-        //     trace!(
-        //         "Ignore not new section key of {:?}: {:?}",
-        //         elders_info,
-        //         src_key
-        //     );
-        //     return Ok(commands);
-        // }
-
-        // commands.extend(self.propose(Proposal::SectionInfo(elders_info))?);
-
-        Ok(commands)
     }
 
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
@@ -1958,19 +1975,28 @@ impl Core {
         self.update_state(snapshot)
     }
 
-    fn handle_their_key_agreement(&mut self, prefix: Prefix, key: bls::PublicKey, proof: Proof) {
-        let key = Proven::new((prefix, key), proof);
-        let _ = self.network.update_their_key(key);
-    }
-
-    fn handle_their_knowledge_agreement(
+    fn update_section_knowledge(
         &mut self,
-        prefix: Prefix,
-        knowledge: bls::PublicKey,
-        proof: Proof,
+        elders_info: Proven<EldersInfo>,
+        section_chain: SectionChain,
     ) {
-        let knowledge = Proven::new((prefix, knowledge), proof);
-        self.network.update_knowledge(knowledge)
+        let prefix = elders_info.value.prefix.clone();
+        if self
+            .network
+            .update_their_key((prefix, *section_chain.last_key()))
+        {
+            info!("Keys updated for Prefix: {:?}", prefix);
+        } else {
+            info!("Nothing to update, Keys are still the same");
+        }
+        if self
+            .network
+            .update_section(elders_info, None, &section_chain)
+        {
+            info!("Neighbour section knowledge updated: {:?}", prefix);
+        } else {
+            warn!("Neighbour section update failed");
+        }
     }
 
     fn handle_accumulate_at_src_agreement(
@@ -2212,7 +2238,7 @@ impl Core {
         // We need to construct a proof that would be trusted by the destination section.
         let known_key = self
             .network
-            .knowledge_by_name(&details.destination)
+            .key_by_name(&details.destination)
             .unwrap_or_else(|| self.section.chain().root_key());
 
         let src = details.pub_id;
@@ -2568,7 +2594,7 @@ impl Core {
         // the actual last key of the resulting proof chain because it's the key that will be used
         // to sign the message.
         let additional_key = additional_key
-            .or_else(|| self.network.knowledge_by_name(&dst.name()?))
+            .or_else(|| self.network.key_by_name(&dst.name()?))
             .filter(|key| self.section.chain().cmp_by_position(key, &last_key) == Ordering::Less);
 
         Ok(self
@@ -2619,11 +2645,7 @@ impl Core {
     ////////////////////////////////////////////////////////////////////////////
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    fn update_section_knowledge(
-        &mut self,
-        msg: &Message,
-        dest_info: DestInfo,
-    ) -> Result<Vec<Command>> {
+    fn check_for_entropy(&mut self, msg: &Message, dest_info: DestInfo) -> Result<Vec<Command>> {
         if !self.is_elder() {
             return Ok(vec![]);
         }
