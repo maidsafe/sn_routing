@@ -20,6 +20,7 @@ use crate::{
 };
 use sn_messaging::DstLocation;
 use std::net::SocketAddr;
+use xor_name::XorName;
 
 impl Core {
     // Send proposal to all our elders.
@@ -65,7 +66,7 @@ impl Core {
             content: proposal,
             proof_share,
         };
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }
@@ -75,7 +76,7 @@ impl Core {
 
     pub(crate) fn check_lagging(
         &self,
-        peer: &SocketAddr,
+        peer: (SocketAddr, XorName),
         proof_share: &ProofShare,
     ) -> Result<Option<Command>> {
         let public_key = proof_share.public_key_set.public_key();
@@ -92,6 +93,7 @@ impl Core {
                     section: self.section.clone(),
                     network: self.network.clone(),
                 },
+                proof_share.public_key_set.public_key(),
             )?))
         } else {
             Ok(None)

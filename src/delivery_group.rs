@@ -20,10 +20,10 @@ use sn_messaging::DstLocation;
 use std::{cmp, iter};
 use xor_name::XorName;
 
-/// Returns a set of nodes to which a message for the given `DstLocation` could be sent
-/// onwards, sorted by priority, along with the number of targets the message should be sent to.
-/// If the total number of targets returned is larger than this number, the spare targets can
-/// be used if the message can't be delivered to some of the initial ones.
+/// Returns a set of nodes and their section PublicKey to which a message for the given
+/// `DstLocation` could be sent onwards, sorted by priority, along with the number of targets the
+/// message should be sent to. If the total number of targets returned is larger than this number,
+/// the spare targets can be used if the message can't be delivered to some of the initial ones.
 ///
 /// * If the destination is a `DstLocation::Section` OR `DstLocation::EndUser`:
 ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
@@ -39,16 +39,16 @@ pub(crate) fn delivery_targets(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize)> {
+) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
     if !section.is_elder(our_name) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
         let targets: Vec<_> = section.authority_provider().peers().collect();
         let dg_size = targets.len();
-        return Ok((targets, dg_size));
+        return Ok((targets, dg_size, *section.chain().last_key()));
     }
 
-    let (best_section, dg_size) = match dst {
+    let (best_section, dg_size, dest_pk) = match dst {
         DstLocation::Section(target_name) => {
             section_candidates(target_name, our_name, section, network)?
         }
@@ -58,10 +58,10 @@ pub(crate) fn delivery_targets(
         }
         DstLocation::Node(target_name) => {
             if target_name == our_name {
-                return Ok((Vec::new(), 0));
+                return Ok((Vec::new(), 0, *section.chain().last_key()));
             }
             if let Some(node) = get_peer(target_name, section, network) {
-                return Ok((vec![node], 1));
+                return Ok((vec![node], 1, *section.chain().last_key()));
             }
 
             candidates(target_name, our_name, section, network)?
@@ -69,7 +69,7 @@ pub(crate) fn delivery_targets(
         DstLocation::Direct => return Err(Error::CannotRoute),
     };
 
-    Ok((best_section, dg_size))
+    Ok((best_section, dg_size, dest_pk))
 }
 
 fn section_candidates(
@@ -77,7 +77,7 @@ fn section_candidates(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize)> {
+) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
     // Find closest section to `target_name` out of the ones we know (including our own)
     let info = iter::once(section.authority_provider())
         .chain(network.all())
@@ -86,12 +86,12 @@ fn section_candidates(
 
     if info.prefix == *section.prefix() {
         // Exclude our name since we don't need to send to ourself
-        let section: Vec<_> = info
+        let chosen_section: Vec<_> = info
             .peers()
             .filter(|node| node.name() != our_name)
             .collect();
-        let dg_size = section.len();
-        return Ok((section, dg_size));
+        let dg_size = chosen_section.len();
+        return Ok((chosen_section, dg_size, *section.chain().last_key()));
     }
 
     candidates(target_name, our_name, section, network)
@@ -103,7 +103,7 @@ fn candidates(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize)> {
+) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
     // All sections we know (including our own), sorted by distance to `target_name`.
     let sections = iter::once(section.authority_provider())
         .chain(network.all())
@@ -145,7 +145,7 @@ fn candidates(
     candidates.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
 
     if dg_size > 0 && candidates.len() >= dg_size {
-        Ok((candidates, dg_size))
+        Ok((candidates, dg_size, *section.chain().last_key()))
     } else {
         Err(Error::CannotRoute)
     }
@@ -188,7 +188,7 @@ mod tests {
             .context("too few elders")?;
 
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send only to the dst node.
         assert_eq!(dg_size, 1);
@@ -209,7 +209,7 @@ mod tests {
         assert!(section.update_member(member_info));
 
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send only to the dst node.
         assert_eq!(dg_size, 1);
@@ -224,7 +224,7 @@ mod tests {
 
         let dst_name = section.prefix().substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all our elders except us.
         let expected_recipients = section
@@ -247,7 +247,7 @@ mod tests {
 
         let dst_name = choose_elder_name(section_auth1)?;
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send only to the dst node.
         assert_eq!(dg_size, 1);
@@ -266,7 +266,7 @@ mod tests {
 
         let dst_name = section_auth1.prefix.substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the dst section
         let expected_recipients = section_auth1
@@ -292,7 +292,7 @@ mod tests {
             .pushed(false)
             .substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _dst_pk) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the dst section
         let expected_recipients = elders_info1
@@ -316,7 +316,7 @@ mod tests {
 
         let dst_name = section_auth1.prefix.substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders in the final dst section
         let expected_recipients = section_auth1
@@ -342,7 +342,7 @@ mod tests {
             .pushed(false)
             .substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _dst_pk) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to a subset of elders in the intermediary dst section
         let min_dg_size =
@@ -364,7 +364,7 @@ mod tests {
 
         let dst_name = choose_elder_name(section.authority_provider())?;
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders().len());
@@ -379,7 +379,7 @@ mod tests {
 
         let dst_name = section.prefix().substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders().len());
@@ -394,7 +394,7 @@ mod tests {
 
         let dst_name = section.prefix().substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders().len());
@@ -411,7 +411,7 @@ mod tests {
             .pushed(true)
             .substituted_in(rand::random());
         let dst = DstLocation::Node(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders().len());
@@ -428,7 +428,7 @@ mod tests {
             .pushed(true)
             .substituted_in(rand::random());
         let dst = DstLocation::Section(dst_name);
-        let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
+        let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
         assert_eq!(dg_size, section.authority_provider().elders().len());

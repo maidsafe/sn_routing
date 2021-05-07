@@ -46,10 +46,6 @@ pub(crate) struct Message {
     variant: Variant,
     /// Proof chain to verify the message trust. Does not need to be signed.
     proof_chain: Option<SectionChain>,
-    /// Source's knowledge of the destination section key. If present, the destination can use it
-    /// to determine the length of the proof of messages sent to the source so the source would
-    /// trust it (the proof needs to start at this key).
-    dst_key: Option<bls::PublicKey>,
     /// Serialised message, this is a signed and fully serialised message ready to send.
     #[serde(skip)]
     serialized: Bytes,
@@ -65,7 +61,6 @@ impl Message {
 
         let signed_bytes = bincode::serialize(&SignableView {
             dst: &msg.dst,
-            dst_key: msg.dst_key.as_ref(),
             variant: &msg.variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
@@ -129,7 +124,6 @@ impl Message {
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SectionChain>,
-        dst_key: Option<bls::PublicKey>,
     ) -> Result<Message, Error> {
         let mut msg = Message {
             dst,
@@ -137,7 +131,6 @@ impl Message {
             aggregation: Aggregation::None,
             proof_chain,
             variant,
-            dst_key,
             serialized: Default::default(),
             hash: Default::default(),
         };
@@ -157,11 +150,9 @@ impl Message {
         dst: DstLocation,
         variant: Variant,
         proof_chain: SectionChain,
-        dst_key: Option<bls::PublicKey>,
     ) -> Result<Self, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
-            dst_key: dst_key.as_ref(),
             variant: &variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
@@ -176,7 +167,7 @@ impl Message {
             proof_share,
         };
 
-        Self::new_signed(src, dst, variant, Some(proof_chain), dst_key)
+        Self::new_signed(src, dst, variant, Some(proof_chain))
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
@@ -217,7 +208,6 @@ impl Message {
     pub(crate) fn signable_view(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
-            dst_key: self.dst_key.as_ref(),
             variant: &self.variant,
         }
     }
@@ -228,11 +218,9 @@ impl Message {
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SectionChain>,
-        dst_key: Option<bls::PublicKey>,
     ) -> Result<Self> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
-            dst_key: dst_key.as_ref(),
             variant: &variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
@@ -242,7 +230,7 @@ impl Message {
             signature,
         };
 
-        Self::new_signed(src, dst, variant, proof_chain, dst_key)
+        Self::new_signed(src, dst, variant, proof_chain)
     }
 
     /// Creates a signed message from a section.
@@ -260,7 +248,6 @@ impl Message {
             plain.dst,
             plain.variant,
             Some(proof_chain),
-            Some(plain.dst_key),
         )
     }
 
@@ -271,7 +258,6 @@ impl Message {
     {
         let bytes = bincode::serialize(&SignableView {
             dst: &self.dst,
-            dst_key: self.dst_key.as_ref(),
             variant: &self.variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
@@ -357,10 +343,6 @@ impl Message {
     }
 
     /// Getter
-    pub fn dst_key(&self) -> Option<&bls::PublicKey> {
-        self.dst_key.as_ref()
-    }
-    /// Getter
     pub fn hash(&self) -> &MessageHash {
         &self.hash
     }
@@ -400,13 +382,7 @@ impl Message {
             Err(error) => return Err(error.into()),
         };
 
-        Self::new_signed(
-            self.src,
-            self.dst,
-            self.variant,
-            self.proof_chain,
-            self.dst_key,
-        )
+        Self::new_signed(self.src, self.dst, self.variant, self.proof_chain)
     }
 }
 
@@ -418,7 +394,6 @@ impl PartialEq for Message {
             && self.dst == other.dst
             && self.variant == other.variant
             && self.proof_chain == other.proof_chain
-            && self.dst_key == other.dst_key
     }
 }
 
@@ -478,7 +453,6 @@ pub enum ExtendProofChainError {
 pub(crate) struct SignableView<'a> {
     // TODO: why don't we include also `src`?
     pub dst: &'a DstLocation,
-    pub dst_key: Option<&'a bls::PublicKey>,
     pub variant: &'a Variant,
 }
 
@@ -530,7 +504,6 @@ mod tests {
             DstLocation::Direct,
             variant,
             Some(full_proof_chain.truncate(1)),
-            Some(pk1),
         )?;
 
         assert_eq!(message.verify(iter::once(&pk1))?, VerifyStatus::Full);

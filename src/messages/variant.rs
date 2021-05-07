@@ -20,6 +20,7 @@ use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use sn_messaging::DestInfo;
 use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
@@ -71,7 +72,10 @@ pub(crate) enum Variant {
     },
     /// Sent from a node that can't establish the trust of the contained message to its original
     /// source in order for them to provide new proof that the node would trust.
-    BouncedUntrustedMessage(Box<Message>),
+    BouncedUntrustedMessage {
+        msg: Box<Message>,
+        dest_info: DestInfo,
+    },
     /// Sent to the new elder candidates to start the DKG process.
     DkgStart {
         /// The identifier of the DKG session to start.
@@ -201,9 +205,10 @@ impl Debug for Variant {
                 .field("section_auth", section_auth)
                 .field("section_key", section_key)
                 .finish(),
-            Self::BouncedUntrustedMessage(message) => f
-                .debug_tuple("BouncedUntrustedMessage")
-                .field(message)
+            Self::BouncedUntrustedMessage { msg, dest_info } => f
+                .debug_struct("BouncedUntrustedMessage")
+                .field("message", msg)
+                .field("dest_info", dest_info)
                 .finish(),
             Self::DkgStart {
                 dkg_key,

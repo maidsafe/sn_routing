@@ -7,10 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
+use crate::XorName;
 use bytes::Bytes;
 use futures::stream::{FuturesUnordered, StreamExt};
 use hex_fmt::HexFmt;
 use qp2p::{Endpoint, QuicP2p};
+use sn_messaging::MessageType;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -108,15 +110,17 @@ impl Comm {
     /// Sends a message on an existing connection. If no such connection exists, returns an error.
     pub async fn send_on_existing_connection(
         &self,
-        recipient: &SocketAddr,
-        msg: Bytes,
-    ) -> Result<()> {
+        recipient: (SocketAddr, XorName),
+        mut msg: MessageType,
+    ) -> Result<(), Error> {
+        msg.update_dest_info(None, Some(recipient.1));
+        let bytes = msg.serialize()?;
         self.endpoint
-            .send_message(msg, recipient)
+            .send_message(bytes, &recipient.0)
             .await
             .map_err(|err| {
                 error!("Sending to {:?} failed with {}", recipient, err);
-                Error::FailedSend(*recipient)
+                Error::FailedSend(recipient.0, recipient.1)
             })
     }
 
@@ -155,13 +159,12 @@ impl Comm {
     /// with the status. It returns a `SendStatus::AllRecipients` if message is sent to all the recipients.
     pub async fn send(
         &self,
-        recipients: &[SocketAddr],
+        recipients: &[(SocketAddr, XorName)],
         delivery_group_size: usize,
-        msg: Bytes,
+        msg: MessageType,
     ) -> Result<SendStatus> {
         trace!(
-            "Sending message ({} bytes) to {} of {:?}",
-            msg.len(),
+            "Sending message to {} of {:?}",
             delivery_group_size,
             recipients
         );
@@ -179,11 +182,29 @@ impl Comm {
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
-        let send = |recipient, msg| async move { (self.send_to(recipient, msg).await, recipient) };
-
+        let send = |recipient: (SocketAddr, XorName), mut msg: MessageType| async move {
+            msg.update_dest_info(None, Some(recipient.1));
+            match msg.serialize() {
+                Ok(bytes) => {
+                    trace!(
+                        "Sending message ({} bytes) to {} of {:?}",
+                        bytes.len(),
+                        delivery_group_size,
+                        recipient.0
+                    );
+                    (
+                        self.send_to(&recipient.0, bytes)
+                            .await
+                            .map_err(Error::Network),
+                        recipient.0,
+                    )
+                }
+                Err(e) => (Err(Error::Messaging(e)), recipient.0),
+            }
+        };
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|recipient| send(recipient, msg.clone()))
+            .map(|(recipient, name)| send((*recipient, *name), msg.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -193,16 +214,18 @@ impl Comm {
         while let Some((result, addr)) = tasks.next().await {
             match result {
                 Ok(()) => successes += 1,
-                Err(qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)) => {
+                Err(Error::Network(qp2p::Error::Connection(
+                    qp2p::ConnectionError::LocallyClosed,
+                ))) => {
                     // The connection was closed by us which means we are terminating so let's cut
                     // this short.
                     return Err(Error::ConnectionClosed);
                 }
                 Err(_) => {
-                    failed_recipients.push(*addr);
+                    failed_recipients.push(addr);
 
                     if next < recipients.len() {
-                        tasks.push(send(&recipients[next], msg.clone()));
+                        tasks.push(send(recipients[next], msg.clone()));
                         next += 1;
                     }
                 }
@@ -210,8 +233,8 @@ impl Comm {
         }
 
         trace!(
-            "Sending message ({} bytes) finished to {}/{} recipients (failed: {:?})",
-            msg.len(),
+            "Sending message ({:?} bytes) finished to {}/{} recipients (failed: {:?})",
+            msg,
             successes,
             delivery_group_size,
             failed_recipients
@@ -302,6 +325,7 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::future;
     use qp2p::Config;
+    use sn_messaging::{DestInfo, WireMsg};
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
@@ -315,15 +339,27 @@ mod tests {
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
 
-        let message = Bytes::from_static(b"hello world");
+        let mut original_message = new_ping_message();
+
         let status = comm
-            .send(&[peer0.addr, peer1.addr], 2, message.clone())
+            .send(
+                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                2,
+                original_message.clone(),
+            )
             .await?;
 
         assert_matches!(status, SendStatus::AllRecipients);
 
-        assert_eq!(peer0.rx.recv().await, Some(message.clone()));
-        assert_eq!(peer1.rx.recv().await, Some(message));
+        if let Some(bytes) = peer0.rx.recv().await {
+            original_message.update_dest_info(None, Some(peer0._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message.clone());
+        }
+
+        if let Some(bytes) = peer1.rx.recv().await {
+            original_message.update_dest_info(None, Some(peer1._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message);
+        }
 
         Ok(())
     }
@@ -336,14 +372,21 @@ mod tests {
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
 
-        let message = Bytes::from_static(b"hello world");
+        let mut original_message = new_ping_message();
         let status = comm
-            .send(&[peer0.addr, peer1.addr], 1, message.clone())
+            .send(
+                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                1,
+                original_message.clone(),
+            )
             .await?;
 
         assert_matches!(status, SendStatus::AllRecipients);
 
-        assert_eq!(peer0.rx.recv().await, Some(message));
+        if let Some(bytes) = peer0.rx.recv().await {
+            original_message.update_dest_info(None, Some(peer0._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, original_message);
+        }
 
         assert!(time::timeout(TIMEOUT, peer1.rx.recv())
             .await
@@ -367,8 +410,9 @@ mod tests {
         .await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
-        let status = comm.send(&[invalid_addr], 1, message.clone()).await?;
+        let status = comm
+            .send(&[(invalid_addr, XorName::random())], 1, new_ping_message())
+            .await?;
 
         assert_matches!(
             &status,
@@ -392,13 +436,19 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
+        let mut message = new_ping_message();
         let _ = comm
-            .send(&[invalid_addr, peer.addr], 1, message.clone())
+            .send(
+                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                1,
+                message.clone(),
+            )
             .await?;
 
-        assert_eq!(peer.rx.recv().await, Some(message));
-
+        if let Some(bytes) = peer.rx.recv().await {
+            message.update_dest_info(None, Some(peer._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, message);
+        }
         Ok(())
     }
 
@@ -416,17 +466,24 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let message = Bytes::from_static(b"hello world");
+        let mut message = new_ping_message();
         let status = comm
-            .send(&[invalid_addr, peer.addr], 2, message.clone())
+            .send(
+                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                2,
+                message.clone(),
+            )
             .await?;
 
         assert_matches!(
             status,
             SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
         );
-        assert_eq!(peer.rx.recv().await, Some(message));
 
+        if let Some(bytes) = peer.rx.recv().await {
+            message.update_dest_info(None, Some(peer._name));
+            assert_eq!(WireMsg::deserialize(bytes)?, message);
+        }
         Ok(())
     }
 
@@ -438,11 +495,16 @@ mod tests {
         let recv_transport = QuicP2p::with_config(Some(transport_config()), &[], false)?;
         let (recv_endpoint, _, mut incoming_msgs, _) = recv_transport.new_endpoint().await?;
         let recv_addr = recv_endpoint.socket_addr();
+        let name = XorName::random();
 
         // Send the first message.
-        let msg0 = Bytes::from_static(b"zero");
+        let key0 = bls::SecretKey::random().public_key();
+        let msg0 = MessageType::Ping(DestInfo {
+            dest: name,
+            dest_section_pk: key0,
+        });
         let _ = send_comm
-            .send(slice::from_ref(&recv_addr), 1, msg0.clone())
+            .send(slice::from_ref(&(recv_addr, name)), 1, msg0.clone())
             .await?;
 
         let mut msg0_received = false;
@@ -450,7 +512,7 @@ mod tests {
         // Receive one message and disconnect from the peer
         {
             if let Some((src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-                assert_eq!(msg, msg0);
+                assert_eq!(WireMsg::deserialize(msg)?, msg0);
                 msg0_received = true;
                 recv_endpoint.disconnect_from(&src)?;
             }
@@ -458,15 +520,19 @@ mod tests {
         }
 
         // Send the second message.
-        let msg1 = Bytes::from_static(b"one");
+        let key1 = bls::SecretKey::random().public_key();
+        let msg1 = MessageType::Ping(DestInfo {
+            dest: name,
+            dest_section_pk: key1,
+        });
         let _ = send_comm
-            .send(slice::from_ref(&recv_addr), 1, msg1.clone())
+            .send(slice::from_ref(&(recv_addr, name)), 1, msg1.clone())
             .await?;
 
         let mut msg1_received = false;
 
         if let Some((_src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
-            assert_eq!(msg, msg1);
+            assert_eq!(WireMsg::deserialize(msg)?, msg1);
             msg1_received = true;
         }
 
@@ -487,7 +553,11 @@ mod tests {
 
         // Send a message to establish the connection
         let _ = comm1
-            .send(slice::from_ref(&addr0), 1, Bytes::from_static(b"hello"))
+            .send(
+                slice::from_ref(&(addr0, XorName::random())),
+                1,
+                new_ping_message(),
+            )
             .await?;
 
         assert_matches!(rx0.recv().await, Some(ConnectionEvent::Received(_)));
@@ -509,10 +579,18 @@ mod tests {
         }
     }
 
+    fn new_ping_message() -> MessageType {
+        MessageType::Ping(DestInfo {
+            dest: XorName::random(),
+            dest_section_pk: bls::SecretKey::random().public_key(),
+        })
+    }
+
     struct Peer {
         addr: SocketAddr,
         _incoming_connections: qp2p::IncomingConnections,
         _disconnections: qp2p::DisconnectionEvents,
+        _name: XorName,
         rx: mpsc::Receiver<Bytes>,
     }
 
@@ -537,6 +615,7 @@ mod tests {
                 rx,
                 _incoming_connections: incoming_connections,
                 _disconnections: disconnections,
+                _name: XorName::random(),
             })
         }
     }

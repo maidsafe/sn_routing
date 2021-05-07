@@ -12,22 +12,21 @@ use crate::{
     messages::Message,
     relocation::SignedRelocateDetails,
     section::{SectionAuthorityProvider, SectionKeyShare},
+    XorName,
 };
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::NodeMessage, section_info::Message as SectionInfoMsg, Itinerary, MessageType,
+    node::RoutingMsg, section_info::Message as SectionInfoMsg, DestInfo, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
-    slice,
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 use tokio::sync::mpsc;
-use xor_name::XorName;
 
 /// Command for node.
 #[allow(clippy::large_enum_variant)]
@@ -38,11 +37,13 @@ pub(crate) enum Command {
     HandleMessage {
         sender: Option<SocketAddr>,
         message: Message,
+        dest_info: DestInfo,
     },
     /// Handle network info message.
     HandleSectionInfoMsg {
         sender: SocketAddr,
         message: SectionInfoMsg,
+        dest_info: DestInfo,
     },
     /// Handle a timeout previously scheduled with `ScheduleTimeout`.
     HandleTimeout(u64),
@@ -62,7 +63,7 @@ pub(crate) enum Command {
     HandleDkgFailure(DkgFailureProofSet),
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
-        recipients: Vec<SocketAddr>,
+        recipients: Vec<(SocketAddr, XorName)>,
         delivery_group_size: usize,
         message: MessageType,
     },
@@ -100,21 +101,26 @@ pub(crate) enum Command {
 
 impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
-    pub fn send_message_to_node(recipient: &SocketAddr, message_bytes: Bytes) -> Self {
-        Self::send_message_to_nodes(slice::from_ref(recipient), 1, message_bytes)
+    pub fn send_message_to_node(
+        recipient: (SocketAddr, XorName),
+        message_bytes: Bytes,
+        dest_info: DestInfo,
+    ) -> Self {
+        Self::send_message_to_nodes(vec![recipient], 1, message_bytes, dest_info)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
-        recipients: &[SocketAddr],
+        recipients: Vec<(SocketAddr, XorName)>,
         delivery_group_size: usize,
         message_bytes: Bytes,
+        dest_info: DestInfo,
     ) -> Self {
-        let node_msg = NodeMessage::new(message_bytes);
+        let msg = RoutingMsg::new(message_bytes);
         Self::SendMessage {
-            recipients: recipients.to_vec(),
+            recipients,
             delivery_group_size,
-            message: MessageType::NodeMessage(node_msg),
+            message: MessageType::Routing { dest_info, msg },
         }
     }
 }
@@ -122,15 +128,25 @@ impl Command {
 impl Debug for Command {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Self::HandleMessage { sender, message } => f
+            Self::HandleMessage {
+                sender,
+                message,
+                dest_info,
+            } => f
                 .debug_struct("HandleMessage")
                 .field("sender", sender)
                 .field("message", message)
+                .field("dest_info", dest_info)
                 .finish(),
-            Self::HandleSectionInfoMsg { sender, message } => f
+            Self::HandleSectionInfoMsg {
+                sender,
+                message,
+                dest_info,
+            } => f
                 .debug_struct("HandleSectionInfoMsg")
                 .field("sender", sender)
                 .field("message", message)
+                .field("dest_info", dest_info)
                 .finish(),
             Self::HandleTimeout(token) => f.debug_tuple("HandleTimeout").field(token).finish(),
             Self::HandleConnectionLost(addr) => {

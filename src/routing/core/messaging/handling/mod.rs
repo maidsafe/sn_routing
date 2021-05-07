@@ -30,13 +30,14 @@ use crate::{
 use bls_signature_aggregator::Error as AggregatorError;
 use bytes::Bytes;
 use sn_messaging::{
-    client::Message as ClientMessage,
-    node::NodeMessage,
+    client::ClientMsg,
+    node::RoutingMsg,
     section_info::Error as TargetSectionError,
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
-    DstLocation, EndUser, MessageType,
+    DestInfo, DstLocation, EndUser, MessageType,
 };
 use std::{collections::BTreeSet, iter, net::SocketAddr};
+use xor_name::XorName;
 
 // Message handling
 impl Core {
@@ -44,6 +45,7 @@ impl Core {
         &mut self,
         sender: Option<SocketAddr>,
         msg: Message,
+        dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -52,7 +54,9 @@ impl Core {
         if !in_dst_location || msg.dst().is_section() {
             // Relay closer to the destination or
             // broadcast to the rest of our section.
-            commands.extend(self.relay_message(&msg)?);
+            if let Some(cmds) = self.relay_message(&msg)? {
+                commands.push(cmds);
+            }
         }
         if !in_dst_location {
             // Message not for us.
@@ -68,12 +72,12 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                commands.extend(self.update_section_knowledge(&msg)?);
+                commands.extend(self.update_section_knowledge(&msg, dest_info)?);
                 commands.extend(self.handle_useful_message(sender, msg).await?);
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
-                commands.push(self.handle_untrusted_message(sender, msg)?);
+                commands.push(self.handle_untrusted_message(sender, msg, dest_info)?);
             }
             MessageStatus::Useless => {
                 debug!("Useless message from {:?}: {:?}", sender, msg);
@@ -87,9 +91,16 @@ impl Core {
         &mut self,
         sender: SocketAddr,
         message: SectionInfoMsg,
+        dest_info: DestInfo, // The DestInfo contains the XorName of the sender and a random PK during the initial SectionQuery,
     ) -> Vec<Command> {
+        // Provide our PK as the dest PK, only redundant as the message itself contains details regarding relocation/registration.
+        let dest_info = DestInfo {
+            dest: dest_info.dest,
+            dest_section_pk: *self.section().chain().last_key(),
+        };
         match message {
-            SectionInfoMsg::GetSectionQuery(name) => {
+            SectionInfoMsg::GetSectionQuery(pk) => {
+                let name = XorName::from(pk);
                 debug!("Received GetSectionQuery({}) from {}", name, sender);
 
                 let response = if let (true, Ok(pk_set)) =
@@ -113,16 +124,24 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    GetSectionResponse::Redirect(section_auth.addrs())
+                    let addrs = section_auth
+                        .elders()
+                        .iter()
+                        .map(|(name, addr)| (*name, *addr))
+                        .collect();
+                    GetSectionResponse::Redirect(addrs)
                 };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
-                    recipients: vec![sender],
+                    recipients: vec![(sender, name)],
                     delivery_group_size: 1,
-                    message: MessageType::SectionInfo(response),
+                    message: MessageType::SectionInfo {
+                        msg: response,
+                        dest_info,
+                    },
                 }]
             }
             SectionInfoMsg::RegisterEndUserCmd {
@@ -144,16 +163,28 @@ impl Core {
                     ));
                 debug!("Sending {:?} to {}", response, sender);
 
+                let name = XorName::from(end_user);
                 vec![Command::SendMessage {
-                    recipients: vec![sender],
+                    recipients: vec![(sender, name)],
                     delivery_group_size: 1,
-                    message: MessageType::SectionInfo(response),
+                    message: MessageType::SectionInfo {
+                        msg: response,
+                        dest_info,
+                    },
                 }]
             }
             SectionInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx.send((MessageType::SectionInfo(message), sender)).await;
+                    let _ = tx
+                        .send((
+                            MessageType::SectionInfo {
+                                msg: message,
+                                dest_info,
+                            },
+                            sender,
+                        ))
+                        .await;
                 }
                 vec![]
             }
@@ -171,7 +202,7 @@ impl Core {
     pub(crate) fn handle_timeout(&mut self, token: u64) -> Result<Vec<Command>> {
         self.dkg_voter
             .handle_timeout(&self.node.keypair, token)
-            .into_commands(&self.node)
+            .into_commands(&self.node, *self.section_chain().last_key())
     }
 
     // Insert the proposal into the proposal aggregator and handle it if aggregated.
@@ -214,7 +245,7 @@ impl Core {
 
     pub(crate) fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
         let variant = Variant::DkgFailureAgreement(proofs);
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None, None)?;
+        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 
@@ -256,6 +287,7 @@ impl Core {
         } else {
             return Ok(vec![]);
         };
+        let src_name = msg.src().name();
 
         match msg.variant() {
             Variant::OtherSection { section_auth, .. } => {
@@ -280,12 +312,15 @@ impl Core {
                 self.handle_join_request(msg.src().peer(sender)?, *join_request.clone())
             }
             Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
-            Variant::BouncedUntrustedMessage(message) => {
+            Variant::BouncedUntrustedMessage {
+                msg: bounced_msg,
+                dest_info,
+            } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
                     msg.src().peer(sender)?,
-                    msg.dst_key().copied(),
-                    *message.clone(),
+                    dest_info.dest_section_pk,
+                    *bounced_msg.clone(),
                 )?])
             }
             Variant::DkgStart {
@@ -311,7 +346,7 @@ impl Core {
                 let result = self.handle_proposal(content.clone(), proof_share.clone());
 
                 if let Some(addr) = sender {
-                    commands.extend(self.check_lagging(&addr, proof_share)?);
+                    commands.extend(self.check_lagging((addr, src_name), proof_share)?);
                 }
 
                 commands.extend(result?);
@@ -326,12 +361,21 @@ impl Core {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let node_msg = NodeMessage::new(msg.to_bytes());
+                        let node_msg = RoutingMsg::new(msg.to_bytes());
                         let _ = message_tx
-                            .send((MessageType::NodeMessage(node_msg), sender))
+                            .send((
+                                MessageType::Routing {
+                                    msg: node_msg,
+                                    dest_info: DestInfo {
+                                        dest: src_name,
+                                        dest_section_pk: *self.section.chain().last_key(),
+                                    },
+                                },
+                                sender,
+                            ))
                             .await;
                     } else {
-                        error!("Missig sender of {:?}", msg);
+                        error!("Missing sender of {:?}", msg);
                     }
                 }
 
@@ -384,20 +428,19 @@ impl Core {
         Ok(commands)
     }
 
-    pub(crate) fn handle_user_message(
-        &mut self,
-        msg: &Message,
-        content: Bytes,
-    ) -> Result<Vec<Command>> {
+    fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(end_user) = msg.dst() {
+            let name = XorName::from(*end_user.id());
             let recipients = match end_user {
-                EndUser::AllClients(public_key) => {
-                    self.get_all_socket_addr(public_key).copied().collect()
-                }
+                EndUser::AllClients(public_key) => self
+                    .get_all_socket_addr(public_key)
+                    .copied()
+                    .map(|addr| (addr, name))
+                    .collect(),
                 EndUser::Client { socket_id, .. } => {
                     if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
-                        vec![socket_addr]
+                        vec![(socket_addr, name)]
                     } else {
                         vec![]
                     }
@@ -411,7 +454,13 @@ impl Core {
             return Ok(vec![Command::SendMessage {
                 recipients,
                 delivery_group_size: 1,
-                message: MessageType::ClientMessage(ClientMessage::from(content)?),
+                message: MessageType::Client {
+                    msg: ClientMsg::from(content)?,
+                    dest_info: DestInfo {
+                        dest: name,
+                        dest_section_pk: *self.section.chain().last_key(),
+                    },
+                },
             }]);
         }
 
@@ -495,7 +544,11 @@ impl Core {
                 section_key: *self.section.chain().last_key(),
             };
             trace!("Sending {:?} to {}", variant, peer);
-            return Ok(vec![self.send_direct_message(peer.addr(), variant)?]);
+            return Ok(vec![self.send_direct_message(
+                (*peer.addr(), *peer.name()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
         }
 
         if self.section.members().is_joined(peer.name()) {

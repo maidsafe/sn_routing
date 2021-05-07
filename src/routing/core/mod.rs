@@ -28,12 +28,13 @@ use crate::{
 use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use sn_messaging::DestInfo;
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
-pub(crate) const RESOURCE_PROOF_DATA_SIZE: usize = 64;
-pub(crate) const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
+pub const RESOURCE_PROOF_DATA_SIZE: usize = 64;
+pub const RESOURCE_PROOF_DIFFICULTY: u8 = 2;
 const KEY_CACHE_SIZE: u8 = 5;
 
 // State + logic of a routing node.
@@ -90,12 +91,17 @@ impl Core {
     ////////////////////////////////////////////////////////////////////////////
 
     // Update our knowledge of their (sender's) section and their knowledge of our section.
-    pub(crate) fn update_section_knowledge(&mut self, msg: &Message) -> Result<Vec<Command>> {
+    pub(crate) fn update_section_knowledge(
+        &mut self,
+        msg: &Message,
+        dest_info: DestInfo,
+    ) -> Result<Vec<Command>> {
         if !self.is_elder() {
             return Ok(vec![]);
         }
 
-        let actions = lazy_messaging::process(&self.node, &self.section, &self.network, msg)?;
+        let actions =
+            lazy_messaging::process(&self.node, &self.section, &self.network, msg, dest_info)?;
         let mut commands = vec![];
 
         if let Some(msg) = actions.send {
