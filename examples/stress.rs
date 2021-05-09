@@ -313,10 +313,10 @@ impl Network {
                     {
                         *prefix = elders.prefix;
 
-                        if elders.elders.contains(name) {
+                        if elders.added.iter().any(|p| p.name() == name) {
                             *elder = Some(ElderState {
                                 key: elders.key,
-                                num_elders: elders.elders.len(),
+                                num_elders: elders.existing.len() + elders.added.len(),
                             });
                         } else {
                             *elder = None;

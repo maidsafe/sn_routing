@@ -1246,7 +1246,7 @@ async fn handle_sync() -> Result<()> {
             .chain(iter::once(new_peer)),
         old_section_auth.prefix,
     );
-    let new_elders: BTreeSet<_> = new_section_auth.elders.keys().copied().collect();
+    let new_section_elders: BTreeSet<_> = new_section_auth.elders.keys().copied().collect();
     let proven_new_section_auth = proven(&sk2, new_section_auth)?;
     let new_section = Section::new(pk0, chain, proven_new_section_auth)?;
 
@@ -1275,7 +1275,9 @@ async fn handle_sync() -> Result<()> {
         event_rx.recv().await,
         Some(Event::EldersChanged { elders, .. }) => {
             assert_eq!(elders.key, pk2);
-            assert_eq!(elders.elders, new_elders);
+            assert!(elders.added.iter().all(|a| new_section_elders.contains(a.name())));
+            assert!(elders.existing.iter().all(|a| new_section_elders.contains(a.name())));
+            assert!(elders.removed.iter().all(|r| !new_section_elders.contains(r.name())));
         }
     );
 
@@ -1690,7 +1692,9 @@ async fn handle_elders_update() -> Result<()> {
         event_rx.recv().await,
         Some(Event::EldersChanged { elders, .. }) => {
             assert_eq!(elders.key, pk1);
-            assert_eq!(elders.elders, elder_names1);
+            assert!(elders.added.iter().all(|a| elder_names1.contains(a.name())));
+            assert!(elders.existing.iter().all(|a| elder_names1.contains(a.name())));
+            assert!(elders.removed.iter().all(|r| !elder_names1.contains(r.name())));
         }
     );
 

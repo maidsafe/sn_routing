@@ -22,12 +22,14 @@ use crate::{
     messages::Message,
     network::Network,
     node::Node,
+    peer::Peer,
     relocation::RelocateState,
     section::{Section, SectionKeyShare, SectionKeysProvider},
 };
 use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use std::collections::BTreeSet;
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -113,6 +115,7 @@ impl Core {
             is_elder: self.is_elder(),
             last_key: *self.section.chain().last_key(),
             prefix: *self.section.prefix(),
+            elders: self.section().elders().copied().collect(),
         }
     }
 
@@ -152,20 +155,6 @@ impl Core {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
             }
 
-            let sibling_elders = if new.prefix != old.prefix {
-                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
-                    self.network.get(&new.prefix.sibling()).map(|info| Elders {
-                        prefix: new.prefix.sibling(),
-                        key: *sibling_key,
-                        elders: info.elders.keys().copied().collect(),
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
             let self_status_change = if !old.is_elder && new.is_elder {
                 info!("Promoted to elder");
                 NodeElderChange::Promoted
@@ -178,23 +167,53 @@ impl Core {
                 NodeElderChange::None
             };
 
+            let current: BTreeSet<_> = self.section.elders().copied().collect();
+            let added = current.difference(&old.elders).copied().collect();
+            let removed = old.elders.difference(&current).copied().collect();
+            let existing = old.elders.intersection(&current).copied().collect();
+
             let elders = Elders {
                 prefix: new.prefix,
                 key: new.last_key,
-                elders: self
-                    .section
-                    .authority_provider()
-                    .elders
-                    .keys()
-                    .copied()
-                    .collect(),
+                existing,
+                added,
+                removed,
             };
 
-            self.send_event(Event::EldersChanged {
-                elders,
-                sibling_elders,
-                self_status_change,
-            });
+            let sibling_elders = if new.prefix != old.prefix {
+                if let Some(sibling_key) = self.section_key(&new.prefix.sibling()) {
+                    self.network.get(&new.prefix.sibling()).map(|info| Elders {
+                        prefix: new.prefix.sibling(),
+                        key: *sibling_key,
+                        existing: info
+                            .elders
+                            .iter()
+                            .map(|(name, addr)| Peer::new(*name, *addr))
+                            .collect(),
+                        added: BTreeSet::new(),
+                        removed: BTreeSet::new(),
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let event = if let Some(sibling_elders) = sibling_elders {
+                Event::SectionSplit {
+                    elders,
+                    sibling_elders,
+                    self_status_change,
+                }
+            } else {
+                Event::EldersChanged {
+                    elders,
+                    self_status_change,
+                }
+            };
+
+            self.send_event(event);
         }
 
         if !new.is_elder {
@@ -232,4 +251,5 @@ pub(crate) struct StateSnapshot {
     is_elder: bool,
     last_key: bls::PublicKey,
     prefix: Prefix,
+    elders: BTreeSet<Peer>,
 }

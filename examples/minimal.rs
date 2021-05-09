@@ -236,14 +236,23 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
         Event::MemberLeft { name, age } => {
             info!("Node #{} member left - name: {}, age: {}", index, name, age);
         }
-        Event::EldersChanged {
+        Event::SectionSplit {
             elders,
             sibling_elders,
             self_status_change,
         } => {
             info!(
-                "Node #{} elders changed - prefix: {:b}, key: {:?}, sibling elders: {:?}, elders: {:?}, node elder status change: {:?}",
-                index, elders.prefix, elders.key, sibling_elders, elders.elders, self_status_change
+                "Node #{} section split - elders: {:?}, sibling elders: {:?}, node elder status change: {:?}",
+                index, elders, sibling_elders, self_status_change
+            );
+        }
+        Event::EldersChanged {
+            elders,
+            self_status_change,
+        } => {
+            info!(
+                "Node #{} elders changed - elders: {:?}, node elder status change: {:?}",
+                index, elders, self_status_change
             );
         }
         Event::MessageReceived {
@@ -275,8 +284,15 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             index, user, msg
         ),
         Event::ClientLost(addr) => info!("Node #{} received ClientLost({:?})", index, addr),
-        Event::AdultsChanged(adult_list) => {
-            info!("Node #{} received AdultsChanged({:?})", index, adult_list)
+        Event::AdultsChanged {
+            existing,
+            added,
+            removed,
+        } => {
+            info!(
+                "Node #{} adults changed - existing: {:?}, added: {:?}, removed: {:?}",
+                index, existing, added, removed
+            )
         }
     }
 

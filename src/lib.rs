@@ -73,6 +73,7 @@ extern crate tracing;
 pub use self::{
     error::{Error, Result},
     event::{Event, NodeElderChange, SendStream},
+    peer::Peer,
     routing::{Config, EventStream, Routing},
     section::{
         SectionChain, SectionChainError, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,

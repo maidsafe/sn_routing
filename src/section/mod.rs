@@ -263,6 +263,13 @@ impl Section {
             .map(|info| &info.peer)
     }
 
+    /// Returns elders from our section.
+    pub fn elders(&self) -> impl Iterator<Item = &Peer> {
+        self.members
+            .mature()
+            .filter(move |peer| self.is_elder(peer.name()))
+    }
+
     /// Returns adults from our section.
     pub fn adults(&self) -> impl Iterator<Item = &Peer> {
         self.members
