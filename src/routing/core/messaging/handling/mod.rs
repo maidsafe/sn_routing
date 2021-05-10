@@ -353,8 +353,8 @@ impl Core {
             }
             Variant::DkgStart {
                 dkg_key,
-                elders_info,
-            } => self.handle_dkg_start(*dkg_key, elders_info.clone()),
+                elder_candidates,
+            } => self.handle_dkg_start(*dkg_key, elder_candidates.clone()),
             Variant::DkgMessage { dkg_key, message } => {
                 self.handle_dkg_message(*dkg_key, message.clone(), src_name)
             }

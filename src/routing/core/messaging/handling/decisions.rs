@@ -47,8 +47,10 @@ impl Core {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::DkgStart { elders_info, .. } => {
-                if !elders_info.elders.contains_key(&self.node.name()) {
+            Variant::DkgStart {
+                elder_candidates, ..
+            } => {
+                if !elder_candidates.elders.contains_key(&self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }

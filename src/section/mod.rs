@@ -19,7 +19,7 @@ pub use self::{
     member_info::{
         MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
-    section_authority_provider::{EldersInfo, SectionAuthorityProvider},
+    section_authority_provider::{ElderCandidates, SectionAuthorityProvider},
     section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
@@ -226,9 +226,9 @@ impl Section {
 
     /// Generate a new section info(s) based on the current set of members.
     /// Returns a set of candidate SectionAuthorityProviders.
-    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<EldersInfo> {
-        if let Some((our_info, other_info)) = self.try_split(our_name) {
-            return vec![our_info, other_info];
+    pub fn promote_and_demote_elders(&self, our_name: &XorName) -> Vec<ElderCandidates> {
+        if let Some((our_elder_candidates, other_elder_candidates)) = self.try_split(our_name) {
+            return vec![our_elder_candidates, other_elder_candidates];
         }
 
         let expected_peers = self.elder_candidates(ELDER_SIZE);
@@ -241,8 +241,9 @@ impl Section {
             warn!("ignore attempt to reduce the number of elders too much");
             vec![]
         } else {
-            let new_info = EldersInfo::new(expected_peers, self.authority_provider().prefix());
-            vec![new_info]
+            let elder_candidates =
+                ElderCandidates::new(expected_peers, self.authority_provider().prefix());
+            vec![elder_candidates]
         }
     }
 
@@ -293,7 +294,7 @@ impl Section {
     // Tries to split our section.
     // If we have enough mature nodes for both subsections, returns the SectionAuthorityProviders
     // of the two subsections. Otherwise returns `None`.
-    fn try_split(&self, our_name: &XorName) -> Option<(EldersInfo, EldersInfo)> {
+    fn try_split(&self, our_name: &XorName) -> Option<(ElderCandidates, ElderCandidates)> {
         let next_bit_index = if let Ok(index) = self.prefix().bit_count().try_into() {
             index
         } else {
@@ -334,10 +335,10 @@ impl Section {
             self.authority_provider(),
         );
 
-        let our_info = EldersInfo::new(our_elders, our_prefix);
-        let other_info = EldersInfo::new(other_elders, other_prefix);
+        let our_elder_candidates = ElderCandidates::new(our_elders, our_prefix);
+        let other_elder_candidates = ElderCandidates::new(other_elders, other_prefix);
 
-        Some((our_info, other_info))
+        Some((our_elder_candidates, other_elder_candidates))
     }
 
     // Returns the candidates for elders out of all the nodes in the section, even out of the

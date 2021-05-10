@@ -197,7 +197,7 @@ impl Core {
             // Our section of sub-section
 
             let infos = self.section.promote_and_demote_elders(&self.node.name());
-            if !infos.contains(&section_auth.value.elders_info()) {
+            if !infos.contains(&section_auth.value.elder_candidates()) {
                 // SectionInfo out of date, ignore.
                 return Ok(commands);
             }

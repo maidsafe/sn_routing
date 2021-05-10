@@ -12,7 +12,7 @@ use crate::{
     messages::{Message, Variant},
     node::Node,
     routing::command::{self, Command},
-    section::{EldersInfo, SectionAuthorityProvider, SectionKeyShare},
+    section::{ElderCandidates, SectionAuthorityProvider, SectionKeyShare},
     supermajority,
 };
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
@@ -43,17 +43,17 @@ pub struct DkgKey {
 }
 
 impl DkgKey {
-    pub fn new(elders_info: &EldersInfo, generation: u64) -> Self {
+    pub fn new(elder_candidates: &ElderCandidates, generation: u64) -> Self {
         // Calculate the hash without involving serialization to avoid having to return `Result`.
         let mut hasher = Sha3::v256();
         let mut hash = Digest256::default();
 
-        for peer in elders_info.peers() {
+        for peer in elder_candidates.peers() {
             hasher.update(&peer.name().0);
         }
 
-        hasher.update(&elders_info.prefix.name().0);
-        hasher.update(&elders_info.prefix.bit_count().to_le_bytes());
+        hasher.update(&elder_candidates.prefix.name().0);
+        hasher.update(&elder_candidates.prefix.bit_count().to_le_bytes());
         hasher.finalize(&mut hash);
 
         Self { hash, generation }
@@ -106,29 +106,29 @@ impl DkgVoter {
         &mut self,
         keypair: &Keypair,
         dkg_key: DkgKey,
-        elders_info: EldersInfo,
+        elder_candidates: ElderCandidates,
     ) -> Vec<DkgCommand> {
         if self.sessions.contains_key(&dkg_key) {
-            trace!("DKG for {:?} already in progress", elders_info);
+            trace!("DKG for {:?} already in progress", elder_candidates);
             return vec![];
         }
 
         let name = crypto::name(&keypair.public);
-        let participant_index = if let Some(index) = elders_info.position(&name) {
+        let participant_index = if let Some(index) = elder_candidates.position(&name) {
             index
         } else {
             error!(
                 "DKG for {:?} failed to start: {} is not a participant",
-                elders_info, name
+                elder_candidates, name
             );
             return vec![];
         };
 
         // Special case: only one participant.
-        if elders_info.elders.len() == 1 {
+        if elder_candidates.elders.len() == 1 {
             let secret_key_set = bls::SecretKeySet::random(0, &mut rand::thread_rng());
-            let section_auth = SectionAuthorityProvider::from_elders_info(
-                elders_info,
+            let section_auth = SectionAuthorityProvider::from_elder_candidates(
+                elder_candidates,
                 secret_key_set.public_keys(),
             );
             return vec![DkgCommand::HandleOutcome {
@@ -141,16 +141,16 @@ impl DkgVoter {
             }];
         }
 
-        let threshold = supermajority(elders_info.elders.len()) - 1;
-        let participants = elders_info.elders.keys().copied().collect();
+        let threshold = supermajority(elder_candidates.elders.len()) - 1;
+        let participants = elder_candidates.elders.keys().copied().collect();
 
         match KeyGen::initialize(name, threshold, participants) {
             Ok((key_gen, message)) => {
-                trace!("DKG for {:?} starting", elders_info);
+                trace!("DKG for {:?} starting", elder_candidates);
 
                 let mut session = Session {
                     key_gen,
-                    elders_info,
+                    elder_candidates,
                     participant_index,
                     timer_token: 0,
                     failures: DkgFailureProofSet::default(),
@@ -178,7 +178,7 @@ impl DkgVoter {
             }
             Err(error) => {
                 // TODO: return a separate error here.
-                error!("DKG for {:?} failed to start: {}", elders_info, error);
+                error!("DKG for {:?} failed to start: {}", elder_candidates, error);
                 vec![]
             }
         }
@@ -226,7 +226,7 @@ impl DkgVoter {
 
 // Data for a DKG participant.
 struct Session {
-    elders_info: EldersInfo,
+    elder_candidates: ElderCandidates,
     participant_index: usize,
     key_gen: KeyGen,
     timer_token: u64,
@@ -267,11 +267,12 @@ impl Session {
     }
 
     fn recipients(&self) -> Vec<(XorName, SocketAddr)> {
-        self.elders_info
-            .peers()
+        self.elder_candidates
+            .elders
+            .iter()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| (*peer.name(), *peer.addr()))
+            .map(|(_, (name, addr))| (*name, *addr))
             .collect()
     }
 
@@ -302,7 +303,7 @@ impl Session {
             return vec![];
         }
 
-        trace!("DKG for {:?} progressing", self.elders_info);
+        trace!("DKG for {:?} progressing", self.elder_candidates);
 
         match self.key_gen.timed_phase_transition(&mut rand::thread_rng()) {
             Ok(messages) => {
@@ -315,7 +316,7 @@ impl Session {
                 commands
             }
             Err(error) => {
-                trace!("DKG for {:?} failed: {}", self.elders_info, error);
+                trace!("DKG for {:?} failed: {}", self.elder_candidates, error);
                 self.report_failure(dkg_key, BTreeSet::new(), keypair)
             }
         }
@@ -338,15 +339,15 @@ impl Session {
         };
 
         // Less than 100% participation
-        if !participants.iter().eq(self.elders_info.elders.keys()) {
+        if !participants.iter().eq(self.elder_candidates.elders.keys()) {
             trace!(
                 "DKG for {:?} failed: unexpected participants: {:?}",
-                self.elders_info,
+                self.elder_candidates,
                 participants.iter().format(", ")
             );
 
             let non_participants: BTreeSet<_> = self
-                .elders_info
+                .elder_candidates
                 .elders
                 .keys()
                 .filter_map(|elder| {
@@ -370,19 +371,22 @@ impl Session {
             .public_key_share(self.participant_index)
             != outcome.secret_key_share.public_key_share()
         {
-            trace!("DKG for {:?} failed: corrupted outcome", self.elders_info);
+            trace!(
+                "DKG for {:?} failed: corrupted outcome",
+                self.elder_candidates
+            );
             return self.report_failure(dkg_key, BTreeSet::new(), keypair);
         }
 
         trace!(
             "DKG for {:?} complete: {:?}",
-            self.elders_info,
+            self.elder_candidates,
             outcome.public_key_set.public_key()
         );
 
         self.complete = true;
-        let section_auth = SectionAuthorityProvider::from_elders_info(
-            self.elders_info.clone(),
+        let section_auth = SectionAuthorityProvider::from_elder_candidates(
+            self.elder_candidates.clone(),
             outcome.public_key_set.clone(),
         );
 
@@ -428,7 +432,7 @@ impl Session {
         proof: DkgFailureProof,
     ) -> Option<DkgCommand> {
         if !self
-            .elders_info
+            .elder_candidates
             .elders
             .contains_key(&crypto::name(&proof.public_key))
         {
@@ -447,7 +451,7 @@ impl Session {
     }
 
     fn check_failure_agreement(&mut self) -> Option<DkgCommand> {
-        if self.failures.has_agreement(&self.elders_info) {
+        if self.failures.has_agreement(&self.elder_candidates) {
             self.complete = true;
 
             Some(DkgCommand::HandleFailureAgreement(mem::take(
@@ -514,27 +518,27 @@ impl DkgFailureProofSet {
 
     // Check whether we have enough proofs to reach agreement on the failure. The contained proofs
     // are assumed valid.
-    fn has_agreement(&self, elders_info: &EldersInfo) -> bool {
-        has_failure_agreement(elders_info.elders.len(), self.proofs.len())
+    fn has_agreement(&self, elder_candidates: &ElderCandidates) -> bool {
+        has_failure_agreement(elder_candidates.elders.len(), self.proofs.len())
     }
 
-    pub fn verify(&self, elders_info: &EldersInfo, generation: u64) -> bool {
+    pub fn verify(&self, elder_candidates: &ElderCandidates, generation: u64) -> bool {
         let hash = failure_proof_hash(
-            &DkgKey::new(elders_info, generation),
+            &DkgKey::new(elder_candidates, generation),
             &self.non_participants,
         );
         let votes = self
             .proofs
             .iter()
             .filter(|proof| {
-                elders_info
+                elder_candidates
                     .elders
                     .contains_key(&crypto::name(&proof.public_key))
                     && proof.public_key.verify(&hash, &proof.signature).is_ok()
             })
             .count();
 
-        has_failure_agreement(elders_info.elders.len(), votes)
+        has_failure_agreement(elder_candidates.elders.len(), votes)
     }
 }
 
@@ -724,10 +728,10 @@ mod tests {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
-        let elders_info = EldersInfo::new(iter::once(node.peer()), Prefix::default());
-        let dkg_key = DkgKey::new(&elders_info, 0);
+        let elder_candidates = ElderCandidates::new(iter::once(node.peer()), Prefix::default());
+        let dkg_key = DkgKey::new(&elder_candidates, 0);
 
-        let commands = voter.start(&node.keypair, dkg_key, elders_info);
+        let commands = voter.start(&node.keypair, dkg_key, elder_candidates);
         assert_matches!(&commands[..], &[DkgCommand::HandleOutcome { .. }]);
     }
 
@@ -746,8 +750,9 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(seed);
         let mut messages = Vec::new();
 
-        let elders_info = EldersInfo::new(nodes.iter().map(Node::peer), Prefix::default());
-        let dkg_key = DkgKey::new(&elders_info, 0);
+        let elder_candidates =
+            ElderCandidates::new(nodes.iter().map(Node::peer), Prefix::default());
+        let dkg_key = DkgKey::new(&elder_candidates, 0);
 
         let mut actors: HashMap<_, _> = nodes
             .into_iter()
@@ -755,9 +760,10 @@ mod tests {
             .collect();
 
         for actor in actors.values_mut() {
-            let commands = actor
-                .voter
-                .start(&actor.node.keypair, dkg_key, elders_info.clone());
+            let commands =
+                actor
+                    .voter
+                    .start(&actor.node.keypair, dkg_key, elder_candidates.clone());
 
             for command in commands {
                 messages.extend(actor.handle(command, &dkg_key))

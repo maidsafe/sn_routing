@@ -567,11 +567,13 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
             _ => continue,
         };
 
-        let actual_elders_info = match message.variant() {
-            Variant::DkgStart { elders_info, .. } => elders_info,
+        let actual_elder_candidates = match message.variant() {
+            Variant::DkgStart {
+                elder_candidates, ..
+            } => elder_candidates,
             _ => continue,
         };
-        itertools::assert_equal(actual_elders_info.peers(), expected_new_elders.clone());
+        itertools::assert_equal(actual_elder_candidates.peers(), expected_new_elders.clone());
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
@@ -816,8 +818,10 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             _ => continue,
         };
 
-        let actual_elders_info = match message.variant() {
-            Variant::DkgStart { elders_info, .. } => elders_info,
+        let actual_elder_candidates = match message.variant() {
+            Variant::DkgStart {
+                elder_candidates, ..
+            } => elder_candidates,
             _ => continue,
         };
 
@@ -826,7 +830,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             .filter(|peer| *peer != remove_peer)
             .chain(iter::once(existing_peer))
             .collect();
-        itertools::assert_equal(actual_elders_info.peers(), expected_new_elders.clone());
+        itertools::assert_equal(actual_elder_candidates.peers(), expected_new_elders.clone());
 
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
