@@ -80,6 +80,9 @@ struct Options {
     /// 10 seconds and then 15 nodes added and 8 nodes removed during the subsequent 20 seconds.
     /// No more churn (apart from internal churn due to relocation) is be generated afterwards.
     schedule: Vec<String>,
+
+    #[structopt(short, long)]
+    interactive: bool,
 }
 
 #[tokio::main]
@@ -149,6 +152,35 @@ async fn main() -> Result<()> {
                 }
             }
             _ = probes.tick() => network.send_probes().await?,
+        };
+
+        if opts.interactive {
+            println!(
+                "Your options:
+            1: Add Node
+            2: Remove Node
+            3: Continue
+            4: Exit "
+            );
+
+            let mut input = String::new();
+            if let Ok(_) = std::io::stdin().read_line(&mut input) {
+                if !input.is_empty() {
+                    match input
+                        .trim()
+                        .get(0usize..=0usize)
+                        .unwrap_or_default()
+                        .parse()?
+                    {
+                        1 => network.create_node(event_tx.clone()).await,
+                        2 => network.remove_random_node(),
+                        4 => break,
+                        _ => continue,
+                    };
+                } else {
+                    continue;
+                }
+            }
         }
     }
 
