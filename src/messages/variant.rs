@@ -36,7 +36,7 @@ pub(crate) enum Variant {
         /// `SectionAuthorityProvider` and `SectionChain` of the sender's section, with the proof chain.
         src_info: (Proven<SectionAuthorityProvider>, SectionChain),
         /// Message
-        msg: Box<Message>,
+        msg: Option<Box<Message>>,
         // Nonce that is derived from the incoming message that triggered sending this
         // message. It's purpose is to make sure that `OtherSection`s that are identical
         // but triggered by different messages are not filtered out.
@@ -119,10 +119,6 @@ pub(crate) enum Variant {
         key: bls::PublicKey,
         msg: Box<Message>,
     },
-    /// Message sent by dst to indicate that sender is lagging on knowledge and shares it.
-    // SrcOutdated(Variant),
-    /// Message sent by dst to indicate that the Dst is ahead on knowledge and shares it.
-    DstAhead(SectionChain),
     /// Message sent by dst to indicate that Dst is outdated in knowledge.
     /// A follow-up reply will be sent by src with SectionKnowledge.
     // DstOutdated,
@@ -253,7 +249,6 @@ impl Debug for Variant {
                 .field("difficulty", difficulty)
                 .finish(),
             Self::ConnectivityComplaint(name) => write!(f, "ConnectivityComplaint({:?})", name),
-            Self::DstAhead(_) => write!(f, "DstAhead"),
             Self::SrcAhead { .. } => write!(f, "SrcAhead"),
         }
     }

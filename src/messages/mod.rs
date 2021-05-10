@@ -36,7 +36,7 @@ pub(crate) struct Message {
     /// Source authority.
     /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
     /// agains the public key and we know the pub key then we are good. If the proof is not recognised we
-    /// ask for a longer chain that can be recognised). Therefor we don't need to sign this field.
+    /// ask for a longer chain that can be recognised). Therefore we don't need to sign this field.
     src: SrcAuthority,
     /// Destination location.
     dst: DstLocation,
