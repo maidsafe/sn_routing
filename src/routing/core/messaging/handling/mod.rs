@@ -439,7 +439,8 @@ impl Core {
         let old_adults: BTreeSet<_> = self
             .section
             .live_adults()
-            .map(|peer| *peer.name())
+            .map(|p| p.name())
+            .copied()
             .collect();
 
         let snapshot = self.state_snapshot();
@@ -452,13 +453,21 @@ impl Core {
         self.network.merge(network, self.section.chain());
 
         if !self.is_elder() {
-            let new_adults: BTreeSet<_> = self
+            let current_adults: BTreeSet<_> = self
                 .section
                 .live_adults()
-                .map(|peer| *peer.name())
+                .map(|p| p.name())
+                .copied()
                 .collect();
-            if old_adults != new_adults {
-                self.send_event(Event::AdultsChanged(new_adults));
+            let added: BTreeSet<_> = current_adults.difference(&old_adults).copied().collect();
+            let removed: BTreeSet<_> = old_adults.difference(&current_adults).copied().collect();
+
+            if !added.is_empty() || !removed.is_empty() {
+                self.send_event(Event::AdultsChanged {
+                    remaining: old_adults.intersection(&current_adults).copied().collect(),
+                    added,
+                    removed,
+                });
             }
         }
 
