@@ -72,8 +72,12 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                commands.extend(self.check_for_entropy(&msg, dest_info.clone())?);
-                commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
+                let (entropy_commands, can_be_executed) =
+                    self.check_for_entropy(&msg, dest_info.clone(), sender)?;
+                commands.extend(entropy_commands);
+                if can_be_executed {
+                    commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
+                }
             }
             MessageStatus::Untrusted => {
                 debug!("Untrusted message from {:?}: {:?} ", sender, msg);
@@ -294,11 +298,15 @@ impl Core {
             Variant::SectionKnowledge { src_info, msg } => {
                 let src_info = src_info.clone();
                 self.update_section_knowledge(src_info.0, src_info.1);
-                Ok(vec![Command::HandleMessage {
-                    sender,
-                    message: *msg.clone(),
-                    dest_info,
-                }])
+                if let Some(bounced_msg) = msg {
+                    Ok(vec![Command::HandleMessage {
+                        sender,
+                        message: *bounced_msg.clone(),
+                        dest_info,
+                    }])
+                } else {
+                    Ok(vec![])
+                }
             }
             Variant::Sync { section, network } => {
                 self.handle_sync(section.clone(), network.clone())
@@ -343,7 +351,7 @@ impl Core {
                     msg.src().src_location().to_dst(),
                 )?])
             }
-            Variant::DstAhead(_chain) => Ok(vec![]),
+
             Variant::DkgStart {
                 dkg_key,
                 elders_info,
@@ -418,7 +426,7 @@ impl Core {
         let section_auth = self.section.proven_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), truncated_key),
-            msg,
+            msg: Some(msg),
         };
 
         let msg = Message::single_src(self.node(), dst_location, variant, None)?;
@@ -543,6 +551,17 @@ impl Core {
         }
 
         self.update_state(snapshot)
+    }
+
+    pub fn handle_lagging_messages_on_sync(&mut self) -> Result<Vec<Command>> {
+        let mut commands = vec![];
+        let latest_key = *self.section_chain().last_key();
+        if let Some(lagged_commands) = self.lagging_messages.src_ahead.remove(&latest_key) {
+            // We now have the latest key, execute the messages that received when we were lagging.
+            commands.extend(lagged_commands);
+        }
+
+        Ok(commands)
     }
 
     pub(crate) fn handle_join_request(

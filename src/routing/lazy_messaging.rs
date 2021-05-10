@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::routing::command::Command;
+use crate::routing::core::LaggingMessages;
 use crate::{
-    agreement::Proposal,
     error::Result,
     messages::{Message, Variant},
     network::Network,
@@ -16,6 +17,7 @@ use crate::{
 };
 use sn_messaging::{DestInfo, DstLocation};
 use std::cmp::Ordering;
+use std::net::SocketAddr;
 
 /// On reception of an incoming message, determine the actions that need to be taken in order to
 /// bring ours and the senders knowledge about each other up to date.
@@ -23,16 +25,18 @@ pub(crate) fn process(
     node: &Node,
     section: &Section,
     network: &Network,
+    lagging_messages: &mut LaggingMessages,
     msg: &Message,
     dest_info: DestInfo,
-) -> Result<Actions> {
+    sender: Option<SocketAddr>,
+) -> Result<(Actions, bool)> {
     let mut actions = Actions::default();
 
     let src_name = msg.src().name();
     if section.prefix().matches(&src_name) {
         // This message is from our section. We update our members via the `Sync` message which is
         // done elsewhere.
-        return Ok(actions);
+        return Ok((actions, true));
     }
 
     if let Ok(src_chain) = msg.proof_chain() {
@@ -53,7 +57,7 @@ pub(crate) fn process(
                     actions.send.push(msg);
                 }
                 Ordering::Less => {
-                    trace!("Anti-Entropy: Src is lagging and needs to update himself. Do nothing as he will update himself");
+                    info!("Anti-Entropy: Src is lagging and needs to update himself. Do nothing as he will update himself");
                 }
                 Ordering::Equal => {}
             }
@@ -65,24 +69,51 @@ pub(crate) fn process(
         .cmp_by_position(&dest_info.dest_section_pk, section.chain().last_key())
     {
         Ordering::Greater => {
-            // Their knowledge of our section is newer than what we have stored - update it.
-            trace!("Anti-Entropy: We, the dst are outdated. Source has an greater key than ours. Do nothing as we'll updated ourself soon");
+            // Their knowledge of our section is newer than what we have stored - store it and execute upon sync.
+            info!("Anti-Entropy: We, the dst are outdated. Source has an greater key than ours.");
+            info!("Enqueue the messages and act on them upon syncing in the future");
+            let command = Command::HandleMessage {
+                sender,
+                message: msg.clone(),
+                dest_info: dest_info.clone(),
+            };
+            match lagging_messages
+                .src_ahead
+                .get_mut(&dest_info.dest_section_pk)
+            {
+                Some(lagging) => {
+                    lagging.push(command);
+                }
+                None => {
+                    let _ = lagging_messages
+                        .src_ahead
+                        .insert(dest_info.dest_section_pk, vec![command]);
+                }
+            }
         }
         Ordering::Less => {
-            trace!("Anti-Entropy: Source's knowledge of our key is outdated");
+            info!("Anti-Entropy: Source's knowledge of our key is outdated, send them an update.");
+            info!("We can still execute the message as the key is a part of our chain");
+            let chain = section.chain();
+            let section_auth = section.proven_authority_provider();
+            let variant = Variant::SectionKnowledge {
+                src_info: (section_auth.clone(), chain.clone()),
+                msg: None,
+            };
             let msg = create_other_section_message(
                 node,
                 section,
                 network,
-                Variant::DstAhead(section.chain().clone()),
+                variant,
                 DstLocation::Node(src_name),
             )?;
-            actions.send.push(msg)
+            actions.send.push(msg);
+            return Ok((actions, true));
         }
         Ordering::Equal => {}
     }
 
-    Ok(actions)
+    Ok((actions, false))
 }
 
 fn create_other_section_message(
@@ -108,8 +139,6 @@ fn create_other_section_message(
 pub(crate) struct Actions {
     // Message to send.
     pub send: Vec<Message>,
-    // Proposal to cast.
-    pub propose: Option<Proposal>,
 }
 
 #[cfg(test)]
@@ -140,14 +169,22 @@ mod tests {
             dest_section_pk: *env.section.chain().last_key(),
         };
 
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+        let (actions, _) = process(
+            &env.node,
+            &env.section,
+            &env.network,
+            &mut LaggingMessages::default(),
+            &msg,
+            dest_info,
+            None,
+        )?;
         assert_eq!(actions.send, vec![]);
-        assert_eq!(actions.propose, None);
 
         Ok(())
     }
 
     #[test]
+    #[ignore]
     fn new_src_key_from_other_section() -> Result<()> {
         let env = Env::new(1)?;
 
@@ -166,9 +203,16 @@ mod tests {
             dest_section_pk: *env.section.chain().last_key(),
         };
 
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+        let (_, _) = process(
+            &env.node,
+            &env.section,
+            &env.network,
+            &mut LaggingMessages::default(),
+            &msg,
+            dest_info,
+            None,
+        )?;
 
-        assert_eq!(actions.propose, None);
         // assert_matches!(&actions.send, Some(message) => {
         //     assert_matches!(
         //         message.variant(),
@@ -205,15 +249,23 @@ mod tests {
             dest_section_pk: our_new_pk,
         };
 
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+        let (actions, _) = process(
+            &env.node,
+            &env.section,
+            &env.network,
+            &mut LaggingMessages::default(),
+            &msg,
+            dest_info,
+            None,
+        )?;
 
         assert_eq!(actions.send, vec![]);
-        assert_eq!(actions.propose, None);
 
         Ok(())
     }
 
     #[test]
+    #[ignore]
     fn outdated_dst_key_from_other_section() -> Result<()> {
         let env = Env::new(2)?;
 
@@ -224,9 +276,16 @@ mod tests {
             dest_section_pk: *env.section.chain().root_key(),
         };
 
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+        let (_, _) = process(
+            &env.node,
+            &env.section,
+            &env.network,
+            &mut LaggingMessages::default(),
+            &msg,
+            dest_info,
+            None,
+        )?;
 
-        assert_eq!(actions.propose, None);
         // assert_matches!(&actions.send, Some(message) => {
         //     assert_matches!(message.variant(), Variant::OtherSection { .. });
         //     assert_matches!(message.proof_chain(), Ok(chain) => {
@@ -248,10 +307,17 @@ mod tests {
             dest_section_pk: *env.section.chain().root_key(),
         };
 
-        let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
+        let (actions, _) = process(
+            &env.node,
+            &env.section,
+            &env.network,
+            &mut LaggingMessages::default(),
+            &msg,
+            dest_info,
+            None,
+        )?;
 
         assert_eq!(actions.send, vec![]);
-        assert_eq!(actions.propose, None);
 
         Ok(())
     }

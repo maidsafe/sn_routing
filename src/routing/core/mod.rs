@@ -30,7 +30,9 @@ use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use sn_messaging::DestInfo;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -56,6 +58,13 @@ pub(crate) struct Core {
     resource_proof: ResourceProof,
     end_users: EndUserRegistry,
     connectivity_complaints: ConnectivityComplaints,
+    lagging_messages: LaggingMessages,
+}
+
+#[derive(Default)]
+pub(crate) struct LaggingMessages {
+    // Execute upon sync
+    pub src_ahead: BTreeMap<bls::PublicKey, Vec<Command>>,
 }
 
 impl Core {
@@ -84,6 +93,7 @@ impl Core {
             resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
             end_users: EndUserRegistry::new(),
             connectivity_complaints: ConnectivityComplaints::new(),
+            lagging_messages: LaggingMessages::default(),
         }
     }
 
@@ -91,24 +101,32 @@ impl Core {
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
 
-    fn check_for_entropy(&mut self, msg: &Message, dest_info: DestInfo) -> Result<Vec<Command>> {
+    fn check_for_entropy(
+        &mut self,
+        msg: &Message,
+        dest_info: DestInfo,
+        sender: Option<SocketAddr>,
+    ) -> Result<(Vec<Command>, bool)> {
         if !self.is_elder() {
-            return Ok(vec![]);
+            return Ok((vec![], false));
         }
 
-        let actions =
-            lazy_messaging::process(&self.node, &self.section, &self.network, msg, dest_info)?;
+        let (actions, can_be_executed) = lazy_messaging::process(
+            &self.node,
+            &self.section,
+            &self.network,
+            &mut self.lagging_messages,
+            msg,
+            dest_info,
+            sender,
+        )?;
         let mut commands = vec![];
 
         for msg in actions.send {
             commands.extend(self.relay_message(&msg)?);
         }
 
-        if let Some(proposal) = actions.propose {
-            commands.extend(self.propose(proposal)?);
-        }
-
-        Ok(commands)
+        Ok((commands, can_be_executed))
     }
 
     pub(crate) fn state_snapshot(&self) -> StateSnapshot {
@@ -184,6 +202,7 @@ impl Core {
 
             if new.is_elder || old.is_elder {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
+                commands.extend(self.handle_lagging_messages_on_sync()?);
             }
 
             let current: BTreeSet<_> = self
