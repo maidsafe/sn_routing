@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.67.1](https://github.com/maidsafe/sn_routing/compare/v0.67.0...v0.67.1) (2021-05-10)
+
+
+### Features
+
+* move section_key into SectionAuthorityProvider ([7d2d476](https://github.com/maidsafe/sn_routing/commit/7d2d4760dcb1e037612f9848884b5690ee0a67c2))
+
 ## [0.67.0](https://github.com/maidsafe/sn_routing/compare/v0.66.3...v0.67.0) (2021-05-10)
 
 
