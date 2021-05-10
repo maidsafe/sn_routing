@@ -46,7 +46,7 @@ use sn_messaging::{
     section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
     DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
 
@@ -117,17 +117,18 @@ impl Routing {
             let elders = Elders {
                 prefix: *section.prefix(),
                 key: *section.chain().last_key(),
-                elders: section
+                remaining: BTreeSet::new(),
+                added: section
                     .authority_provider()
                     .elders
                     .keys()
                     .copied()
                     .collect(),
+                removed: BTreeSet::new(),
             };
 
             state.send_event(Event::EldersChanged {
                 elders,
-                sibling_elders: None,
                 self_status_change: NodeElderChange::Promoted,
             });
 

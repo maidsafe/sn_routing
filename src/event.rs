@@ -40,8 +40,12 @@ pub struct Elders {
     pub prefix: Prefix,
     /// The BLS public key of a section.
     pub key: bls::PublicKey,
-    /// The set of elders of a section.
-    pub elders: BTreeSet<XorName>,
+    /// Remaining Elders in our section.
+    pub remaining: BTreeSet<XorName>,
+    /// New Elders in our section.
+    pub added: BTreeSet<XorName>,
+    /// Removed Elders in our section.
+    pub removed: BTreeSet<XorName>,
 }
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -82,13 +86,19 @@ pub enum Event {
         /// Age of the node
         age: u8,
     },
+    /// Our section has split.
+    SectionSplit {
+        /// The Elders of our section.
+        elders: Elders,
+        /// The Elders of the sibling section.
+        sibling_elders: Elders,
+        /// Promoted, demoted or no change?
+        self_status_change: NodeElderChange,
+    },
     /// The set of elders in our section has changed.
     EldersChanged {
         /// The Elders of our section.
         elders: Elders,
-        /// The Elders of the sibling section, if this event is fired during a split.
-        /// Otherwise `None`.
-        sibling_elders: Option<Elders>,
         /// Promoted, demoted or no change?
         self_status_change: NodeElderChange,
     },
@@ -118,7 +128,14 @@ pub enum Event {
     /// Failed in sending a message to client, or connection to client is lost
     ClientLost(SocketAddr),
     /// Notify the current list of adult nodes, in case of churning.
-    AdultsChanged(BTreeSet<XorName>),
+    AdultsChanged {
+        /// Remaining Adults in our section.
+        remaining: BTreeSet<XorName>,
+        /// New Adults in our section.
+        added: BTreeSet<XorName>,
+        /// Removed Adults in our section.
+        removed: BTreeSet<XorName>,
+    },
 }
 
 impl Debug for Event {
@@ -148,7 +165,7 @@ impl Debug for Event {
                 .field("name", name)
                 .field("age", age)
                 .finish(),
-            Self::EldersChanged {
+            Self::SectionSplit {
                 elders,
                 sibling_elders,
                 self_status_change,
@@ -156,6 +173,14 @@ impl Debug for Event {
                 .debug_struct("EldersChanged")
                 .field("elders", elders)
                 .field("sibling_elders", sibling_elders)
+                .field("self_status_change", self_status_change)
+                .finish(),
+            Self::EldersChanged {
+                elders,
+                self_status_change,
+            } => formatter
+                .debug_struct("EldersChanged")
+                .field("elders", elders)
                 .field("self_status_change", self_status_change)
                 .finish(),
             Self::RelocationStarted { previous_name } => formatter
@@ -177,7 +202,16 @@ impl Debug for Event {
                 msg, user,
             ),
             Self::ClientLost(addr) => write!(formatter, "ClientLost({:?})", addr),
-            Self::AdultsChanged(adult_list) => write!(formatter, "AdultsChanged({:?})", adult_list),
+            Self::AdultsChanged {
+                remaining,
+                added,
+                removed,
+            } => formatter
+                .debug_struct("AdultsChanged")
+                .field("remaining", remaining)
+                .field("added", added)
+                .field("removed", removed)
+                .finish(),
         }
     }
 }
