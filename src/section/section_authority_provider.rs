@@ -18,17 +18,17 @@ use std::{
     net::SocketAddr,
 };
 
-/// The information about all elders of a section at one point in time.
+/// The information about elder candidates in a DKG round.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct EldersInfo {
+pub struct ElderCandidates {
     /// The section's complete set of elders as a map from their name to their socket address.
     pub elders: BTreeMap<XorName, SocketAddr>,
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
 }
 
-impl EldersInfo {
-    /// Creates a new `EldersInfo` with the given members and prefix.
+impl ElderCandidates {
+    /// Creates a new `ElderCandidates` with the given members and prefix.
     pub(crate) fn new<I>(elders: I, prefix: Prefix) -> Self
     where
         I: IntoIterator<Item = Peer>,
@@ -93,24 +93,27 @@ impl SectionAuthorityProvider {
         }
     }
 
-    /// Creates a new `SectionAuthorityProvider` from EldersInfo and public keyset.
-    pub fn from_elders_info(elders_info: EldersInfo, pk_set: ReplicaPublicKeySet) -> Self {
-        let elders = elders_info
+    /// Creates a new `SectionAuthorityProvider` from ElderCandidates and public keyset.
+    pub fn from_elder_candidates(
+        elder_candidates: ElderCandidates,
+        pk_set: ReplicaPublicKeySet,
+    ) -> Self {
+        let elders = elder_candidates
             .elders
             .iter()
             .enumerate()
             .map(|(index, (name, addr))| (*name, (pk_set.public_key_share(index), *addr)))
             .collect();
         Self {
-            prefix: elders_info.prefix,
+            prefix: elder_candidates.prefix,
             section_key: pk_set.public_key(),
             elders,
         }
     }
 
-    /// Returns `EldersInfo`, which doesn't have key related infos.
-    pub fn elders_info(&self) -> EldersInfo {
-        EldersInfo {
+    /// Returns `ElderCandidates`, which doesn't have key related infos.
+    pub fn elder_candidates(&self) -> ElderCandidates {
+        ElderCandidates {
             elders: self.elders(),
             prefix: self.prefix,
         }
@@ -257,8 +260,8 @@ pub(crate) mod test_utils {
 
         let threshold = supermajority(count) - 1;
         let secret_key_set = bls::SecretKeySet::random(threshold, &mut rand::thread_rng());
-        let section_auth = SectionAuthorityProvider::from_elders_info(
-            EldersInfo { elders, prefix },
+        let section_auth = SectionAuthorityProvider::from_elder_candidates(
+            ElderCandidates { elders, prefix },
             secret_key_set.public_keys(),
         );
 

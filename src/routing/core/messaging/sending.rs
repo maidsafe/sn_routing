@@ -15,7 +15,7 @@ use crate::{
     peer::Peer,
     relocation::{RelocateDetails, RelocatePromise, RelocateState},
     routing::command::Command,
-    section::{EldersInfo, MemberInfo, Section, SectionChain},
+    section::{ElderCandidates, MemberInfo, Section, SectionChain},
 };
 use bytes::Bytes;
 use sn_messaging::{DestInfo, DstLocation};
@@ -190,31 +190,31 @@ impl Core {
         }
     }
 
-    pub(crate) fn send_dkg_start(&self, elders_info: EldersInfo) -> Result<Vec<Command>> {
+    pub(crate) fn send_dkg_start(&self, elder_candidates: ElderCandidates) -> Result<Vec<Command>> {
         // Send to all participants.
-        let recipients: Vec<_> = elders_info.peers().collect();
-        self.send_dkg_start_to(elders_info, &recipients)
+        let recipients: Vec<_> = elder_candidates.peers().collect();
+        self.send_dkg_start_to(elder_candidates, &recipients)
     }
 
     pub(crate) fn send_dkg_start_to(
         &self,
-        elders_info: EldersInfo,
+        elder_candidates: ElderCandidates,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let src_prefix = elders_info.prefix;
+        let src_prefix = elder_candidates.prefix;
         let generation = self.section.chain().main_branch_len() as u64;
-        let dkg_key = DkgKey::new(&elders_info, generation);
+        let dkg_key = DkgKey::new(&elder_candidates, generation);
 
         trace!(
             "Send DkgStart for {:?} with {:?} to {:?}",
-            elders_info,
+            elder_candidates,
             dkg_key,
             recipients
         );
 
         let variant = Variant::DkgStart {
             dkg_key,
-            elders_info,
+            elder_candidates,
         };
 
         self.send_message_for_dst_accumulation(
