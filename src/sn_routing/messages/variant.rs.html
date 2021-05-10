@@ -296,19 +296,6 @@
 <span id="295">295</span>
 <span id="296">296</span>
 <span id="297">297</span>
-<span id="298">298</span>
-<span id="299">299</span>
-<span id="300">300</span>
-<span id="301">301</span>
-<span id="302">302</span>
-<span id="303">303</span>
-<span id="304">304</span>
-<span id="305">305</span>
-<span id="306">306</span>
-<span id="307">307</span>
-<span id="308">308</span>
-<span id="309">309</span>
-<span id="310">310</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -384,14 +371,6 @@
     <span class="doccomment">/// Sent from a node that can&#39;t establish the trust of the contained message to its original</span>
     <span class="doccomment">/// source in order for them to provide new proof that the node would trust.</span>
     <span class="ident">BouncedUntrustedMessage</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>),
-    <span class="doccomment">/// Sent from a node that doesn&#39;t know how to handle `message` to its elders in order for them</span>
-    <span class="doccomment">/// to decide what to do with it (resend with more info or discard).</span>
-    <span class="ident">BouncedUnknownMessage</span> {
-        <span class="doccomment">/// The last section key of the sender.</span>
-        <span class="ident">src_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-        <span class="doccomment">/// The serialized original message.</span>
-        <span class="ident">message</span>: <span class="ident">Bytes</span>,
-    },
     <span class="doccomment">/// Sent to the new elder candidates to start the DKG process.</span>
     <span class="ident">DkgStart</span> {
         <span class="doccomment">/// The identifier of the DKG session to start.</span>
@@ -524,11 +503,6 @@
             <span class="self">Self</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_tuple</span>(<span class="string">&quot;BouncedUntrustedMessage&quot;</span>)
                 .<span class="ident">field</span>(<span class="ident">message</span>)
-                .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">BouncedUnknownMessage</span> { <span class="ident">src_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;BouncedUnknownMessage&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;src_key&quot;</span>, <span class="ident">src_key</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;message_hash&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">MessageHash</span>::<span class="ident">from_bytes</span>(<span class="ident">message</span>))
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
