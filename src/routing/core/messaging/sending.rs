@@ -48,7 +48,6 @@ impl Core {
         )?;
 
         let variant = Variant::NodeApproval {
-            genesis_key: *self.section.genesis_key(),
             section_auth: self.section.proven_authority_provider().clone(),
             member_info,
         };

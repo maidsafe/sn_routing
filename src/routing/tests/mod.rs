@@ -506,7 +506,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     );
     let proven_section_auth = proven(sk_set.secret_key(), section_auth.clone())?;
 
-    let mut section = Section::new(*chain.root_key(), chain, proven_section_auth)?;
+    let mut section = Section::new(chain, proven_section_auth)?;
     let mut expected_new_elders = BTreeSet::new();
 
     for peer in section_auth.peers() {
@@ -900,7 +900,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     };
 
     let proven_section_auth = proven(&sk0, section_auth)?;
-    let section = Section::new(pk0, chain.clone(), proven_section_auth)?;
+    let section = Section::new(chain.clone(), proven_section_auth)?;
 
     let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
@@ -992,7 +992,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let _ = chain.insert(&pk0, pk1, pk1_signature);
 
     let proven_section_auth = proven(sk1_set.secret_key(), section_auth)?;
-    let section = Section::new(pk0, chain.clone(), proven_section_auth)?;
+    let section = Section::new(chain.clone(), proven_section_auth)?;
     let section_key_share = create_section_key_share(&sk1_set, 0);
 
     let node = nodes.remove(0);
@@ -1104,7 +1104,7 @@ async fn handle_sync() -> Result<()> {
 
     let (old_section_auth, mut nodes) = create_section_auth();
     let proven_old_section_auth = proven(sk1_set.secret_key(), old_section_auth.clone())?;
-    let old_section = Section::new(pk0, chain.clone(), proven_old_section_auth)?;
+    let old_section = Section::new(chain.clone(), proven_old_section_auth)?;
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -1135,7 +1135,7 @@ async fn handle_sync() -> Result<()> {
     );
     let new_section_elders: BTreeSet<_> = new_section_auth.names();
     let proven_new_section_auth = proven(sk2, new_section_auth)?;
-    let new_section = Section::new(pk0, chain, proven_new_section_auth)?;
+    let new_section = Section::new(chain, proven_new_section_auth)?;
 
     // Create the `Sync` message containing the new `Section`.
     let message = Message::single_src(
@@ -1193,11 +1193,11 @@ async fn handle_untrusted_sync() -> Result<()> {
 
     let (old_section_auth, _) = create_section_auth();
     let proven_old_section_auth = proven(&sk0, old_section_auth.clone())?;
-    let old_section = Section::new(pk0, SectionChain::new(pk0), proven_old_section_auth)?;
+    let old_section = Section::new(SectionChain::new(pk0), proven_old_section_auth)?;
 
     let (new_section_auth, _) = create_section_auth();
     let proven_new_section_auth = proven(&sk2, new_section_auth.clone())?;
-    let new_section = Section::new(pk0, chain.truncate(2), proven_new_section_auth)?;
+    let new_section = Section::new(chain.truncate(2), proven_new_section_auth)?;
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = create_node(MIN_ADULT_AGE);
@@ -1281,7 +1281,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 
     let (section_auth, mut nodes) = create_section_auth();
     let proven_section_auth = proven(sk2, section_auth.clone())?;
-    let section_full = Section::new(pk0, chain, proven_section_auth)?;
+    let section_full = Section::new(chain, proven_section_auth)?;
 
     let (event_tx, _) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
@@ -1805,11 +1805,7 @@ fn create_section(
     let section_chain = SectionChain::new(sk_set.secret_key().public_key());
     let proven_section_auth = proven(sk_set.secret_key(), section_auth.clone())?;
 
-    let mut section = Section::new(
-        *section_chain.root_key(),
-        section_chain,
-        proven_section_auth,
-    )?;
+    let mut section = Section::new(section_chain, proven_section_auth)?;
 
     for peer in section_auth.peers() {
         let mut peer = peer;

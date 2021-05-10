@@ -368,12 +368,11 @@ impl<'a> State<'a> {
             match response {
                 JoinResponse::Approval {
                     section_auth,
-                    genesis_key,
                     section_chain,
                 } => {
                     return Ok((
                         self.node,
-                        Section::new(genesis_key, section_chain, section_auth)?,
+                        Section::new(section_chain, section_auth)?,
                         self.backlog.into_iter().collect(),
                     ));
                 }
@@ -531,7 +530,6 @@ impl<'a> State<'a> {
                     ));
                 }
                 Variant::NodeApproval {
-                    genesis_key,
                     section_auth,
                     member_info,
                 } => {
@@ -540,8 +538,10 @@ impl<'a> State<'a> {
                         continue;
                     }
 
+                    let section_chain = message.proof_chain()?.clone();
+
                     if let Some(expected_genesis_key) = expected_genesis_key {
-                        if expected_genesis_key != genesis_key {
+                        if expected_genesis_key != section_chain.root_key() {
                             trace!("Unexpected Genesis key");
                             continue;
                         }
@@ -557,8 +557,6 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    let section_chain = message.proof_chain()?.clone();
-
                     trace!(
                         "This node has been approved to join the network at {:?}!",
                         section_auth.value.prefix,
@@ -567,7 +565,6 @@ impl<'a> State<'a> {
                     return Ok((
                         JoinResponse::Approval {
                             section_auth: section_auth.clone(),
-                            genesis_key: *genesis_key,
                             section_chain,
                         },
                         sender,
@@ -612,7 +609,6 @@ impl<'a> State<'a> {
 enum JoinResponse {
     Approval {
         section_auth: Proven<SectionAuthorityProvider>,
-        genesis_key: bls::PublicKey,
         section_chain: SectionChain,
     },
     Retry {
@@ -796,7 +792,6 @@ mod tests {
                 &bootstrap_node,
                 DstLocation::Direct,
                 Variant::NodeApproval {
-                    genesis_key: pk,
                     section_auth,
                     member_info,
                 },

@@ -334,8 +334,7 @@ mod tests {
             let node = nodes.remove(0);
 
             let section_auth0 = proven(&our_sk, section_auth0)?;
-            let section = Section::new(*chain.root_key(), chain, section_auth0)
-                .context("failed to create section")?;
+            let section = Section::new(chain, section_auth0).context("failed to create section")?;
 
             let (section_auth1, _, their_sk) = gen_section_authority_provider(prefix1, ELDER_SIZE);
             let their_pk = their_sk.public_keys().public_key();

@@ -37,7 +37,6 @@ use xor_name::{Prefix, XorName};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Section {
-    genesis_key: bls::PublicKey,
     chain: SectionChain,
     section_auth: Proven<SectionAuthorityProvider>,
     members: SectionPeers,
@@ -49,7 +48,6 @@ impl Section {
     ///
     /// Returns error if `section_auth` is not signed with the last key of `chain`.
     pub fn new(
-        genesis_key: bls::PublicKey,
         chain: SectionChain,
         section_auth: Proven<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
@@ -60,7 +58,6 @@ impl Section {
         }
 
         Ok(Self {
-            genesis_key,
             chain,
             section_auth,
             members: SectionPeers::default(),
@@ -77,7 +74,6 @@ impl Section {
             create_first_section_authority_provider(&public_key_set, &secret_key_share, peer)?;
 
         let mut section = Self::new(
-            section_auth.proof.public_key,
             SectionChain::new(section_auth.proof.public_key),
             section_auth,
         )?;
@@ -101,7 +97,7 @@ impl Section {
     }
 
     pub fn genesis_key(&self) -> &bls::PublicKey {
-        &self.genesis_key
+        self.chain.root_key()
     }
 
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
@@ -205,7 +201,6 @@ impl Section {
         };
 
         Ok(Self {
-            genesis_key: self.genesis_key,
             section_auth: self.section_auth.clone(),
             chain,
             members: self.members.clone(),

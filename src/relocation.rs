@@ -352,7 +352,7 @@ mod tests {
         );
         let section_auth = proven(sk, section_auth)?;
 
-        let mut section = Section::new(pk, SectionChain::new(pk), section_auth)?;
+        let mut section = Section::new(SectionChain::new(pk), section_auth)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);

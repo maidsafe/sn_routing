@@ -47,7 +47,6 @@ pub(crate) enum Variant {
     /// Message sent to newly joined node containing the necessary info to become a member of our
     /// section.
     NodeApproval {
-        genesis_key: bls::PublicKey,
         section_auth: Proven<SectionAuthorityProvider>,
         member_info: Proven<MemberInfo>,
     },
@@ -170,12 +169,10 @@ impl Debug for Variant {
             Self::SectionKnowledge { .. } => f.debug_struct("SectionKnowledge").finish(),
             Self::UserMessage(payload) => write!(f, "UserMessage({:10})", HexFmt(payload)),
             Self::NodeApproval {
-                genesis_key,
                 section_auth,
                 member_info,
             } => f
                 .debug_struct("NodeApproval")
-                .field("genesis_key", genesis_key)
                 .field("section_auth", section_auth)
                 .field("member_info", member_info)
                 .finish(),

@@ -495,7 +495,6 @@ mod tests {
         let member_info = agreement::test_utils::proven(&sk1, member_info)?;
 
         let variant = Variant::NodeApproval {
-            genesis_key: pk0,
             section_auth,
             member_info,
         };

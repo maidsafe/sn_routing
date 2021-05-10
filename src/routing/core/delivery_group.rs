@@ -448,7 +448,7 @@ mod tests {
         let elders0: Vec<_> = section_auth0.peers().collect();
         let section_auth0 = proven(&sk, section_auth0)?;
 
-        let mut section = Section::new(pk, chain, section_auth0)?;
+        let mut section = Section::new(chain, section_auth0)?;
 
         for peer in elders0 {
             let member_info = MemberInfo::joined(peer);
@@ -476,7 +476,7 @@ mod tests {
 
         let (section_auth, _, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
         let section_auth = proven(&sk, section_auth)?;
-        let section = Section::new(pk, chain, section_auth)?;
+        let section = Section::new(chain, section_auth)?;
 
         let network = Network::new();
         let our_name = section.prefix().substituted_in(rand::random());
