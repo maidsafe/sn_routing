@@ -45,14 +45,6 @@ impl Core {
             Proposal::OurElders(section_auth) => {
                 self.handle_our_elders_agreement(section_auth, proof)
             }
-            // Proposal::TheirKey { prefix, key } => {
-            //     self.handle_their_key_agreement(prefix, key, proof);
-            //     Ok(vec![])
-            // }
-            // Proposal::TheirKnowledge { prefix, key } => {
-            //     self.handle_their_knowledge_agreement(prefix, key, proof);
-            //     Ok(vec![])
-            // }
             Proposal::AccumulateAtSrc {
                 message,
                 proof_chain,

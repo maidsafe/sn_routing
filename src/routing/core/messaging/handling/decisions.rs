@@ -83,7 +83,7 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
-            | Variant::SrcAhead { .. }
+            | Variant::SectionKnowledgeQuery { .. }
             | Variant::ResourceChallenge { .. } => {}
         }
 
@@ -109,7 +109,7 @@ impl Core {
                 // This `SectionInfo` is proposed by the DKG participants and is signed by the new
                 // key created by the DKG so we don't know it yet. We only require the sender of the
                 // proposal to be one of the DKG participants.
-                if section_auth.elders().contains_key(sender) {
+                if section_auth.contains_elder(sender) {
                     None
                 } else {
                     Some(MessageStatus::Useless)

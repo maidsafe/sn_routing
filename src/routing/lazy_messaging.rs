@@ -50,8 +50,8 @@ pub(crate) fn process(
                         node,
                         section,
                         network,
-                        Variant::SrcAhead {
-                            key: *key,
+                        Variant::SectionKnowledgeQuery {
+                            last_known_key: *key,
                             msg: Box::new(msg.clone()),
                         },
                         dst,
@@ -102,13 +102,7 @@ pub(crate) fn process(
                 src_info: (section_auth.clone(), chain.clone()),
                 msg: None,
             };
-            let msg = create_other_section_message(
-                node,
-                section,
-                network,
-                variant,
-                dst,
-            )?;
+            let msg = create_other_section_message(node, section, network, variant, dst)?;
             actions.send.push(msg);
             return Ok((actions, true));
         }

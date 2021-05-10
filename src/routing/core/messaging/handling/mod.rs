@@ -72,10 +72,10 @@ impl Core {
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
-                let (entropy_commands, can_be_executed) =
+                let (entropy_commands, shall_be_handled) =
                     self.check_for_entropy(&msg, dest_info.clone(), sender)?;
                 commands.extend(entropy_commands);
-                if can_be_executed {
+                if shall_be_handled {
                     commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
                 }
             }
@@ -128,12 +128,12 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    let addrs = section_auth
+                    let targets = section_auth
                         .elders()
                         .iter()
                         .map(|(name, addr)| (*name, *addr))
                         .collect();
-                    GetSectionResponse::Redirect(addrs)
+                    GetSectionResponse::Redirect(targets)
                 };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);
@@ -338,13 +338,13 @@ impl Core {
                     *bounced_msg.clone(),
                 )?])
             }
-            Variant::SrcAhead {
-                key,
+            Variant::SectionKnowledgeQuery {
+                last_known_key,
                 msg: returned_msg,
             } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_src_ahead(
-                    *key,
+                    *last_known_key,
                     returned_msg.clone(),
                     sender,
                     src_name,
@@ -422,10 +422,10 @@ impl Core {
         dst_location: DstLocation,
     ) -> Result<Command> {
         let chain = self.section.chain();
-        let truncated_key = chain.get_proof_chain_to_current(&key)?;
+        let truncated_chain = chain.get_proof_chain_to_current(&key)?;
         let section_auth = self.section.proven_authority_provider();
         let variant = Variant::SectionKnowledge {
-            src_info: (section_auth.clone(), truncated_key),
+            src_info: (section_auth.clone(), truncated_chain),
             msg: Some(msg),
         };
 

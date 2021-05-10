@@ -233,7 +233,7 @@ impl Comm {
         }
 
         trace!(
-            "Sending message ({:?} bytes) finished to {}/{} recipients (failed: {:?})",
+            "Sending message {:?} finished to {}/{} recipients (failed: {:?})",
             msg,
             successes,
             delivery_group_size,

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sn_data_types::ReplicaPublicKeySet;
 use std::{
     borrow::Borrow,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
 };
@@ -129,6 +129,26 @@ impl SectionAuthorityProvider {
         })
     }
 
+    /// Returns the number of elders in the section.
+    pub fn elder_count(&self) -> usize {
+        self.elders.len()
+    }
+
+    /// Returns a map of name to socket_addr.
+    pub(crate) fn contains_elder(&self, name: &XorName) -> bool {
+        self.elders.contains_key(name)
+    }
+
+    /// Returns a socket_addr of an elder.
+    pub(crate) fn get_addr(&self, name: &XorName) -> Option<SocketAddr> {
+        self.elders.get(name).map(|(_, addr)| *addr)
+    }
+
+    /// Returns the set of elder names.
+    pub fn names(&self) -> BTreeSet<XorName> {
+        self.elders.keys().copied().collect()
+    }
+
     /// Returns a map of name to socket_addr.
     pub fn elders(&self) -> BTreeMap<XorName, SocketAddr> {
         self.elders
@@ -137,7 +157,7 @@ impl SectionAuthorityProvider {
             .collect()
     }
 
-    pub(crate) fn addrs(&self) -> Vec<SocketAddr> {
+    pub(crate) fn addresses(&self) -> Vec<SocketAddr> {
         self.elders.values().map(|(_, addr)| *addr).collect()
     }
 
