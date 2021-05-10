@@ -221,7 +221,7 @@ impl Section {
     }
 
     pub fn is_elder(&self, name: &XorName) -> bool {
-        self.authority_provider().elders().contains_key(name)
+        self.authority_provider().contains_elder(name)
     }
 
     /// Generate a new section info(s) based on the current set of members.
@@ -233,8 +233,7 @@ impl Section {
 
         let expected_peers = self.elder_candidates(ELDER_SIZE);
         let expected_names: BTreeSet<_> = expected_peers.iter().map(Peer::name).cloned().collect();
-        let current_names: BTreeSet<_> =
-            self.authority_provider().elders().keys().cloned().collect();
+        let current_names: BTreeSet<_> = self.authority_provider().names();
 
         if expected_names == current_names {
             vec![]

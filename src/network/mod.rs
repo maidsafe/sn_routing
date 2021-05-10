@@ -72,10 +72,9 @@ impl Network {
             .get_matching(name)?
             .section_auth
             .value
-            .elders()
-            .get(name)
+            .get_addr(name)
             .map(|addr| {
-                let mut peer = Peer::new(*name, *addr);
+                let mut peer = Peer::new(*name, addr);
                 peer.set_reachable(true);
                 peer
             })
@@ -210,7 +209,7 @@ impl Network {
             .map(|p| 1.0 / (p.bit_count() as f64).exp2())
             .sum();
 
-        let known = our.elders().len() + self.elders().count();
+        let known = our.elder_count() + self.elders().count();
         let total = known as f64 / network_fraction;
 
         (known as u64, total.ceil() as u64, is_exact)

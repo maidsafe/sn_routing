@@ -96,7 +96,7 @@ impl Routing {
         let keypair = config.keypair.unwrap_or_else(|| {
             crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
         });
-        let node_name = XorName::from(sn_data_types::PublicKey::from(keypair.public));
+        let node_name = crypto::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
@@ -104,7 +104,7 @@ impl Routing {
         let (state, comm, backlog) = if config.first {
             // Genesis node having a fix age of 255.
             let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
-            let node_name = XorName::from(sn_data_types::PublicKey::from(keypair.public));
+            let node_name = crypto::name(&keypair.public);
 
             info!("{} Starting a new network as the genesis node.", node_name);
 
@@ -118,12 +118,7 @@ impl Routing {
                 prefix: *section.prefix(),
                 key: *section.chain().last_key(),
                 remaining: BTreeSet::new(),
-                added: section
-                    .authority_provider()
-                    .elders()
-                    .keys()
-                    .copied()
-                    .collect(),
+                added: section.authority_provider().names(),
                 removed: BTreeSet::new(),
             };
 

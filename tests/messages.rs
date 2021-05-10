@@ -114,7 +114,6 @@ async fn test_messages_client_node() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_messages_between_nodes() -> Result<()> {
     let msg = b"hello!";
     let response = b"good bye!";

@@ -134,13 +134,7 @@ impl Core {
             is_elder: self.is_elder(),
             last_key: *self.section.chain().last_key(),
             prefix: *self.section.prefix(),
-            elders: self
-                .section()
-                .authority_provider()
-                .elders()
-                .keys()
-                .copied()
-                .collect(),
+            elders: self.section().authority_provider().names(),
         }
     }
 
@@ -205,13 +199,7 @@ impl Core {
                 commands.extend(self.handle_lagging_messages_on_sync()?);
             }
 
-            let current: BTreeSet<_> = self
-                .section
-                .authority_provider()
-                .elders()
-                .keys()
-                .copied()
-                .collect();
+            let current: BTreeSet<_> = self.section.authority_provider().names();
             let added = current.difference(&old.elders).copied().collect();
             let removed = old.elders.difference(&current).copied().collect();
             let remaining = old.elders.intersection(&current).copied().collect();
@@ -238,7 +226,7 @@ impl Core {
 
             let sibling_elders = if new.prefix != old.prefix {
                 self.network.get(&new.prefix.sibling()).map(|sec_auth| {
-                    let current: BTreeSet<_> = sec_auth.elders().keys().copied().collect();
+                    let current: BTreeSet<_> = sec_auth.names();
                     let added = current.difference(&old.elders).copied().collect();
                     let removed = old.elders.difference(&current).copied().collect();
                     let remaining = old.elders.intersection(&current).copied().collect();

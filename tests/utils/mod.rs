@@ -134,8 +134,7 @@ pub async fn verify_invariants_for_node(node: &Routing, elder_size: usize) -> Re
     assert!(node.matches_our_prefix(&our_name).await);
 
     let our_prefix = node.our_prefix().await;
-    let our_section_elders: BTreeSet<_> =
-        node.our_section().await.elders().keys().copied().collect();
+    let our_section_elders: BTreeSet<_> = node.our_section().await.names();
 
     if !our_prefix.is_empty() {
         assert!(
@@ -182,21 +181,21 @@ pub async fn verify_invariants_for_node(node: &Routing, elder_size: usize) -> Re
 
     if let Some(info) = other_sections
         .iter()
-        .find(|info| info.elders().len() < elder_size)
+        .find(|info| info.elder_count() < elder_size)
     {
         bail!(
             "{}({:b}) An other section {:?} is below the minimum size ({}/{}) (other_sections: {:?})",
             our_name,
             our_prefix,
             info.prefix,
-            info.elders().len(),
+            info.elder_count(),
             elder_size,
             other_sections,
         );
     }
 
     for info in &other_sections {
-        if let Some(name) = info.elders().keys().find(|name| !info.prefix.matches(name)) {
+        if let Some(name) = info.names().iter().find(|&name| !info.prefix.matches(name)) {
             bail!(
                 "{}({:b}) A name in a section doesn't match its prefix: {:?}, {:?}",
                 our_name,

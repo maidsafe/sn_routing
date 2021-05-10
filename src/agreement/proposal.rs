@@ -51,18 +51,6 @@ pub(crate) enum Proposal {
     // the same time as a single atomic operation without needing to cache anything.
     OurElders(Proven<SectionAuthorityProvider>),
 
-    // // Proposal to update other section key.
-    // TheirKey {
-    //     prefix: Prefix,
-    //     key: bls::PublicKey,
-    // },
-    //
-    // // Proposal to update other section's knowledge of our section.
-    // TheirKnowledge {
-    //     prefix: Prefix,
-    //     key: bls::PublicKey,
-    // },
-
     // Proposal to accumulate the message at the source (that is, our section) and then send it to
     // its destination.
     AccumulateAtSrc {
@@ -147,12 +135,10 @@ mod tests {
     use super::*;
     use crate::{agreement, section};
     use anyhow::Result;
-    use rand::Rng;
     use std::fmt::Debug;
     use xor_name::Prefix;
 
     #[test]
-    #[ignore]
     fn serialize_for_signing() -> Result<()> {
         // Proposal::SectionInfo
         let (section_auth, _) =
@@ -166,18 +152,6 @@ mod tests {
         let proven_section_auth = agreement::test_utils::proven(&new_sk, section_auth)?;
         let proposal = Proposal::OurElders(proven_section_auth);
         verify_serialize_for_signing(&proposal, &new_pk)?;
-
-        // Proposal::TheirKey
-        let prefix = gen_prefix();
-        let key = bls::SecretKey::random().public_key();
-        // let proposal = Proposal::TheirKey { prefix, key };
-        verify_serialize_for_signing(&proposal, &(prefix, key))?;
-
-        // Proposal::TheirKnowledge
-        let prefix = gen_prefix();
-        let key = bls::SecretKey::random().public_key();
-        // let proposal = Proposal::TheirKnowledge { prefix, key };
-        verify_serialize_for_signing(&proposal, &(prefix, key))?;
 
         Ok(())
     }
@@ -197,17 +171,5 @@ mod tests {
         );
 
         Ok(())
-    }
-
-    fn gen_prefix() -> Prefix {
-        let mut rng = rand::thread_rng();
-        let mut prefix = Prefix::default();
-        let len = rng.gen_range(0, 5);
-
-        for _ in 0..len {
-            prefix = prefix.pushed(rng.gen());
-        }
-
-        prefix
     }
 }

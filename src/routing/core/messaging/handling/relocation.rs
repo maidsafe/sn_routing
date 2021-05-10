@@ -32,7 +32,7 @@ impl Core {
         let mut commands = vec![];
 
         // Do not carry out relocation when there is not enough elder nodes.
-        if self.section.authority_provider().elders().len() < ELDER_SIZE {
+        if self.section.authority_provider().elder_count() < ELDER_SIZE {
             return Ok(commands);
         }
 
@@ -120,7 +120,7 @@ impl Core {
         let (message_tx, message_rx) = mpsc::channel(1);
         self.relocate_state = Some(RelocateState::InProgress(message_tx));
 
-        let bootstrap_addrs = self.section.authority_provider().addrs();
+        let bootstrap_addrs = self.section.authority_provider().addresses();
 
         Ok(Some(Command::Relocate {
             bootstrap_addrs,

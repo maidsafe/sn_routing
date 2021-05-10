@@ -135,7 +135,7 @@ impl<'a> State<'a> {
                 .unwrap_or(FIRST_SECTION_MAX_AGE);
 
             let new_keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
-            let new_name = XorName::from(sn_data_types::PublicKey::from(new_keypair.public));
+            let new_name = crypto::name(&new_keypair.public);
 
             info!("Setting name to {}", new_name);
             self.node = Node::new(new_keypair, self.node.addr);
@@ -399,7 +399,7 @@ impl<'a> State<'a> {
                         let recipients = section_auth
                             .elders()
                             .iter()
-                            .map(|(addr, name)| (*name, *addr))
+                            .map(|(name, addr)| (*addr, *name))
                             .collect();
                         self.send_join_requests(join_request, recipients, section_key)
                             .await?;

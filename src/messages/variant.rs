@@ -113,13 +113,12 @@ pub(crate) enum Variant {
         nonce: [u8; 32],
         nonce_signature: Signature,
     },
-    /// Message sent by dst to indicate that Src is ahead in knowledge.
-    /// A follow-up reply will be sent by Src with SectionKnowledge
-    SrcAhead {
-        key: bls::PublicKey,
+    /// Message sent by a node to indicate it received a message from a node which was ahead in knowledge.
+    /// A reply is expected with a `SectionKnowledge` message.
+    SectionKnowledgeQuery {
+        last_known_key: bls::PublicKey,
         msg: Box<Message>,
     },
-    /// Message sent by dst to indicate that Dst is outdated in knowledge.
     /// A follow-up reply will be sent by src with SectionKnowledge.
     // DstOutdated,
     /// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.
@@ -249,7 +248,7 @@ impl Debug for Variant {
                 .field("difficulty", difficulty)
                 .finish(),
             Self::ConnectivityComplaint(name) => write!(f, "ConnectivityComplaint({:?})", name),
-            Self::SrcAhead { .. } => write!(f, "SrcAhead"),
+            Self::SectionKnowledgeQuery { .. } => write!(f, "SectionKnowledgeQuery"),
         }
     }
 }

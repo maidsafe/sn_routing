@@ -108,7 +108,7 @@ fn candidates(
     let sections = iter::once(section.authority_provider())
         .chain(network.all())
         .sorted_by(|lhs, rhs| lhs.prefix.cmp_distance(&rhs.prefix, target_name))
-        .map(|info| (&info.prefix, info.elders().len(), info.peers()));
+        .map(|info| (&info.prefix, info.elder_count(), info.peers()));
 
     // gives at least 1 honest target among recipients.
     let min_dg_size = 1 + ELDER_SIZE - supermajority(ELDER_SIZE);
@@ -181,8 +181,8 @@ mod tests {
 
         let dst_name = *section
             .authority_provider()
-            .elders()
-            .keys()
+            .names()
+            .iter()
             .filter(|&&name| name != our_name)
             .choose(&mut rand::thread_rng())
             .context("too few elders")?;
@@ -272,7 +272,7 @@ mod tests {
         let expected_recipients = section_auth1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, section_auth1.elders().len());
+        assert_eq!(dg_size, section_auth1.elder_count());
         itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())
@@ -299,7 +299,7 @@ mod tests {
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
         let min_dg_size =
-            1 + elders_info1.elders().len() - supermajority(elders_info1.elders().len());
+            1 + elders_info1.elder_count() - supermajority(elders_info1.elder_count());
         assert_eq!(dg_size, min_dg_size);
         itertools::assert_equal(recipients, expected_recipients);
 
@@ -322,7 +322,7 @@ mod tests {
         let expected_recipients = section_auth1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        assert_eq!(dg_size, section_auth1.elders().len());
+        assert_eq!(dg_size, section_auth1.elder_count());
         itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())
@@ -346,7 +346,7 @@ mod tests {
 
         // Send to a subset of elders in the intermediary dst section
         let min_dg_size =
-            1 + elders_info1.elders().len() - supermajority(elders_info1.elders().len());
+            1 + elders_info1.elder_count() - supermajority(elders_info1.elder_count());
         let expected_recipients = elders_info1
             .peers()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()))
@@ -367,7 +367,7 @@ mod tests {
         let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.authority_provider().elders().len());
+        assert_eq!(dg_size, section.authority_provider().elder_count());
         itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
@@ -382,7 +382,7 @@ mod tests {
         let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.authority_provider().elders().len());
+        assert_eq!(dg_size, section.authority_provider().elder_count());
         itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
@@ -397,7 +397,7 @@ mod tests {
         let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.authority_provider().elders().len());
+        assert_eq!(dg_size, section.authority_provider().elder_count());
         itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
@@ -414,7 +414,7 @@ mod tests {
         let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.authority_provider().elders().len());
+        assert_eq!(dg_size, section.authority_provider().elder_count());
         itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())
@@ -431,7 +431,7 @@ mod tests {
         let (recipients, dg_size, _) = delivery_targets(&dst, &our_name, &section, &network)?;
 
         // Send to all elders
-        assert_eq!(dg_size, section.authority_provider().elders().len());
+        assert_eq!(dg_size, section.authority_provider().elder_count());
         itertools::assert_equal(recipients, section.authority_provider().peers());
 
         Ok(())

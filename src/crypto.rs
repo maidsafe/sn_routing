@@ -39,6 +39,10 @@ pub fn pub_key(name: &XorName) -> Result<PublicKey, ed25519_dalek::SignatureErro
     PublicKey::from_bytes(&name.0)
 }
 
+pub fn name(public_key: &PublicKey) -> XorName {
+    XorName(public_key.to_bytes())
+}
+
 #[cfg(test)]
 /// Construct a random `XorName` whose last byte represents the targeted age.
 pub fn gen_name_with_age(age: u8) -> XorName {
