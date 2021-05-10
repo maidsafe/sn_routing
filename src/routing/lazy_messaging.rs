@@ -39,6 +39,8 @@ pub(crate) fn process(
         return Ok((actions, true));
     }
 
+    let dst = msg.src().src_location().to_dst();
+
     if let Ok(src_chain) = msg.proof_chain() {
         if let Some(key) = network.key_by_name(&src_name) {
             match src_chain.cmp_by_position(src_chain.last_key(), key) {
@@ -52,7 +54,7 @@ pub(crate) fn process(
                             key: *key,
                             msg: Box::new(msg.clone()),
                         },
-                        DstLocation::Node(src_name),
+                        dst,
                     )?;
                     actions.send.push(msg);
                 }
@@ -105,7 +107,7 @@ pub(crate) fn process(
                 section,
                 network,
                 variant,
-                DstLocation::Node(src_name),
+                dst,
             )?;
             actions.send.push(msg);
             return Ok((actions, true));
