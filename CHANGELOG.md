@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.67.0](https://github.com/maidsafe/sn_routing/compare/v0.66.3...v0.67.0) (2021-05-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **event:** `Event` enum variants changed and new added.
+
+* **event:** add SectionSplit, increase granularity ([4766067](https://github.com/maidsafe/sn_routing/commit/47660678f765268cc32bf2d44cb427deaab42486))
+
 ### [0.66.3](https://github.com/maidsafe/sn_routing/compare/v0.66.2...v0.66.3) (2021-05-10)
 
 ### [0.66.2](https://github.com/maidsafe/sn_routing/compare/v0.66.1...v0.66.2) (2021-05-07)
