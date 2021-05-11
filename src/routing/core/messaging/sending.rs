@@ -303,18 +303,17 @@ impl Core {
             }
         }
 
-        let dest_info = DestInfo {
-            dest: XorName::random(), // will be updated when sending
-            dest_section_pk: *self.section_key_by_name(&others[0].0),
-        };
-
         if !others.is_empty() {
             let count = others.len();
+            let dest_section_pk = *self.section_key_by_name(&others[0].0);
             commands.push(Command::send_message_to_nodes(
                 others,
                 count,
                 message.to_bytes(),
-                dest_info.clone(),
+                DestInfo {
+                    dest: XorName::random(), // will be updated when sending
+                    dest_section_pk,
+                },
             ));
         }
 
@@ -322,7 +321,10 @@ impl Core {
             commands.push(Command::HandleMessage {
                 sender: Some(self.node.addr),
                 message,
-                dest_info,
+                dest_info: DestInfo {
+                    dest: self.node.name(),
+                    dest_section_pk: *self.section_chain().last_key(),
+                },
             });
         }
 
