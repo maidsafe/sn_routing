@@ -343,7 +343,7 @@ impl Core {
                 msg: returned_msg,
             } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                Ok(vec![self.handle_src_ahead(
+                Ok(vec![self.handle_section_knowledge_query(
                     *last_known_key,
                     returned_msg.clone(),
                     sender,
@@ -351,7 +351,6 @@ impl Core {
                     msg.src().src_location().to_dst(),
                 )?])
             }
-
             Variant::DkgStart {
                 dkg_key,
                 elders_info,
@@ -413,7 +412,7 @@ impl Core {
         }
     }
 
-    fn handle_src_ahead(
+    fn handle_section_knowledge_query(
         &self,
         key: bls::PublicKey,
         msg: Box<Message>,

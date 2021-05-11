@@ -304,8 +304,8 @@ impl Core {
         }
 
         let dest_info = DestInfo {
-            dest: XorName::random(),
-            dest_section_pk: *self.section.chain().last_key(),
+            dest: XorName::random(), // will be updated when sending
+            dest_section_pk: *self.section_key_by_name(&others[0].1),
         };
 
         if !others.is_empty() {
