@@ -736,7 +736,7 @@ mod tests {
                 .ok_or_else(|| anyhow!("GetSectionQuery was not received"))?;
 
             let bootstrap_addrs: Vec<SocketAddr> =
-                recipients.iter().map(|(addr, _name)| *addr).collect();
+                recipients.iter().map(|(_name, addr)| *addr).collect();
             assert_eq!(bootstrap_addrs, [bootstrap_addr]);
             assert_matches!(message, MessageType::SectionInfo{ msg: SectionInfoMsg::GetSectionQuery(name), .. } => {
                 assert_eq!(XorName::from(name), *peer.name());
@@ -780,7 +780,7 @@ mod tests {
                 section_auth
                     .elders()
                     .iter()
-                    .map(|(name, addr)| (*addr, *name))
+                    .map(|(name, addr)| (*name, *addr))
                     .collect::<Vec<_>>(),
             );
             assert_matches!(message.variant(), Variant::JoinRequest(request) => {
@@ -856,7 +856,7 @@ mod tests {
             assert_eq!(
                 recipients
                     .into_iter()
-                    .map(|peer| peer.0)
+                    .map(|peer| peer.1)
                     .collect::<Vec<_>>(),
                 vec![bootstrap_node.addr]
             );
@@ -897,7 +897,7 @@ mod tests {
             assert_eq!(
                 recipients
                     .into_iter()
-                    .map(|peer| peer.0)
+                    .map(|peer| peer.1)
                     .collect::<Vec<_>>(),
                 new_bootstrap_addrs
                     .into_iter()
