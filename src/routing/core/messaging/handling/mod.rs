@@ -140,7 +140,7 @@ impl Core {
                 debug!("Sending {:?} to {}", response, sender);
 
                 vec![Command::SendMessage {
-                    recipients: vec![(sender, name)],
+                    recipients: vec![(name, sender)],
                     delivery_group_size: 1,
                     message: MessageType::SectionInfo {
                         msg: response,
@@ -169,7 +169,7 @@ impl Core {
 
                 let name = XorName::from(end_user);
                 vec![Command::SendMessage {
-                    recipients: vec![(sender, name)],
+                    recipients: vec![(name, sender)],
                     delivery_group_size: 1,
                     message: MessageType::SectionInfo {
                         msg: response,
@@ -374,7 +374,7 @@ impl Core {
                 let result = self.handle_proposal(content.clone(), proof_share.clone());
 
                 if let Some(addr) = sender {
-                    commands.extend(self.check_lagging((addr, src_name), proof_share)?);
+                    commands.extend(self.check_lagging((src_name, addr), proof_share)?);
                 }
 
                 commands.extend(result?);
@@ -431,7 +431,7 @@ impl Core {
         let msg = Message::single_src(self.node(), dst_location, variant, None)?;
         let key = self.section_key_by_name(&src_name);
         Ok(Command::send_message_to_node(
-            (sender, src_name),
+            (src_name, sender),
             msg.to_bytes(),
             DestInfo {
                 dest: src_name,
@@ -466,11 +466,11 @@ impl Core {
                 EndUser::AllClients(public_key) => self
                     .get_all_socket_addr(public_key)
                     .copied()
-                    .map(|addr| (addr, name))
+                    .map(|addr| (name, addr))
                     .collect(),
                 EndUser::Client { socket_id, .. } => {
                     if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
-                        vec![(socket_addr, name)]
+                        vec![(name, socket_addr)]
                     } else {
                         vec![]
                     }
@@ -586,7 +586,7 @@ impl Core {
             };
             trace!("Sending {:?} to {}", variant, peer);
             return Ok(vec![self.send_direct_message(
-                (*peer.addr(), *peer.name()),
+                (*peer.name(), *peer.addr()),
                 variant,
                 *self.section.chain().last_key(),
             )?]);

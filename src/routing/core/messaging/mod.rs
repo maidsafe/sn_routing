@@ -76,7 +76,7 @@ impl Core {
 
     pub(crate) fn check_lagging(
         &self,
-        peer: (SocketAddr, XorName),
+        peer: (XorName, SocketAddr),
         proof_share: &ProofShare,
     ) -> Result<Option<Command>> {
         let public_key = proof_share.public_key_set.public_key();

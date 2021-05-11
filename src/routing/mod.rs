@@ -426,7 +426,7 @@ impl Routing {
         };
         let user_xor_name = XorName::from(end_user_pk);
         let command = Command::SendMessage {
-            recipients: vec![(recipient, user_xor_name)],
+            recipients: vec![(user_xor_name, recipient)],
             delivery_group_size: 1,
             message: MessageType::Client {
                 msg: message,
@@ -549,10 +549,10 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
 
                     // we are not yet bootstrapped, todo: inform enduser in a better way of this
 
-                    let dest = dest_info.dest;
+                    let dest_name = dest_info.dest;
                     let client_pk = dest_info.dest_section_pk;
                     let command = Command::SendMessage {
-                        recipients: vec![(sender, dest)],
+                        recipients: vec![(dest_name, sender)],
                         delivery_group_size: 1,
                         message: MessageType::SectionInfo {
                             msg: SectionInfoMsg::RegisterEndUserError(
@@ -562,7 +562,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                                 )),
                             ),
                             dest_info: DestInfo {
-                                dest,
+                                dest: dest_name,
                                 dest_section_pk: client_pk,
                             },
                         },

@@ -266,12 +266,12 @@ impl Session {
         commands
     }
 
-    fn recipients(&self) -> Vec<(SocketAddr, XorName)> {
+    fn recipients(&self) -> Vec<(XorName, SocketAddr)> {
         self.elders_info
             .peers()
             .enumerate()
             .filter(|(index, _)| *index != self.participant_index)
-            .map(|(_, peer)| (*peer.addr(), *peer.name()))
+            .map(|(_, peer)| (*peer.name(), *peer.addr()))
             .collect()
     }
 
@@ -601,7 +601,7 @@ impl Backlog {
 #[derive(Debug)]
 pub(crate) enum DkgCommand {
     SendMessage {
-        recipients: Vec<(SocketAddr, XorName)>,
+        recipients: Vec<(XorName, SocketAddr)>,
         dkg_key: DkgKey,
         message: DkgMessage,
     },
@@ -614,7 +614,7 @@ pub(crate) enum DkgCommand {
         outcome: SectionKeyShare,
     },
     SendFailureObservation {
-        recipients: Vec<(SocketAddr, XorName)>,
+        recipients: Vec<(XorName, SocketAddr)>,
         dkg_key: DkgKey,
         proof: DkgFailureProof,
         non_participants: BTreeSet<XorName>,

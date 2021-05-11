@@ -171,7 +171,7 @@ impl Core {
 
         let targets: Vec<_> = targets
             .into_iter()
-            .map(|node| (*node.addr(), *node.name()))
+            .map(|node| (*node.name(), *node.addr()))
             .collect();
         let command = Command::send_message_to_nodes(
             targets,

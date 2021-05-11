@@ -45,7 +45,7 @@ impl Core {
         let bounce_msg_bytes = bounce_msg.to_bytes();
 
         let cmd = if let Some(sender) = sender {
-            Command::send_message_to_node((sender, src_name), bounce_msg_bytes, dest_info)
+            Command::send_message_to_node((src_name, sender), bounce_msg_bytes, dest_info)
         } else {
             self.send_message_to_our_elders(bounce_msg_bytes)
         };
@@ -99,7 +99,7 @@ impl Core {
         };
         trace!("resending with extended proof");
         Ok(Command::send_message_to_node(
-            (*sender.addr(), *sender.name()),
+            (*sender.name(), *sender.addr()),
             resend_msg.to_bytes(),
             dest_info,
         ))

@@ -208,7 +208,7 @@ impl Core {
                 .iter()
                 .flat_map(|info| info.peers())
                 .filter(|peer| !self.section.is_elder(peer.name()))
-                .map(|peer| (*peer.addr(), *peer.name()))
+                .map(|peer| (*peer.name(), *peer.addr()))
                 .collect();
             if !sync_recipients.is_empty() {
                 let sync_message = Message::single_src(

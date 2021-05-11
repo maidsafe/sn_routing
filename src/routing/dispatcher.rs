@@ -197,7 +197,7 @@ impl Dispatcher {
 
     async fn send_message(
         &self,
-        recipients: &[(SocketAddr, XorName)],
+        recipients: &[(XorName, SocketAddr)],
         delivery_group_size: usize,
         message: MessageType,
     ) -> Result<Vec<Command>> {
@@ -232,7 +232,7 @@ impl Dispatcher {
                             recipient,
                             message
                         );
-                        self.send_event(Event::ClientLost(recipient.0)).await;
+                        self.send_event(Event::ClientLost(recipient.1)).await;
                     }
                 }
                 vec![]

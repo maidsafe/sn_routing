@@ -63,7 +63,7 @@ pub(crate) enum Command {
     HandleDkgFailure(DkgFailureProofSet),
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
-        recipients: Vec<(SocketAddr, XorName)>,
+        recipients: Vec<(XorName, SocketAddr)>,
         delivery_group_size: usize,
         message: MessageType,
     },
@@ -102,7 +102,7 @@ pub(crate) enum Command {
 impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
     pub fn send_message_to_node(
-        recipient: (SocketAddr, XorName),
+        recipient: (XorName, SocketAddr),
         message_bytes: Bytes,
         dest_info: DestInfo,
     ) -> Self {
@@ -111,7 +111,7 @@ impl Command {
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
-        recipients: Vec<(SocketAddr, XorName)>,
+        recipients: Vec<(XorName, SocketAddr)>,
         delivery_group_size: usize,
         message_bytes: Bytes,
         dest_info: DestInfo,
