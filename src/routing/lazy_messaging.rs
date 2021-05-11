@@ -50,8 +50,6 @@ pub(crate) fn process(
                     trace!("Anti-Entropy: We do not know source's key, need to update ourselves");
                     let msg = create_other_section_message(
                         node,
-                        section,
-                        network,
                         Variant::SectionKnowledgeQuery {
                             last_known_key: *key,
                             msg: Box::new(msg.clone()),
@@ -104,7 +102,7 @@ pub(crate) fn process(
                 src_info: (section_auth.clone(), chain.clone()),
                 msg: None,
             };
-            let msg = create_other_section_message(node, section, network, variant, dst)?;
+            let msg = create_other_section_message(node, variant, dst)?;
             actions.send.push(msg);
             return Ok((actions, true));
         }
@@ -116,21 +114,10 @@ pub(crate) fn process(
 
 fn create_other_section_message(
     node: &Node,
-    section: &Section,
-    network: &Network,
     variant: Variant,
     dst: DstLocation,
-    // nonce: MessageHash,
 ) -> Result<Message> {
-    let dst_knowledge = dst
-        .name()
-        .and_then(|dst| network.key_by_name(&dst))
-        .unwrap_or_else(|| section.chain().root_key());
-    let proof_chain = section
-        .chain()
-        .minimize(vec![section.chain().last_key(), dst_knowledge])?;
-
-    Message::single_src(node, dst, variant, Some(proof_chain))
+    Message::single_src(node, dst, variant, None)
 }
 
 #[derive(Default)]
@@ -152,7 +139,7 @@ mod tests {
         XorName, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use anyhow::{Context, Result};
-    //use assert_matches::assert_matches;
+    use assert_matches::assert_matches;
     use bytes::Bytes;
     use xor_name::Prefix;
 
@@ -182,7 +169,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn new_src_key_from_other_section() -> Result<()> {
         let env = Env::new(1)?;
 
@@ -197,11 +183,11 @@ mod tests {
 
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
         let dest_info = DestInfo {
-            dest: XorName::random(),
+            dest: env.node.name(),
             dest_section_pk: *env.section.chain().last_key(),
         };
 
-        let (_, _) = process(
+        let (mut actions, _) = process(
             &env.node,
             &env.section,
             &env.network,
@@ -211,18 +197,14 @@ mod tests {
             None,
         )?;
 
-        // assert_matches!(&actions.send, Some(message) => {
-        //     assert_matches!(
-        //         message.variant(),
-        //         Variant::OtherSection { section_auth, .. } => {
-        //             assert_eq!(&section_auth.value, env.section.authority_provider())
-        //         }
-        //     );
-        //     assert_matches!(message.proof_chain(), Ok(chain) => {
-        //         assert_eq!(chain.len(), 1);
-        //         assert_eq!(chain.last_key(), env.section.chain().last_key());
-        //     });
-        // });
+        assert_matches!(&actions.send.pop(), Some(message) => {
+            assert_matches!(
+                message.variant(),
+                Variant::SectionKnowledgeQuery { last_known_key, .. } => {
+                    assert_eq!(*last_known_key, their_old_pk);
+                }
+            );
+        });
 
         Ok(())
     }
@@ -243,7 +225,7 @@ mod tests {
 
         let msg = env.create_message(env.section.prefix(), proof_chain)?;
         let dest_info = DestInfo {
-            dest: XorName::random(),
+            dest: env.node.name(),
             dest_section_pk: our_new_pk,
         };
 
@@ -263,7 +245,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn outdated_dst_key_from_other_section() -> Result<()> {
         let env = Env::new(2)?;
 
@@ -274,7 +255,7 @@ mod tests {
             dest_section_pk: *env.section.chain().root_key(),
         };
 
-        let (_, _) = process(
+        let (mut actions, _) = process(
             &env.node,
             &env.section,
             &env.network,
@@ -284,12 +265,12 @@ mod tests {
             None,
         )?;
 
-        // assert_matches!(&actions.send, Some(message) => {
-        //     assert_matches!(message.variant(), Variant::OtherSection { .. });
-        //     assert_matches!(message.proof_chain(), Ok(chain) => {
-        //         assert_eq!(chain, env.section.chain());
-        //     })
-        // });
+        assert_matches!(&actions.send.pop(), Some(message) => {
+            assert_matches!(message.variant(), Variant::SectionKnowledge { src_info, .. } => {
+                assert_eq!(src_info.0.value, *env.section.authority_provider());
+                assert_eq!(src_info.1, *env.section.chain());
+            });
+        });
 
         Ok(())
     }
@@ -319,34 +300,6 @@ mod tests {
 
         Ok(())
     }
-
-    // #[test]
-    // #[ignore]
-    // fn outdated_knowledge() -> Result<()> {
-    //     let mut env = Env::new(2)?;
-
-    //     let knowledge = proven(
-    //         &env.our_sk,
-    //         (env.their_prefix, *env.section.chain().root_key()),
-    //     )?;
-    //     env.network.update_knowledge(knowledge);
-
-    //     let proof_chain = SectionChain::new(env.their_sk.public_key());
-    //     let msg = env.create_message(&env.their_prefix, proof_chain)?;
-    //     let dest_info = DestInfo {
-    //         dest: XorName::random(),
-    //         dest_section_pk: *env.section.chain().last_key(),
-    //     };
-    //     let actions = process(&env.node, &env.section, &env.network, &msg, dest_info)?;
-
-    //     assert_eq!(actions.send, vec![]);
-    //     // assert_matches!(&actions.propose, Some(Proposal::TheirKnowledge { prefix, key }) => {
-    //     //     assert_eq!(prefix, &env.their_prefix);
-    //     //     assert_eq!(key, env.section.chain().last_key());
-    //     // });
-
-    //     Ok(())
-    // }
 
     struct Env {
         node: Node,

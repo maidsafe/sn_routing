@@ -822,7 +822,7 @@ mod tests {
                     assert_eq!(dkg_key, *expected_dkg_key);
                     recipients
                         .into_iter()
-                        .map(|addr| (addr.0, message.clone()))
+                        .map(|addr| (addr.1, message.clone()))
                         .collect()
                 }
                 DkgCommand::HandleOutcome { outcome, .. } => {

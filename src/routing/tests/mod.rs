@@ -80,7 +80,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
         }) => (recipients, msg)
     );
 
-    assert_eq!(recipients, [(new_node.addr, new_node.name())]);
+    assert_eq!(recipients, [(new_node.name(), new_node.addr)]);
 
     assert_matches!(
         message,
@@ -142,7 +142,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         }) => (recipients, msg)
     );
 
-    assert_eq!(recipients, [(new_node_addr, new_node_name)]);
+    assert_eq!(recipients, [(new_node_name, new_node_addr)]);
     assert_matches!(
         message,
         SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
@@ -576,7 +576,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
             .filter(|peer| *peer.name() != node_name)
-            .map(|peer| (*peer.addr(), *peer.name()))
+            .map(|peer| (*peer.name(), *peer.addr()))
             .collect();
         assert_eq!(recipients, expected_dkg_start_recipients);
 
@@ -632,7 +632,7 @@ async fn handle_online_command(
                 ..
             } => {
                 assert_eq!(proven_section_auth.value, *section_auth);
-                assert_eq!(recipients, [(*peer.addr(), *peer.name())]);
+                assert_eq!(recipients, [(*peer.name(), *peer.addr())]);
                 status.node_approval_sent = true;
             }
             Variant::Relocate(details) => {
@@ -640,7 +640,7 @@ async fn handle_online_command(
                     continue;
                 }
 
-                assert_eq!(recipients, [(*peer.addr(), *peer.name())]);
+                assert_eq!(recipients, [(*peer.name(), *peer.addr())]);
 
                 status.relocate_details = Some(details.clone());
             }
@@ -831,7 +831,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         let expected_dkg_start_recipients: Vec<_> = expected_new_elders
             .iter()
             .filter(|peer| *peer.name() != node_name)
-            .map(|peer| (*peer.addr(), *peer.name()))
+            .map(|peer| (*peer.name(), *peer.addr()))
             .collect();
         assert_eq!(recipients, expected_dkg_start_recipients);
 
@@ -956,7 +956,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
             assert_eq!(
                 recipients
                     .into_iter()
-                    .map(|recp| recp.0)
+                    .map(|recp| recp.1)
                     .collect::<Vec<_>>(),
                 expected_recipients
             );
@@ -1071,7 +1071,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
 
         match message.variant() {
             Variant::UserMessage(content) => {
-                assert_eq!(recipients, [(other_node.addr, other_node.name())]);
+                assert_eq!(recipients, [(other_node.name(), other_node.addr)]);
                 assert_eq!(*content, original_message_content);
                 assert_eq!(*message.proof_chain()?, chain);
 
@@ -1242,7 +1242,7 @@ async fn handle_untrusted_sync() -> Result<()> {
         match message.variant() {
             Variant::BouncedUntrustedMessage { msg, .. } => {
                 assert_eq!(**msg, orig_message);
-                assert_eq!(recipients, [(sender.addr, sender.name())]);
+                assert_eq!(recipients, [(sender.name(), sender.addr)]);
                 bounce_sent = true;
             }
             _ => continue,
@@ -1343,7 +1343,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 
         match message.variant() {
             Variant::Sync { section, .. } => {
-                assert_eq!(recipients, [(sender.addr, sender.name())]);
+                assert_eq!(recipients, [(sender.name(), sender.addr)]);
                 assert!(section.chain().has_key(&pk0));
                 message_resent = true;
             }
@@ -1418,7 +1418,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
 
         if recipients
             .into_iter()
-            .map(|recp| recp.0)
+            .map(|recp| recp.1)
             .collect::<Vec<_>>()
             != [*relocated_peer.addr()]
         {
@@ -1602,10 +1602,10 @@ async fn handle_elders_update() -> Result<()> {
 
     let sync_expected_recipients: HashSet<_> = other_elder_peers
         .into_iter()
-        .map(|peer| (*peer.addr(), *peer.name()))
-        .chain(iter::once((*promoted_peer.addr(), *promoted_peer.name())))
-        .chain(iter::once((*demoted_peer.addr(), *demoted_peer.name())))
-        .chain(iter::once((*adult_peer.addr(), *adult_peer.name())))
+        .map(|peer| (*peer.name(), *peer.addr()))
+        .chain(iter::once((*promoted_peer.name(), *promoted_peer.addr())))
+        .chain(iter::once((*demoted_peer.name(), *demoted_peer.addr())))
+        .chain(iter::once((*adult_peer.name(), *adult_peer.addr())))
         .collect();
 
     assert_eq!(sync_actual_recipients, sync_expected_recipients);
@@ -1721,13 +1721,13 @@ async fn handle_demote_during_split() -> Result<()> {
     let expected_sync_recipients = if prefix0.matches(&node_name) {
         peers_a
             .iter()
-            .map(|peer| (*peer.addr(), *peer.name()))
-            .chain(iter::once((*peer_c.addr(), *peer_c.name())))
+            .map(|peer| (*peer.name(), *peer.addr()))
+            .chain(iter::once((*peer_c.name(), *peer_c.addr())))
             .collect()
     } else {
         peers_b
             .iter()
-            .map(|peer| (*peer.addr(), *peer.name()))
+            .map(|peer| (*peer.name(), *peer.addr()))
             .collect()
     };
 
@@ -1739,7 +1739,7 @@ async fn handle_demote_during_split() -> Result<()> {
 // TODO: add more tests here
 
 #[allow(unused)]
-fn init_log() {
+pub fn init_log() {
     tracing_subscriber::fmt()
         .pretty()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
