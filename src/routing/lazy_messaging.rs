@@ -20,7 +20,9 @@ use std::cmp::Ordering;
 use std::net::SocketAddr;
 
 /// On reception of an incoming message, determine the actions that need to be taken in order to
-/// bring ours and the senders knowledge about each other up to date.
+/// bring ours and the senders knowledge about each other up to date. Returns a tuple of
+/// `Actions` and `bool`. The boolean is flag for executing the message. If entropy is found, we do
+/// not execute the message by returning `false`.
 pub(crate) fn process(
     node: &Node,
     section: &Section,
@@ -72,7 +74,7 @@ pub(crate) fn process(
     {
         Ordering::Greater => {
             // Their knowledge of our section is newer than what we have stored - store it and execute upon sync.
-            info!("Anti-Entropy: We, the dst are outdated. Source has an greater key than ours.");
+            info!("Anti-Entropy: We, the dst are outdated. Source has a greater key than ours.");
             info!("Enqueue the messages and act on them upon syncing in the future");
             let command = Command::HandleMessage {
                 sender,

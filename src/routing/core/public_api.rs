@@ -142,7 +142,7 @@ impl Core {
 
     // Send message over the network.
     pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
-        let (targets, dg_size, _) = delivery_group::delivery_targets(
+        let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
             &self.section,

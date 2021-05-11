@@ -39,16 +39,16 @@ pub(crate) fn delivery_targets(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
+) -> Result<(Vec<Peer>, usize)> {
     if !section.is_elder(our_name) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
         let targets: Vec<_> = section.authority_provider().peers().collect();
         let dg_size = targets.len();
-        return Ok((targets, dg_size, *section.chain().last_key()));
+        return Ok((targets, dg_size));
     }
 
-    let (best_section, dg_size, dest_pk) = match dst {
+    let (best_section, dg_size) = match dst {
         DstLocation::Section(target_name) => {
             section_candidates(target_name, our_name, section, network)?
         }
@@ -58,10 +58,10 @@ pub(crate) fn delivery_targets(
         }
         DstLocation::Node(target_name) => {
             if target_name == our_name {
-                return Ok((Vec::new(), 0, *section.chain().last_key()));
+                return Ok((Vec::new(), 0));
             }
             if let Some(node) = get_peer(target_name, section, network) {
-                return Ok((vec![node], 1, *section.chain().last_key()));
+                return Ok((vec![node], 1));
             }
 
             candidates(target_name, our_name, section, network)?
@@ -69,7 +69,7 @@ pub(crate) fn delivery_targets(
         DstLocation::Direct => return Err(Error::CannotRoute),
     };
 
-    Ok((best_section, dg_size, dest_pk))
+    Ok((best_section, dg_size))
 }
 
 fn section_candidates(
@@ -77,7 +77,7 @@ fn section_candidates(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
+) -> Result<(Vec<Peer>, usize)> {
     // Find closest section to `target_name` out of the ones we know (including our own)
     let info = iter::once(section.authority_provider())
         .chain(network.all())
@@ -91,7 +91,7 @@ fn section_candidates(
             .filter(|node| node.name() != our_name)
             .collect();
         let dg_size = chosen_section.len();
-        return Ok((chosen_section, dg_size, *section.chain().last_key()));
+        return Ok((chosen_section, dg_size));
     }
 
     candidates(target_name, our_name, section, network)
@@ -103,7 +103,7 @@ fn candidates(
     our_name: &XorName,
     section: &Section,
     network: &Network,
-) -> Result<(Vec<Peer>, usize, bls::PublicKey)> {
+) -> Result<(Vec<Peer>, usize)> {
     // All sections we know (including our own), sorted by distance to `target_name`.
     let sections = iter::once(section.authority_provider())
         .chain(network.all())
@@ -145,7 +145,7 @@ fn candidates(
     candidates.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
 
     if dg_size > 0 && candidates.len() >= dg_size {
-        Ok((candidates, dg_size, *section.chain().last_key()))
+        Ok((candidates, dg_size))
     } else {
         Err(Error::CannotRoute)
     }
