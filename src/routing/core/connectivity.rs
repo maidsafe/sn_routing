@@ -125,19 +125,7 @@ impl Core {
         }
     }
 
-    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
-        let name = if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
-            debug!("Lost connection to known peer {}", peer);
-            *peer.name()
-        } else {
-            if let Some(end_user) = self.get_enduser_by_addr(&addr) {
-                debug!("Lost connection to client {:?}", end_user);
-            } else {
-                debug!("Lost connection to unknown peer {}", addr);
-            }
-            return Ok(vec![]);
-        };
-
+    fn complain_connectivity(&self, name: XorName) -> Result<Vec<Command>> {
         if !self.is_elder() {
             // When self is not an elder, then the peer has to be an elder, and we shall complaint
             // the lost to other elders.
@@ -167,6 +155,22 @@ impl Core {
         self.propose_offline(name)
     }
 
+    pub fn handle_connection_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
+        let name = if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
+            debug!("Lost connection to known peer {}", peer);
+            *peer.name()
+        } else {
+            if let Some(end_user) = self.get_enduser_by_addr(&addr) {
+                debug!("Lost connection to client {:?}", end_user);
+            } else {
+                debug!("Lost connection to unknown peer {}", addr);
+            }
+            return Ok(vec![]);
+        };
+
+        self.complain_connectivity(name)
+    }
+
     pub fn handle_peer_lost(&self, addr: &SocketAddr) -> Result<Vec<Command>> {
         let name = if let Some(peer) = self.section.find_joined_member_by_addr(addr) {
             debug!("Lost known peer {}", peer);
@@ -176,32 +180,7 @@ impl Core {
             return Ok(vec![]);
         };
 
-        if !self.is_elder() {
-            // When self is not an elder, then the peer has to be an elder, and we shall complaint
-            // the lost to other elders.
-            let variant = Variant::ConnectivityComplaint(name);
-            let recipients: Vec<_> = self
-                .section
-                .authority_provider()
-                .peers()
-                .filter(|peer| *peer.name() != name)
-                .collect();
-            trace!(
-                "Casting connectivity complaint against {:?} {:?}",
-                name,
-                recipients
-            );
-
-            return self.send_message_for_dst_accumulation(
-                self.node.name(),
-                DstLocation::Direct,
-                variant,
-                None,
-                &recipients,
-            );
-        }
-
-        self.propose_offline(name)
+        self.complain_connectivity(name)
     }
 
     pub fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {
