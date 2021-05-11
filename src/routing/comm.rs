@@ -110,17 +110,17 @@ impl Comm {
     /// Sends a message on an existing connection. If no such connection exists, returns an error.
     pub async fn send_on_existing_connection(
         &self,
-        recipient: (SocketAddr, XorName),
+        recipient: (XorName, SocketAddr),
         mut msg: MessageType,
     ) -> Result<(), Error> {
-        msg.update_dest_info(None, Some(recipient.1));
+        msg.update_dest_info(None, Some(recipient.0));
         let bytes = msg.serialize()?;
         self.endpoint
-            .send_message(bytes, &recipient.0)
+            .send_message(bytes, &recipient.1)
             .await
             .map_err(|err| {
                 error!("Sending to {:?} failed with {}", recipient, err);
-                Error::FailedSend(recipient.0, recipient.1)
+                Error::FailedSend(recipient.1, recipient.0)
             })
     }
 
@@ -159,7 +159,7 @@ impl Comm {
     /// with the status. It returns a `SendStatus::AllRecipients` if message is sent to all the recipients.
     pub async fn send(
         &self,
-        recipients: &[(SocketAddr, XorName)],
+        recipients: &[(XorName, SocketAddr)],
         delivery_group_size: usize,
         msg: MessageType,
     ) -> Result<SendStatus> {
@@ -182,29 +182,29 @@ impl Comm {
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
-        let send = |recipient: (SocketAddr, XorName), mut msg: MessageType| async move {
-            msg.update_dest_info(None, Some(recipient.1));
+        let send = |recipient: (XorName, SocketAddr), mut msg: MessageType| async move {
+            msg.update_dest_info(None, Some(recipient.0));
             match msg.serialize() {
                 Ok(bytes) => {
                     trace!(
                         "Sending message ({} bytes) to {} of {:?}",
                         bytes.len(),
                         delivery_group_size,
-                        recipient.0
+                        recipient.1
                     );
                     (
-                        self.send_to(&recipient.0, bytes)
+                        self.send_to(&recipient.1, bytes)
                             .await
                             .map_err(Error::Network),
-                        recipient.0,
+                        recipient.1,
                     )
                 }
-                Err(e) => (Err(Error::Messaging(e)), recipient.0),
+                Err(e) => (Err(Error::Messaging(e)), recipient.1),
             }
         };
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|(recipient, name)| send((*recipient, *name), msg.clone()))
+            .map(|(name, recipient)| send((*name, *recipient), msg.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -343,7 +343,7 @@ mod tests {
 
         let status = comm
             .send(
-                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                &[(peer0._name, peer0.addr), (peer1._name, peer1.addr)],
                 2,
                 original_message.clone(),
             )
@@ -375,7 +375,7 @@ mod tests {
         let mut original_message = new_ping_message();
         let status = comm
             .send(
-                &[(peer0.addr, peer0._name), (peer1.addr, peer1._name)],
+                &[(peer0._name, peer0.addr), (peer1._name, peer1.addr)],
                 1,
                 original_message.clone(),
             )
@@ -411,7 +411,7 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let status = comm
-            .send(&[(invalid_addr, XorName::random())], 1, new_ping_message())
+            .send(&[(XorName::random(), invalid_addr)], 1, new_ping_message())
             .await?;
 
         assert_matches!(
@@ -439,7 +439,7 @@ mod tests {
         let mut message = new_ping_message();
         let _ = comm
             .send(
-                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
                 1,
                 message.clone(),
             )
@@ -469,7 +469,7 @@ mod tests {
         let mut message = new_ping_message();
         let status = comm
             .send(
-                &[(invalid_addr, XorName::random()), (peer.addr, peer._name)],
+                &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
                 2,
                 message.clone(),
             )
@@ -504,7 +504,7 @@ mod tests {
             dest_section_pk: key0,
         });
         let _ = send_comm
-            .send(slice::from_ref(&(recv_addr, name)), 1, msg0.clone())
+            .send(slice::from_ref(&(name, recv_addr)), 1, msg0.clone())
             .await?;
 
         let mut msg0_received = false;
@@ -526,7 +526,7 @@ mod tests {
             dest_section_pk: key1,
         });
         let _ = send_comm
-            .send(slice::from_ref(&(recv_addr, name)), 1, msg1.clone())
+            .send(slice::from_ref(&(name, recv_addr)), 1, msg1.clone())
             .await?;
 
         let mut msg1_received = false;
@@ -554,7 +554,7 @@ mod tests {
         // Send a message to establish the connection
         let _ = comm1
             .send(
-                slice::from_ref(&(addr0, XorName::random())),
+                slice::from_ref(&(XorName::random(), addr0)),
                 1,
                 new_ping_message(),
             )

@@ -95,7 +95,7 @@ pub(crate) async fn relocate(
 
 struct State<'a> {
     // Sender for outgoing messages.
-    send_tx: mpsc::Sender<(MessageType, Vec<(SocketAddr, XorName)>)>,
+    send_tx: mpsc::Sender<(MessageType, Vec<(XorName, SocketAddr)>)>,
     // Receiver for incoming messages.
     recv_rx: MessageReceiver<'a>,
     node: Node,
@@ -106,7 +106,7 @@ struct State<'a> {
 impl<'a> State<'a> {
     fn new(
         node: Node,
-        send_tx: mpsc::Sender<(MessageType, Vec<(SocketAddr, XorName)>)>,
+        send_tx: mpsc::Sender<(MessageType, Vec<(XorName, SocketAddr)>)>,
         recv_rx: MessageReceiver<'a>,
     ) -> Self {
         Self {
@@ -225,7 +225,7 @@ impl<'a> State<'a> {
 
         debug!("Sending GetSectionQuery to {:?}", recipients);
 
-        let (dest_pk, dest_xorname): (PublicKey, XorName) = match relocate_details {
+        let (dest_pk, dest_xorname) = match relocate_details {
             Some(details) => (
                 PublicKey::from(details.relocate_details()?.destination_key),
                 *details.destination()?,
@@ -238,7 +238,7 @@ impl<'a> State<'a> {
         // Group up with our XorName as we do not know their name yet.
         let recipients = recipients
             .iter()
-            .map(|addr| (*addr, dest_xorname))
+            .map(|addr| (dest_xorname, *addr))
             .collect();
 
         let dest_info = DestInfo {
@@ -355,7 +355,7 @@ impl<'a> State<'a> {
         };
         let recipients = elders
             .into_iter()
-            .map(|(name, addr)| (addr, name))
+            .map(|(name, addr)| (name, addr))
             .collect_vec();
         self.send_join_requests(join_request, recipients, section_key)
             .await?;
@@ -399,7 +399,7 @@ impl<'a> State<'a> {
                         let recipients = section_auth
                             .elders()
                             .iter()
-                            .map(|(name, addr)| (*addr, *name))
+                            .map(|(name, addr)| (*name, *addr))
                             .collect();
                         self.send_join_requests(join_request, recipients, section_key)
                             .await?;
@@ -431,7 +431,7 @@ impl<'a> State<'a> {
                             nonce_signature,
                         }),
                     };
-                    let recipients = vec![(sender, dest_info.dest)];
+                    let recipients = vec![(dest_info.dest, sender)];
                     self.send_join_requests(join_request, recipients, section_key)
                         .await?;
                 }
@@ -442,7 +442,7 @@ impl<'a> State<'a> {
     async fn send_join_requests(
         &mut self,
         join_request: JoinRequest,
-        recipients: Vec<(SocketAddr, XorName)>,
+        recipients: Vec<(XorName, SocketAddr)>,
         section_key: bls::PublicKey,
     ) -> Result<()> {
         info!("Sending {:?} to {:?}", join_request, recipients);
@@ -660,7 +660,7 @@ impl<'a> MessageReceiver<'a> {
 
 // Keep reading messages from `rx` and send them using `comm`.
 async fn send_messages(
-    mut rx: mpsc::Receiver<(MessageType, Vec<(SocketAddr, XorName)>)>,
+    mut rx: mpsc::Receiver<(MessageType, Vec<(XorName, SocketAddr)>)>,
     comm: &Comm,
 ) -> Result<()> {
     while let Some((message, recipients)) = rx.recv().await {

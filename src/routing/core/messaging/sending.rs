@@ -57,7 +57,7 @@ impl Core {
             Message::single_src(&self.node, DstLocation::Direct, variant, Some(proof_chain))?;
 
         Ok(Command::send_message_to_node(
-            (addr, name),
+            (name, addr),
             message.to_bytes(),
             DestInfo {
                 dest: name,
@@ -67,7 +67,7 @@ impl Core {
     }
 
     pub(crate) fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
-        let send = |variant, recipients: Vec<(SocketAddr, XorName)>| -> Result<_> {
+        let send = |variant, recipients: Vec<(XorName, SocketAddr)>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
             let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
@@ -88,8 +88,8 @@ impl Core {
         let (elders, non_elders): (Vec<_>, _) = section
             .active_members()
             .filter(|peer| peer.name() != &self.node.name())
-            .map(|peer| (*peer.addr(), *peer.name()))
-            .partition(|peer| section.is_elder(&peer.1));
+            .map(|peer| (*peer.name(), *peer.addr()))
+            .partition(|peer| section.is_elder(&peer.0));
 
         // Send the trimmed state to non-elders. The trimmed state contains only the knowledge of
         // own section.
@@ -129,7 +129,7 @@ impl Core {
         let adults: Vec<_> = self
             .section
             .live_adults()
-            .map(|peer| (*peer.addr(), *peer.name()))
+            .map(|peer| (*peer.name(), *peer.addr()))
             .collect();
 
         let variant = Variant::Sync {
@@ -299,13 +299,13 @@ impl Core {
             if recipient.name() == &self.node.name() {
                 handle = true;
             } else {
-                others.push((*recipient.addr(), *recipient.name()));
+                others.push((*recipient.name(), *recipient.addr()));
             }
         }
 
         let dest_info = DestInfo {
             dest: XorName::random(), // will be updated when sending
-            dest_section_pk: *self.section_key_by_name(&others[0].1),
+            dest_section_pk: *self.section_key_by_name(&others[0].0),
         };
 
         if !others.is_empty() {
@@ -358,7 +358,7 @@ impl Core {
 
     pub(crate) fn send_direct_message(
         &self,
-        recipient: (SocketAddr, XorName),
+        recipient: (XorName, SocketAddr),
         variant: Variant,
         dst_pk: bls::PublicKey,
     ) -> Result<Command> {
@@ -367,7 +367,7 @@ impl Core {
             recipient,
             message.to_bytes(),
             DestInfo {
-                dest: recipient.1,
+                dest: recipient.0,
                 dest_section_pk: dst_pk,
             },
         ))
@@ -381,7 +381,7 @@ impl Core {
             .authority_provider()
             .elders()
             .iter()
-            .map(|(name, address)| (*address, *name))
+            .map(|(name, address)| (*name, *address))
             .collect();
 
         let dest_section_pk = *self.section_chain().last_key();
