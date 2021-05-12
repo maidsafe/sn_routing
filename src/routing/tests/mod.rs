@@ -1475,9 +1475,9 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
     let section_name = XorName::random();
 
     let src = SrcLocation::Node(*peer.name());
-    let dst = match dst {
-        MessageDst::Node => DstLocation::Node(*peer.name()),
-        MessageDst::Section => DstLocation::Section(section_name),
+    let (dst, dst_name) = match dst {
+        MessageDst::Node => (DstLocation::Node(*peer.name()), *peer.name()),
+        MessageDst::Section => (DstLocation::Section(section_name), section_name),
     };
     let content = Bytes::from_static(b"hello");
 
@@ -1497,7 +1497,7 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
         assert_eq!(sender.as_ref(), Some(peer.addr()));
         assert_eq!(message.src().src_location(), src);
         assert_eq!(message.dst(), &dst);
-        assert_eq!(dest_info.dest, section_name);
+        assert_eq!(dest_info.dest, dst_name);
         assert_matches!(
             message.variant(),
             Variant::UserMessage(actual_content) if actual_content == &content
