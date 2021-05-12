@@ -140,7 +140,7 @@ mod tests {
             test_utils::{gen_addr, gen_section_authority_provider},
             SectionChain,
         },
-        XorName, ELDER_SIZE, MIN_ADULT_AGE,
+        Error, XorName, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
@@ -207,7 +207,7 @@ mod tests {
                 message.variant(),
                 Variant::SectionKnowledgeQuery { last_known_key, .. } => {
                     assert!(last_known_key.is_some());
-                    assert_eq!(last_known_key.unwrap(), their_old_pk);
+                    assert_eq!(last_known_key.ok_or(Error::InvalidMessage)?, their_old_pk);
                 }
             );
         });
