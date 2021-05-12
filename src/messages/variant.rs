@@ -116,7 +116,7 @@ pub(crate) enum Variant {
     /// Message sent by a node to indicate it received a message from a node which was ahead in knowledge.
     /// A reply is expected with a `SectionKnowledge` message.
     SectionKnowledgeQuery {
-        last_known_key: bls::PublicKey,
+        last_known_key: Option<bls::PublicKey>,
         msg: Box<Message>,
     },
     /// A follow-up reply will be sent by src with SectionKnowledge.

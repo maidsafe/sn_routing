@@ -15,7 +15,7 @@ use crate::{
     node::Node,
     section::Section,
 };
-use sn_messaging::{DestInfo, DstLocation};
+use sn_messaging::DestInfo;
 use std::cmp::Ordering;
 use std::net::SocketAddr;
 
@@ -48,13 +48,14 @@ pub(crate) fn process(
             match src_chain.cmp_by_position(src_chain.last_key(), key) {
                 Ordering::Greater => {
                     trace!("Anti-Entropy: We do not know source's key, need to update ourselves");
-                    let msg = create_other_section_message(
+                    let msg = Message::single_src(
                         node,
+                        dst,
                         Variant::SectionKnowledgeQuery {
-                            last_known_key: *key,
+                            last_known_key: Some(*key),
                             msg: Box::new(msg.clone()),
                         },
-                        dst,
+                        None,
                     )?;
                     actions.send.push(msg);
                 }
@@ -63,14 +64,25 @@ pub(crate) fn process(
                 }
                 Ordering::Equal => {}
             }
+        } else {
+            let msg = Message::single_src(
+                node,
+                dst,
+                Variant::SectionKnowledgeQuery {
+                    last_known_key: None,
+                    msg: Box::new(msg.clone()),
+                },
+                None,
+            )?;
+            actions.send.push(msg);
         }
     }
 
-    match section
+    if let Ordering::Less = section
         .chain()
         .cmp_by_position(&dest_info.dest_section_pk, section.chain().last_key())
     {
-        Ordering::Greater => {
+        if !section.chain().has_key(&dest_info.dest_section_pk) {
             // Their knowledge of our section is newer than what we have stored - store it and execute upon sync.
             info!("Anti-Entropy: We, the dst are outdated. Source has a greater key than ours.");
             info!("Enqueue the messages and act on them upon syncing in the future");
@@ -92,32 +104,24 @@ pub(crate) fn process(
                         .insert(dest_info.dest_section_pk, vec![command]);
                 }
             }
-        }
-        Ordering::Less => {
+        } else {
             info!("Anti-Entropy: Source's knowledge of our key is outdated, send them an update.");
             info!("We can still execute the message as the key is a part of our chain");
-            let chain = section.chain();
+            let chain = section
+                .chain()
+                .get_proof_chain_to_current(&dest_info.dest_section_pk)?;
             let section_auth = section.proven_authority_provider();
             let variant = Variant::SectionKnowledge {
-                src_info: (section_auth.clone(), chain.clone()),
+                src_info: (section_auth.clone(), chain),
                 msg: None,
             };
-            let msg = create_other_section_message(node, variant, dst)?;
+            let msg = Message::single_src(node, dst, variant, None)?;
             actions.send.push(msg);
             return Ok((actions, true));
         }
-        Ordering::Equal => {}
     }
 
     Ok((actions, false))
-}
-
-fn create_other_section_message(
-    node: &Node,
-    variant: Variant,
-    dst: DstLocation,
-) -> Result<Message> {
-    Message::single_src(node, dst, variant, None)
 }
 
 #[derive(Default)]
@@ -141,6 +145,7 @@ mod tests {
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
     use bytes::Bytes;
+    use sn_messaging::DstLocation;
     use xor_name::Prefix;
 
     #[test]
@@ -201,7 +206,8 @@ mod tests {
             assert_matches!(
                 message.variant(),
                 Variant::SectionKnowledgeQuery { last_known_key, .. } => {
-                    assert_eq!(*last_known_key, their_old_pk);
+                    assert!(last_known_key.is_some());
+                    assert_eq!(last_known_key.unwrap(), their_old_pk);
                 }
             );
         });

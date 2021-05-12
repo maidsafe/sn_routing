@@ -108,7 +108,7 @@ impl Core {
         sender: Option<SocketAddr>,
     ) -> Result<(Vec<Command>, bool)> {
         if !self.is_elder() {
-            return Ok((vec![], false));
+            return Ok((vec![], true));
         }
 
         let (actions, can_be_executed) = lazy_messaging::process(
