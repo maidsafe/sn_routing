@@ -414,14 +414,19 @@ impl Core {
 
     fn handle_section_knowledge_query(
         &self,
-        key: bls::PublicKey,
+        given_key: Option<bls::PublicKey>,
         msg: Box<Message>,
         sender: SocketAddr,
         src_name: XorName,
         dst_location: DstLocation,
     ) -> Result<Command> {
         let chain = self.section.chain();
-        let truncated_chain = chain.get_proof_chain_to_current(&key)?;
+        let given_key = if let Some(key) = given_key {
+            key
+        } else {
+            *self.section_chain().root_key()
+        };
+        let truncated_chain = chain.get_proof_chain_to_current(&given_key)?;
         let section_auth = self.section.proven_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), truncated_chain),
