@@ -89,7 +89,6 @@ pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API upd
 
 mod agreement;
 mod crypto;
-mod delivery_group;
 mod error;
 mod event;
 mod message_filter;

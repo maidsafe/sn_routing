@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod connectivity;
+mod delivery_group;
 mod messaging;
 mod public_api;
 
