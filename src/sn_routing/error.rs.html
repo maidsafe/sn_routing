@@ -67,7 +67,6 @@
 <span id="66">66</span>
 <span id="67">67</span>
 <span id="68">68</span>
-<span id="69">69</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -92,6 +91,7 @@
 <span class="doccomment">/// Internal error.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Error</span> {
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Failed signature check.&quot;</span>)]</span>
     <span class="ident">FailedSignature</span>,
@@ -103,10 +103,8 @@
     <span class="ident">InvalidConfig</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot connect to the endpoint&quot;</span>)]</span>
     <span class="ident">CannotConnectEndpoint</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Address not reachable&quot;</span>)]</span>
-    <span class="ident">AddressNotReachable</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Network layer error: {0}&quot;</span>)]</span>
-    <span class="ident">Network</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">qp2p</span>::<span class="ident">Error</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Address not reachable: {0}&quot;</span>)]</span>
+    <span class="ident">AddressNotReachable</span>(<span class="ident">usize</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source location.&quot;</span>)]</span>
