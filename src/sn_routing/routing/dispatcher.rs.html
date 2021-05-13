@@ -298,6 +298,17 @@
 <span id="297">297</span>
 <span id="298">298</span>
 <span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -308,8 +319,10 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">bootstrap</span>, <span class="ident">Comm</span>, <span class="ident">Command</span>, <span class="ident">Core</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error</span>::<span class="prelude-ty">Result</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">relocation</span>::<span class="ident">SignedRelocateDetails</span>, <span class="ident">Error</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">error</span>::<span class="prelude-ty">Result</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">relocation</span>::<span class="ident">SignedRelocateDetails</span>, <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>,
+    <span class="ident">Error</span>, <span class="ident">XorName</span>,
+};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">time</span>::<span class="ident">Duration</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::{
@@ -394,26 +407,34 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">try_handle_command</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">command</span>: <span class="ident">Command</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">command</span> {
-            <span class="ident">Command</span>::<span class="ident">HandleMessage</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_message</span>(<span class="ident">sender</span>, <span class="ident">message</span>).<span class="kw">await</span>
+            <span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
+                <span class="ident">sender</span>,
+                <span class="ident">message</span>,
+                <span class="ident">dest_info</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">core</span>
+                    .<span class="ident">lock</span>()
+                    .<span class="kw">await</span>
+                    .<span class="ident">handle_message</span>(<span class="ident">sender</span>, <span class="ident">message</span>, <span class="ident">dest_info</span>)
+                    .<span class="kw">await</span>
             }
-            <span class="ident">Command</span>::<span class="ident">HandleSectionInfoMsg</span> { <span class="ident">sender</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+            <span class="ident">Command</span>::<span class="ident">HandleSectionInfoMsg</span> {
+                <span class="ident">sender</span>,
+                <span class="ident">message</span>,
+                <span class="ident">dest_info</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                 .<span class="ident">core</span>
                 .<span class="ident">lock</span>()
                 .<span class="kw">await</span>
-                .<span class="ident">handle_section_info_msg</span>(<span class="ident">sender</span>, <span class="ident">message</span>)
+                .<span class="ident">handle_section_info_msg</span>(<span class="ident">sender</span>, <span class="ident">message</span>, <span class="ident">dest_info</span>)
                 .<span class="kw">await</span>),
             <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
             <span class="ident">Command</span>::<span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_agreement</span>(<span class="ident">proposal</span>, <span class="ident">proof</span>)
             }
-            <span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
-                .<span class="ident">core</span>
-                .<span class="ident">lock</span>()
-                .<span class="kw">await</span>
-                .<span class="ident">handle_connection_lost</span>(<span class="ident">addr</span>)
-                .<span class="ident">into_iter</span>()
-                .<span class="ident">collect</span>()),
+            <span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_connection_lost</span>(<span class="ident">addr</span>)
+            }
             <span class="ident">Command</span>::<span class="ident">HandlePeerLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>),
             <span class="ident">Command</span>::<span class="ident">HandleDkgOutcome</span> {
                 <span class="ident">section_auth</span>,
@@ -441,11 +462,13 @@
                 <span class="ident">itinerary</span>,
                 <span class="ident">content</span>,
                 <span class="ident">additional_proof_chain_key</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_user_message</span>(
-                <span class="ident">itinerary</span>,
-                <span class="ident">content</span>,
-                <span class="ident">additional_proof_chain_key</span>.<span class="ident">as_ref</span>(),
-            ),
+            } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">core</span>
+                    .<span class="ident">lock</span>()
+                    .<span class="kw">await</span>
+                    .<span class="ident">send_user_message</span>(<span class="ident">itinerary</span>, <span class="ident">content</span>, <span class="ident">additional_proof_chain_key</span>.<span class="ident">as_ref</span>())
+                    .<span class="kw">await</span>
+            }
             <span class="ident">Command</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
                 .<span class="ident">handle_schedule_timeout</span>(<span class="ident">duration</span>, <span class="ident">token</span>)
                 .<span class="kw">await</span>
@@ -486,17 +509,15 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">SocketAddr</span>],
+        <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[(<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>)],
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
         <span class="ident">message</span>: <span class="ident">MessageType</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">msg_bytes</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">serialize</span>()<span class="question-mark">?</span>;
-
         <span class="kw">let</span> <span class="ident">cmds</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">message</span> {
-            <span class="ident">MessageType</span>::<span class="ident">Ping</span> <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">NodeMessage</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">MessageType</span>::<span class="ident">Ping</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. } <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Routing</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">status</span> <span class="op">=</span> <span class="self">self</span>
                     .<span class="ident">comm</span>
-                    .<span class="ident">send</span>(<span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">msg_bytes</span>)
+                    .<span class="ident">send</span>(<span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">message</span>)
                     .<span class="kw">await</span><span class="question-mark">?</span>;
                 <span class="kw">match</span> <span class="ident">status</span> {
                     <span class="ident">SendStatus</span>::<span class="ident">MinDeliveryGroupSizeReached</span>(<span class="ident">failed_recipients</span>)
@@ -510,11 +531,11 @@
                 }
                 .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">e</span>: <span class="ident">Error</span><span class="op">|</span> <span class="ident">e</span>)<span class="question-mark">?</span>
             }
-            <span class="ident">MessageType</span>::<span class="ident">ClientMessage</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">MessageType</span>::<span class="ident">Client</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">for</span> <span class="ident">recipient</span> <span class="kw">in</span> <span class="ident">recipients</span> {
                     <span class="kw">if</span> <span class="self">self</span>
                         .<span class="ident">comm</span>
-                        .<span class="ident">send_on_existing_connection</span>(<span class="ident">recipient</span>, <span class="ident">msg_bytes</span>.<span class="ident">clone</span>())
+                        .<span class="ident">send_on_existing_connection</span>(<span class="kw-2">*</span><span class="ident">recipient</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
                         .<span class="kw">await</span>
                         .<span class="ident">is_err</span>()
                     {
@@ -523,16 +544,16 @@
                             <span class="ident">recipient</span>,
                             <span class="ident">message</span>
                         );
-                        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">ClientLost</span>(<span class="kw-2">*</span><span class="ident">recipient</span>)).<span class="kw">await</span>;
+                        <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">ClientLost</span>(<span class="ident">recipient</span>.<span class="number">1</span>)).<span class="kw">await</span>;
                     }
                 }
                 <span class="macro">vec</span><span class="macro">!</span>[]
             }
-            <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">for</span> <span class="ident">recipient</span> <span class="kw">in</span> <span class="ident">recipients</span> {
                     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
                         .<span class="ident">comm</span>
-                        .<span class="ident">send_on_existing_connection</span>(<span class="ident">recipient</span>, <span class="ident">msg_bytes</span>.<span class="ident">clone</span>())
+                        .<span class="ident">send_on_existing_connection</span>(<span class="kw-2">*</span><span class="ident">recipient</span>, <span class="ident">message</span>.<span class="ident">clone</span>())
                         .<span class="kw">await</span>;
                 }
                 <span class="macro">vec</span><span class="macro">!</span>[]
@@ -590,9 +611,10 @@
 
         <span class="kw">let</span> <span class="ident">commands</span> <span class="op">=</span> <span class="ident">backlog</span>
             .<span class="ident">into_iter</span>()
-            .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">message</span>, <span class="ident">sender</span>)<span class="op">|</span> <span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
+            .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">message</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>)<span class="op">|</span> <span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
                 <span class="ident">message</span>,
                 <span class="ident">sender</span>: <span class="prelude-val">Some</span>(<span class="ident">sender</span>),
+                <span class="ident">dest_info</span>,
             })
             .<span class="ident">collect</span>();
         <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)

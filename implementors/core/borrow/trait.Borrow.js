@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["sn_routing"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/borrow/trait.Borrow.html\" title=\"trait core::borrow::Borrow\">Borrow</a>&lt;<a class=\"struct\" href=\"sn_routing/struct.Prefix.html\" title=\"struct sn_routing::Prefix\">Prefix</a>&gt; for <a class=\"struct\" href=\"sn_routing/struct.SectionAuthorityProvider.html\" title=\"struct sn_routing::SectionAuthorityProvider\">SectionAuthorityProvider</a>","synthetic":false,"types":["sn_routing::section::section_authority_provider::SectionAuthorityProvider"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

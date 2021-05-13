@@ -209,11 +209,6 @@
 <span id="208">208</span>
 <span id="209">209</span>
 <span id="210">210</span>
-<span id="211">211</span>
-<span id="212">212</span>
-<span id="213">213</span>
-<span id="214">214</span>
-<span id="215">215</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -229,11 +224,11 @@
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">Variant</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">section</span>::<span class="ident">SectionAuthorityProvider</span>,
+    <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
     <span class="ident">Error</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">DstLocation</span>, <span class="ident">MessageType</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">collections</span>::<span class="ident">BTreeSet</span>, <span class="ident">iter</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">slice</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
@@ -241,12 +236,12 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_dkg_start</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
-        <span class="ident">new_section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
+        <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {}&quot;</span>, <span class="ident">new_section_auth</span>);
+        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {:?}&quot;</span>, <span class="ident">new_elders_info</span>);
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
-            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">new_section_auth</span>)
-            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
+            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">new_elders_info</span>)
+            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_chain</span>().<span class="ident">last_key</span>())
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_dkg_message</span>(
@@ -259,7 +254,7 @@
 
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
             .<span class="ident">process_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="kw-2">&amp;</span><span class="ident">dkg_key</span>, <span class="ident">message</span>)
-            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
+            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_chain</span>().<span class="ident">last_key</span>())
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_dkg_failure_observation</span>(
@@ -270,7 +265,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
             .<span class="ident">process_failure</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>, <span class="ident">non_participants</span>, <span class="ident">proof</span>)
-            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>)
+            .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_chain</span>().<span class="ident">last_key</span>())
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_dkg_failure_agreement</span>(
@@ -286,13 +281,13 @@
             .<span class="ident">peer</span>;
 
         <span class="kw">let</span> <span class="ident">generation</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">main_branch_len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>
+        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
             .<span class="ident">into_iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">section_auth</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">section_auth</span>, <span class="ident">generation</span>));
-        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">section_auth</span>) <span class="op">=</span> <span class="ident">section_auth</span> {
-            <span class="ident">section_auth</span>
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">elders_info</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">elders_info</span>, <span class="ident">generation</span>));
+        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">elders_info</span>) <span class="op">=</span> <span class="ident">elders_info</span> {
+            <span class="ident">elders_info</span>
         } <span class="kw">else</span> {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore DKG failure agreement with invalid proofs or outdated participants&quot;</span>,);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
@@ -301,18 +296,18 @@
         <span class="kw">if</span> <span class="ident">proofs</span>.<span class="ident">non_participants</span>.<span class="ident">is_empty</span>() {
             <span class="comment">// The DKG failure is a corrupted one due to lagging.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
-                <span class="string">&quot;Received DKG failure agreement - restarting: {}&quot;</span>,
-                <span class="ident">section_auth</span>
+                <span class="string">&quot;Received DKG failure agreement - restarting: {:?}&quot;</span>,
+                <span class="ident">elders_info</span>
             );
 
-            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">section_auth</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
+            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">elders_info</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
         } <span class="kw">else</span> {
             <span class="comment">// The DKG failure is regarding non_participants, i.e. potential unresponsive node.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}&quot;</span>,
                 <span class="ident">proofs</span>.<span class="ident">non_participants</span>,
                 <span class="ident">generation</span>,
-                <span class="ident">section_auth</span>
+                <span class="ident">elders_info</span>
             );
             <span class="self">self</span>.<span class="ident">cast_offline_proposals</span>(<span class="kw-2">&amp;</span><span class="ident">proofs</span>.<span class="ident">non_participants</span>)
         }
@@ -342,48 +337,15 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_connection_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">find_joined_member_by_addr</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>) {
-            <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to {}&quot;</span>, <span class="ident">peer</span>);
-        } <span class="kw">else</span> {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">end_user</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_enduser_by_addr</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>) {
-                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to client {:?}&quot;</span>, <span class="ident">end_user</span>);
-            } <span class="kw">else</span> {
-                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to unknown peer {}&quot;</span>, <span class="ident">addr</span>);
-            }
-            <span class="kw">return</span> <span class="prelude-val">None</span>;
-        }
-
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
-            <span class="kw">return</span> <span class="prelude-val">None</span>;
-        }
-
-        <span class="comment">// Try to send a &quot;ping&quot; message to probe the peer connection. If it succeeds, the</span>
-        <span class="comment">// connection loss was just temporary. Otherwise the peer is assumed lost and we will</span>
-        <span class="comment">// propose it offline.</span>
-        <span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">SendMessage</span> {
-            <span class="ident">recipients</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">addr</span>],
-            <span class="ident">delivery_group_size</span>: <span class="number">1</span>,
-            <span class="ident">message</span>: <span class="ident">MessageType</span>::<span class="ident">Ping</span>,
-        })
-    }
-
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">find_joined_member_by_addr</span>(<span class="ident">addr</span>) {
-            <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost known peer {}&quot;</span>, <span class="ident">peer</span>);
-            <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()
-        } <span class="kw">else</span> {
-            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Lost unknown peer {}&quot;</span>, <span class="ident">addr</span>);
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-        };
-
+    <span class="kw">fn</span> <span class="ident">complain_connectivity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_elder</span>() {
             <span class="comment">// When self is not an elder, then the peer has to be an elder, and we shall complaint</span>
             <span class="comment">// the lost to other elders.</span>
             <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">ConnectivityComplaint</span>(<span class="ident">name</span>);
             <span class="kw">let</span> <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">section</span>
-                .<span class="ident">authority_provider</span>()
+                .<span class="ident">proven_authority_provider</span>()
+                .<span class="ident">value</span>
                 .<span class="ident">peers</span>()
                 .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">name</span>)
                 .<span class="ident">collect</span>();
@@ -403,6 +365,34 @@
         }
 
         <span class="self">self</span>.<span class="ident">propose_offline</span>(<span class="ident">name</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_connection_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">find_joined_member_by_addr</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>) {
+            <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to known peer {}&quot;</span>, <span class="ident">peer</span>);
+            <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()
+        } <span class="kw">else</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">end_user</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_enduser_by_addr</span>(<span class="kw-2">&amp;</span><span class="ident">addr</span>) {
+                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to client {:?}&quot;</span>, <span class="ident">end_user</span>);
+            } <span class="kw">else</span> {
+                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost connection to unknown peer {}&quot;</span>, <span class="ident">addr</span>);
+            }
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        };
+
+        <span class="self">self</span>.<span class="ident">complain_connectivity</span>(<span class="ident">name</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_peer_lost</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">find_joined_member_by_addr</span>(<span class="ident">addr</span>) {
+            <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Lost known peer {}&quot;</span>, <span class="ident">peer</span>);
+            <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>()
+        } <span class="kw">else</span> {
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Lost unknown peer {}&quot;</span>, <span class="ident">addr</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        };
+
+        <span class="self">self</span>.<span class="ident">complain_connectivity</span>(<span class="ident">name</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">propose_offline</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {

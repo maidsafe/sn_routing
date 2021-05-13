@@ -33,7 +33,6 @@
 <span id="32">32</span>
 <span id="33">33</span>
 <span id="34">34</span>
-<span id="35">35</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -65,7 +64,6 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_signable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SignableView</span> {
         <span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">dst</span>,
-            <span class="ident">dst_key</span>: <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">dst_key</span>),
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">variant</span>,
         }
     }

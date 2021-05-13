@@ -305,20 +305,21 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Message</span>, <span class="ident">MessageHash</span>, <span class="ident">VerifyStatus</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Message</span>, <span class="ident">VerifyStatus</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::{<span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ProofShare</span>, <span class="ident">Proposal</span>, <span class="ident">Proven</span>},
     <span class="ident">crypto</span>::<span class="ident">Signature</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
     <span class="ident">relocation</span>::{<span class="ident">RelocateDetails</span>, <span class="ident">RelocatePayload</span>, <span class="ident">RelocatePromise</span>},
-    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
+    <span class="ident">section</span>::{<span class="ident">EldersInfo</span>, <span class="ident">MemberInfo</span>, <span class="ident">Section</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DestInfo</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::{<span class="ident">BTreeSet</span>, <span class="ident">VecDeque</span>},
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -330,13 +331,15 @@
 <span class="doccomment">/// Message variant</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">Variant</span> {
     <span class="doccomment">/// Inform other sections about our section or vice-versa.</span>
-    <span class="ident">OtherSection</span> {
-        <span class="doccomment">/// `SectionAuthorityProvider` of the sender&#39;s section, with the proof chain.</span>
-        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
-        <span class="doccomment">/// Nonce that is derived from the incoming message that triggered sending this</span>
-        <span class="doccomment">/// message. It&#39;s purpose is to make sure that `OtherSection`s that are identical</span>
-        <span class="doccomment">/// but triggered by different messages are not filtered out.</span>
-        <span class="ident">nonce</span>: <span class="ident">MessageHash</span>,
+    <span class="ident">SectionKnowledge</span> {
+        <span class="doccomment">/// `SectionAuthorityProvider` and `SectionChain` of the sender&#39;s section, with the proof chain.</span>
+        <span class="ident">src_info</span>: (<span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>, <span class="ident">SectionChain</span>),
+        <span class="doccomment">/// Message</span>
+        <span class="ident">msg</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="comment">// Nonce that is derived from the incoming message that triggered sending this</span>
+        <span class="comment">// message. It&#39;s purpose is to make sure that `OtherSection`s that are identical</span>
+        <span class="comment">// but triggered by different messages are not filtered out.</span>
+        <span class="comment">// nonce: MessageHash,</span>
     },
     <span class="doccomment">/// User-facing message</span>
     <span class="ident">UserMessage</span>(<span class="ident">Bytes</span>),
@@ -370,13 +373,16 @@
     },
     <span class="doccomment">/// Sent from a node that can&#39;t establish the trust of the contained message to its original</span>
     <span class="doccomment">/// source in order for them to provide new proof that the node would trust.</span>
-    <span class="ident">BouncedUntrustedMessage</span>(<span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>),
+    <span class="ident">BouncedUntrustedMessage</span> {
+        <span class="ident">msg</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
+        <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
+    },
     <span class="doccomment">/// Sent to the new elder candidates to start the DKG process.</span>
     <span class="ident">DkgStart</span> {
         <span class="doccomment">/// The identifier of the DKG session to start.</span>
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
         <span class="doccomment">/// The DKG particpants.</span>
-        <span class="ident">section_auth</span>: <span class="ident">SectionAuthorityProvider</span>,
+        <span class="ident">elders_info</span>: <span class="ident">EldersInfo</span>,
     },
     <span class="doccomment">/// Message exchanged for DKG process.</span>
     <span class="ident">DkgMessage</span> {
@@ -406,6 +412,14 @@
         <span class="ident">nonce</span>: [<span class="ident">u8</span>; <span class="number">32</span>],
         <span class="ident">nonce_signature</span>: <span class="ident">Signature</span>,
     },
+    <span class="doccomment">/// Message sent by a node to indicate it received a message from a node which was ahead in knowledge.</span>
+    <span class="doccomment">/// A reply is expected with a `SectionKnowledge` message.</span>
+    <span class="ident">SectionKnowledgeQuery</span> {
+        <span class="ident">last_known_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
+        <span class="ident">msg</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
+    },
+    <span class="doccomment">/// A follow-up reply will be sent by src with SectionKnowledge.</span>
+    <span class="comment">// DstOutdated,</span>
     <span class="doccomment">/// Direct complaint sent from an adult to elders regarding the connectivity issue of an elder.</span>
     <span class="ident">ConnectivityComplaint</span>(<span class="ident">XorName</span>),
 }
@@ -438,15 +452,6 @@
                 <span class="ident">proof_chain</span>
             }
             <span class="self">Self</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">section</span>.<span class="ident">chain</span>(),
-            <span class="self">Self</span>::<span class="ident">OtherSection</span> { <span class="ident">section_auth</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">proof_chain</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)<span class="question-mark">?</span>;
-
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">proof_chain</span>) {
-                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>);
-                }
-
-                <span class="ident">proof_chain</span>
-            }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>),
         };
 
@@ -461,14 +466,7 @@
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Variant</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="self">Self</span>::<span class="ident">OtherSection</span> {
-                <span class="ident">section_auth</span>,
-                <span class="ident">nonce</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_struct</span>(<span class="string">&quot;OtherSection&quot;</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;nonce&quot;</span>, <span class="ident">nonce</span>)
-                .<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">SectionKnowledge</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;SectionKnowledge&quot;</span>).<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">UserMessage</span>(<span class="ident">payload</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;UserMessage({:10})&quot;</span>, <span class="ident">HexFmt</span>(<span class="ident">payload</span>)),
             <span class="self">Self</span>::<span class="ident">NodeApproval</span> {
                 <span class="ident">genesis_key</span>,
@@ -500,17 +498,18 @@
                 .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;section_key&quot;</span>, <span class="ident">section_key</span>)
                 .<span class="ident">finish</span>(),
-            <span class="self">Self</span>::<span class="ident">BouncedUntrustedMessage</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
-                .<span class="ident">debug_tuple</span>(<span class="string">&quot;BouncedUntrustedMessage&quot;</span>)
-                .<span class="ident">field</span>(<span class="ident">message</span>)
+            <span class="self">Self</span>::<span class="ident">BouncedUntrustedMessage</span> { <span class="ident">msg</span>, <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
+                .<span class="ident">debug_struct</span>(<span class="string">&quot;BouncedUntrustedMessage&quot;</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;message&quot;</span>, <span class="ident">msg</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;dest_info&quot;</span>, <span class="ident">dest_info</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
-                <span class="ident">section_auth</span>,
+                <span class="ident">elders_info</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DkgStart&quot;</span>)
                 .<span class="ident">field</span>(<span class="string">&quot;dkg_key&quot;</span>, <span class="ident">dkg_key</span>)
-                .<span class="ident">field</span>(<span class="string">&quot;section_auth&quot;</span>, <span class="ident">section_auth</span>)
+                .<span class="ident">field</span>(<span class="string">&quot;elders_info&quot;</span>, <span class="ident">elders_info</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>
                 .<span class="ident">debug_struct</span>(<span class="string">&quot;DkgMessage&quot;</span>)
@@ -548,6 +547,7 @@
                 .<span class="ident">field</span>(<span class="string">&quot;difficulty&quot;</span>, <span class="ident">difficulty</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">ConnectivityComplaint</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;ConnectivityComplaint({:?})&quot;</span>, <span class="ident">name</span>),
+            <span class="self">Self</span>::<span class="ident">SectionKnowledgeQuery</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;SectionKnowledgeQuery&quot;</span>),
         }
     }
 }

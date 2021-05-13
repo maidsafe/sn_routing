@@ -193,12 +193,6 @@
 <span id="192">192</span>
 <span id="193">193</span>
 <span id="194">194</span>
-<span id="195">195</span>
-<span id="196">196</span>
-<span id="197">197</span>
-<span id="198">198</span>
-<span id="199">199</span>
-<span id="200">200</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -234,7 +228,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
         <span class="comment">// Do not carry out relocation when there is not enough elder nodes.</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">elders</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">ELDER_SIZE</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">elder_count</span>() <span class="op">&lt;</span> <span class="ident">ELDER_SIZE</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
@@ -322,13 +316,7 @@
         <span class="kw">let</span> (<span class="ident">message_tx</span>, <span class="ident">message_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
         <span class="self">self</span>.<span class="ident">relocate_state</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="ident">message_tx</span>));
 
-        <span class="kw">let</span> <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">section</span>
-            .<span class="ident">authority_provider</span>()
-            .<span class="ident">elders</span>
-            .<span class="ident">values</span>()
-            .<span class="ident">copied</span>()
-            .<span class="ident">collect</span>();
+        <span class="kw">let</span> <span class="ident">bootstrap_addrs</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">addresses</span>();
 
         <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">Command</span>::<span class="ident">Relocate</span> {
             <span class="ident">bootstrap_addrs</span>,
