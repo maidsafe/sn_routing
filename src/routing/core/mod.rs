@@ -108,6 +108,8 @@ impl Core {
         sender: Option<SocketAddr>,
     ) -> Result<(Vec<Command>, bool)> {
         if !self.is_elder() {
+            // Adult nodes do need to carry out entropy checking, however the message shall always
+            // be handled.
             return Ok((vec![], true));
         }
 

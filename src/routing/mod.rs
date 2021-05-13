@@ -532,9 +532,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             msg: _,
             dest_info: _,
             src_section_pk: _,
-        } => {
-            unimplemented!()
-        }
+        } => unimplemented!(),
         MessageType::Client { msg, dest_info } => {
             let end_user = dispatcher
                 .core
