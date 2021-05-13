@@ -303,6 +303,11 @@ impl Network {
                     elders,
                     self_status_change,
                     ..
+                }
+                | RoutingEvent::SectionSplit {
+                    elders,
+                    self_status_change,
+                    ..
                 } => {
                     if let Some(Node::Joined {
                         name,
@@ -311,14 +316,15 @@ impl Network {
                         ..
                     }) = self.nodes.get_mut(&id)
                     {
+                        let old_prefix = *prefix;
                         *prefix = elders.prefix;
 
-                        if elders.added.contains(name) {
+                        if elders.added.contains(name) || elders.remaining.contains(name) {
                             *elder = Some(ElderState {
                                 key: elders.key,
                                 num_elders: elders.remaining.len() + elders.added.len(),
                             });
-                        } else {
+                        } else if elders.removed.contains(name) && old_prefix == elders.prefix {
                             *elder = None;
                         }
                     }
