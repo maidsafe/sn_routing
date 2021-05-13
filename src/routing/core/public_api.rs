@@ -6,10 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Core;
+use super::{delivery_group, Core};
 use crate::{
     agreement::Proposal,
-    delivery_group,
     error::Result,
     messages::{Message, Variant},
     network::Network,
