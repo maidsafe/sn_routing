@@ -378,6 +378,7 @@
 <span id="377">377</span>
 <span id="378">378</span>
 <span id="379">379</span>
+<span id="380">380</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -400,7 +401,7 @@
     <span class="ident">member_info</span>::{
         <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
     },
-    <span class="ident">section_authority_provider</span>::{<span class="ident">EldersInfo</span>, <span class="ident">SectionAuthorityProvider</span>},
+    <span class="ident">section_authority_provider</span>::{<span class="ident">ElderCandidates</span>, <span class="ident">SectionAuthorityProvider</span>},
     <span class="ident">section_chain</span>::{<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SectionChainError</span>, <span class="ident">SectionChain</span>},
     <span class="ident">section_keys</span>::{<span class="ident">SectionKeyShare</span>, <span class="ident">SectionKeysProvider</span>},
 };
@@ -607,9 +608,9 @@
 
     <span class="doccomment">/// Generate a new section info(s) based on the current set of members.</span>
     <span class="doccomment">/// Returns a set of candidate SectionAuthorityProviders.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EldersInfo</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_info</span>, <span class="ident">other_info</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">our_name</span>) {
-            <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">our_info</span>, <span class="ident">other_info</span>];
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">ElderCandidates</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">try_split</span>(<span class="ident">our_name</span>) {
+            <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>];
         }
 
         <span class="kw">let</span> <span class="ident">expected_peers</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">elder_candidates</span>(<span class="ident">ELDER_SIZE</span>);
@@ -622,8 +623,9 @@
             <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ignore attempt to reduce the number of elders too much&quot;</span>);
             <span class="macro">vec</span><span class="macro">!</span>[]
         } <span class="kw">else</span> {
-            <span class="kw">let</span> <span class="ident">new_info</span> <span class="op">=</span> <span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">expected_peers</span>, <span class="self">self</span>.<span class="ident">authority_provider</span>().<span class="ident">prefix</span>());
-            <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">new_info</span>]
+            <span class="kw">let</span> <span class="ident">elder_candidates</span> <span class="op">=</span>
+                <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">expected_peers</span>, <span class="self">self</span>.<span class="ident">authority_provider</span>().<span class="ident">prefix</span>());
+            <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">elder_candidates</span>]
         }
     }
 
@@ -674,7 +676,7 @@
     <span class="comment">// Tries to split our section.</span>
     <span class="comment">// If we have enough mature nodes for both subsections, returns the SectionAuthorityProviders</span>
     <span class="comment">// of the two subsections. Otherwise returns `None`.</span>
-    <span class="kw">fn</span> <span class="ident">try_split</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">EldersInfo</span>, <span class="ident">EldersInfo</span>)<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">try_split</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">our_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">ElderCandidates</span>, <span class="ident">ElderCandidates</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">next_bit_index</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">index</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">prefix</span>().<span class="ident">bit_count</span>().<span class="ident">try_into</span>() {
             <span class="ident">index</span>
         } <span class="kw">else</span> {
@@ -715,10 +717,10 @@
             <span class="self">self</span>.<span class="ident">authority_provider</span>(),
         );
 
-        <span class="kw">let</span> <span class="ident">our_info</span> <span class="op">=</span> <span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">our_elders</span>, <span class="ident">our_prefix</span>);
-        <span class="kw">let</span> <span class="ident">other_info</span> <span class="op">=</span> <span class="ident">EldersInfo</span>::<span class="ident">new</span>(<span class="ident">other_elders</span>, <span class="ident">other_prefix</span>);
+        <span class="kw">let</span> <span class="ident">our_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">our_elders</span>, <span class="ident">our_prefix</span>);
+        <span class="kw">let</span> <span class="ident">other_elder_candidates</span> <span class="op">=</span> <span class="ident">ElderCandidates</span>::<span class="ident">new</span>(<span class="ident">other_elders</span>, <span class="ident">other_prefix</span>);
 
-        <span class="prelude-val">Some</span>((<span class="ident">our_info</span>, <span class="ident">other_info</span>))
+        <span class="prelude-val">Some</span>((<span class="ident">our_elder_candidates</span>, <span class="ident">other_elder_candidates</span>))
     }
 
     <span class="comment">// Returns the candidates for elders out of all the nodes in the section, even out of the</span>

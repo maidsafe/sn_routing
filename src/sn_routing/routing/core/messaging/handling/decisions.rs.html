@@ -156,6 +156,8 @@
 <span id="155">155</span>
 <span id="156">156</span>
 <span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -206,8 +208,10 @@
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }
-            <span class="ident">Variant</span>::<span class="ident">DkgStart</span> { <span class="ident">elders_info</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">elders_info</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
+            <span class="ident">Variant</span>::<span class="ident">DkgStart</span> {
+                <span class="ident">elder_candidates</span>, ..
+            } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">elder_candidates</span>.<span class="ident">elders</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">MessageStatus</span>::<span class="ident">Useless</span>);
                 }
             }

@@ -224,7 +224,7 @@
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">Variant</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">section</span>::<span class="ident">EldersInfo</span>,
+    <span class="ident">section</span>::<span class="ident">ElderCandidates</span>,
     <span class="ident">Error</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>;
@@ -236,11 +236,11 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_dkg_start</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">dkg_key</span>: <span class="ident">DkgKey</span>,
-        <span class="ident">new_elders_info</span>: <span class="ident">EldersInfo</span>,
+        <span class="ident">elder_candidates</span>: <span class="ident">ElderCandidates</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {:?}&quot;</span>, <span class="ident">new_elders_info</span>);
+        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Received DkgStart for {:?}&quot;</span>, <span class="ident">elder_candidates</span>);
         <span class="self">self</span>.<span class="ident">dkg_voter</span>
-            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">new_elders_info</span>)
+            .<span class="ident">start</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>, <span class="ident">dkg_key</span>, <span class="ident">elder_candidates</span>)
             .<span class="ident">into_commands</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_chain</span>().<span class="ident">last_key</span>())
     }
 
@@ -281,13 +281,13 @@
             .<span class="ident">peer</span>;
 
         <span class="kw">let</span> <span class="ident">generation</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">main_branch_len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
-        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="self">self</span>
+        <span class="kw">let</span> <span class="ident">elder_candidates</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
             .<span class="ident">promote_and_demote_elders</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>())
             .<span class="ident">into_iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">elders_info</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">elders_info</span>, <span class="ident">generation</span>));
-        <span class="kw">let</span> <span class="ident">elders_info</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">elders_info</span>) <span class="op">=</span> <span class="ident">elders_info</span> {
-            <span class="ident">elders_info</span>
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">elder_candidates</span><span class="op">|</span> <span class="ident">proofs</span>.<span class="ident">verify</span>(<span class="ident">elder_candidates</span>, <span class="ident">generation</span>));
+        <span class="kw">let</span> <span class="ident">elder_candidates</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">elder_candidates</span>) <span class="op">=</span> <span class="ident">elder_candidates</span> {
+            <span class="ident">elder_candidates</span>
         } <span class="kw">else</span> {
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore DKG failure agreement with invalid proofs or outdated participants&quot;</span>,);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
@@ -297,17 +297,17 @@
             <span class="comment">// The DKG failure is a corrupted one due to lagging.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Received DKG failure agreement - restarting: {:?}&quot;</span>,
-                <span class="ident">elders_info</span>
+                <span class="ident">elder_candidates</span>
             );
 
-            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">elders_info</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
+            <span class="self">self</span>.<span class="ident">send_dkg_start_to</span>(<span class="ident">elder_candidates</span>, <span class="ident">slice</span>::<span class="ident">from_ref</span>(<span class="ident">sender</span>))
         } <span class="kw">else</span> {
             <span class="comment">// The DKG failure is regarding non_participants, i.e. potential unresponsive node.</span>
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Received DKG failure agreement of non_participants {:?} , DKG generation({}) {:?}&quot;</span>,
                 <span class="ident">proofs</span>.<span class="ident">non_participants</span>,
                 <span class="ident">generation</span>,
-                <span class="ident">elders_info</span>
+                <span class="ident">elder_candidates</span>
             );
             <span class="self">self</span>.<span class="ident">cast_offline_proposals</span>(<span class="kw-2">&amp;</span><span class="ident">proofs</span>.<span class="ident">non_participants</span>)
         }

@@ -1100,8 +1100,8 @@
             }
             <span class="ident">Variant</span>::<span class="ident">DkgStart</span> {
                 <span class="ident">dkg_key</span>,
-                <span class="ident">elders_info</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elders_info</span>.<span class="ident">clone</span>()),
+                <span class="ident">elder_candidates</span>,
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_dkg_start</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">elder_candidates</span>.<span class="ident">clone</span>()),
             <span class="ident">Variant</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_dkg_message</span>(<span class="kw-2">*</span><span class="ident">dkg_key</span>, <span class="ident">message</span>.<span class="ident">clone</span>(), <span class="ident">src_name</span>)
             }
