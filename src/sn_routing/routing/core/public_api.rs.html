@@ -310,7 +310,6 @@
 <span id="309">309</span>
 <span id="310">310</span>
 <span id="311">311</span>
-<span id="312">312</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -320,10 +319,9 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Core</span>;
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">delivery_group</span>, <span class="ident">Core</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::<span class="ident">Proposal</span>,
-    <span class="ident">delivery_group</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
     <span class="ident">network</span>::<span class="ident">Network</span>,
