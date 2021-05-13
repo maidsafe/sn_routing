@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.68.0](https://github.com/maidsafe/sn_routing/compare/v0.67.1...v0.68.0) (2021-05-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* AE work
+
+### Features
+
+* **AE:** flesh out remaining Anti-Entropy flow ([b28c422](https://github.com/maidsafe/sn_routing/commit/b28c42261750b9c5db3715e50ab59a208776b953))
+
+
+### Bug Fixes
+
+* fixing stress statistic couting error ([47f2024](https://github.com/maidsafe/sn_routing/commit/47f2024a364721c39644f9df45475ccf27eb76c1))
+* **test:** fix AE tests ([4d8ae27](https://github.com/maidsafe/sn_routing/commit/4d8ae27bd2d27edfb08ccc042ea25fa8792c7d6e))
+* **test:** fix node_msg_to_self test ([a563a77](https://github.com/maidsafe/sn_routing/commit/a563a77797482460a04daf5acdd9bf1a9cc763ae))
+* convert SrcLocation to DstLocation in AE messages ([314dc3e](https://github.com/maidsafe/sn_routing/commit/314dc3eb0c71dc327ebfd04c4618e8e171d88208))
+* fix dst_info for send_or_handle method ([649d27b](https://github.com/maidsafe/sn_routing/commit/649d27b58313e2e35af998eb5a8351fcac63fed4))
+* fix dst_key in send_or_handle ([6436aee](https://github.com/maidsafe/sn_routing/commit/6436aee5be7df1e28a50fa60634b6e4bdc6a319f))
+* post-rebase issues ([ddd0682](https://github.com/maidsafe/sn_routing/commit/ddd06821a29a380ed75c67164c19b2597a704ac9))
+* **AE:** implement SrcAhead flow ([ade92fb](https://github.com/maidsafe/sn_routing/commit/ade92fba775e768e2d99c8a1cbad6df94dd9546e))
+
+
+### api
+
+* AE work ([3bb0c88](https://github.com/maidsafe/sn_routing/commit/3bb0c88bbf789bf43998c709098ec5205ebb03bf))
+
 ### [0.67.1](https://github.com/maidsafe/sn_routing/compare/v0.67.0...v0.67.1) (2021-05-10)
 
 
