@@ -649,6 +649,8 @@
 <span id="648">648</span>
 <span id="649">649</span>
 <span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -689,7 +691,7 @@
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">true</span>)
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
 
         <span class="comment">// Don&#39;t bootstrap, just create an endpoint to listen to</span>
         <span class="comment">// the incoming messages from other nodes.</span>
@@ -698,7 +700,7 @@
         <span class="kw">let</span> (<span class="ident">endpoint</span>, <span class="ident">_incoming_connections</span>, <span class="ident">incoming_messages</span>, <span class="ident">disconnections</span>) <span class="op">=</span> <span class="ident">quic_p2p</span>
             .<span class="ident">new_endpoint</span>()
             .<span class="kw">await</span>
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(
             <span class="ident">incoming_messages</span>,
@@ -722,7 +724,7 @@
         <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="self">Self</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">quic_p2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">transport_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">true</span>)
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
 
         <span class="comment">// Bootstrap to the network returning the connection to a node.</span>
         <span class="comment">// We can use the returned channels to listen for incoming messages and disconnection events</span>
@@ -730,7 +732,7 @@
             <span class="ident">quic_p2p</span>
                 .<span class="ident">bootstrap</span>()
                 .<span class="kw">await</span>
-                .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span>)<span class="question-mark">?</span>;
+                .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">handle_incoming_messages</span>(
             <span class="ident">incoming_messages</span>,
@@ -793,18 +795,18 @@
         };
 
         <span class="kw">let</span> <span class="ident">qp2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">qp2p_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
         <span class="kw">let</span> (<span class="ident">connectivity_endpoint</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">qp2p</span>
             .<span class="ident">new_endpoint</span>()
             .<span class="kw">await</span>
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span>)<span class="question-mark">?</span>;
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
 
         <span class="ident">connectivity_endpoint</span>
             .<span class="ident">is_reachable</span>(<span class="ident">peer</span>)
             .<span class="kw">await</span>
             .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
                 <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is NOT externally reachable: {}&quot;</span>, <span class="ident">peer</span>, <span class="ident">err</span>);
-                <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span>(<span class="number">1</span>)
+                <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span> { <span class="ident">err</span> }
             })
             .<span class="ident">map</span>(<span class="op">|</span>()<span class="op">|</span> {
                 <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is externally reachable.&quot;</span>, <span class="ident">peer</span>);
@@ -855,21 +857,23 @@
                         <span class="ident">delivery_group_size</span>,
                         <span class="ident">recipient</span>.<span class="number">1</span>
                     );
-                    (
-                        <span class="self">self</span>.<span class="ident">send_to</span>(<span class="kw-2">&amp;</span><span class="ident">recipient</span>.<span class="number">1</span>, <span class="ident">bytes</span>)
-                            .<span class="kw">await</span>
-                            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">e</span><span class="op">|</span> <span class="kw">match</span> <span class="ident">e</span> {
-                                <span class="ident">qp2p</span>::<span class="ident">Error</span>::<span class="ident">Connection</span>(<span class="ident">qp2p</span>::<span class="ident">ConnectionError</span>::<span class="ident">LocallyClosed</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                                    <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span>(<span class="number">0</span>)
-                                }
-                                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span>(<span class="number">1</span>),
-                            }),
-                        <span class="ident">recipient</span>.<span class="number">1</span>,
-                    )
+
+                    <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>
+                        .<span class="ident">send_to</span>(<span class="kw-2">&amp;</span><span class="ident">recipient</span>.<span class="number">1</span>, <span class="ident">bytes</span>)
+                        .<span class="kw">await</span>
+                        .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="kw">match</span> <span class="ident">err</span> {
+                            <span class="ident">qp2p</span>::<span class="ident">Error</span>::<span class="ident">Connection</span>(<span class="ident">qp2p</span>::<span class="ident">ConnectionError</span>::<span class="ident">LocallyClosed</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                                <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span> { <span class="ident">err</span> }
+                            }
+                            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Error</span>::<span class="ident">ConnectionClosed</span>,
+                        });
+
+                    (<span class="ident">result</span>, <span class="ident">recipient</span>.<span class="number">1</span>)
                 }
                 <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span><span class="op">&gt;</span> (<span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Messaging</span>(<span class="ident">e</span>)), <span class="ident">recipient</span>.<span class="number">1</span>),
             }
         };
+
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tasks</span>: <span class="ident">FuturesUnordered</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">recipients</span>[<span class="number">0</span>..<span class="ident">delivery_group_size</span>]
             .<span class="ident">iter</span>()
             .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">name</span>, <span class="ident">recipient</span>)<span class="op">|</span> <span class="ident">send</span>((<span class="kw-2">*</span><span class="ident">name</span>, <span class="kw-2">*</span><span class="ident">recipient</span>), <span class="ident">msg</span>.<span class="ident">clone</span>()))
@@ -882,9 +886,9 @@
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">result</span>, <span class="ident">addr</span>)) <span class="op">=</span> <span class="ident">tasks</span>.<span class="ident">next</span>().<span class="kw">await</span> {
             <span class="kw">match</span> <span class="ident">result</span> {
                 <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">successes</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>,
-                <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">AddressNotReachable</span>(<span class="ident">reason</span>)) <span class="kw">if</span> <span class="ident">reason</span> <span class="op">=</span><span class="op">=</span> <span class="number">1</span> <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="comment">// The connection was closed by us which means we are terminating so let&#39;s cut</span>
-                    <span class="comment">// this short.</span>
+                <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">ConnectionClosed</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="comment">// The connection was closed by us which means</span>
+                    <span class="comment">// we are terminating so let&#39;s cut this short.</span>
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">ConnectionClosed</span>);
                 }
                 <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {

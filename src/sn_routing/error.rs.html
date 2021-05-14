@@ -67,6 +67,15 @@
 <span id="66">66</span>
 <span id="67">67</span>
 <span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -81,6 +90,7 @@
     <span class="ident">messages</span>::{<span class="ident">CreateError</span>, <span class="ident">ExtendProofChainError</span>},
     <span class="ident">section</span>::<span class="ident">SectionChainError</span>,
 };
+<span class="kw">use</span> <span class="ident">qp2p</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">Qp2pError</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
 <span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -91,7 +101,6 @@
 <span class="doccomment">/// Internal error.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Error</span>)]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">large_enum_variant</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Error</span> {
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Failed signature check.&quot;</span>)]</span>
     <span class="ident">FailedSignature</span>,
@@ -99,12 +108,21 @@
     <span class="ident">CannotRoute</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Empty recipient list&quot;</span>)]</span>
     <span class="ident">EmptyRecipientList</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The config is invalid&quot;</span>)]</span>
-    <span class="ident">InvalidConfig</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot connect to the endpoint&quot;</span>)]</span>
-    <span class="ident">CannotConnectEndpoint</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Address not reachable: {0}&quot;</span>)]</span>
-    <span class="ident">AddressNotReachable</span>(<span class="ident">usize</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The config is invalid: {err}&quot;</span>)]</span>
+    <span class="ident">InvalidConfig</span> {
+        <span class="attribute">#[<span class="ident">source</span>]</span>
+        <span class="ident">err</span>: <span class="ident">Qp2pError</span>,
+    },
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot connect to the endpoint: {err}&quot;</span>)]</span>
+    <span class="ident">CannotConnectEndpoint</span> {
+        <span class="attribute">#[<span class="ident">source</span>]</span>
+        <span class="ident">err</span>: <span class="ident">Qp2pError</span>,
+    },
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Address not reachable: {err}&quot;</span>)]</span>
+    <span class="ident">AddressNotReachable</span> {
+        <span class="attribute">#[<span class="ident">source</span>]</span>
+        <span class="ident">err</span>: <span class="ident">Qp2pError</span>,
+    },
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The node is not in a state to handle the action.&quot;</span>)]</span>
     <span class="ident">InvalidState</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Invalid source location.&quot;</span>)]</span>
