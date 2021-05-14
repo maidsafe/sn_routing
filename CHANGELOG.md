@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.68.5](https://github.com/maidsafe/sn_routing/compare/v0.68.4...v0.68.5) (2021-05-14)
+
+
+### Features
+
+* **errors:** maintain Error chain in our Error types while customising them when additional context is available/useful ([c89c3a4](https://github.com/maidsafe/sn_routing/commit/c89c3a4ae169f822f3782484b6607ad228da0b04))
+
 ### [0.68.4](https://github.com/maidsafe/sn_routing/compare/v0.68.3...v0.68.4) (2021-05-14)
 
 ### [0.68.3](https://github.com/maidsafe/sn_routing/compare/v0.68.2...v0.68.3) (2021-05-13)
