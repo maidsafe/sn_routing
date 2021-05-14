@@ -15,7 +15,6 @@ mod core;
 mod dispatcher;
 mod enduser_registry;
 mod event_stream;
-mod lazy_messaging;
 mod split_barrier;
 #[cfg(test)]
 pub(crate) mod tests;

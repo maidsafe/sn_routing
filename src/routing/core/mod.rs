@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod anti_entropy;
 mod connectivity;
 mod delivery_group;
 mod messaging;
@@ -13,7 +14,7 @@ mod public_api;
 
 use super::{
     command::Command, connectivity_complaints::ConnectivityComplaints,
-    enduser_registry::EndUserRegistry, lazy_messaging, split_barrier::SplitBarrier,
+    enduser_registry::EndUserRegistry, split_barrier::SplitBarrier,
 };
 use crate::{
     agreement::{DkgVoter, Proposal, ProposalAggregator, Proven},
@@ -114,7 +115,7 @@ impl Core {
             return Ok((vec![], true));
         }
 
-        let (actions, can_be_executed) = lazy_messaging::process(
+        let (actions, can_be_executed) = anti_entropy::process(
             &self.node,
             &self.section,
             &self.network,
