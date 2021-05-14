@@ -299,6 +299,7 @@
 <span id="298">298</span>
 <span id="299">299</span>
 <span id="300">300</span>
+<span id="301">301</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -308,6 +309,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">mod</span> <span class="ident">anti_entropy</span>;
 <span class="kw">mod</span> <span class="ident">connectivity</span>;
 <span class="kw">mod</span> <span class="ident">delivery_group</span>;
 <span class="kw">mod</span> <span class="ident">messaging</span>;
@@ -315,7 +317,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{
     <span class="ident">command</span>::<span class="ident">Command</span>, <span class="ident">connectivity_complaints</span>::<span class="ident">ConnectivityComplaints</span>,
-    <span class="ident">enduser_registry</span>::<span class="ident">EndUserRegistry</span>, <span class="ident">lazy_messaging</span>, <span class="ident">split_barrier</span>::<span class="ident">SplitBarrier</span>,
+    <span class="ident">enduser_registry</span>::<span class="ident">EndUserRegistry</span>, <span class="ident">split_barrier</span>::<span class="ident">SplitBarrier</span>,
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::{<span class="ident">DkgVoter</span>, <span class="ident">Proposal</span>, <span class="ident">ProposalAggregator</span>, <span class="ident">Proven</span>},
@@ -416,7 +418,7 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="macro">vec</span><span class="macro">!</span>[], <span class="bool-val">true</span>));
         }
 
-        <span class="kw">let</span> (<span class="ident">actions</span>, <span class="ident">can_be_executed</span>) <span class="op">=</span> <span class="ident">lazy_messaging</span>::<span class="ident">process</span>(
+        <span class="kw">let</span> (<span class="ident">actions</span>, <span class="ident">can_be_executed</span>) <span class="op">=</span> <span class="ident">anti_entropy</span>::<span class="ident">process</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section</span>,
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">network</span>,
