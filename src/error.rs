@@ -11,6 +11,7 @@ use crate::{
     messages::{CreateError, ExtendProofChainError},
     section::SectionChainError,
 };
+use qp2p::Error as Qp2pError;
 use std::net::SocketAddr;
 use thiserror::Error;
 use xor_name::XorName;
@@ -21,7 +22,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Internal error.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
-#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[error("Failed signature check.")]
     FailedSignature,
@@ -29,12 +29,21 @@ pub enum Error {
     CannotRoute,
     #[error("Empty recipient list")]
     EmptyRecipientList,
-    #[error("The config is invalid")]
-    InvalidConfig,
-    #[error("Cannot connect to the endpoint")]
-    CannotConnectEndpoint,
-    #[error("Address not reachable: {0}")]
-    AddressNotReachable(usize),
+    #[error("The config is invalid: {err}")]
+    InvalidConfig {
+        #[source]
+        err: Qp2pError,
+    },
+    #[error("Cannot connect to the endpoint: {err}")]
+    CannotConnectEndpoint {
+        #[source]
+        err: Qp2pError,
+    },
+    #[error("Address not reachable: {err}")]
+    AddressNotReachable {
+        #[source]
+        err: Qp2pError,
+    },
     #[error("The node is not in a state to handle the action.")]
     InvalidState,
     #[error("Invalid source location.")]
