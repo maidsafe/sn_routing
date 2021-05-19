@@ -137,7 +137,9 @@ mod tests {
         agreement::test_utils::proven,
         crypto,
         section::{
-            test_utils::{gen_addr, gen_section_authority_provider},
+            test_utils::{
+                create_section_authority_provider, gen_addr, gen_section_authority_provider,
+            },
             SectionChain,
         },
         Error, XorName, ELDER_SIZE, MIN_ADULT_AGE,
@@ -152,7 +154,7 @@ mod tests {
     fn everything_up_to_date() -> Result<()> {
         let env = Env::new(1)?;
 
-        let proof_chain = SectionChain::new(env.their_sk.public_key());
+        let proof_chain = SectionChain::new(env.their_pk);
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -177,13 +179,18 @@ mod tests {
     fn new_src_key_from_other_section() -> Result<()> {
         let env = Env::new(1)?;
 
-        let their_old_pk = env.their_sk.public_key();
+        let root_key =
+            bls::PublicKey::from_bytes(env.their_sk.public_keys().public_key_share(0).to_bytes())
+                .unwrap();
         let their_new_pk = bls::SecretKey::random().public_key();
-        let mut proof_chain = SectionChain::new(their_old_pk);
+        let mut proof_chain = SectionChain::new(root_key);
         proof_chain.insert(
-            &their_old_pk,
+            &root_key,
             their_new_pk,
-            env.their_sk.sign(&bincode::serialize(&their_new_pk)?),
+            env.their_sk
+                .secret_key_share(0)
+                .sign(&bincode::serialize(&their_new_pk)?)
+                .0,
         )?;
 
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
@@ -207,7 +214,7 @@ mod tests {
                 message.variant(),
                 Variant::SectionKnowledgeQuery { last_known_key, .. } => {
                     assert!(last_known_key.is_some());
-                    assert_eq!(last_known_key.ok_or(Error::InvalidMessage)?, their_old_pk);
+                    assert_eq!(last_known_key.ok_or(Error::InvalidMessage)?, env.their_pk);
                 }
             );
         });
@@ -254,7 +261,7 @@ mod tests {
     fn outdated_dst_key_from_other_section() -> Result<()> {
         let env = Env::new(2)?;
 
-        let proof_chain = SectionChain::new(env.their_sk.public_key());
+        let proof_chain = SectionChain::new(env.their_pk);
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -313,7 +320,8 @@ mod tests {
         network: Network,
         our_sk: bls::SecretKey,
         their_prefix: Prefix,
-        their_sk: bls::SecretKey,
+        their_sk: bls::SecretKeySet,
+        their_pk: bls::PublicKey,
     }
 
     impl Env {
@@ -331,10 +339,10 @@ mod tests {
             let section = Section::new(*chain.root_key(), chain, section_auth0)
                 .context("failed to create section")?;
 
-            let (section_auth1, _) = gen_section_authority_provider(prefix1, ELDER_SIZE);
+            let (section_auth1, _, their_sk) =
+                create_section_authority_provider(prefix1, ELDER_SIZE);
+            let their_pk = their_sk.public_keys().public_key();
             let section_auth1 = proven(&our_sk, section_auth1)?;
-
-            let their_sk = bls::SecretKey::random();
 
             let mut network = Network::new();
             assert!(network.update_section(section_auth1, None, section.chain()));
@@ -346,6 +354,7 @@ mod tests {
                 our_sk,
                 their_prefix: prefix1,
                 their_sk,
+                their_pk,
             })
         }
 
