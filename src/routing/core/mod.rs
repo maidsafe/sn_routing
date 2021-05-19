@@ -150,14 +150,6 @@ impl Core {
         let prefix = section_auth.value.prefix;
         if self
             .network
-            .update_their_key((prefix, *section_chain.last_key()))
-        {
-            info!("Keys updated for Prefix: {:?}", prefix);
-        } else {
-            info!("Nothing to update, Keys are still the same");
-        }
-        if self
-            .network
             .update_section(section_auth, None, &section_chain)
         {
             info!("Neighbour section knowledge updated: {:?}", prefix);

@@ -335,11 +335,9 @@ mod tests {
             let section_auth1 = proven(&our_sk, section_auth1)?;
 
             let their_sk = bls::SecretKey::random();
-            let their_pk = their_sk.public_key();
 
             let mut network = Network::new();
             assert!(network.update_section(section_auth1, None, section.chain()));
-            assert!(network.update_their_key((prefix1, their_pk)));
 
             Ok(Self {
                 node,
