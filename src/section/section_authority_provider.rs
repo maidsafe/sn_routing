@@ -70,7 +70,7 @@ pub struct SectionAuthorityProvider {
     /// The section prefix. It matches all the members' names.
     pub prefix: Prefix,
     /// Public key of the section.
-    section_key: PublicKey,
+    pub section_key: PublicKey,
     // The section's complete set of elders as a map from their name to their socket address.
     elders: BTreeMap<XorName, (PublicKeyShare, SocketAddr)>,
 }

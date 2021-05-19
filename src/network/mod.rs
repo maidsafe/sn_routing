@@ -25,15 +25,12 @@ use xor_name::{Prefix, XorName};
 pub struct Network {
     // Other sections: maps section prefixes to their latest signed section authority providers.
     sections: PrefixMap<OtherSection>,
-    // BLS public keys of known sections excluding ours.
-    keys: PrefixMap<(Prefix, bls::PublicKey)>,
 }
 
 impl Network {
     pub fn new() -> Self {
         Self {
             sections: PrefixMap::new(),
-            keys: PrefixMap::new(),
         }
     }
 
@@ -91,10 +88,6 @@ impl Network {
                 let _ = self.sections.insert(entry);
             }
         }
-
-        for entry in other.keys {
-            let _ = self.keys.insert(entry);
-        }
     }
 
     /// Update the info about a section.
@@ -130,43 +123,29 @@ impl Network {
         true
     }
 
-    /// Updates the entry in `keys` for `prefix` to the latest known key.
-    #[allow(unused)]
-    pub fn update_their_key(&mut self, new_key: (Prefix, bls::PublicKey)) -> bool {
-        // TODO: verify against section chain
-
-        trace!("update key for {:?}: {:?}", new_key.0, new_key.1);
-
-        if let Some(old) = self.keys.insert(new_key) {
-            if old == new_key {
-                return false;
-            }
-        }
-
-        true
-    }
-
     /// Returns the known section keys.
     pub fn keys(&self) -> impl Iterator<Item = (&Prefix, &bls::PublicKey)> {
-        self.keys.iter().map(|entry| (&entry.0, &entry.1))
-    }
-
-    #[allow(unused)]
-    pub fn has_key(&self, key: &bls::PublicKey) -> bool {
-        self.keys.iter().any(|entry| entry.1 == *key)
+        self.sections.iter().map(|entry| {
+            (
+                &entry.section_auth.value.prefix,
+                &entry.section_auth.value.section_key,
+            )
+        })
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
     pub fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
-        self.keys.get_matching(name).map(|entry| &entry.1)
+        self.sections
+            .get_matching(name)
+            .map(|entry| &entry.section_auth.value.section_key)
     }
 
     /// Returns the latest known key for a section with `prefix`.
     /// If this returns `None` that means the latest known key is the genesis key.
     pub fn key_by_prefix(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
-        self.keys
+        self.sections
             .get_equal_or_ancestor(prefix)
-            .map(|entry| &entry.1)
+            .map(|entry| &entry.section_auth.value.section_key)
     }
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
@@ -176,7 +155,9 @@ impl Network {
         name: &XorName,
     ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
         (
-            self.keys.get_matching(name).map(|entry| &entry.1),
+            self.sections
+                .get_matching(name)
+                .map(|entry| &entry.section_auth.value.section_key),
             self.sections
                 .get_matching(name)
                 .map(|entry| &entry.section_auth.value),
@@ -250,96 +231,6 @@ mod tests {
     use rand::Rng;
 
     #[test]
-    fn update_keys_single_prefix_multiple_updates() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-        let k2 = gen_key();
-
-        update_keys_and_check(vec![("1", &k0), ("1", &k1), ("1", &k2)], vec![("1", &k2)]);
-    }
-
-    #[test]
-    fn update_keys_existing_old_key() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-
-        update_keys_and_check(vec![("1", &k0), ("1", &k1), ("1", &k0)], vec![("1", &k0)]);
-    }
-
-    #[test]
-    fn update_keys_complete_split() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-        let k2 = gen_key();
-
-        update_keys_and_check(
-            vec![("1", &k0), ("10", &k1), ("11", &k2)],
-            vec![("10", &k1), ("11", &k2)],
-        );
-    }
-
-    #[test]
-    fn update_keys_partial_split() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-
-        update_keys_and_check(vec![("1", &k0), ("10", &k1)], vec![("1", &k0), ("10", &k1)]);
-    }
-
-    #[test]
-    fn update_keys_indirect_complete_split() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-        let k2 = gen_key();
-        let k3 = gen_key();
-        let k4 = gen_key();
-
-        update_keys_and_check(
-            vec![
-                ("1", &k0),
-                ("100", &k1),
-                ("101", &k2),
-                ("110", &k3),
-                ("111", &k4),
-            ],
-            vec![("100", &k1), ("101", &k2), ("110", &k3), ("111", &k4)],
-        );
-    }
-
-    #[test]
-    fn update_keys_indirect_partial_split() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-        let k2 = gen_key();
-
-        update_keys_and_check(
-            vec![("1", &k0), ("100", &k1), ("101", &k2)],
-            vec![("1", &k0), ("100", &k1), ("101", &k2)],
-        );
-    }
-
-    #[test]
-    fn update_keys_split_out_of_order() {
-        let k0 = gen_key();
-        let k1 = gen_key();
-        let k2 = gen_key();
-        let k3 = gen_key();
-        let k4 = gen_key();
-
-        // Late keys ignored
-        update_keys_and_check(
-            vec![
-                ("1", &k0),
-                ("10", &k1),
-                ("11", &k2),
-                ("101", &k3),
-                ("10", &k4),
-            ],
-            vec![("10", &k1), ("101", &k3), ("11", &k2)],
-        );
-    }
-
-    #[test]
     fn closest() {
         let sk = bls::SecretKey::random();
         let chain = SectionChain::new(sk.public_key());
@@ -363,41 +254,11 @@ mod tests {
         assert_eq!(map.closest(&n11).map(|i| &i.prefix), Some(&p10));
     }
 
-    // Create a `Network` and apply a series of `update_keys` calls to it, then verify the stored
-    // keys are as expected.
-    //
-    // updates:  updates to `Network::keys` as a sequence of (prefix, key) pairs that are
-    //           applied in sequence by calling `update_keys`
-    // expected: vec of pairs (prefix, key) of the expected keys for each prefix, in the expected
-    //           order.
-    fn update_keys_and_check(
-        updates: Vec<(&str, &bls::PublicKey)>,
-        expected: Vec<(&str, &bls::PublicKey)>,
-    ) {
-        let mut map = Network::new();
-
-        for (prefix, key) in updates {
-            let prefix = prefix.parse().unwrap();
-            let _ = map.update_their_key((prefix, *key));
-        }
-
-        let actual: Vec<_> = map.keys().map(|(prefix, key)| (*prefix, key)).collect();
-        let expected: Vec<(Prefix, _)> = expected
-            .into_iter()
-            .map(|(prefix, key)| (prefix.parse().unwrap(), key))
-            .collect();
-        assert_eq!(actual, expected);
-    }
-
     fn gen_proven_section_auth(
         sk: &bls::SecretKey,
         prefix: Prefix,
     ) -> Proven<SectionAuthorityProvider> {
         let (section_auth, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
         agreement::test_utils::proven(sk, section_auth).unwrap()
-    }
-
-    fn gen_key() -> bls::PublicKey {
-        bls::SecretKey::random().public_key()
     }
 }
