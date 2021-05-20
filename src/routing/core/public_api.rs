@@ -246,8 +246,7 @@ impl Core {
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
-            let proof_chain =
-                self.create_proof_chain(&itinerary.dst, additional_proof_chain_key)?;
+            let proof_chain = self.create_proof_chain(additional_proof_chain_key)?;
             Message::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
                 itinerary.src.name(),

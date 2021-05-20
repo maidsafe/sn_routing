@@ -232,7 +232,7 @@ impl Core {
         variant: Variant,
         proof_chain_first_key: Option<&bls::PublicKey>,
     ) -> Result<Proposal> {
-        let proof_chain = self.create_proof_chain(&dst, proof_chain_first_key)?;
+        let proof_chain = self.create_proof_chain(proof_chain_first_key)?;
         let dst_key = if let Some(name) = dst.name() {
             *self.section_key_by_name(&name)
         } else {
@@ -265,7 +265,7 @@ impl Core {
         additional_proof_chain_key: Option<&bls::PublicKey>,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let proof_chain = self.create_proof_chain(&dst, additional_proof_chain_key)?;
+        let proof_chain = self.create_proof_chain(additional_proof_chain_key)?;
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
             trace!(
                 "Can't create message {:?} for accumulation at dst {:?}: {}",
@@ -333,7 +333,6 @@ impl Core {
 
     pub(crate) fn create_proof_chain(
         &self,
-        dst: &DstLocation,
         additional_key: Option<&bls::PublicKey>,
     ) -> Result<SectionChain> {
         // The last key of the proof chain is the last section key for which we also have the
@@ -349,7 +348,6 @@ impl Core {
         // the actual last key of the resulting proof chain because it's the key that will be used
         // to sign the message.
         let additional_key = additional_key
-            .or_else(|| self.network.key_by_name(&dst.name()?))
             .filter(|key| self.section.chain().cmp_by_position(key, &last_key) == Ordering::Less);
 
         Ok(self
