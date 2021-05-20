@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.68.6](https://github.com/maidsafe/sn_routing/compare/v0.68.5...v0.68.6) (2021-05-20)
+
+
+### Bug Fixes
+
+* catering qp2p error change ([1747cc3](https://github.com/maidsafe/sn_routing/commit/1747cc36873f0725873fd0e3579412d49cb698bc))
+* remove the obsolete member of Network ([6b6788b](https://github.com/maidsafe/sn_routing/commit/6b6788bb4ee1b3ee7733d2eac733bc9bea32f9b5))
+* resolving failing AE tests ([fcdf30a](https://github.com/maidsafe/sn_routing/commit/fcdf30af2c56d7d9cd3bb4f1e4f08e6995bfe02a))
+
 ### [0.68.5](https://github.com/maidsafe/sn_routing/compare/v0.68.4...v0.68.5) (2021-05-14)
 
 
