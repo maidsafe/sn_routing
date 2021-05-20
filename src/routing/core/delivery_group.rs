@@ -445,7 +445,7 @@ mod tests {
         let pk = sk.public_key();
         let chain = SectionChain::new(pk);
 
-        let (section_auth0, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
+        let (section_auth0, _, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
         let elders0: Vec<_> = section_auth0.peers().collect();
         let section_auth0 = proven(&sk, section_auth0)?;
 
@@ -459,7 +459,7 @@ mod tests {
 
         let mut network = Network::new();
 
-        let (section_auth1, _) = gen_section_authority_provider(prefix1, ELDER_SIZE);
+        let (section_auth1, _, _) = gen_section_authority_provider(prefix1, ELDER_SIZE);
         let section_auth1 = proven(&sk, section_auth1)?;
         assert!(network.update_section(section_auth1, None, section.chain()));
 
@@ -475,7 +475,7 @@ mod tests {
         let pk = sk.public_key();
         let chain = SectionChain::new(pk);
 
-        let (section_auth, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
+        let (section_auth, _, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
         let section_auth = proven(&sk, section_auth)?;
         let section = Section::new(pk, chain, section_auth)?;
 

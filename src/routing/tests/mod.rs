@@ -95,7 +95,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let good_prefix = Prefix::default().pushed(false);
 
     let sk_set = SecretKeySet::random();
-    let (section_auth, _) = gen_section_authority_provider(good_prefix, ELDER_SIZE);
+    let (section_auth, _, _) = gen_section_authority_provider(good_prefix, ELDER_SIZE);
     let elders_addrs: Vec<_> = section_auth
         .elders()
         .iter()
@@ -471,7 +471,7 @@ async fn handle_agreement_on_online() -> Result<()> {
 
     let prefix = Prefix::default();
 
-    let (section_auth, mut nodes) = gen_section_authority_provider(prefix, ELDER_SIZE);
+    let (section_auth, mut nodes, _) = gen_section_authority_provider(prefix, ELDER_SIZE);
     let sk_set = SecretKeySet::random();
     let (section, section_key_share) = create_section(&sk_set, &section_auth)?;
     let node = nodes.remove(0);
@@ -668,7 +668,7 @@ async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u
         NetworkPhase::Startup => Prefix::default(),
         NetworkPhase::Regular => "0".parse().unwrap(),
     };
-    let (section_auth, mut nodes) = gen_section_authority_provider(prefix, ELDER_SIZE);
+    let (section_auth, mut nodes, _) = gen_section_authority_provider(prefix, ELDER_SIZE);
     let sk_set = SecretKeySet::random();
     let (mut section, section_key_share) = create_section(&sk_set, &section_auth)?;
 
@@ -1377,7 +1377,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     let sk_set = SecretKeySet::random();
 
     let prefix: Prefix = "0".parse().unwrap();
-    let (section_auth, mut nodes) = gen_section_authority_provider(prefix, ELDER_SIZE);
+    let (section_auth, mut nodes, _) = gen_section_authority_provider(prefix, ELDER_SIZE);
     let (mut section, section_key_share) = create_section(&sk_set, &section_auth)?;
 
     let non_elder_peer = create_peer(MIN_AGE);
@@ -1786,7 +1786,8 @@ async fn create_comm() -> Result<Comm> {
 
 // Generate random SectionAuthorityProvider and the corresponding Nodes.
 fn create_section_auth() -> (SectionAuthorityProvider, Vec<Node>) {
-    gen_section_authority_provider(Prefix::default(), ELDER_SIZE)
+    let (section_auth, elders, _) = gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
+    (section_auth, elders)
 }
 
 fn create_section_key_share(sk_set: &bls::SecretKeySet, index: usize) -> SectionKeyShare {

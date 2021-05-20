@@ -486,7 +486,7 @@ mod tests {
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
         let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 
-        let (section_auth, _) =
+        let (section_auth, _, _) =
             section::test_utils::gen_section_authority_provider(Prefix::default(), 3);
         let section_auth = agreement::test_utils::proven(&sk1, section_auth)?;
 
