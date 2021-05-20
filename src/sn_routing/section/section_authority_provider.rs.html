@@ -342,7 +342,7 @@
     <span class="doccomment">/// The section prefix. It matches all the members&#39; names.</span>
     <span class="kw">pub</span> <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
     <span class="doccomment">/// Public key of the section.</span>
-    <span class="ident">section_key</span>: <span class="ident">PublicKey</span>,
+    <span class="kw">pub</span> <span class="ident">section_key</span>: <span class="ident">PublicKey</span>,
     <span class="comment">// The section&#39;s complete set of elders as a map from their name to their socket address.</span>
     <span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, (<span class="ident">PublicKeyShare</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
 }
@@ -519,7 +519,7 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">gen_section_authority_provider</span>(
         <span class="ident">prefix</span>: <span class="ident">Prefix</span>,
         <span class="ident">count</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SectionAuthorityProvider</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Node</span><span class="op">&gt;</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">SectionAuthorityProvider</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Node</span><span class="op">&gt;</span>, <span class="ident">bls</span>::<span class="ident">SecretKeySet</span>) {
         <span class="kw">let</span> <span class="ident">nodes</span> <span class="op">=</span> <span class="ident">gen_sorted_nodes</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>, <span class="ident">count</span>, <span class="bool-val">false</span>);
         <span class="kw">let</span> <span class="ident">elders</span> <span class="op">=</span> <span class="ident">nodes</span>
             .<span class="ident">iter</span>()
@@ -537,7 +537,7 @@
             <span class="ident">secret_key_set</span>.<span class="ident">public_keys</span>(),
         );
 
-        (<span class="ident">section_auth</span>, <span class="ident">nodes</span>)
+        (<span class="ident">section_auth</span>, <span class="ident">nodes</span>, <span class="ident">secret_key_set</span>)
     }
 }
 </pre></div>

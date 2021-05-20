@@ -943,7 +943,7 @@
         <span class="kw">let</span> <span class="ident">pk</span> <span class="op">=</span> <span class="ident">sk</span>.<span class="ident">public_key</span>();
         <span class="kw">let</span> <span class="ident">chain</span> <span class="op">=</span> <span class="ident">SectionChain</span>::<span class="ident">new</span>(<span class="ident">pk</span>);
 
-        <span class="kw">let</span> (<span class="ident">section_auth0</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix0</span>, <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> (<span class="ident">section_auth0</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix0</span>, <span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">elders0</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">section_auth0</span>.<span class="ident">peers</span>().<span class="ident">collect</span>();
         <span class="kw">let</span> <span class="ident">section_auth0</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">section_auth0</span>)<span class="question-mark">?</span>;
 
@@ -957,7 +957,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">network</span> <span class="op">=</span> <span class="ident">Network</span>::<span class="ident">new</span>();
 
-        <span class="kw">let</span> (<span class="ident">section_auth1</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix1</span>, <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> (<span class="ident">section_auth1</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix1</span>, <span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">section_auth1</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">section_auth1</span>)<span class="question-mark">?</span>;
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">network</span>.<span class="ident">update_section</span>(<span class="ident">section_auth1</span>, <span class="prelude-val">None</span>, <span class="ident">section</span>.<span class="ident">chain</span>()));
 
@@ -973,7 +973,7 @@
         <span class="kw">let</span> <span class="ident">pk</span> <span class="op">=</span> <span class="ident">sk</span>.<span class="ident">public_key</span>();
         <span class="kw">let</span> <span class="ident">chain</span> <span class="op">=</span> <span class="ident">SectionChain</span>::<span class="ident">new</span>(<span class="ident">pk</span>);
 
-        <span class="kw">let</span> (<span class="ident">section_auth</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix0</span>, <span class="ident">ELDER_SIZE</span>);
+        <span class="kw">let</span> (<span class="ident">section_auth</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">gen_section_authority_provider</span>(<span class="ident">prefix0</span>, <span class="ident">ELDER_SIZE</span>);
         <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="kw-2">&amp;</span><span class="ident">sk</span>, <span class="ident">section_auth</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">section</span> <span class="op">=</span> <span class="ident">Section</span>::<span class="ident">new</span>(<span class="ident">pk</span>, <span class="ident">chain</span>, <span class="ident">section_auth</span>)<span class="question-mark">?</span>;
 
