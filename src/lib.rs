@@ -72,7 +72,7 @@ extern crate tracing;
 // ############################################################################
 pub use self::{
     error::{Error, Result},
-    event::{Event, NodeElderChange, SendStream},
+    event::{Event, SendStream},
     routing::{Config, EventStream, Routing},
     section::{
         SectionAuthorityProvider, SectionChain, SectionChainError, FIRST_SECTION_MAX_AGE,

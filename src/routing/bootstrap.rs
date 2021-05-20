@@ -8,7 +8,7 @@
 
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
-    agreement::Proven,
+    agreement::SectionSigned,
     crypto::{self, Signature},
     error::{Error, Result},
     messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
@@ -533,9 +533,9 @@ impl<'a> State<'a> {
                 Variant::NodeApproval {
                     genesis_key,
                     section_auth,
-                    member_info,
+                    node_op,
                 } => {
-                    if member_info.value.peer.name() != &self.node.name() {
+                    if node_op.value.peer.name() != &self.node.name() {
                         trace!("Ignore NodeApproval not for us");
                         continue;
                     }
@@ -611,7 +611,7 @@ impl<'a> State<'a> {
 
 enum JoinResponse {
     Approval {
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         genesis_key: bls::PublicKey,
         section_chain: SectionChain,
     },
@@ -682,7 +682,7 @@ mod tests {
     use super::*;
     use crate::{
         agreement::test_utils::*, error::Error as RoutingError, routing::tests::SecretKeySet,
-        section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
+        section::test_utils::*, section::NodeOp, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};
     use assert_matches::assert_matches;
@@ -790,7 +790,7 @@ mod tests {
 
             // Send NodeApproval
             let section_auth = proven(sk, section_auth.clone())?;
-            let member_info = proven(sk, MemberInfo::joined(peer))?;
+            let node_op = proven(sk, NodeOp::joined(peer))?;
             let proof_chain = SectionChain::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
@@ -798,7 +798,7 @@ mod tests {
                 Variant::NodeApproval {
                     genesis_key: pk,
                     section_auth,
-                    member_info,
+                    node_op,
                 },
                 Some(proof_chain),
             )?;

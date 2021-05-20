@@ -15,7 +15,7 @@ use crate::{
     node::Node,
     peer::Peer,
     routing::{command::Command, enduser_registry::SocketId},
-    section::{MemberInfo, Section, SectionAuthorityProvider},
+    section::{NodeOp, Section, SectionAuthorityProvider},
     Error, Event, SectionChain,
 };
 use bytes::Bytes;
@@ -205,7 +205,7 @@ impl Core {
                 Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
                     prefix: *self.section.prefix(),
                     pk_set: public_key_set,
-                    elders: self.section.proven_authority_provider().value.elders(),
+                    elders: self.section.signed_authority_provider().value.elders(),
                     joins_allowed: self.joins_allowed,
                 }))
             } else {
@@ -303,7 +303,7 @@ impl Core {
         their_knowledge: Option<bls::PublicKey>,
     ) -> Result<Vec<Command>> {
         self.propose(Proposal::Online {
-            member_info: MemberInfo::joined(peer),
+            node_op: NodeOp::joined(peer),
             previous_name,
             their_knowledge,
         })

@@ -8,14 +8,14 @@
 
 use super::super::Core;
 use crate::{
-    agreement::{DkgKey, Proposal, Proven},
+    agreement::{DkgKey, Proposal, SectionSigned},
     error::Result,
     messages::{Message, PlainMessage, Variant},
     network::Network,
     peer::Peer,
     relocation::{RelocateDetails, RelocatePromise, RelocateState},
     routing::command::Command,
-    section::{ElderCandidates, MemberInfo, Section, SectionChain},
+    section::{ElderCandidates, NodeOp, Section, SectionChain},
 };
 use bytes::Bytes;
 use sn_messaging::{DestInfo, DstLocation};
@@ -27,30 +27,30 @@ impl Core {
     // Send NodeApproval to a joining node which makes them a section member
     pub(crate) fn send_node_approval(
         &self,
-        member_info: Proven<MemberInfo>,
+        node_op: SectionSigned<NodeOp>,
         their_knowledge: Option<bls::PublicKey>,
     ) -> Result<Command> {
         info!(
             "Our section with {:?} has approved peer {:?}.",
             self.section.prefix(),
-            member_info.value.peer
+            node_op.value.peer
         );
 
-        let addr = *member_info.value.peer.addr();
-        let name = *member_info.value.peer.name();
+        let addr = *node_op.value.peer.addr();
+        let name = *node_op.value.peer.name();
 
         // Attach proof chain that includes the key the approved node knows (if any), the key its
-        // `MemberInfo` is signed with and the last key of our section chain.
+        // `NodeOp` is signed with and the last key of our section chain.
         let proof_chain = self.section.chain().minimize(
             iter::once(self.section.chain().last_key())
                 .chain(their_knowledge.as_ref())
-                .chain(iter::once(&member_info.proof.public_key)),
+                .chain(iter::once(&node_op.proof.public_key)),
         )?;
 
         let variant = Variant::NodeApproval {
             genesis_key: *self.section.genesis_key(),
-            section_auth: self.section.proven_authority_provider().clone(),
-            member_info,
+            section_auth: self.section.signed_authority_provider().clone(),
+            node_op,
         };
 
         let message =
@@ -86,9 +86,10 @@ impl Core {
         let mut commands = vec![];
 
         let (elders, non_elders): (Vec<_>, _) = section
-            .active_members()
-            .filter(|peer| peer.name() != &self.node.name())
-            .map(|peer| (*peer.name(), *peer.addr()))
+            .members()
+            .all()
+            .filter(|op| op.peer.name() != &self.node.name())
+            .map(|op| (*op.peer.name(), *op.peer.addr()))
             .partition(|peer| section.is_elder(&peer.0));
 
         // Send the trimmed state to non-elders. The trimmed state contains only the knowledge of
@@ -128,7 +129,7 @@ impl Core {
 
         let adults: Vec<_> = self
             .section
-            .live_adults()
+            .adults()
             .map(|peer| (*peer.name(), *peer.addr()))
             .collect();
 

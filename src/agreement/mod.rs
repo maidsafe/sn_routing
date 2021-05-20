@@ -8,11 +8,11 @@
 
 mod dkg;
 mod proposal;
-mod proven;
+mod section_signed;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use self::{dkg::DkgKey, proven::Proven};
+pub use self::{dkg::DkgKey, section_signed::SectionSigned};
 pub(crate) use self::{
     dkg::{DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgVoter},
     proposal::{Proposal, ProposalAggregator, ProposalError},

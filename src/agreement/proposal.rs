@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, ProofShare, Proven, SignatureAggregator};
+use super::{Proof, ProofShare, SectionSigned, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
-    section::{MemberInfo, SectionAuthorityProvider, SectionChain},
+    section::{NodeOp, SectionAuthorityProvider, SectionChain},
 };
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
@@ -21,7 +21,7 @@ use xor_name::XorName;
 pub(crate) enum Proposal {
     // Proposal to add a node to oursection
     Online {
-        member_info: MemberInfo,
+        node_op: NodeOp,
         // Previous name if relocated.
         previous_name: Option<XorName>,
         // The key of the destination section that the joining node knows, if any.
@@ -29,7 +29,7 @@ pub(crate) enum Proposal {
     },
 
     // Proposal to remove a node from our section
-    Offline(MemberInfo),
+    Offline(NodeOp),
 
     // Proposal to update info about a section. This has two purposes:
     //
@@ -49,7 +49,7 @@ pub(crate) enum Proposal {
     //   4. the signature of the new key using the current key
     // Which we can use to update the section section authority provider and the section chain at
     // the same time as a single atomic operation without needing to cache anything.
-    OurElders(Proven<SectionAuthorityProvider>),
+    OurElders(SectionSigned<SectionAuthorityProvider>),
 
     // Proposal to accumulate the message at the source (that is, our section) and then send it to
     // its destination.
@@ -91,8 +91,8 @@ pub(crate) struct SignableView<'a>(&'a Proposal);
 impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
-            Proposal::Online { member_info, .. } => member_info.serialize(serializer),
-            Proposal::Offline(member_info) => member_info.serialize(serializer),
+            Proposal::Online { node_op, .. } => node_op.serialize(serializer),
+            Proposal::Offline(node_op) => node_op.serialize(serializer),
             Proposal::SectionInfo(info) => info.serialize(serializer),
             Proposal::OurElders(info) => info.proof.public_key.serialize(serializer),
             // Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),

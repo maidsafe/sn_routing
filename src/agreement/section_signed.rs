@@ -14,12 +14,12 @@ use xor_name::Prefix;
 
 /// A value together with the proof that it was agreed on by the majority of the section elders.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
-pub struct Proven<T: Serialize> {
+pub struct SectionSigned<T: Serialize> {
     pub value: T,
     pub proof: Proof,
 }
 
-impl<T: Serialize> Proven<T> {
+impl<T: Serialize> SectionSigned<T> {
     pub fn new(value: T, proof: Proof) -> Self {
         Self { value, proof }
     }
@@ -33,7 +33,7 @@ impl<T: Serialize> Proven<T> {
     }
 }
 
-impl<T> Borrow<Prefix> for Proven<T>
+impl<T> Borrow<Prefix> for SectionSigned<T>
 where
     T: Borrow<Prefix> + Serialize,
 {

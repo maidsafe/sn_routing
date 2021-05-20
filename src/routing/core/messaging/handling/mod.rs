@@ -427,7 +427,7 @@ impl Core {
             *self.section_chain().root_key()
         };
         let truncated_chain = chain.get_proof_chain_to_current(&given_key)?;
-        let section_auth = self.section.proven_authority_provider();
+        let section_auth = self.section.signed_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), truncated_chain),
             msg: Some(msg),
@@ -519,12 +519,7 @@ impl Core {
             return Ok(vec![]);
         }
 
-        let old_adults: BTreeSet<_> = self
-            .section
-            .live_adults()
-            .map(|p| p.name())
-            .copied()
-            .collect();
+        let old_adults: BTreeSet<_> = self.section.adults().map(|p| p.name()).copied().collect();
 
         let snapshot = self.state_snapshot();
         trace!(
@@ -536,21 +531,18 @@ impl Core {
         self.network.merge(network, self.section.chain());
 
         if !self.is_elder() {
-            let current_adults: BTreeSet<_> = self
-                .section
-                .live_adults()
-                .map(|p| p.name())
-                .copied()
-                .collect();
+            let current_adults: BTreeSet<_> =
+                self.section.adults().map(|p| p.name()).copied().collect();
             let added: BTreeSet<_> = current_adults.difference(&old_adults).copied().collect();
             let removed: BTreeSet<_> = old_adults.difference(&current_adults).copied().collect();
 
             if !added.is_empty() || !removed.is_empty() {
-                self.send_event(Event::AdultsChanged {
-                    remaining: old_adults.intersection(&current_adults).copied().collect(),
-                    added,
-                    removed,
-                });
+                let event = Event::SectionChanged {
+                    previous_section_auth: snapshot.online_nodes.section_auth().clone(),
+                    node_op: None,
+                    online_nodes: self.section.online_nodes().clone(),
+                };
+                self.send_event(event);
             }
         }
 
@@ -597,7 +589,7 @@ impl Core {
             )?]);
         }
 
-        if self.section.members().is_joined(peer.name()) {
+        if self.section.members().get(peer.name()).is_some() {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 peer

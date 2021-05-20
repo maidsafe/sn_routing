@@ -8,12 +8,12 @@
 
 use super::{Message, VerifyStatus};
 use crate::{
-    agreement::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, Proven},
+    agreement::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, SectionSigned},
     crypto::Signature,
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{ElderCandidates, MemberInfo, Section, SectionAuthorityProvider, SectionChain},
+    section::{ElderCandidates, NodeOp, Section, SectionAuthorityProvider, SectionChain},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
@@ -34,7 +34,7 @@ pub(crate) enum Variant {
     /// Inform other sections about our section or vice-versa.
     SectionKnowledge {
         /// `SectionAuthorityProvider` and `SectionChain` of the sender's section, with the proof chain.
-        src_info: (Proven<SectionAuthorityProvider>, SectionChain),
+        src_info: (SectionSigned<SectionAuthorityProvider>, SectionChain),
         /// Message
         msg: Option<Box<Message>>,
         // Nonce that is derived from the incoming message that triggered sending this
@@ -48,8 +48,8 @@ pub(crate) enum Variant {
     /// section.
     NodeApproval {
         genesis_key: bls::PublicKey,
-        section_auth: Proven<SectionAuthorityProvider>,
-        member_info: Proven<MemberInfo>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
+        node_op: SectionSigned<NodeOp>,
     },
     /// Message sent to all members to update them about the state of our section.
     Sync {
@@ -137,7 +137,7 @@ impl Variant {
         let proof_chain = match self {
             Self::NodeApproval {
                 section_auth,
-                member_info,
+                node_op,
                 ..
             } => {
                 let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
@@ -146,7 +146,7 @@ impl Variant {
                     return Err(Error::InvalidMessage);
                 }
 
-                if !member_info.verify(proof_chain) {
+                if !node_op.verify(proof_chain) {
                     return Err(Error::InvalidMessage);
                 }
 
@@ -172,12 +172,12 @@ impl Debug for Variant {
             Self::NodeApproval {
                 genesis_key,
                 section_auth,
-                member_info,
+                node_op,
             } => f
                 .debug_struct("NodeApproval")
                 .field("genesis_key", genesis_key)
                 .field("section_auth", section_auth)
-                .field("member_info", member_info)
+                .field("node_op", node_op)
                 .finish(),
             Self::Sync { section, network } => f
                 .debug_struct("Sync")

@@ -11,7 +11,7 @@ mod stats;
 
 use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
-    agreement::{verify_proof, Proof, Proven},
+    agreement::{verify_proof, Proof, SectionSigned},
     peer::Peer,
     section::{SectionAuthorityProvider, SectionChain},
 };
@@ -46,6 +46,7 @@ impl Network {
         self.sections.iter().map(|info| &info.section_auth.value)
     }
 
+    #[cfg(test)]
     /// Get `SectionAuthorityProvider` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix) -> Option<&SectionAuthorityProvider> {
         self.sections
@@ -101,7 +102,7 @@ impl Network {
     /// needed in that case.
     pub fn update_section(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_proof: Option<Proof>,
         section_chain: &SectionChain,
     ) -> bool {
@@ -202,7 +203,7 @@ struct OtherSection {
     // If this is signed by our section, then `key_proof` is `None`. If this is signed by our
     // sibling section, then `key_proof` contains the proof of the signing key itself signed by our
     // section.
-    section_auth: Proven<SectionAuthorityProvider>,
+    section_auth: SectionSigned<SectionAuthorityProvider>,
     key_proof: Option<Proof>,
 }
 
@@ -257,7 +258,7 @@ mod tests {
     fn gen_proven_section_auth(
         sk: &bls::SecretKey,
         prefix: Prefix,
-    ) -> Proven<SectionAuthorityProvider> {
+    ) -> SectionSigned<SectionAuthorityProvider> {
         let (section_auth, _, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
         agreement::test_utils::proven(sk, section_auth).unwrap()
     }

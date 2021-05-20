@@ -13,11 +13,11 @@ use sn_messaging::{DestInfo, DstLocation};
 use xor_name::XorName;
 
 use crate::{
-    agreement::{Proposal, Proven},
+    agreement::{Proposal, SectionSigned},
     error::Result,
     messages::{Message, PlainMessage, Variant},
     routing::command::Command,
-    section::{MemberInfo, PeerState, SectionAuthorityProvider},
+    section::{NodeOp, PeerState, SectionAuthorityProvider},
     Error, Event, SectionChain, MIN_AGE,
 };
 
@@ -34,11 +34,11 @@ impl Core {
 
         match proposal {
             Proposal::Online {
-                member_info,
+                node_op,
                 previous_name,
                 their_knowledge,
-            } => self.handle_online_agreement(member_info, previous_name, their_knowledge, proof),
-            Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
+            } => self.handle_online_agreement(node_op, previous_name, their_knowledge, proof),
+            Proposal::Offline(node_op) => self.handle_offline_agreement(node_op, proof),
             Proposal::SectionInfo(section_auth) => {
                 self.handle_section_info_agreement(section_auth, proof)
             }
@@ -78,8 +78,8 @@ impl Core {
 
     fn handle_online_agreement(
         &mut self,
-        new_info: MemberInfo,
-        previous_name: Option<XorName>,
+        new_info: NodeOp,
+        _previous_name: Option<XorName>,
         their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<Vec<Command>> {
@@ -110,7 +110,7 @@ impl Core {
             }
         }
 
-        let new_info = Proven {
+        let new_info = SectionSigned {
             value: new_info,
             proof,
         };
@@ -122,11 +122,12 @@ impl Core {
 
         info!("handle Online: {:?}", new_info.value.peer);
 
-        self.send_event(Event::MemberJoined {
-            name: *new_info.value.peer.name(),
-            previous_name,
-            age: new_info.value.peer.age(),
-        });
+        let event = Event::SectionChanged {
+            previous_section_auth: self.section.online_nodes().section_auth().clone(),
+            node_op: Some(new_info.clone()),
+            online_nodes: self.section.online_nodes().clone(),
+        };
+        self.send_event(event);
 
         commands
             .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.proof.signature)?);
@@ -144,21 +145,17 @@ impl Core {
         Ok(commands)
     }
 
-    fn handle_offline_agreement(
-        &mut self,
-        member_info: MemberInfo,
-        proof: Proof,
-    ) -> Result<Vec<Command>> {
+    fn handle_offline_agreement(&mut self, node_op: NodeOp, proof: Proof) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let peer = member_info.peer;
-        let age = peer.age();
+        let peer = node_op.peer;
         let signature = proof.signature.clone();
-
-        if !self.section.update_member(Proven {
-            value: member_info,
+        let signed_op = SectionSigned {
+            value: node_op,
             proof,
-        }) {
+        };
+
+        if !self.section.update_member(signed_op.clone()) {
             info!("ignore Offline: {:?}", peer);
             return Ok(commands);
         }
@@ -174,10 +171,12 @@ impl Core {
 
         commands.extend(result);
 
-        self.send_event(Event::MemberLeft {
-            name: *peer.name(),
-            age,
-        });
+        let event = Event::SectionChanged {
+            previous_section_auth: self.section.online_nodes().section_auth().clone(),
+            node_op: Some(signed_op),
+            online_nodes: self.section.online_nodes().clone(),
+        };
+        self.send_event(event);
 
         Ok(commands)
     }
@@ -191,7 +190,7 @@ impl Core {
 
         let equal_or_extension = section_auth.prefix() == *self.section.prefix()
             || section_auth.prefix().is_extension_of(self.section.prefix());
-        let section_auth = Proven::new(section_auth, proof.clone());
+        let section_auth = SectionSigned::new(section_auth, proof.clone());
 
         if equal_or_extension {
             // Our section of sub-section
@@ -251,7 +250,7 @@ impl Core {
 
     fn handle_our_elders_agreement(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_proof: Proof,
     ) -> Result<Vec<Command>> {
         let updates = self

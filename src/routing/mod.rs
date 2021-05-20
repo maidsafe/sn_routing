@@ -29,7 +29,7 @@ use self::{
 use crate::{
     crypto,
     error::Result,
-    event::{Elders, Event, NodeElderChange},
+    event::Event,
     messages::Message,
     node::Node,
     peer::Peer,
@@ -45,7 +45,7 @@ use sn_messaging::{
     section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
     DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
 
@@ -112,19 +112,12 @@ impl Routing {
             let state = Core::first_node(node, event_tx)?;
 
             let section = state.section();
-
-            let elders = Elders {
-                prefix: *section.prefix(),
-                key: *section.chain().last_key(),
-                remaining: BTreeSet::new(),
-                added: section.authority_provider().names(),
-                removed: BTreeSet::new(),
+            let event = Event::SectionChanged {
+                previous_section_auth: section.signed_authority_provider().clone(),
+                node_op: None,
+                online_nodes: section.online_nodes().clone(),
             };
-
-            state.send_event(Event::EldersChanged {
-                elders,
-                self_status_change: NodeElderChange::Promoted,
-            });
+            state.send_event(event);
 
             (state, comm, vec![])
         } else {

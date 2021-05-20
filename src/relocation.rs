@@ -14,7 +14,7 @@ use crate::{
     messages::{Message, Variant},
     network::Network,
     peer::Peer,
-    section::{MemberInfo, Section},
+    section::{NodeOp, Section},
 };
 use bytes::Bytes;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
@@ -29,12 +29,12 @@ pub(crate) fn actions(
     network: &Network,
     churn_name: &XorName,
     churn_signature: &bls::Signature,
-) -> Vec<(MemberInfo, RelocateAction)> {
+) -> Vec<(NodeOp, RelocateAction)> {
     // Find the peers that pass the relocation check and take only the oldest ones to avoid
     // relocating too many nodes at the same time.
     let candidates: Vec<_> = section
         .members()
-        .joined()
+        .all()
         .filter(|info| check(info.peer.age(), churn_signature))
         .collect();
 
@@ -355,7 +355,7 @@ mod tests {
         let mut section = Section::new(pk, SectionChain::new(pk), section_auth)?;
 
         for peer in &peers {
-            let info = MemberInfo::joined(*peer);
+            let info = NodeOp::joined(*peer);
             let info = proven(sk, info)?;
 
             assert!(section.update_member(info));

@@ -26,23 +26,18 @@ pub const FIRST_SECTION_MAX_AGE: u8 = 100;
 
 /// Information about a member of our section.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
-pub struct MemberInfo {
+pub struct NodeOp {
     pub peer: Peer,
     pub state: PeerState,
 }
 
-impl MemberInfo {
-    // Creates a `MemberInfo` in the `Joined` state.
+impl NodeOp {
+    // Creates a `NodeOp` in the `Joined` state.
     pub fn joined(peer: Peer) -> Self {
         Self {
             peer,
             state: PeerState::Joined,
         }
-    }
-
-    // Is the age > `MIN_AGE`?
-    pub fn is_mature(&self) -> bool {
-        self.peer.age() > MIN_AGE
     }
 
     pub fn leave(self) -> Result<Self, Error> {

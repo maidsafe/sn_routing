@@ -147,13 +147,7 @@ async fn test_messages_between_nodes() -> Result<()> {
     // start a second node which sends a message to the first node
     let (node2, mut event_stream) = create_node(config_with_contact(node1_contact)).await?;
 
-    assert_event!(
-        event_stream,
-        Event::EldersChanged {
-            self_status_change: NodeElderChange::Promoted,
-            ..
-        }
-    );
+    assert_event!(event_stream, Event::SectionChanged { .. });
 
     let node2_name = node2.name().await;
 

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, Proven};
+use super::{Proof, SectionSigned};
 use crate::error::Result;
 use crate::Error;
 use serde::Serialize;
@@ -20,8 +20,8 @@ pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<P
     })
 }
 
-// Wrap the given payload in `Proven`
-pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Result<Proven<T>> {
+// Wrap the given payload in `SectionSigned`
+pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Result<SectionSigned<T>> {
     let proof = prove(secret_key, &payload)?;
-    Ok(Proven::new(payload, proof))
+    Ok(SectionSigned::new(payload, proof))
 }

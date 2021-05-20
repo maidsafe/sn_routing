@@ -112,7 +112,7 @@ impl Core {
         let weighing_adults: BTreeSet<XorName> = self
             .section
             .members()
-            .joined()
+            .all()
             .map(|info| *info.peer.name())
             .collect();
         if self
@@ -132,7 +132,7 @@ impl Core {
             let variant = Variant::ConnectivityComplaint(name);
             let recipients: Vec<_> = self
                 .section
-                .proven_authority_provider()
+                .signed_authority_provider()
                 .value
                 .peers()
                 .filter(|peer| *peer.name() != name)

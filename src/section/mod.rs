@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod member_info;
+mod node_op;
+mod online_nodes;
 mod section_authority_provider;
 mod section_chain;
 mod section_keys;
@@ -16,16 +17,17 @@ mod section_peers;
 pub(crate) use self::section_authority_provider::test_utils;
 pub(crate) use self::section_peers::SectionPeers;
 pub use self::{
-    member_info::{
-        MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
+    node_op::{
+        NodeOp, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
+    online_nodes::OnlineNodes,
     section_authority_provider::{ElderCandidates, SectionAuthorityProvider},
     section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
 
 use crate::{
-    agreement::Proven,
+    agreement::SectionSigned,
     error::{Error, Result},
     peer::Peer,
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
@@ -39,8 +41,11 @@ use xor_name::{Prefix, XorName};
 pub(crate) struct Section {
     genesis_key: bls::PublicKey,
     chain: SectionChain,
-    section_auth: Proven<SectionAuthorityProvider>,
-    members: SectionPeers,
+    online_nodes: OnlineNodes,
+    // Can come back but will be relocated
+    offline_nodes: SectionPeers,
+    // Can never come back here (we killed or relocated them)
+    dead_nodes: SectionPeers,
 }
 
 impl Section {
@@ -51,7 +56,7 @@ impl Section {
     pub fn new(
         genesis_key: bls::PublicKey,
         chain: SectionChain,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
         if section_auth.proof.public_key != *chain.last_key() {
             error!("can't create section: section_auth signed with incorrect key");
@@ -62,8 +67,9 @@ impl Section {
         Ok(Self {
             genesis_key,
             chain,
-            section_auth,
-            members: SectionPeers::default(),
+            online_nodes: OnlineNodes::new(section_auth),
+            offline_nodes: SectionPeers::default(),
+            dead_nodes: SectionPeers::default(),
         })
     }
 
@@ -82,14 +88,12 @@ impl Section {
             section_auth,
         )?;
 
-        for peer in section.section_auth.value.peers() {
-            let member_info = MemberInfo::joined(peer);
-            let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
-            let _ = section.members.update(Proven {
-                value: member_info,
-                proof,
-            });
-        }
+        let node_op = NodeOp::joined(peer);
+        let proof = create_first_proof(&public_key_set, &secret_key_share, &node_op)?;
+        let _ = section.update_member(SectionSigned {
+            value: node_op,
+            proof,
+        });
 
         let section_key_share = SectionKeyShare {
             public_key_set,
@@ -107,36 +111,118 @@ impl Section {
     /// Try to merge this `Section` with `other`. Returns `InvalidMessage` if `other` is invalid or
     /// its chain is not compatible with the chain of `self`.
     pub fn merge(&mut self, other: Self) -> Result<()> {
-        if !other.section_auth.self_verify() {
-            error!("can't merge sections: other section_auth failed self-verification");
-            return Err(Error::InvalidMessage);
-        }
-        if &other.section_auth.proof.public_key != other.chain.last_key() {
-            // TODO: use more specific error variant.
-            error!("can't merge sections: other section_auth signed with incorrect key");
-            return Err(Error::InvalidMessage);
-        }
+        other.self_verify()?;
 
+        // The `SectionChain::merge` function carries out the check whether the incoming chain is
+        // trust-worthy.
         self.chain.merge(other.chain.clone())?;
 
-        if &other.section_auth.proof.public_key == self.chain.last_key() {
-            self.section_auth = other.section_auth;
+        if &other.signed_authority_provider().proof.public_key == self.chain.last_key() {
+            self.online_nodes
+                .set_section_auth(other.signed_authority_provider());
         }
 
-        for info in other.members {
-            let _ = self.update_member(info);
+        let incoming = other
+            .online_nodes
+            .members()
+            .chain(other.offline_nodes.members())
+            .chain(other.dead_nodes.members());
+
+        for entry in incoming {
+            let _ = self.update_member(entry.clone());
         }
 
-        self.members
-            .prune_not_matching(&self.section_auth.value.prefix());
+        self.prune_not_matching();
 
         Ok(())
+    }
+
+    // TODO: use more specific error variant.
+    fn self_verify(&self) -> Result<()> {
+        if !self.signed_authority_provider().self_verify() {
+            error!(
+                "cannot verify the signed authority_provider {:?}",
+                self.signed_authority_provider()
+            );
+            return Err(Error::InvalidMessage);
+        }
+        if &self.signed_authority_provider().proof.public_key != self.chain.last_key() {
+            error!(
+                "authority_provider is not signed by the last key in chain {:?} - {:?}",
+                self.signed_authority_provider(),
+                self.chain.last_key()
+            );
+            return Err(Error::InvalidMessage);
+        }
+
+        if self
+            .online_nodes
+            .all()
+            .any(|op| op.state != PeerState::Joined)
+        {
+            error!(
+                "online_nodes contains non-Joined node {:?}",
+                self.online_nodes.peers()
+            );
+            return Err(Error::InvalidMessage);
+        }
+        if self
+            .offline_nodes
+            .all()
+            .any(|op| op.state != PeerState::Left)
+        {
+            error!(
+                "offline_nodes contains non-Left node {:?}",
+                self.offline_nodes
+            );
+            return Err(Error::InvalidMessage);
+        }
+        if self
+            .dead_nodes
+            .all()
+            .any(|op| !matches!(op.state, PeerState::Relocated(_)))
+        {
+            error!(
+                "dead_nodes contains non-Relocated node {:?}",
+                self.dead_nodes
+            );
+            return Err(Error::InvalidMessage);
+        }
+
+        let not_has_key = |entry: &SectionSigned<NodeOp>| {
+            let not_has_key = !self.chain.has_key(&entry.proof.public_key);
+            if not_has_key {
+                error!(
+                    "contains entry signed by unknown key {:?} - {:?}",
+                    entry, self.chain
+                );
+            }
+            not_has_key
+        };
+        let mut entries = self
+            .online_nodes
+            .members()
+            .chain(self.offline_nodes.members())
+            .chain(self.dead_nodes.members());
+
+        if entries.any(|entry| not_has_key(entry)) {
+            return Err(Error::InvalidMessage);
+        }
+
+        Ok(())
+    }
+
+    fn prune_not_matching(&mut self) {
+        let prefix = self.authority_provider().prefix;
+        self.online_nodes.prune_not_matching(&prefix);
+        self.offline_nodes.prune_not_matching(&prefix);
+        self.dead_nodes.prune_not_matching(&prefix);
     }
 
     /// Update the `SectionAuthorityProvider` of our section.
     pub fn update_elders(
         &mut self,
-        new_section_auth: Proven<SectionAuthorityProvider>,
+        new_section_auth: SectionSigned<SectionAuthorityProvider>,
         new_key_proof: Proof,
     ) -> bool {
         if new_section_auth.value.prefix() != *self.prefix()
@@ -165,23 +251,68 @@ impl Section {
         }
 
         if &new_section_auth.proof.public_key == self.chain.last_key() {
-            self.section_auth = new_section_auth;
+            self.online_nodes.set_section_auth(&new_section_auth);
         }
 
-        self.members
-            .prune_not_matching(&self.section_auth.value.prefix());
+        self.prune_not_matching();
 
         true
     }
 
     /// Update the member. Returns whether it actually changed anything.
-    pub fn update_member(&mut self, member_info: Proven<MemberInfo>) -> bool {
-        if !member_info.verify(&self.chain) {
-            error!("can't merge member {:?}", member_info.value);
+    pub fn update_member(&mut self, new_op: SectionSigned<NodeOp>) -> bool {
+        if !new_op.verify(&self.chain) {
+            error!("can't merge member {:?}", new_op.value);
             return false;
         }
 
-        self.members.update(member_info)
+        // To maintain commutativity, the only allowed transitions are:
+        // - Joined -> Joined if the new age is greater than the old age
+        // - Joined -> Left
+        // - Joined -> Relocated
+        // - Relocated -> Left (should not happen, but needed for consistency)
+        let cur_op = self
+            .online_nodes
+            .take(new_op.value.peer.name())
+            .or_else(|| self.dead_nodes.take(new_op.value.peer.name()))
+            .or_else(|| self.offline_nodes.take(new_op.value.peer.name()));
+
+        if let Some(cur_op) = cur_op {
+            match (cur_op.value.state, new_op.value.state) {
+                (PeerState::Joined, PeerState::Joined) => {
+                    if new_op.value.peer.age() > cur_op.value.peer.age() {
+                        self.online_nodes.add(new_op);
+                    } else {
+                        self.online_nodes.add(cur_op);
+                        return false;
+                    }
+                }
+                (PeerState::Joined, PeerState::Left) => {
+                    // TODO: differentiate left and killed
+                    self.offline_nodes.add(new_op);
+                }
+                (PeerState::Joined, PeerState::Relocated(_))
+                | (PeerState::Left, PeerState::Relocated(_)) => {
+                    self.dead_nodes.add(new_op);
+                }
+                (PeerState::Left, PeerState::Joined) | (PeerState::Left, PeerState::Left) => {
+                    self.offline_nodes.add(cur_op);
+                    return false;
+                }
+                (PeerState::Relocated(_), _) => {
+                    self.dead_nodes.add(cur_op);
+                    return false;
+                }
+            };
+        } else {
+            match new_op.value.state {
+                PeerState::Joined => self.online_nodes.add(new_op),
+                PeerState::Left => self.offline_nodes.add(new_op),
+                PeerState::Relocated(_) => self.dead_nodes.add(new_op),
+            }
+        }
+
+        true
     }
 
     pub fn chain(&self) -> &SectionChain {
@@ -206,22 +337,27 @@ impl Section {
 
         Ok(Self {
             genesis_key: self.genesis_key,
-            section_auth: self.section_auth.clone(),
             chain,
-            members: self.members.clone(),
+            online_nodes: self.online_nodes.clone(),
+            offline_nodes: self.offline_nodes.clone(),
+            dead_nodes: self.dead_nodes.clone(),
         })
     }
 
     pub fn authority_provider(&self) -> &SectionAuthorityProvider {
-        &self.section_auth.value
+        &self.signed_authority_provider().value
     }
 
-    pub fn proven_authority_provider(&self) -> &Proven<SectionAuthorityProvider> {
-        &self.section_auth
+    pub fn signed_authority_provider(&self) -> &SectionSigned<SectionAuthorityProvider> {
+        self.online_nodes.section_auth()
     }
 
     pub fn is_elder(&self, name: &XorName) -> bool {
         self.authority_provider().contains_elder(name)
+    }
+
+    pub fn online_nodes(&self) -> &OnlineNodes {
+        &self.online_nodes
     }
 
     /// Generate a new section info(s) based on the current set of members.
@@ -252,41 +388,19 @@ impl Section {
         &self.authority_provider().prefix
     }
 
+    // Members of adults AND elders.
     pub fn members(&self) -> &SectionPeers {
-        &self.members
-    }
-
-    /// Returns members that are either joined or are left but still elders.
-    pub fn active_members(&self) -> impl Iterator<Item = &Peer> {
-        self.members
-            .all()
-            .filter(move |info| {
-                self.members.is_joined(info.peer.name()) || self.is_elder(info.peer.name())
-            })
-            .map(|info| &info.peer)
+        self.online_nodes.peers()
     }
 
     /// Returns adults from our section.
     pub fn adults(&self) -> impl Iterator<Item = &Peer> {
-        self.members
-            .mature()
-            .filter(move |peer| !self.is_elder(peer.name()))
-    }
-
-    /// Returns live adults from our section.
-    pub fn live_adults(&self) -> impl Iterator<Item = &Peer> {
-        self.members.joined().filter_map(move |info| {
-            if !self.is_elder(info.peer.name()) {
-                Some(&info.peer)
-            } else {
-                None
-            }
-        })
+        self.online_nodes.adults()
     }
 
     pub fn find_joined_member_by_addr(&self, addr: &SocketAddr) -> Option<&Peer> {
-        self.members
-            .joined()
+        self.online_nodes
+            .all()
             .find(|info| info.peer.addr() == addr)
             .map(|info| &info.peer)
     }
@@ -305,9 +419,9 @@ impl Section {
         let next_bit = our_name.bit(next_bit_index);
 
         let (our_new_size, sibling_new_size) = self
-            .members
-            .mature()
-            .map(|peer| peer.name().bit(next_bit_index) == next_bit)
+            .online_nodes
+            .all()
+            .map(|op| op.peer.name().bit(next_bit_index) == next_bit)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
                     (ours + 1, siblings)
@@ -324,12 +438,12 @@ impl Section {
         let our_prefix = self.prefix().pushed(next_bit);
         let other_prefix = self.prefix().pushed(!next_bit);
 
-        let our_elders = self.members.elder_candidates_matching_prefix(
+        let our_elders = self.online_nodes.elder_candidates_matching_prefix(
             &our_prefix,
             ELDER_SIZE,
             self.authority_provider(),
         );
-        let other_elders = self.members.elder_candidates_matching_prefix(
+        let other_elders = self.online_nodes.elder_candidates_matching_prefix(
             &other_prefix,
             ELDER_SIZE,
             self.authority_provider(),
@@ -344,7 +458,7 @@ impl Section {
     // Returns the candidates for elders out of all the nodes in the section, even out of the
     // relocating nodes if there would not be enough instead.
     fn elder_candidates(&self, elder_size: usize) -> Vec<Peer> {
-        self.members
+        self.online_nodes
             .elder_candidates(elder_size, self.authority_provider())
     }
 }
@@ -354,12 +468,12 @@ fn create_first_section_authority_provider(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     mut peer: Peer,
-) -> Result<Proven<SectionAuthorityProvider>> {
+) -> Result<SectionSigned<SectionAuthorityProvider>> {
     peer.set_reachable(true);
     let section_auth =
         SectionAuthorityProvider::new(iter::once(peer), Prefix::default(), pk_set.clone());
     let proof = create_first_proof(pk_set, sk_share, &section_auth)?;
-    Ok(Proven::new(section_auth, proof))
+    Ok(SectionSigned::new(section_auth, proof))
 }
 
 fn create_first_proof<T: Serialize>(

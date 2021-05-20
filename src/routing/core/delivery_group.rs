@@ -168,7 +168,7 @@ mod tests {
         crypto,
         section::{
             test_utils::{gen_addr, gen_section_authority_provider},
-            MemberInfo, SectionAuthorityProvider, SectionChain, MIN_ADULT_AGE,
+            NodeOp, SectionAuthorityProvider, SectionChain, MIN_ADULT_AGE,
         },
     };
     use anyhow::{Context, Result};
@@ -204,9 +204,9 @@ mod tests {
         let name = crypto::gen_name_with_age(MIN_ADULT_AGE);
         let dst_name = section.prefix().substituted_in(name);
         let peer = Peer::new(dst_name, gen_addr());
-        let member_info = MemberInfo::joined(peer);
-        let member_info = proven(&sk, member_info)?;
-        assert!(section.update_member(member_info));
+        let node_op = NodeOp::joined(peer);
+        let node_op = proven(&sk, node_op)?;
+        assert!(section.update_member(node_op));
 
         let dst = DstLocation::Node(dst_name);
         let (recipients, dg_size) = delivery_targets(&dst, &our_name, &section, &network)?;
@@ -452,9 +452,9 @@ mod tests {
         let mut section = Section::new(pk, chain, section_auth0)?;
 
         for peer in elders0 {
-            let member_info = MemberInfo::joined(peer);
-            let member_info = proven(&sk, member_info)?;
-            assert!(section.update_member(member_info));
+            let node_op = NodeOp::joined(peer);
+            let node_op = proven(&sk, node_op)?;
+            assert!(section.update_member(node_op));
         }
 
         let mut network = Network::new();

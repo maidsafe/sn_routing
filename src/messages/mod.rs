@@ -462,7 +462,7 @@ mod tests {
     use crate::{
         agreement, crypto,
         peer::Peer,
-        section::{self, test_utils::gen_addr, MemberInfo},
+        section::{self, test_utils::gen_addr, NodeOp},
         MIN_ADULT_AGE,
     };
     use anyhow::Result;
@@ -491,13 +491,13 @@ mod tests {
         let section_auth = agreement::test_utils::proven(&sk1, section_auth)?;
 
         let peer = Peer::new(rand::random(), gen_addr());
-        let member_info = MemberInfo::joined(peer);
-        let member_info = agreement::test_utils::proven(&sk1, member_info)?;
+        let node_op = NodeOp::joined(peer);
+        let node_op = agreement::test_utils::proven(&sk1, node_op)?;
 
         let variant = Variant::NodeApproval {
             genesis_key: pk0,
             section_auth,
-            member_info,
+            node_op,
         };
         let message = Message::single_src(
             &node,

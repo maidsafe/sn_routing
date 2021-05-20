@@ -8,7 +8,7 @@
 
 use super::{Comm, Command, Core, Dispatcher};
 use crate::agreement::test_utils::{prove, proven};
-use crate::agreement::{Proposal, Proven};
+use crate::agreement::{Proposal, SectionSigned};
 use crate::routing::core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY};
 use crate::{
     crypto,
@@ -19,7 +19,7 @@ use crate::{
     peer::Peer,
     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
-        test_utils::*, MemberInfo, PeerState, Section, SectionAuthorityProvider, SectionChain,
+        test_utils::*, NodeOp, PeerState, Section, SectionAuthorityProvider, SectionChain,
         SectionKeyShare, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     supermajority, ELDER_SIZE,
@@ -397,9 +397,9 @@ async fn aggregate_proposals() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_peer = create_peer(MIN_AGE);
-    let member_info = MemberInfo::joined(new_peer);
+    let node_op = NodeOp::joined(new_peer);
     let proposal = Proposal::Online {
-        member_info,
+        node_op,
         previous_name: None,
         their_knowledge: None,
     };
@@ -483,9 +483,13 @@ async fn handle_agreement_on_online() -> Result<()> {
     let status = handle_online_command(&new_peer, &sk_set, &dispatcher, &section_auth).await?;
     assert!(status.node_approval_sent);
 
-    assert_matches!(event_rx.recv().await, Some(Event::MemberJoined { name, age, .. }) => {
-        assert_eq!(name, *new_peer.name());
-        assert_eq!(age, MIN_AGE);
+    assert_matches!(event_rx.recv().await, Some(Event::SectionChanged { online_nodes, .. }) => {
+        let result = online_nodes.peers().get(new_peer.name());
+        assert!(result.is_some());
+        if let Some(op) = result {
+            assert_eq!(op.peer.name(), new_peer.name());
+            assert_eq!(op.peer.age(), MIN_AGE);
+        }
     });
 
     Ok(())
@@ -512,10 +516,10 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     for peer in section_auth.peers() {
         let mut peer = peer;
         peer.set_reachable(true);
-        let member_info = MemberInfo::joined(peer);
-        let proof = prove(sk_set.secret_key(), &member_info)?;
-        let _ = section.update_member(Proven {
-            value: member_info,
+        let node_op = NodeOp::joined(peer);
+        let proof = prove(sk_set.secret_key(), &node_op)?;
+        let _ = section.update_member(SectionSigned {
+            value: node_op,
             proof,
         });
         if peer.age() == MIN_AGE + 2 {
@@ -537,9 +541,9 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     // Handle agreement on Online of a peer that is older than the youngest
     // current elder - that means this peer is going to be promoted.
     let new_peer = create_peer(MIN_AGE + 2);
-    let member_info = MemberInfo::joined(new_peer);
+    let node_op = NodeOp::joined(new_peer);
     let proposal = Proposal::Online {
-        member_info,
+        node_op,
         previous_name: Some(XorName::random()),
         their_knowledge: Some(sk_set.secret_key().public_key()),
     };
@@ -597,9 +601,9 @@ async fn handle_online_command(
     dispatcher: &Dispatcher,
     section_auth: &SectionAuthorityProvider,
 ) -> Result<HandleOnlineStatus> {
-    let member_info = MemberInfo::joined(*peer);
+    let node_op = NodeOp::joined(*peer);
     let proposal = Proposal::Online {
-        member_info,
+        node_op,
         previous_name: None,
         their_knowledge: None,
     };
@@ -674,12 +678,12 @@ async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u
 
     // Make a left peer.
     let peer = create_peer(age);
-    let member_info = MemberInfo {
+    let node_op = NodeOp {
         peer,
         state: PeerState::Left,
     };
-    let member_info = proven(sk_set.secret_key(), member_info)?;
-    let _ = section.update_member(member_info);
+    let node_op = proven(sk_set.secret_key(), node_op)?;
+    let _ = section.update_member(node_op);
 
     // Make a Node
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
@@ -734,29 +738,33 @@ async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
     let (mut section, section_key_share) = create_section(&sk_set, &section_auth)?;
 
     let existing_peer = create_peer(MIN_AGE);
-    let member_info = MemberInfo::joined(existing_peer);
-    let member_info = proven(sk_set.secret_key(), member_info)?;
-    let _ = section.update_member(member_info);
+    let node_op = NodeOp::joined(existing_peer);
+    let node_op = proven(sk_set.secret_key(), node_op)?;
+    let _ = section.update_member(node_op);
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let node = nodes.remove(0);
     let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
-    let member_info = MemberInfo {
+    let node_op = NodeOp {
         peer: existing_peer,
         state: PeerState::Left,
     };
-    let proposal = Proposal::Offline(member_info);
+    let proposal = Proposal::Offline(node_op);
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let _ = dispatcher
         .handle_command(Command::HandleAgreement { proposal, proof })
         .await?;
 
-    assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, age, }) => {
-        assert_eq!(name, *existing_peer.name());
-        assert_eq!(age, MIN_AGE);
+    assert_matches!(event_rx.recv().await, Some(Event::SectionChanged { online_nodes, node_op, .. }) => {
+        assert!(online_nodes.peers().get(existing_peer.name()).is_none());
+        assert!(node_op.is_some());
+        if let Some(op) = node_op {
+            assert_eq!(op.value.peer.name(), existing_peer.name());
+            assert_eq!(op.value.peer.age(), MIN_AGE);
+        }
     });
 
     Ok(())
@@ -770,9 +778,9 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let (mut section, section_key_share) = create_section(&sk_set, &section_auth)?;
 
     let existing_peer = create_peer(MIN_AGE);
-    let member_info = MemberInfo::joined(existing_peer);
-    let member_info = proven(sk_set.secret_key(), member_info)?;
-    let _ = section.update_member(member_info);
+    let node_op = NodeOp::joined(existing_peer);
+    let node_op = proven(sk_set.secret_key(), node_op)?;
+    let _ = section.update_member(node_op);
 
     // Pick the elder to remove.
     let remove_peer = section_auth
@@ -780,7 +788,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         .rev()
         .next()
         .expect("section_auth is empty");
-    let remove_member_info = section
+    let remove_node_op = section
         .members()
         .get(remove_peer.name())
         .expect("member not found")
@@ -794,7 +802,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     // Handle agreement on the Offline proposal
-    let proposal = Proposal::Offline(remove_member_info);
+    let proposal = Proposal::Offline(remove_node_op);
     let proof = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
     let commands = dispatcher
@@ -844,8 +852,11 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
 
     assert!(dkg_start_sent);
 
-    assert_matches!(event_rx.recv().await, Some(Event::MemberLeft { name, .. }) => {
-        assert_eq!(name, *remove_peer.name());
+    assert_matches!(event_rx.recv().await, Some(Event::SectionChanged { node_op, .. }) => {
+        assert!(node_op.is_some());
+        if let Some(op) = node_op {
+            assert_eq!(op.value.peer.name(), remove_peer.name());
+        }
     });
 
     // The removed peer is still our elder because we haven't yet processed the section update.
@@ -1104,7 +1115,7 @@ async fn handle_sync() -> Result<()> {
 
     let (old_section_auth, mut nodes) = create_section_auth();
     let proven_old_section_auth = proven(sk1_set.secret_key(), old_section_auth.clone())?;
-    let old_section = Section::new(pk0, chain.clone(), proven_old_section_auth)?;
+    let old_section = Section::new(pk0, chain.clone(), proven_old_section_auth.clone())?;
 
     // Create our node
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -1133,9 +1144,9 @@ async fn handle_sync() -> Result<()> {
         old_section_auth.prefix,
         sk2_set.public_keys(),
     );
-    let new_section_elders: BTreeSet<_> = new_section_auth.names();
+
     let proven_new_section_auth = proven(sk2, new_section_auth)?;
-    let new_section = Section::new(pk0, chain, proven_new_section_auth)?;
+    let new_section = Section::new(pk0, chain, proven_new_section_auth.clone())?;
 
     // Create the `Sync` message containing the new `Section`.
     let message = Message::single_src(
@@ -1163,11 +1174,10 @@ async fn handle_sync() -> Result<()> {
     // Verify our `Section` got updated.
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { elders, .. }) => {
-            assert_eq!(elders.key, pk2);
-            assert!(elders.added.iter().all(|a| new_section_elders.contains(a)));
-            assert!(elders.remaining.iter().all(|a| new_section_elders.contains(a)));
-            assert!(elders.removed.iter().all(|r| !new_section_elders.contains(r)));
+        Some(Event::SectionChanged { previous_section_auth, node_op, online_nodes }) => {
+            assert!(node_op.is_none());
+            assert_eq!(previous_section_auth, proven_old_section_auth);
+            assert_eq!(online_nodes.section_auth(), &proven_new_section_auth);
         }
     );
 
@@ -1381,9 +1391,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     let (mut section, section_key_share) = create_section(&sk_set, &section_auth)?;
 
     let non_elder_peer = create_peer(MIN_AGE);
-    let member_info = MemberInfo::joined(non_elder_peer);
-    let member_info = proven(sk_set.secret_key(), member_info)?;
-    assert!(section.update_member(member_info));
+    let node_op = NodeOp::joined(non_elder_peer);
+    let node_op = proven(sk_set.secret_key(), node_op)?;
+    assert!(section.update_member(node_op));
 
     let node = nodes.remove(0);
     let state = Core::new(
@@ -1534,9 +1544,9 @@ async fn handle_elders_update() -> Result<()> {
     let (mut section0, section_key_share) = create_section(&sk_set0, &section_auth0)?;
 
     for peer in &[adult_peer, promoted_peer] {
-        let member_info = MemberInfo::joined(*peer);
-        let member_info = proven(sk_set0.secret_key(), member_info)?;
-        assert!(section0.update_member(member_info));
+        let node_op = NodeOp::joined(*peer);
+        let node_op = proven(sk_set0.secret_key(), node_op)?;
+        assert!(section0.update_member(node_op));
     }
 
     let demoted_peer = other_elder_peers.remove(0);
@@ -1552,10 +1562,9 @@ async fn handle_elders_update() -> Result<()> {
         Prefix::default(),
         sk_set1.public_keys(),
     );
-    let elder_names1: BTreeSet<_> = section_auth1.names();
 
     let proven_section_auth1 = proven(sk_set1.secret_key(), section_auth1)?;
-    let proposal = Proposal::OurElders(proven_section_auth1);
+    let proposal = Proposal::OurElders(proven_section_auth1.clone());
     let signature = sk_set0
         .secret_key()
         .sign(&bincode::serialize(&proposal.as_signable())?);
@@ -1616,10 +1625,9 @@ async fn handle_elders_update() -> Result<()> {
 
     assert_matches!(
         event_rx.recv().await,
-        Some(Event::EldersChanged { elders, .. }) => {
-            assert_eq!(elders.key, pk1);
-            assert_eq!(elder_names1, elders.added.union(&elders.remaining).copied().collect());
-            assert!(elders.removed.iter().all(|r| !elder_names1.contains(r)));
+        Some(Event::SectionChanged { node_op, online_nodes, .. }) => {
+            assert!(node_op.is_none());
+            assert_eq!(online_nodes.section_auth(), &proven_section_auth1);
         }
     );
 
@@ -1658,9 +1666,9 @@ async fn handle_demote_during_split() -> Result<()> {
     let (mut section, section_key_share) = create_section(&sk_set_v0, &section_auth_v0)?;
 
     for peer in peers_b.iter().chain(iter::once(&peer_c)) {
-        let member_info = MemberInfo::joined(*peer);
-        let member_info = proven(sk_set_v0.secret_key(), member_info)?;
-        assert!(section.update_member(member_info));
+        let node_op = NodeOp::joined(*peer);
+        let node_op = proven(sk_set_v0.secret_key(), node_op)?;
+        assert!(section.update_member(node_op));
     }
 
     let (event_tx, _) = mpsc::unbounded_channel();
@@ -1814,9 +1822,9 @@ fn create_section(
     for peer in section_auth.peers() {
         let mut peer = peer;
         peer.set_reachable(true);
-        let member_info = MemberInfo::joined(peer);
-        let member_info = proven(sk_set.secret_key(), member_info)?;
-        let _ = section.update_member(member_info);
+        let node_op = NodeOp::joined(peer);
+        let node_op = proven(sk_set.secret_key(), node_op)?;
+        let _ = section.update_member(node_op);
     }
 
     let section_key_share = create_section_key_share(sk_set, 0);
@@ -1832,7 +1840,7 @@ fn create_section(
 fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Proposal, Proof)> {
     loop {
         let proposal = Proposal::Online {
-            member_info: MemberInfo::joined(create_peer(MIN_ADULT_AGE)),
+            node_op: NodeOp::joined(create_peer(MIN_ADULT_AGE)),
             previous_name: Some(rand::random()),
             their_knowledge: None,
         };

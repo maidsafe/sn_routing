@@ -110,7 +110,7 @@ pub(crate) fn process(
             let chain = section
                 .chain()
                 .get_proof_chain_to_current(&dest_info.dest_section_pk)?;
-            let section_auth = section.proven_authority_provider();
+            let section_auth = section.signed_authority_provider();
             let variant = Variant::SectionKnowledge {
                 src_info: (section_auth.clone(), chain),
                 msg: None,

@@ -9,12 +9,12 @@
 use std::mem;
 
 use crate::{
-    agreement::{Proof, Proven},
+    agreement::{Proof, SectionSigned},
     section::SectionAuthorityProvider,
 };
 use xor_name::Prefix;
 
-type Entry = (Proven<SectionAuthorityProvider>, Proof);
+type Entry = (SectionSigned<SectionAuthorityProvider>, Proof);
 
 // Helper structure to make sure we process a split by updating info about both our section and the
 // sibling section at the same time.
@@ -34,7 +34,7 @@ impl SplitBarrier {
     pub fn process(
         &mut self,
         our_prefix: &Prefix,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_proof: Proof,
     ) -> Vec<Entry> {
         if !section_auth.value.prefix.is_extension_of(our_prefix) {

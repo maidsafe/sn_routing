@@ -223,36 +223,14 @@ fn run_node(index: usize, mut node: Routing, mut event_stream: EventStream) -> J
 // Handles the event emitted by the node.
 async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
     match event {
-        Event::MemberJoined {
-            name,
-            previous_name,
-            age,
+        Event::SectionChanged {
+            previous_section_auth,
+            node_op,
+            online_nodes,
         } => {
             info!(
-                "Node #{} member joined - name: {}, previous_name: {:?}, age: {}",
-                index, name, previous_name, age
-            );
-        }
-        Event::MemberLeft { name, age } => {
-            info!("Node #{} member left - name: {}, age: {}", index, name, age);
-        }
-        Event::SectionSplit {
-            elders,
-            sibling_elders,
-            self_status_change,
-        } => {
-            info!(
-                "Node #{} section split - elders: {:?}, sibling elders: {:?}, node elder status change: {:?}",
-                index, elders, sibling_elders, self_status_change
-            );
-        }
-        Event::EldersChanged {
-            elders,
-            self_status_change,
-        } => {
-            info!(
-                "Node #{} elders changed - elders: {:?}, node elder status change: {:?}",
-                index, elders, self_status_change
+                "Node #{} got section change notification - previous_section_auth: {:?}, node_op: {:?}, online_nodes: {:?}",
+                index, previous_section_auth, node_op, online_nodes
             );
         }
         Event::MessageReceived {
@@ -284,14 +262,6 @@ async fn handle_event(index: usize, node: &mut Routing, event: Event) -> bool {
             index, user, msg
         ),
         Event::ClientLost(addr) => info!("Node #{} received ClientLost({:?})", index, addr),
-        Event::AdultsChanged {
-            remaining,
-            added,
-            removed,
-        } => info!(
-            "Node #{} adults changed - remaining: {:?}, added: {:?}, removed: {:?}",
-            index, remaining, added, removed
-        ),
     }
 
     true
