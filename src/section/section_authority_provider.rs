@@ -247,15 +247,6 @@ pub(crate) mod test_utils {
     pub(crate) fn gen_section_authority_provider(
         prefix: Prefix,
         count: usize,
-    ) -> (SectionAuthorityProvider, Vec<Node>) {
-        let (section_auth, nodes, _) = create_section_authority_provider(prefix, count);
-        (section_auth, nodes)
-    }
-
-    // Create a random `SectionAuthorityProvider` for testing purposes.
-    pub(crate) fn create_section_authority_provider(
-        prefix: Prefix,
-        count: usize,
     ) -> (SectionAuthorityProvider, Vec<Node>, bls::SecretKeySet) {
         let nodes = gen_sorted_nodes(&prefix, count, false);
         let elders = nodes

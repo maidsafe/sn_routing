@@ -137,9 +137,7 @@ mod tests {
         agreement::test_utils::proven,
         crypto,
         section::{
-            test_utils::{
-                create_section_authority_provider, gen_addr, gen_section_authority_provider,
-            },
+            test_utils::{gen_addr, gen_section_authority_provider},
             SectionChain,
         },
         Error, XorName, ELDER_SIZE, MIN_ADULT_AGE,
@@ -181,7 +179,7 @@ mod tests {
 
         let root_key =
             bls::PublicKey::from_bytes(env.their_sk.public_keys().public_key_share(0).to_bytes())
-                .unwrap();
+                .map_err(|_| Error::InvalidPayload)?;
         let their_new_pk = bls::SecretKey::random().public_key();
         let mut proof_chain = SectionChain::new(root_key);
         proof_chain.insert(
@@ -332,15 +330,14 @@ mod tests {
             let (chain, our_sk) =
                 create_chain(chain_len).context("failed to create section chain")?;
 
-            let (section_auth0, mut nodes) = gen_section_authority_provider(prefix0, ELDER_SIZE);
+            let (section_auth0, mut nodes, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
             let node = nodes.remove(0);
 
             let section_auth0 = proven(&our_sk, section_auth0)?;
             let section = Section::new(*chain.root_key(), chain, section_auth0)
                 .context("failed to create section")?;
 
-            let (section_auth1, _, their_sk) =
-                create_section_authority_provider(prefix1, ELDER_SIZE);
+            let (section_auth1, _, their_sk) = gen_section_authority_provider(prefix1, ELDER_SIZE);
             let their_pk = their_sk.public_keys().public_key();
             let section_auth1 = proven(&our_sk, section_auth1)?;
 

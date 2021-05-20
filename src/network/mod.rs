@@ -258,7 +258,7 @@ mod tests {
         sk: &bls::SecretKey,
         prefix: Prefix,
     ) -> Proven<SectionAuthorityProvider> {
-        let (section_auth, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
+        let (section_auth, _, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
         agreement::test_utils::proven(sk, section_auth).unwrap()
     }
 }

@@ -699,7 +699,7 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (section_auth, mut nodes) =
+        let (section_auth, mut nodes, _) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
@@ -1019,7 +1019,7 @@ mod tests {
         let (recv_tx, recv_rx) = mpsc::channel(1);
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
-        let (section_auth, mut nodes) =
+        let (section_auth, mut nodes, _) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
         let bootstrap_node = nodes.remove(0);
         let bootstrap_addr = bootstrap_node.addr;
