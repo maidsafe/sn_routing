@@ -53,8 +53,7 @@ pub(crate) fn delivery_targets(
             section_candidates(target_name, our_name, section, network)?
         }
         DstLocation::EndUser(user) => {
-            let target_name = user.name();
-            section_candidates(&target_name, our_name, section, network)?
+            section_candidates(&user.xorname, our_name, section, network)?
         }
         DstLocation::Node(target_name) => {
             if target_name == our_name {

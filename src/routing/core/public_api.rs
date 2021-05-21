@@ -19,7 +19,6 @@ use crate::{
     Error, Event, SectionChain,
 };
 use bytes::Bytes;
-use sn_data_types::PublicKey as EndUserPK;
 use sn_messaging::{
     section_info::{Error as TargetSectionError, SectionInfo},
     DestInfo, EndUser, Itinerary, SrcLocation,
@@ -43,11 +42,8 @@ impl Core {
         self.end_users.get_socket_addr(id)
     }
 
-    pub fn get_all_socket_addr<'a>(
-        &'a self,
-        end_user: &'a EndUserPK,
-    ) -> impl Iterator<Item = &'a SocketAddr> {
-        self.end_users.get_all_socket_addr(end_user)
+    pub fn try_add(&mut self, sender: SocketAddr) -> Result<EndUser> {
+        self.end_users.try_add(sender)
     }
 
     pub fn node(&self) -> &Node {

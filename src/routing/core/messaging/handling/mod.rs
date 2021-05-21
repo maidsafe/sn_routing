@@ -32,7 +32,6 @@ use bytes::Bytes;
 use sn_messaging::{
     client::ClientMsg,
     node::RoutingMsg,
-    section_info::Error as TargetSectionError,
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, EndUser, MessageType,
 };
@@ -148,35 +147,6 @@ impl Core {
                     },
                 }]
             }
-            SectionInfoMsg::RegisterEndUserCmd {
-                end_user,
-                socketaddr_sig,
-            } => {
-                trace!("Try adding enduser {} from {}", end_user, sender);
-                if self
-                    .end_users
-                    .try_add(sender, end_user, socketaddr_sig)
-                    .is_ok()
-                {
-                    return vec![];
-                }
-
-                let response =
-                    SectionInfoMsg::RegisterEndUserError(TargetSectionError::InvalidBootstrap(
-                        format!("Failed to add enduser {} from {}", end_user, sender),
-                    ));
-                debug!("Sending {:?} to {}", response, sender);
-
-                let name = XorName::from(end_user);
-                vec![Command::SendMessage {
-                    recipients: vec![(name, sender)],
-                    delivery_group_size: 1,
-                    message: MessageType::SectionInfo {
-                        msg: response,
-                        dest_info,
-                    },
-                }]
-            }
             SectionInfoMsg::GetSectionResponse(_) => {
                 if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
                     trace!("Forwarding {:?} to the bootstrap task", message);
@@ -190,10 +160,6 @@ impl Core {
                         ))
                         .await;
                 }
-                vec![]
-            }
-            SectionInfoMsg::RegisterEndUserError(error) => {
-                error!("RegisterEndUserError received: {:?}", error);
                 vec![]
             }
             SectionInfoMsg::SectionInfoUpdate(error) => {
@@ -465,38 +431,27 @@ impl Core {
 
     fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
-        if let DstLocation::EndUser(end_user) = msg.dst() {
-            let name = XorName::from(*end_user.id());
-            let recipients = match end_user {
-                EndUser::AllClients(public_key) => self
-                    .get_all_socket_addr(public_key)
-                    .copied()
-                    .map(|addr| (name, addr))
-                    .collect(),
-                EndUser::Client { socket_id, .. } => {
-                    if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
-                        vec![(name, socket_addr)]
-                    } else {
-                        vec![]
-                    }
-                }
-            };
-            if recipients.is_empty() {
-                trace!("Cannot route user message, recipient list empty: {:?}", msg);
-                return Err(Error::EmptyRecipientList);
-            };
-            trace!("sending user message {:?} to client {:?}", msg, recipients);
-            return Ok(vec![Command::SendMessage {
-                recipients,
-                delivery_group_size: 1,
-                message: MessageType::Client {
-                    msg: ClientMsg::from(content)?,
-                    dest_info: DestInfo {
-                        dest: name,
-                        dest_section_pk: *self.section.chain().last_key(),
+        if let DstLocation::EndUser(EndUser { xorname, socket_id }) = msg.dst() {
+            if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
+                trace!("sending user message {:?} to client {:?}", msg, socket_addr);
+                return Ok(vec![Command::SendMessage {
+                    recipients: vec![(*xorname, socket_addr)],
+                    delivery_group_size: 1,
+                    message: MessageType::Client {
+                        msg: ClientMsg::from(content)?,
+                        dest_info: DestInfo {
+                            dest: *xorname,
+                            dest_section_pk: *self.section.chain().last_key(),
+                        },
                     },
-                },
-            }]);
+                }]);
+            } else {
+                trace!(
+                    "Cannot route user message, socket id not found for {:?}",
+                    msg
+                );
+                return Err(Error::EmptyRecipientList);
+            }
         }
 
         self.send_event(Event::MessageReceived {
@@ -506,6 +461,7 @@ impl Core {
             proof: msg.proof(),
             proof_chain: msg.proof_chain().ok().cloned(),
         });
+
         Ok(vec![])
     }
 
