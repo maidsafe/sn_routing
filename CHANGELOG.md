@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.69.0](https://github.com/maidsafe/sn_routing/compare/v0.68.6...v0.69.0) (2021-05-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **messaging:** this version uses a non backward-compatbile version of sn_messaging
+
+* **messaging:** remove the RegisterEndUser messaging handling and flows ([fa88047](https://github.com/maidsafe/sn_routing/commit/fa88047e9e53b244905963d1ab09e5900a5c0b1e))
+
 ### [0.68.6](https://github.com/maidsafe/sn_routing/compare/v0.68.5...v0.68.6) (2021-05-20)
 
 
