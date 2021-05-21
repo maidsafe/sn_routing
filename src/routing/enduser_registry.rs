@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::{Error, Result};
-use sn_data_types::{PublicKey as EndUserPK, Signature as EndUserSig};
 use sn_messaging::EndUser;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
@@ -37,40 +36,30 @@ impl EndUserRegistry {
         self.socket_id_mapping.get(&socket_id)
     }
 
-    pub fn get_all_socket_addr<'a>(
-        &'a self,
-        end_user_pk: &'a EndUserPK,
-    ) -> impl Iterator<Item = &'a SocketAddr> {
-        self.clients
-            .iter()
-            .filter(move |(_, end_user)| end_user.id() == end_user_pk)
-            .map(|(socket_addr, _)| socket_addr)
-    }
-
-    pub fn try_add(
-        &mut self,
-        sender: SocketAddr,
-        end_user_pk: EndUserPK,
-        socketaddr_sig: EndUserSig,
-    ) -> Result<()> {
-        let serialized_sender = bincode::serialize(&sender).map_err(|_| Error::InvalidMessage)?;
-        end_user_pk
-            .verify(&socketaddr_sig, &serialized_sender)
-            .map_err(|_e| Error::FailedSignature)?;
-        let socket_id = XorName::from_content(&[
-            &bincode::serialize(&socketaddr_sig).map_err(|_| Error::FailedSignature)?
+    pub fn try_add(&mut self, sender: SocketAddr) -> Result<EndUser> {
+        // create a unique socket id from client socket addr
+        let user_xorname = XorName::from_content(&[
+            &bincode::serialize(&sender).map_err(|_| Error::FailedSignature)?
         ]);
-        let end_user = EndUser::Client {
-            public_key: end_user_pk,
-            socket_id,
+
+        // TODO: we probably should remove the socket_id from the EndUser struct,
+        // and pass the socket id separatelly as part of nodes' messages,
+        // instead of it being part of the SrcLocation/DstLocation in nodes' messages.
+        // Currently each Elder cannot create a different socket id since that breaks
+        // aggregation of messages when sent to another section with aggregation AtDestination.
+        let end_user = EndUser {
+            xorname: user_xorname,
+            socket_id: user_xorname,
         };
-        match self.socket_id_mapping.entry(socket_id) {
+
+        match self.socket_id_mapping.entry(user_xorname) {
             Entry::Vacant(entry) => {
                 let _ = self.clients.insert(sender, end_user);
                 let _ = entry.insert(sender);
             }
             Entry::Occupied(_) => (),
         }
-        Ok(())
+
+        Ok(end_user)
     }
 }

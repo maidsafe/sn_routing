@@ -40,10 +40,8 @@ use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
 use sn_messaging::{
-    client::ClientMsg,
-    node::RoutingMsg,
-    section_info::{Error as TargetSectionError, Message as SectionInfoMsg},
-    DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
+    client::ClientMsg, node::RoutingMsg, DestInfo, DstLocation, EndUser, Itinerary, MessageType,
+    WireMsg,
 };
 use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 use tokio::{sync::mpsc, task};
@@ -141,6 +139,7 @@ impl Routing {
 
         let dispatcher = Arc::new(Dispatcher::new(state, comm));
         let event_stream = EventStream::new(event_rx);
+        info!("{} Bootstrapped!", node_name);
 
         // Process message backlog
         for (message, sender, dest_info) in backlog {
@@ -356,14 +355,9 @@ impl Routing {
         content: Bytes,
         additional_proof_chain_key: Option<bls::PublicKey>,
     ) -> Result<()> {
-        if let DstLocation::EndUser(EndUser::Client {
-            socket_id,
-            public_key,
-        }) = itinerary.dst
-        {
-            let name = XorName::from(public_key);
-            if self.our_prefix().await.matches(&name) {
-                let socket_addr = self
+        if let DstLocation::EndUser(EndUser { socket_id, xorname }) = itinerary.dst {
+            if self.our_prefix().await.matches(&xorname) {
+                let addr = self
                     .dispatcher
                     .core
                     .lock()
@@ -371,25 +365,23 @@ impl Routing {
                     .get_socket_addr(socket_id)
                     .copied();
 
-                if let Some(socket_addr) = socket_addr {
-                    debug!(
-                        "Sending client msg of {:?} to {:?}",
-                        public_key, socket_addr
-                    );
+                if let Some(socket_addr) = addr {
+                    debug!("Sending client msg to {:?}", socket_addr);
                     return self
-                        .send_message_to_client(socket_addr, ClientMsg::from(content)?)
+                        .send_message_to_client(socket_addr, xorname, ClientMsg::from(content)?)
                         .await;
                 } else {
                     debug!(
-                        "Could not find socketaddr corresponding to socket_id {:?} and public_key {:?}",
-                        socket_id, public_key
+                        "Could not find socketaddr corresponding to socket_id {:?}",
+                        socket_id
                     );
-                    debug!("Sending user message instead.. (Command::SendUserMessage)");
+                    debug!("Relaying user message instead.. (Command::SendUserMessage)");
                 }
             } else {
                 debug!("Relaying message with sending user message (Command::SendUserMessage)");
             }
         }
+
         let command = Command::SendUserMessage {
             itinerary,
             content,
@@ -404,33 +396,16 @@ impl Routing {
     async fn send_message_to_client(
         &self,
         recipient: SocketAddr,
+        user_xorname: XorName,
         message: ClientMsg,
     ) -> Result<()> {
-        let end_user = self
-            .dispatcher
-            .core
-            .lock()
-            .await
-            .get_enduser_by_addr(&recipient)
-            .copied();
-        let end_user_pk = match end_user {
-            Some(end_user) => match end_user {
-                EndUser::AllClients(pk) => pk,
-                EndUser::Client { public_key, .. } => public_key,
-            },
-            None => {
-                error!("No client end user known of to send ");
-                return Ok(());
-            }
-        };
-        let user_xor_name = XorName::from(end_user_pk);
         let command = Command::SendMessage {
-            recipients: vec![(user_xor_name, recipient)],
+            recipients: vec![(user_xorname, recipient)],
             delivery_group_size: 1,
             message: MessageType::Client {
                 msg: message,
                 dest_info: DestInfo {
-                    dest: user_xor_name,
+                    dest: user_xorname,
                     dest_section_pk: *self.section_chain().await.last_key(),
                 },
             },
@@ -532,40 +507,35 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             dest_info: _,
             src_section_pk: _,
         } => unimplemented!(),
-        MessageType::Client { msg, dest_info } => {
+        MessageType::Client { msg, .. } => {
             let end_user = dispatcher
                 .core
                 .lock()
                 .await
                 .get_enduser_by_addr(&sender)
                 .copied();
+
             let end_user = match end_user {
                 Some(end_user) => end_user,
                 None => {
-                    // TODO: Update to handle messages, w/ added PK to all msgs...?
+                    // this is the first time we receive a message from this client
+                    trace!(
+                        "First message from client {}, creating a socket id and caching it",
+                        sender
+                    );
 
-                    // we are not yet bootstrapped, todo: inform enduser in a better way of this
-
-                    let dest_name = dest_info.dest;
-                    let client_pk = dest_info.dest_section_pk;
-                    let command = Command::SendMessage {
-                        recipients: vec![(dest_name, sender)],
-                        delivery_group_size: 1,
-                        message: MessageType::SectionInfo {
-                            msg: SectionInfoMsg::RegisterEndUserError(
-                                TargetSectionError::InvalidBootstrap(format!(
-                                    "No enduser found for {} and msg {:?}",
-                                    sender, msg
-                                )),
-                            ),
-                            dest_info: DestInfo {
-                                dest: dest_name,
-                                dest_section_pk: client_pk,
-                            },
-                        },
-                    };
-                    let _ = task::spawn(dispatcher.handle_commands(command));
-                    return;
+                    // TODO: remove the enduser registry and simply encrypt socket addr with
+                    // this node's keypair and use that as the socket id
+                    match dispatcher.core.lock().await.try_add(sender) {
+                        Ok(end_user) => end_user,
+                        Err(err) => {
+                            error!(
+                                "Failed to cache client socket address for message {:?}: {:?}",
+                                msg, err
+                            );
+                            return;
+                        }
+                    }
                 }
             };
 

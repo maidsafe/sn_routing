@@ -8,15 +8,15 @@
 
 mod utils;
 
-use anyhow::{format_err, Result};
+use anyhow::{anyhow, format_err, Result};
 use bytes::Bytes;
 use qp2p::QuicP2p;
 use sn_data_types::Keypair;
 use sn_messaging::client::ProcessMsg;
 use sn_messaging::{
-    client::{ClientMsg, Query, TransferQuery},
+    client::{ClientMsg, ClientSigned, Query, TransferQuery},
     location::{Aggregation, Itinerary},
-    DstLocation, MessageId, SrcLocation, WireMsg,
+    DstLocation, MessageId, SrcLocation,
 };
 use sn_routing::{Config, Error, Event, NodeElderChange};
 use std::net::{IpAddr, Ipv4Addr};
@@ -35,7 +35,10 @@ async fn test_messages_client_node() -> Result<()> {
     let mut rng = rand::thread_rng();
     let keypair = Keypair::new_ed25519(&mut rng);
     let pk = keypair.public_key();
-
+    let client_signed = ClientSigned {
+        public_key: pk,
+        signature: keypair.sign(b"the msg"),
+    };
     let id = MessageId::new();
 
     // create a client which sends a message to the node
@@ -52,25 +55,12 @@ async fn test_messages_client_node() -> Result<()> {
     let (client_endpoint, _, mut incoming_messages, _) = client.new_endpoint().await?;
     client_endpoint.connect_to(&node_addr).await?;
 
-    let socket_addr = client_endpoint.socket_addr();
-    let socketaddr_sig = keypair.sign(&bincode::serialize(&socket_addr)?);
-    let registration = sn_messaging::section_info::Message::RegisterEndUserCmd {
-        end_user: pk,
-        socketaddr_sig,
-    };
-    let registration_bytes =
-        WireMsg::serialize_section_info_msg(&registration, XorName::from(pk), section_key)?;
-
-    client_endpoint
-        .send_message(registration_bytes, &node_addr)
-        .await?;
-
     let query = ClientMsg::Process(ProcessMsg::Query {
-        query: Query::Transfer(TransferQuery::GetBalance(pk)),
         id,
+        query: Query::Transfer(TransferQuery::GetBalance(pk)),
+        client_signed,
     });
     let query_clone = query.clone();
-    let client_msg_bytes = WireMsg::serialize_client_msg(&query, XorName::from(pk), section_key)?;
 
     // spawn node events listener
     let node_handler = tokio::spawn(async move {
@@ -92,25 +82,34 @@ async fn test_messages_client_node() -> Result<()> {
                     .await?;
                     break;
                 }
-                _other => println!("{:?}", _other),
+                other => println!("Ignoring msg: {:?}", other),
             }
         }
         Ok::<(), Error>(())
     });
 
+    let query_bytes = query.serialize(XorName::from(pk), section_key)?;
     client_endpoint
-        .send_message(client_msg_bytes, &node_addr)
+        .send_message(query_bytes.clone(), &node_addr)
         .await?;
 
     // just await for node to respond to client
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let expected_bytes = query.serialize(XorName::from(pk), section_key)?;
-        assert_eq!(resp, expected_bytes);
-    }
+        let user_xorname =
+            XorName::from_content(&[&bincode::serialize(&client_endpoint.socket_addr())?]);
+        let expected_bytes = query.serialize(user_xorname, section_key)?;
 
-    Ok(())
+        assert_eq!(resp, expected_bytes);
+
+        let response_decoded = ClientMsg::from(resp)?;
+        assert_eq!(response_decoded, query);
+
+        Ok(())
+    } else {
+        Err(anyhow!("Failed to read from incoming messages channel"))
+    }
 }
 
 #[tokio::test]
