@@ -12,7 +12,7 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     net::SocketAddr,
 };
-use xor_name::XorName;
+use xor_name::{Prefix, XorName};
 
 pub type SocketId = XorName;
 pub(crate) struct EndUserRegistry {
@@ -36,11 +36,15 @@ impl EndUserRegistry {
         self.socket_id_mapping.get(&socket_id)
     }
 
-    pub fn try_add(&mut self, sender: SocketAddr) -> Result<EndUser> {
+    pub fn try_add(&mut self, sender: SocketAddr, section_prefix: &Prefix) -> Result<EndUser> {
         // create a unique socket id from client socket addr
-        let user_xorname = XorName::from_content(&[
+        let socket_id = XorName::from_content(&[
             &bincode::serialize(&sender).map_err(|_| Error::FailedSignature)?
         ]);
+
+        // assign a XorName to the end user which belongs to this section's prefix
+        // so messages directed to this end user are correctly routed back through us
+        let user_xorname = section_prefix.substituted_in(socket_id);
 
         // TODO: we probably should remove the socket_id from the EndUser struct,
         // and pass the socket id separatelly as part of nodes' messages,
@@ -49,10 +53,10 @@ impl EndUserRegistry {
         // aggregation of messages when sent to another section with aggregation AtDestination.
         let end_user = EndUser {
             xorname: user_xorname,
-            socket_id: user_xorname,
+            socket_id,
         };
 
-        match self.socket_id_mapping.entry(user_xorname) {
+        match self.socket_id_mapping.entry(socket_id) {
             Entry::Vacant(entry) => {
                 let _ = self.clients.insert(sender, end_user);
                 let _ = entry.insert(sender);
