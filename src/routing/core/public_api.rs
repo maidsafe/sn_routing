@@ -43,7 +43,8 @@ impl Core {
     }
 
     pub fn try_add(&mut self, sender: SocketAddr) -> Result<EndUser> {
-        self.end_users.try_add(sender)
+        let section_prefix = self.section.prefix();
+        self.end_users.try_add(sender, section_prefix)
     }
 
     pub fn node(&self) -> &Node {

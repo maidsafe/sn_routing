@@ -49,6 +49,7 @@ async fn test_messages_client_node() -> Result<()> {
     config.local_ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     let node_addr = node.our_connection_info();
+    let section_prefix = node.our_prefix().await;
     let section_key = *node.section_chain().await.last_key();
 
     let client = QuicP2p::with_config(Some(config), &[node_addr], false)?;
@@ -97,8 +98,12 @@ async fn test_messages_client_node() -> Result<()> {
     node_handler.await??;
 
     if let Some((_, resp)) = incoming_messages.next().await {
-        let user_xorname =
+        // the xorname assigned to each end user is computed from
+        // the client socket addr plus the client section prefix
+        let socket_id =
             XorName::from_content(&[&bincode::serialize(&client_endpoint.socket_addr())?]);
+        let user_xorname = section_prefix.substituted_in(socket_id);
+
         let expected_bytes = query.serialize(user_xorname, section_key)?;
 
         assert_eq!(resp, expected_bytes);

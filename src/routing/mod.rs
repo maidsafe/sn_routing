@@ -516,13 +516,16 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 .copied();
 
             let end_user = match end_user {
-                Some(end_user) => end_user,
+                Some(end_user) => {
+                    debug!(
+                        "Message from client {}, socket id already exists: {:?}",
+                        sender, end_user
+                    );
+                    end_user
+                }
                 None => {
                     // this is the first time we receive a message from this client
-                    trace!(
-                        "First message from client {}, creating a socket id and caching it",
-                        sender
-                    );
+                    debug!("First message from client {}, creating a socket id", sender);
 
                     // TODO: remove the enduser registry and simply encrypt socket addr with
                     // this node's keypair and use that as the socket id
