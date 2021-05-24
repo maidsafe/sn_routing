@@ -68,8 +68,13 @@ impl Core {
             content: proposal,
             proof_share,
         };
-        let message =
-            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+        let message = RoutingMsg::single_src(
+            &self.node,
+            DstLocation::DirectAndUnrouted,
+            variant,
+            self.section.authority_provider().section_key,
+            None,
+        )?;
 
         Ok(self.send_or_handle(message, recipients))
     }

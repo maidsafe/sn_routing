@@ -63,6 +63,7 @@ impl Core {
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
+            self.section.authority_provider().section_key,
             Some(proof_chain),
         )?;
 
@@ -80,8 +81,13 @@ impl Core {
         let send = |variant, recipients: Vec<(XorName, SocketAddr)>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message =
-                RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+            let message = RoutingMsg::single_src(
+                &self.node,
+                DstLocation::DirectAndUnrouted,
+                variant,
+                self.section.authority_provider().section_key,
+                None,
+            )?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: *self.section.chain().last_key(),
@@ -122,8 +128,13 @@ impl Core {
         let send = |variant, recipients: Vec<_>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message =
-                RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+            let message = RoutingMsg::single_src(
+                &self.node,
+                DstLocation::DirectAndUnrouted,
+                variant,
+                self.section.authority_provider().section_key,
+                None,
+            )?;
 
             Ok(Command::send_message_to_nodes(
                 recipients.clone(),
@@ -287,7 +298,14 @@ impl Core {
             );
             err
         })?;
-        let message = RoutingMsg::for_dst_accumulation(key_share, src, dst, variant, proof_chain)?;
+        let message = RoutingMsg::for_dst_accumulation(
+            key_share,
+            src,
+            dst,
+            variant,
+            self.section.authority_provider().section_key,
+            proof_chain,
+        )?;
 
         trace!(
             "Send {:?} for accumulation at dst to {:?}",
@@ -374,8 +392,13 @@ impl Core {
         variant: Variant,
         dst_pk: bls::PublicKey,
     ) -> Result<Command> {
-        let message =
-            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+        let message = RoutingMsg::single_src(
+            &self.node,
+            DstLocation::DirectAndUnrouted,
+            variant,
+            self.section.authority_provider().section_key,
+            None,
+        )?;
         Ok(Command::send_message_to_node(
             recipient,
             message,

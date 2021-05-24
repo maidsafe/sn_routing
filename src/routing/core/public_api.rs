@@ -250,13 +250,20 @@ impl Core {
                 itinerary.src.name(),
                 itinerary.dst,
                 variant,
+                self.section.authority_provider().section_key,
                 proof_chain,
             )?
         } else if itinerary.aggregate_at_src() {
             let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
             return self.propose(proposal);
         } else {
-            RoutingMsg::single_src(&self.node, itinerary.dst, variant, None)?
+            RoutingMsg::single_src(
+                &self.node,
+                itinerary.dst,
+                variant,
+                self.section.authority_provider().section_key,
+                None,
+            )?
         };
         let mut commands = vec![];
 

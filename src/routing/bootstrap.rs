@@ -446,8 +446,13 @@ impl<'a> State<'a> {
         info!("Sending {:?} to {:?}", join_request, recipients);
 
         let variant = Variant::JoinRequest(Box::new(join_request));
-        let message =
-            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+        let message = RoutingMsg::single_src(
+            &self.node,
+            DstLocation::DirectAndUnrouted,
+            variant,
+            section_key,
+            None,
+        )?;
 
         let _ = self
             .send_tx
@@ -792,9 +797,10 @@ mod tests {
                 DstLocation::DirectAndUnrouted,
                 Variant::NodeApproval {
                     genesis_key: pk,
-                    section_auth,
+                    section_auth: section_auth.clone(),
                     member_info,
                 },
+                section_auth.value.section_key,
                 Some(proof_chain),
             )?;
 
@@ -1243,6 +1249,7 @@ mod tests {
                     section_auth: gen_section_authority_provider(bad_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
+                section_key,
                 None,
             )?;
 
@@ -1266,6 +1273,7 @@ mod tests {
                     section_auth: gen_section_authority_provider(good_prefix, ELDER_SIZE).0,
                     section_key: bls::SecretKey::random().public_key(),
                 },
+                section_key,
                 None,
             )?;
 

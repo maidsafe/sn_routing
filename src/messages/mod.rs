@@ -38,6 +38,7 @@ pub trait RoutingMsgUtils {
         src: SrcAuthority,
         dst: DstLocation,
         variant: Variant,
+        section_key: bls::PublicKey,
         proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg, Error>;
 
@@ -61,6 +62,7 @@ pub trait RoutingMsgUtils {
         node: &Node,
         dst: DstLocation,
         variant: Variant,
+        section_key: bls::PublicKey,
         proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg>;
 
@@ -174,6 +176,7 @@ impl RoutingMsgUtils for RoutingMsg {
         src: SrcAuthority,
         dst: DstLocation,
         variant: Variant,
+        section_pk: bls::PublicKey,
         proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg, Error> {
         // Create message id from src authority signature
@@ -187,10 +190,11 @@ impl RoutingMsgUtils for RoutingMsg {
         .unwrap_or_default();
 
         let msg = RoutingMsg {
-            id,
             src,
             dst,
             aggregation: Aggregation::None,
+            proof_chain,
+            section_pk,
             variant,
             proof_chain,
         };
@@ -204,6 +208,7 @@ impl RoutingMsgUtils for RoutingMsg {
         src_name: XorName,
         dst: DstLocation,
         variant: Variant,
+        section_pk: bls::PublicKey,
         proof_chain: SecuredLinkedList,
     ) -> Result<RoutingMsg, Error> {
         let serialized = bincode::serialize(&SignableView {
@@ -224,7 +229,7 @@ impl RoutingMsgUtils for RoutingMsg {
             proof_share,
         };
 
-        RoutingMsg::new_signed(src, dst, variant, Some(proof_chain))
+        RoutingMsg::new_signed(src, dst, variant, section_pk, Some(proof_chain))
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
@@ -274,8 +279,9 @@ impl RoutingMsgUtils for RoutingMsg {
         node: &Node,
         dst: DstLocation,
         variant: Variant,
+        section_pk: bls::PublicKey,
         proof_chain: Option<SecuredLinkedList>,
-    ) -> Result<RoutingMsg> {
+    ) -> Result<Self> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             variant: &variant,
@@ -288,7 +294,7 @@ impl RoutingMsgUtils for RoutingMsg {
             signature,
         };
 
-        RoutingMsg::new_signed(src, dst, variant, proof_chain)
+        RoutingMsg::new_signed(src, dst, variant, section_pk, proof_chain)
     }
 
     /// Creates a signed message from a section.
@@ -296,6 +302,7 @@ impl RoutingMsgUtils for RoutingMsg {
     fn section_src(
         plain: PlainMessage,
         proof: Proof,
+        section_pk: bls::PublicKey,
         proof_chain: SecuredLinkedList,
     ) -> Result<RoutingMsg> {
         RoutingMsg::new_signed(
@@ -305,6 +312,7 @@ impl RoutingMsgUtils for RoutingMsg {
             },
             plain.dst,
             plain.variant,
+            section_pk,
             Some(proof_chain),
         )
     }
@@ -415,33 +423,33 @@ impl RoutingMsgUtils for RoutingMsg {
         self.proof_chain().map(|proof_chain| proof_chain.last_key())
     }
 
-    // Extend the current message proof chain so it starts at `new_first_key` while keeping the
-    // last key (and therefore the signature) intact.
-    // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
-    // the signed data.
-    fn extend_proof_chain(
-        mut self,
-        new_first_key: &bls::PublicKey,
-        full_chain: &SecuredLinkedList,
-    ) -> Result<RoutingMsg, Error> {
-        let proof_chain = self
-            .proof_chain
-            .as_mut()
-            .ok_or(ExtendProofChainError::NoProofChain)?;
+    // // Extend the current message proof chain so it starts at `new_first_key` while keeping the
+    // // last key (and therefore the signature) intact.
+    // // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
+    // // the signed data.
+    // fn extend_proof_chain(
+    //     mut self,
+    //     new_first_key: &bls::PublicKey,
+    //     full_chain: &SecuredLinkedList,
+    // ) -> Result<RoutingMsg, Error> {
+    //     let proof_chain = self
+    //         .proof_chain
+    //         .as_mut()
+    //         .ok_or(ExtendProofChainError::NoProofChain)?;
 
-        *proof_chain = match proof_chain.extend(new_first_key, full_chain) {
-            Ok(chain) => chain,
-            Err(SecuredLinkedListError::InvalidOperation) => {
-                // This means the tip of the proof chain is not reachable from `new_first_key`.
-                // Extend it from the root key of the full chain instead as that should be the
-                // genesis key which is implicitly trusted.
-                proof_chain.extend(full_chain.root_key(), full_chain)?
-            }
-            Err(error) => return Err(error.into()),
-        };
+    //     *proof_chain = match proof_chain.extend(new_first_key, full_chain) {
+    //         Ok(chain) => chain,
+    //         Err(SecuredLinkedListError::InvalidOperation) => {
+    //             // This means the tip of the proof chain is not reachable from `new_first_key`.
+    //             // Extend it from the root key of the full chain instead as that should be the
+    //             // genesis key which is implicitly trusted.
+    //             proof_chain.extend(full_chain.root_key(), full_chain)?
+    //         }
+    //         Err(error) => return Err(error.into()),
+    //     };
 
-        RoutingMsg::new_signed(self.src, self.dst, self.variant, self.proof_chain)
-    }
+    //     RoutingMsg::new_signed(self.src, self.dst, self.variant, self.proof_chain)
+    // }
 
     fn verify_variant<'a, I>(
         &self,
@@ -577,13 +585,18 @@ mod tests {
             &node,
             DstLocation::DirectAndUnrouted,
             variant,
+            section_auth.value.section_key.clone(),
             Some(full_proof_chain.truncate(1)),
         )?;
 
         assert_eq!(message.verify(iter::once(&pk1))?, VerifyStatus::Full);
         assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Unknown);
 
-        let message = message.extend_proof_chain(&pk0, &full_proof_chain)?;
+        let message = message.extend_proof_chain(
+            &pk0,
+            section_auth.value.section_key.clone(),
+            &full_proof_chain,
+        )?;
 
         assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Full);
 
