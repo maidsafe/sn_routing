@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.69.2](https://github.com/maidsafe/sn_routing/compare/v0.69.1...v0.69.2) (2021-05-24)
+
+
+### Bug Fixes
+
+* **end-user:** assign clients a xorname which always matches the section prefix so they are propoerly routed in a multi-section network ([ac4a27c](https://github.com/maidsafe/sn_routing/commit/ac4a27cdee61048273be49fc9c9500d4009c6192))
+
 ### [0.69.1](https://github.com/maidsafe/sn_routing/compare/v0.69.0...v0.69.1) (2021-05-24)
 
 
