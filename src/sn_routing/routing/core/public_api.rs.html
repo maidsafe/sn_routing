@@ -305,7 +305,6 @@
 <span id="304">304</span>
 <span id="305">305</span>
 <span id="306">306</span>
-<span id="307">307</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -555,8 +554,7 @@
         <span class="comment">// If the msg is to be aggregated at dst, we don&#39;t vote among our peers, we simply send the</span>
         <span class="comment">// msg as our vote to the dst.</span>
         <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">itinerary</span>.<span class="ident">aggregate_at_dst</span>() {
-            <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span>
-                <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="kw-2">&amp;</span><span class="ident">itinerary</span>.<span class="ident">dst</span>, <span class="ident">additional_proof_chain_key</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="ident">additional_proof_chain_key</span>)<span class="question-mark">?</span>;
             <span class="ident">Message</span>::<span class="ident">for_dst_accumulation</span>(
                 <span class="self">self</span>.<span class="ident">section_keys_provider</span>.<span class="ident">key_share</span>()<span class="question-mark">?</span>,
                 <span class="ident">itinerary</span>.<span class="ident">src</span>.<span class="ident">name</span>(),

@@ -395,8 +395,6 @@
 <span id="394">394</span>
 <span id="395">395</span>
 <span id="396">396</span>
-<span id="397">397</span>
-<span id="398">398</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -632,7 +630,7 @@
         <span class="ident">variant</span>: <span class="ident">Variant</span>,
         <span class="ident">proof_chain_first_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Proposal</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>, <span class="ident">proof_chain_first_key</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="ident">proof_chain_first_key</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">dst_key</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="ident">dst</span>.<span class="ident">name</span>() {
             <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>)
         } <span class="kw">else</span> {
@@ -665,7 +663,7 @@
         <span class="ident">additional_proof_chain_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">recipients</span>: <span class="kw-2">&amp;</span>[<span class="ident">Peer</span>],
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>, <span class="ident">additional_proof_chain_key</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">create_proof_chain</span>(<span class="ident">additional_proof_chain_key</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">key_share</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section_keys_provider</span>.<span class="ident">key_share</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
             <span class="macro">trace</span><span class="macro">!</span>(
                 <span class="string">&quot;Can&#39;t create message {:?} for accumulation at dst {:?}: {}&quot;</span>,
@@ -733,7 +731,6 @@
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">create_proof_chain</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="ident">DstLocation</span>,
         <span class="ident">additional_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">SectionChain</span><span class="op">&gt;</span> {
         <span class="comment">// The last key of the proof chain is the last section key for which we also have the</span>
@@ -749,7 +746,6 @@
         <span class="comment">// the actual last key of the resulting proof chain because it&#39;s the key that will be used</span>
         <span class="comment">// to sign the message.</span>
         <span class="kw">let</span> <span class="ident">additional_key</span> <span class="op">=</span> <span class="ident">additional_key</span>
-            .<span class="ident">or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">dst</span>.<span class="ident">name</span>()<span class="question-mark">?</span>))
             .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">key</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">cmp_by_position</span>(<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="ident">last_key</span>) <span class="op">=</span><span class="op">=</span> <span class="ident">Ordering</span>::<span class="ident">Less</span>);
 
         <span class="prelude-val">Ok</span>(<span class="self">self</span>
