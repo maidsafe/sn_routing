@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.69.1](https://github.com/maidsafe/sn_routing/compare/v0.69.0...v0.69.1) (2021-05-24)
+
+
+### Bug Fixes
+
+* **msg:** attach correct proof_chain to messages ([e0cd846](https://github.com/maidsafe/sn_routing/commit/e0cd8462959697e6565bfba1d3cee7e08d2001ee))
+
 ## [0.69.0](https://github.com/maidsafe/sn_routing/compare/v0.68.6...v0.69.0) (2021-05-21)
 
 
