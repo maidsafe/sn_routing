@@ -549,6 +549,9 @@
 <span id="548">548</span>
 <span id="549">549</span>
 <span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1068,13 +1071,16 @@
                 .<span class="ident">copied</span>();
 
             <span class="kw">let</span> <span class="ident">end_user</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">end_user</span> {
-                <span class="prelude-val">Some</span>(<span class="ident">end_user</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">end_user</span>,
+                <span class="prelude-val">Some</span>(<span class="ident">end_user</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="macro">debug</span><span class="macro">!</span>(
+                        <span class="string">&quot;Message from client {}, socket id already exists: {:?}&quot;</span>,
+                        <span class="ident">sender</span>, <span class="ident">end_user</span>
+                    );
+                    <span class="ident">end_user</span>
+                }
                 <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="comment">// this is the first time we receive a message from this client</span>
-                    <span class="macro">trace</span><span class="macro">!</span>(
-                        <span class="string">&quot;First message from client {}, creating a socket id and caching it&quot;</span>,
-                        <span class="ident">sender</span>
-                    );
+                    <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;First message from client {}, creating a socket id&quot;</span>, <span class="ident">sender</span>);
 
                     <span class="comment">// TODO: remove the enduser registry and simply encrypt socket addr with</span>
                     <span class="comment">// this node&#39;s keypair and use that as the socket id</span>
