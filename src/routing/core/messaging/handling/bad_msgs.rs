@@ -43,6 +43,7 @@ impl Core {
                 msg: Box::new(msg),
                 dest_info: received_dest_info,
             },
+            self.section.authority_provider().section_key,
             None,
         )?;
 
@@ -81,11 +82,16 @@ impl Core {
                     &self.node,
                     DstLocation::DirectAndUnrouted,
                     Variant::Sync { section, network },
+                    self.section.authority_provider().section_key,
                     None,
                 )?
             }
             _ => bounced_msg
-                .extend_proof_chain(&dst_key, self.section.chain())
+                .extend_proof_chain(
+                    &dst_key,
+                    self.section.authority_provider().section_key,
+                    self.section.chain(),
+                )
                 .map_err(|err| {
                     error!("extending proof chain failed: {:?}", err);
                     Error::InvalidMessage // TODO: more specific error

@@ -212,8 +212,13 @@ impl Core {
 
     pub(crate) fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
         let variant = Variant::DkgFailureAgreement(proofs);
-        let message =
-            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+        let message = RoutingMsg::single_src(
+            &self.node,
+            DstLocation::DirectAndUnrouted,
+            variant,
+            self.section.authority_provider().section_key,
+            None,
+        )?;
         Ok(self.send_message_to_our_elders(message))
     }
 
@@ -401,7 +406,13 @@ impl Core {
             msg: Some(msg),
         };
 
-        let msg = RoutingMsg::single_src(self.node(), dst_location, variant, None)?;
+        let msg = RoutingMsg::single_src(
+            self.node(),
+            dst_location,
+            variant,
+            self.section.authority_provider().section_key,
+            None,
+        )?;
         let key = self.section_key_by_name(&src_name);
         Ok(Command::send_message_to_node(
             (src_name, sender),

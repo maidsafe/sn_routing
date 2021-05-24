@@ -58,6 +58,7 @@ pub(crate) fn process(
                             last_known_key: Some(*key),
                             msg: Box::new(msg.clone()),
                         },
+                        section.authority_provider().section_key,
                         None,
                     )?;
                     actions.send.push(msg);
@@ -75,6 +76,7 @@ pub(crate) fn process(
                     last_known_key: None,
                     msg: Box::new(msg.clone()),
                 },
+                section.authority_provider().section_key,
                 None,
             )?;
             actions.send.push(msg);
@@ -118,7 +120,13 @@ pub(crate) fn process(
                 src_info: (section_auth.clone(), chain),
                 msg: None,
             };
-            let msg = RoutingMsg::single_src(node, dst, variant, None)?;
+            let msg = RoutingMsg::single_src(
+                node,
+                dst,
+                variant,
+                section.authority_provider().section_key,
+                None,
+            )?;
             actions.send.push(msg);
             return Ok((actions, true));
         }
@@ -153,7 +161,11 @@ mod tests {
         let env = Env::new(1)?;
 
         let proof_chain = SecuredLinkedList::new(env.their_pk);
-        let msg = env.create_message(&env.their_prefix, proof_chain)?;
+        let msg = env.create_message(
+            &env.their_prefix,
+            env.section.authority_provider().section_key,
+            proof_chain,
+        )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
             dest_section_pk: *env.section.chain().last_key(),
@@ -191,7 +203,11 @@ mod tests {
                 .0,
         )?;
 
-        let msg = env.create_message(&env.their_prefix, proof_chain)?;
+        let msg = env.create_message(
+            &env.their_prefix,
+            env.section.authority_provider().section_key,
+            proof_chain,
+        )?;
         let dest_info = DestInfo {
             dest: env.node.name(),
             dest_section_pk: *env.section.chain().last_key(),
@@ -234,7 +250,11 @@ mod tests {
             env.our_sk.sign(&bincode::serialize(&our_new_pk)?),
         )?;
 
-        let msg = env.create_message(env.section.prefix(), proof_chain)?;
+        let msg = env.create_message(
+            env.section.prefix(),
+            env.section.authority_provider().section_key,
+            proof_chain,
+        )?;
         let dest_info = DestInfo {
             dest: env.node.name(),
             dest_section_pk: our_new_pk,
@@ -260,7 +280,11 @@ mod tests {
         let env = Env::new(2)?;
 
         let proof_chain = SecuredLinkedList::new(env.their_pk);
-        let msg = env.create_message(&env.their_prefix, proof_chain)?;
+        let msg = env.create_message(
+            &env.their_prefix,
+            env.section.authority_provider().section_key,
+            proof_chain,
+        )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
             dest_section_pk: *env.section.chain().root_key(),
@@ -291,7 +315,11 @@ mod tests {
         let env = Env::new(2)?;
 
         let proof_chain = SecuredLinkedList::new(*env.section.chain().root_key());
-        let msg = env.create_message(env.section.prefix(), proof_chain)?;
+        let msg = env.create_message(
+            env.section.prefix(),
+            env.section.authority_provider().section_key,
+            proof_chain,
+        )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
             dest_section_pk: *env.section.chain().root_key(),
@@ -358,6 +386,7 @@ mod tests {
         fn create_message(
             &self,
             src_section: &Prefix,
+            section_pk: bls::PublicKey,
             proof_chain: SecuredLinkedList,
         ) -> Result<RoutingMsg> {
             let sender = Node::new(
@@ -369,6 +398,7 @@ mod tests {
                 &sender,
                 DstLocation::Section(self.node.name()),
                 Variant::UserMessage(b"hello".to_vec()),
+                section_pk,
                 Some(proof_chain),
             )?)
         }
