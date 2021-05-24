@@ -395,7 +395,10 @@ impl Routing {
             content,
             additional_proof_chain_key,
         };
-        self.dispatcher.clone().handle_commands(command).await
+       
+        let _ = tokio::spawn( self.dispatcher.clone().handle_commands(command));
+
+        Ok(())
     }
 
     /// Send a message to a client peer.

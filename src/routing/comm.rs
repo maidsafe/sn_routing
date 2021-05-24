@@ -121,6 +121,7 @@ impl Comm {
         mut msg: MessageType,
     ) -> Result<(), Error> {
         msg.update_dest_info(None, Some(recipient.0));
+        debug!("***** this seriallll");
         let bytes = msg.serialize()?;
         self.endpoint
             .send_message(bytes, &recipient.1)
@@ -195,6 +196,8 @@ impl Comm {
         // succeeds or if there are no more recipients to pick.
         let send = |recipient: (XorName, SocketAddr), mut msg: MessageType| async move {
             msg.update_dest_info(None, Some(recipient.0));
+            debug!("***** this seriallll  in send");
+
             match msg.serialize() {
                 Ok(bytes) => {
                     trace!(
@@ -221,6 +224,7 @@ impl Comm {
             }
         };
 
+        debug!("what is our delivery group size? {:?}", delivery_group_size);
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
             .map(|(name, recipient)| send((*name, *recipient), msg.clone()))
@@ -231,6 +235,9 @@ impl Comm {
         let mut failed_recipients = vec![];
 
         while let Some((result, addr)) = tasks.next().await {
+
+            debug!("looping tasks... the cuurrent tasks len is: {:?}", tasks.len());
+
             match result {
                 Ok(()) => successes += 1,
                 Err(Error::ConnectionClosed) => {
@@ -271,19 +278,20 @@ impl Comm {
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
         // This will attempt to use a cached connection
-        if self
+        // if 
+        self
             .endpoint
-            .send_message(msg.clone(), recipient)
+            .send_message(msg, recipient)
             .await
-            .is_ok()
-        {
-            return Ok(());
-        }
+        //     .is_ok()
+        // {
+        //     return Ok(());
+        // }
 
         // If the sending of a message failed the connection would no longer
         // exist in the pool. So we connect again and then send the message.
-        self.endpoint.connect_to(recipient).await?;
-        self.endpoint.send_message(msg, recipient).await
+        // self.endpoint.connect_to(recipient).await?;
+        // self.endpoint.send_message(msg, recipient).await
     }
 }
 

@@ -68,7 +68,7 @@ impl Core {
 
     pub(crate) fn send_sync(&mut self, section: Section, network: Network) -> Result<Vec<Command>> {
         let send = |variant, recipients: Vec<(XorName, SocketAddr)>| -> Result<_> {
-            trace!("Send {:?} to {:?}", variant, recipients);
+            trace!("Send sync to elders {:?} to {:?}", variant, recipients);
 
             let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
             let dest_info = DestInfo {
@@ -109,7 +109,7 @@ impl Core {
 
     pub(crate) fn send_sync_to_adults(&mut self) -> Result<Vec<Command>> {
         let send = |variant, recipients: Vec<_>| -> Result<_> {
-            trace!("Send {:?} to {:?}", variant, recipients);
+            trace!("Send sync to adults {:?} to {:?}", variant, recipients);
 
             let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
 
