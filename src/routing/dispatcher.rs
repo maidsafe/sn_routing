@@ -202,7 +202,7 @@ impl Dispatcher {
         message: MessageType,
     ) -> Result<Vec<Command>> {
         let cmds = match message {
-            MessageType::Ping(_) | MessageType::Node { .. } | MessageType::Routing { .. } => {
+            MessageType::Node { .. } | MessageType::Routing { .. } => {
                 let status = self
                     .comm
                     .send(recipients, delivery_group_size, message)

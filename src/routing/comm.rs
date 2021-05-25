@@ -342,7 +342,8 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::future;
     use qp2p::Config;
-    use sn_messaging::{DestInfo, WireMsg};
+    use sn_data_types::PublicKey;
+    use sn_messaging::{section_info::Message, DestInfo, WireMsg};
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
@@ -356,7 +357,7 @@ mod tests {
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
 
-        let mut original_message = new_ping_message();
+        let mut original_message = new_section_info_message();
 
         let status = comm
             .send(
@@ -389,7 +390,7 @@ mod tests {
         let mut peer0 = Peer::new().await?;
         let mut peer1 = Peer::new().await?;
 
-        let mut original_message = new_ping_message();
+        let mut original_message = new_section_info_message();
         let status = comm
             .send(
                 &[(peer0._name, peer0.addr), (peer1._name, peer1.addr)],
@@ -428,7 +429,11 @@ mod tests {
         let invalid_addr = get_invalid_addr().await?;
 
         let status = comm
-            .send(&[(XorName::random(), invalid_addr)], 1, new_ping_message())
+            .send(
+                &[(XorName::random(), invalid_addr)],
+                1,
+                new_section_info_message(),
+            )
             .await?;
 
         assert_matches!(
@@ -453,7 +458,7 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let mut message = new_ping_message();
+        let mut message = new_section_info_message();
         let _ = comm
             .send(
                 &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
@@ -483,7 +488,7 @@ mod tests {
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
 
-        let mut message = new_ping_message();
+        let mut message = new_section_info_message();
         let status = comm
             .send(
                 &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
@@ -516,10 +521,13 @@ mod tests {
 
         // Send the first message.
         let key0 = bls::SecretKey::random().public_key();
-        let msg0 = MessageType::Ping(DestInfo {
-            dest: name,
-            dest_section_pk: key0,
-        });
+        let msg0 = MessageType::SectionInfo {
+            msg: Message::GetSectionQuery(PublicKey::Bls(key0)),
+            dest_info: DestInfo {
+                dest: name,
+                dest_section_pk: key0,
+            },
+        };
         let _ = send_comm
             .send(slice::from_ref(&(name, recv_addr)), 1, msg0.clone())
             .await?;
@@ -538,10 +546,13 @@ mod tests {
 
         // Send the second message.
         let key1 = bls::SecretKey::random().public_key();
-        let msg1 = MessageType::Ping(DestInfo {
-            dest: name,
-            dest_section_pk: key1,
-        });
+        let msg1 = MessageType::SectionInfo {
+            msg: Message::GetSectionQuery(PublicKey::Bls(key1)),
+            dest_info: DestInfo {
+                dest: name,
+                dest_section_pk: key1,
+            },
+        };
         let _ = send_comm
             .send(slice::from_ref(&(name, recv_addr)), 1, msg1.clone())
             .await?;
@@ -573,7 +584,7 @@ mod tests {
             .send(
                 slice::from_ref(&(XorName::random(), addr0)),
                 1,
-                new_ping_message(),
+                new_section_info_message(),
             )
             .await?;
 
@@ -596,11 +607,15 @@ mod tests {
         }
     }
 
-    fn new_ping_message() -> MessageType {
-        MessageType::Ping(DestInfo {
-            dest: XorName::random(),
-            dest_section_pk: bls::SecretKey::random().public_key(),
-        })
+    fn new_section_info_message() -> MessageType {
+        let random_bls_pk = bls::SecretKey::random().public_key();
+        MessageType::SectionInfo {
+            msg: Message::GetSectionQuery(PublicKey::Bls(random_bls_pk)),
+            dest_info: DestInfo {
+                dest: XorName::random(),
+                dest_section_pk: bls::SecretKey::random().public_key(),
+            },
+        }
     }
 
     struct Peer {

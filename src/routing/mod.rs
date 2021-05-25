@@ -475,9 +475,6 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     };
 
     match message_type {
-        MessageType::Ping(_) => {
-            // Pings are not handled
-        }
         MessageType::SectionInfo { msg, dest_info } => {
             let command = Command::HandleSectionInfoMsg {
                 sender,
