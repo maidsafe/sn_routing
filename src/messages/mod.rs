@@ -39,7 +39,6 @@ pub trait RoutingMsgUtils {
         dst: DstLocation,
         variant: Variant,
         section_key: bls::PublicKey,
-        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg, Error>;
 
     /// Creates a message signed using a BLS KeyShare for destination accumulation
@@ -63,16 +62,11 @@ pub trait RoutingMsgUtils {
         dst: DstLocation,
         variant: Variant,
         section_key: bls::PublicKey,
-        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg>;
 
     /// Creates a signed message from a section.
     /// Note: `proof` isn't verified and is assumed valid.
-    fn section_src(
-        plain: PlainMessage,
-        proof: Proof,
-        proof_chain: SecuredLinkedList,
-    ) -> Result<RoutingMsg>;
+    fn section_src(plain: PlainMessage, proof: Proof) -> Result<RoutingMsg>;
 
     /// Verify this message is properly signed and trusted.
     fn verify<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
@@ -143,8 +137,7 @@ impl RoutingMsgUtils for RoutingMsg {
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
 
-                if Some(&proof_share.public_key_set.public_key()) != msg.proof_chain_last_key().ok()
-                {
+                if proof_share.public_key_set.public_key() != msg.section_pk() {
                     error!(
                         "Proof share public key doesn't match proof chain last key: {:?}",
                         msg
@@ -153,17 +146,12 @@ impl RoutingMsgUtils for RoutingMsg {
                 }
             }
             SrcAuthority::Section { proof, .. } => {
-                if let Some(proof_chain) = msg.proof_chain.as_ref() {
-                    if !proof_chain
-                        .last_key()
-                        .verify(&proof.signature, &signed_bytes)
-                    {
-                        error!(
-                            "Failed signature: {:?} (proof chain: {:?})",
-                            msg, proof_chain
-                        );
-                        return Err(Error::CreateError(CreateError::FailedSignature));
-                    }
+                if !msg.section_pk.verify(&proof.signature, &signed_bytes) {
+                    error!(
+                        "Failed signature: {:?} (Section PK: {:?})",
+                        msg, msg.section_pk
+                    );
+                    return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
         }
@@ -177,7 +165,6 @@ impl RoutingMsgUtils for RoutingMsg {
         dst: DstLocation,
         variant: Variant,
         section_pk: bls::PublicKey,
-        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<RoutingMsg, Error> {
         // Create message id from src authority signature
         let id = match &src {
@@ -190,13 +177,12 @@ impl RoutingMsgUtils for RoutingMsg {
         .unwrap_or_default();
 
         let msg = RoutingMsg {
+            id,
             src,
             dst,
             aggregation: Aggregation::None,
-            proof_chain,
-            section_pk,
             variant,
-            proof_chain,
+            section_pk,
         };
 
         Ok(msg)
@@ -209,8 +195,7 @@ impl RoutingMsgUtils for RoutingMsg {
         dst: DstLocation,
         variant: Variant,
         section_pk: bls::PublicKey,
-        proof_chain: SecuredLinkedList,
-    ) -> Result<RoutingMsg, Error> {
+    ) -> Result<Self, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             variant: &variant,
@@ -229,7 +214,7 @@ impl RoutingMsgUtils for RoutingMsg {
             proof_share,
         };
 
-        RoutingMsg::new_signed(src, dst, variant, section_pk, Some(proof_chain))
+        Self::new_signed(src, dst, variant, section_pk)
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
@@ -251,8 +236,8 @@ impl RoutingMsgUtils for RoutingMsg {
             return Err(Error::InvalidMessage);
         }
 
-        if Some(&proof.public_key) != self.proof_chain_last_key().ok() {
-            error!("proof public key doesn't match proof chain last key");
+        if proof.public_key != self.section_pk {
+            error!("proof public key doesn't match the attached section PK");
             return Err(Error::InvalidMessage);
         }
 
@@ -280,7 +265,6 @@ impl RoutingMsgUtils for RoutingMsg {
         dst: DstLocation,
         variant: Variant,
         section_pk: bls::PublicKey,
-        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<Self> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -294,7 +278,7 @@ impl RoutingMsgUtils for RoutingMsg {
             signature,
         };
 
-        RoutingMsg::new_signed(src, dst, variant, section_pk, proof_chain)
+        RoutingMsg::new_signed(src, dst, variant, section_pk)
     }
 
     /// Creates a signed message from a section.
@@ -303,7 +287,6 @@ impl RoutingMsgUtils for RoutingMsg {
         plain: PlainMessage,
         proof: Proof,
         section_pk: bls::PublicKey,
-        proof_chain: SecuredLinkedList,
     ) -> Result<RoutingMsg> {
         RoutingMsg::new_signed(
             SrcAuthority::Section {
@@ -313,7 +296,6 @@ impl RoutingMsgUtils for RoutingMsg {
             plain.dst,
             plain.variant,
             section_pk,
-            Some(proof_chain),
         )
     }
 
@@ -342,14 +324,15 @@ impl RoutingMsgUtils for RoutingMsg {
                 self.verify_variant(self.proof_chain.as_ref(), trusted_keys)
             }
             SrcAuthority::BlsShare { proof_share, .. } => {
+                // TODO: Add SectionChain as a part of SrcAuthority::BlsShare
                 // Proof chain is required for accumulation at destination.
-                let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
-                    proof_chain
-                } else {
-                    return Err(Error::InvalidMessage);
-                };
+                // let proof_chain: SectionChain = if let Some(proof_chain) = self.proof_chain.as_ref() {
+                //     proof_chain
+                // } else {
+                //     return Err(Error::InvalidMessage);
+                // };
 
-                if proof_share.public_key_set.public_key() != *proof_chain.last_key() {
+                if proof_share.public_key_set.public_key() != self.section_pk {
                     return Err(Error::InvalidMessage);
                 }
 
@@ -357,29 +340,34 @@ impl RoutingMsgUtils for RoutingMsg {
                     return Err(Error::FailedSignature);
                 }
 
-                if proof_chain.check_trust(trusted_keys) {
-                    Ok(VerifyStatus::Full)
-                } else {
-                    Ok(VerifyStatus::Unknown)
-                }
+                // TODO: Add SectionChain as a part of SrcAuthority::BlsShare
+                // if proof_chain.check_trust(trusted_keys) {
+                //     Ok(VerifyStatus::Full)
+                // } else {
+                //     Ok(VerifyStatus::Unknown)
+                // }
+                Ok(VerifyStatus::Full)
             }
             SrcAuthority::Section { proof, .. } => {
+                // TODO: Add SectionChain as a part of SrcAuthority::Section
                 // Proof chain is required for section-src messages.
-                let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
-                    proof_chain
-                } else {
-                    return Err(Error::InvalidMessage);
-                };
+                // let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
+                //     proof_chain
+                // } else {
+                //     return Err(Error::InvalidMessage);
+                // };
 
-                if !proof_chain.last_key().verify(&proof.signature, &bytes) {
+                if !self.section_pk.verify(&proof.signature, &bytes) {
                     return Err(Error::FailedSignature);
                 }
 
-                if proof_chain.check_trust(trusted_keys) {
-                    Ok(VerifyStatus::Full)
-                } else {
-                    Ok(VerifyStatus::Unknown)
-                }
+                // TODO: Add SectionChain as a part of SrcAuthority::Section
+                // if proof_chain.check_trust(trusted_keys) {
+                //     Ok(VerifyStatus::Full)
+                // } else {
+                //     Ok(VerifyStatus::Unknown)
+                // }
+                Ok(VerifyStatus::Full)
             }
         }
     }
@@ -535,71 +523,4 @@ pub struct SignableView<'a> {
     // TODO: why don't we include also `src`?
     pub dst: &'a DstLocation,
     pub variant: &'a Variant,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        agreement, crypto,
-        peer::PeerUtils,
-        section::{self, test_utils::gen_addr, MemberInfoUtils},
-        MIN_ADULT_AGE,
-    };
-    use anyhow::Result;
-    use sn_messaging::node::{MemberInfo, Peer};
-    use std::iter;
-    use xor_name::Prefix;
-
-    #[test]
-    fn extend_proof_chain() -> Result<()> {
-        let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
-            gen_addr(),
-        );
-
-        let sk0 = bls::SecretKey::random();
-        let pk0 = sk0.public_key();
-
-        let sk1 = bls::SecretKey::random();
-        let pk1 = sk1.public_key();
-
-        let mut full_proof_chain = SecuredLinkedList::new(pk0);
-        let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
-        let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
-
-        let (section_auth, _, _) =
-            section::test_utils::gen_section_authority_provider(Prefix::default(), 3);
-        let section_auth = agreement::test_utils::proven(&sk1, section_auth)?;
-
-        let peer = Peer::new(rand::random(), gen_addr());
-        let member_info = MemberInfo::joined(peer);
-        let member_info = agreement::test_utils::proven(&sk1, member_info)?;
-
-        let variant = Variant::NodeApproval {
-            genesis_key: pk0,
-            section_auth,
-            member_info,
-        };
-        let message = RoutingMsg::single_src(
-            &node,
-            DstLocation::DirectAndUnrouted,
-            variant,
-            section_auth.value.section_key.clone(),
-            Some(full_proof_chain.truncate(1)),
-        )?;
-
-        assert_eq!(message.verify(iter::once(&pk1))?, VerifyStatus::Full);
-        assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Unknown);
-
-        let message = message.extend_proof_chain(
-            &pk0,
-            section_auth.value.section_key.clone(),
-            &full_proof_chain,
-        )?;
-
-        assert_eq!(message.verify(iter::once(&pk0))?, VerifyStatus::Full);
-
-        Ok(())
-    }
 }

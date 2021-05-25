@@ -367,7 +367,7 @@ impl<'a> State<'a> {
                 JoinResponse::Approval {
                     section_auth,
                     genesis_key,
-                    section_chain,
+                    // section_chain,
                 } => {
                     return Ok((
                         self.node,
@@ -451,7 +451,6 @@ impl<'a> State<'a> {
             DstLocation::DirectAndUnrouted,
             variant,
             section_key,
-            None,
         )?;
 
         let _ = self
@@ -556,8 +555,6 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    let section_chain = message.proof_chain()?.clone();
-
                     trace!(
                         "This node has been approved to join the network at {:?}!",
                         section_auth.value.prefix,
@@ -567,7 +564,7 @@ impl<'a> State<'a> {
                         JoinResponse::Approval {
                             section_auth: section_auth.clone(),
                             genesis_key: *genesis_key,
-                            section_chain,
+                            // section_chain,
                         },
                         sender,
                         dest_info,
@@ -612,7 +609,8 @@ enum JoinResponse {
     Approval {
         section_auth: Proven<SectionAuthorityProvider>,
         genesis_key: bls::PublicKey,
-        section_chain: SecuredLinkedList,
+        // TODO: Re-enable when SecuredLinkedList is attached to Variant::NodeApproval
+        // section_chain: SecuredLinkedList,
     },
     Retry {
         section_auth: SectionAuthorityProvider,
@@ -801,7 +799,6 @@ mod tests {
                     member_info,
                 },
                 section_auth.value.section_key,
-                Some(proof_chain),
             )?;
 
             recv_tx.try_send((
@@ -1250,7 +1247,6 @@ mod tests {
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 section_key,
-                None,
             )?;
 
             recv_tx.try_send((
@@ -1274,7 +1270,6 @@ mod tests {
                     section_key: bls::SecretKey::random().public_key(),
                 },
                 section_key,
-                None,
             )?;
 
             recv_tx.try_send((

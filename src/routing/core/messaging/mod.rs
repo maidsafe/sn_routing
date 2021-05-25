@@ -73,7 +73,6 @@ impl Core {
             DstLocation::DirectAndUnrouted,
             variant,
             self.section.authority_provider().section_key,
-            None,
         )?;
 
         Ok(self.send_or_handle(message, recipients))

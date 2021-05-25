@@ -46,24 +46,16 @@ impl Core {
             Proposal::Online {
                 member_info,
                 previous_name,
-                their_knowledge,
-            } => {
-                self.handle_online_agreement(member_info, previous_name, their_knowledge, proof)
-                    .await
-            }
-            Proposal::Offline(member_info) => {
-                self.handle_offline_agreement(member_info, proof).await
-            }
+                ..
+            } => self.handle_online_agreement(member_info, previous_name, proof),
+            Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
             Proposal::SectionInfo(section_auth) => {
                 self.handle_section_info_agreement(section_auth, proof)
             }
             Proposal::OurElders(section_auth) => {
                 self.handle_our_elders_agreement(section_auth, proof).await
             }
-            Proposal::AccumulateAtSrc {
-                message,
-                proof_chain,
-            } => {
+            Proposal::AccumulateAtSrc { message, .. } => {
                 let dest_name = if let Some(name) = message.dst.name() {
                     name
                 } else {
@@ -76,7 +68,6 @@ impl Core {
                 let dest_section_pk = message.dst_key;
                 Ok(vec![self.handle_accumulate_at_src_agreement(
                     *message,
-                    proof_chain,
                     self.section.authority_provider().section_key,
                     proof,
                     DestInfo {
@@ -96,7 +87,6 @@ impl Core {
         &mut self,
         new_info: MemberInfo,
         previous_name: Option<XorName>,
-        their_knowledge: Option<bls::PublicKey>,
         proof: Proof,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
@@ -119,7 +109,7 @@ impl Core {
             if new_age > MIN_AGE {
                 // TODO: consider handling the relocation inside the bootstrap phase, to avoid
                 // having to send this `NodeApproval`.
-                commands.push(self.send_node_approval(old_info.clone(), their_knowledge)?);
+                commands.push(self.send_node_approval(old_info.clone())?);
                 commands.extend(self.relocate_rejoining_peer(&old_info.value.peer, new_age)?);
 
                 return Ok(commands);
@@ -154,7 +144,7 @@ impl Core {
         }
 
         commands.extend(result);
-        commands.push(self.send_node_approval(new_info, their_knowledge)?);
+        commands.push(self.send_node_approval(new_info)?);
 
         self.print_network_stats();
 
@@ -237,7 +227,6 @@ impl Core {
                         network: self.network.clone(),
                     },
                     self.section.authority_provider().section_key,
-                    None,
                 )?;
                 let len = sync_recipients.len();
                 commands.push(Command::send_message_to_nodes(
