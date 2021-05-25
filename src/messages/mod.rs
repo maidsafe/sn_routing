@@ -66,7 +66,11 @@ pub trait RoutingMsgUtils {
 
     /// Creates a signed message from a section.
     /// Note: `proof` isn't verified and is assumed valid.
-    fn section_src(plain: PlainMessage, proof: Proof) -> Result<RoutingMsg>;
+    fn section_src(
+        plain: PlainMessage,
+        proof: Proof,
+        section_chain: SecuredLinkedList,
+    ) -> Result<RoutingMsg>;
 
     /// Verify this message is properly signed and trusted.
     fn verify<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
@@ -88,21 +92,15 @@ pub trait RoutingMsgUtils {
     /// Getter
     fn src(&self) -> &SrcAuthority;
 
-    /// Returns the attached proof chain, if any.
-    fn proof_chain(&self) -> Result<&SecuredLinkedList>;
-
-    /// Returns the last key of the attached the proof chain, if any.
-    fn proof_chain_last_key(&self) -> Result<&bls::PublicKey>;
-
-    // Extend the current message proof chain so it starts at `new_first_key` while keeping the
-    // last key (and therefore the signature) intact.
-    // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
-    // the signed data.
-    fn extend_proof_chain(
-        self,
-        new_first_key: &bls::PublicKey,
-        full_chain: &SecuredLinkedList,
-    ) -> Result<RoutingMsg, Error>;
+    // // Extend the current message proof chain so it starts at `new_first_key` while keeping the
+    // // last key (and therefore the signature) intact.
+    // // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
+    // // the signed data.
+    // fn extend_proof_chain(
+    //     self,
+    //     new_first_key: &bls::PublicKey,
+    //     full_chain: &SecuredLinkedList,
+    // ) -> Result<RoutingMsg, Error>;
 
     fn verify_variant<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
         &self,
@@ -194,7 +192,7 @@ impl RoutingMsgUtils for RoutingMsg {
         src_name: XorName,
         dst: DstLocation,
         variant: Variant,
-        section_pk: bls::PublicKey,
+        section_chain: SecuredLinkedList,
     ) -> Result<Self, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -212,20 +210,22 @@ impl RoutingMsgUtils for RoutingMsg {
         let src = SrcAuthority::BlsShare {
             src_name,
             proof_share,
+            section_chain: section_chain.clone(),
         };
 
-        Self::new_signed(src, dst, variant, section_pk)
+        Self::new_signed(src, dst, variant, section_chain.last_key())
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
     /// Returns errors if src is not `BlsShare` or if the proof is invalid.
-    fn into_dst_accumulated(mut self, proof: Proof) -> Result<RoutingMsg> {
-        let (proof_share, src_name) = if let SrcAuthority::BlsShare {
+    pub(crate) fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
+        let (proof_share, src_name, section_chain) = if let SrcAuthority::BlsShare {
             proof_share,
             src_name,
+            section_chain,
         } = &self.src
         {
-            (proof_share.clone(), *src_name)
+            (proof_share.clone(), *src_name, section_chain)
         } else {
             error!("not a message for dst accumulation");
             return Err(Error::InvalidMessage);
@@ -247,7 +247,11 @@ impl RoutingMsgUtils for RoutingMsg {
             return Err(Error::FailedSignature);
         }
 
-        self.src = SrcAuthority::Section { proof, src_name };
+        self.src = SrcAuthority::Section {
+            proof,
+            src_name,
+            section_chain: section_chain.clone(),
+        };
 
         Ok(self)
     }
@@ -286,16 +290,17 @@ impl RoutingMsgUtils for RoutingMsg {
     fn section_src(
         plain: PlainMessage,
         proof: Proof,
-        section_pk: bls::PublicKey,
-    ) -> Result<RoutingMsg> {
-        RoutingMsg::new_signed(
+        section_chain: SecuredLinkedList,
+    ) -> Result<Self> {
+        Self::new_signed(
             SrcAuthority::Section {
                 src_name: plain.src,
                 proof,
+                section_chain: section_chain.clone(),
             },
             plain.dst,
             plain.variant,
-            section_pk,
+            *section_chain.last_key(),
         )
     }
 
@@ -323,15 +328,12 @@ impl RoutingMsgUtils for RoutingMsg {
                 // Variant-specific verification.
                 self.verify_variant(self.proof_chain.as_ref(), trusted_keys)
             }
-            SrcAuthority::BlsShare { proof_share, .. } => {
-                // TODO: Add SectionChain as a part of SrcAuthority::BlsShare
+            SrcAuthority::BlsShare {
+                proof_share,
+                section_chain,
+                ..
+            } => {
                 // Proof chain is required for accumulation at destination.
-                // let proof_chain: SectionChain = if let Some(proof_chain) = self.proof_chain.as_ref() {
-                //     proof_chain
-                // } else {
-                //     return Err(Error::InvalidMessage);
-                // };
-
                 if proof_share.public_key_set.public_key() != self.section_pk {
                     return Err(Error::InvalidMessage);
                 }
@@ -340,34 +342,27 @@ impl RoutingMsgUtils for RoutingMsg {
                     return Err(Error::FailedSignature);
                 }
 
-                // TODO: Add SectionChain as a part of SrcAuthority::BlsShare
-                // if proof_chain.check_trust(trusted_keys) {
-                //     Ok(VerifyStatus::Full)
-                // } else {
-                //     Ok(VerifyStatus::Unknown)
-                // }
-                Ok(VerifyStatus::Full)
+                if section_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
-            SrcAuthority::Section { proof, .. } => {
-                // TODO: Add SectionChain as a part of SrcAuthority::Section
+            SrcAuthority::Section {
+                proof,
+                section_chain,
+                ..
+            } => {
                 // Proof chain is required for section-src messages.
-                // let proof_chain = if let Some(proof_chain) = self.proof_chain.as_ref() {
-                //     proof_chain
-                // } else {
-                //     return Err(Error::InvalidMessage);
-                // };
-
                 if !self.section_pk.verify(&proof.signature, &bytes) {
                     return Err(Error::FailedSignature);
                 }
 
-                // TODO: Add SectionChain as a part of SrcAuthority::Section
-                // if proof_chain.check_trust(trusted_keys) {
-                //     Ok(VerifyStatus::Full)
-                // } else {
-                //     Ok(VerifyStatus::Unknown)
-                // }
-                Ok(VerifyStatus::Full)
+                if section_chain.check_trust(trusted_keys) {
+                    Ok(VerifyStatus::Full)
+                } else {
+                    Ok(VerifyStatus::Unknown)
+                }
             }
         }
     }
@@ -399,16 +394,6 @@ impl RoutingMsgUtils for RoutingMsg {
     /// Getter
     fn src(&self) -> &SrcAuthority {
         &self.src
-    }
-
-    /// Returns the attached proof chain, if any.
-    fn proof_chain(&self) -> Result<&SecuredLinkedList> {
-        self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
-    }
-
-    /// Returns the last key of the attached the proof chain, if any.
-    fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
-        self.proof_chain().map(|proof_chain| proof_chain.last_key())
     }
 
     // // Extend the current message proof chain so it starts at `new_first_key` while keeping the

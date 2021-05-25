@@ -7,10 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Message, VerifyStatus};
+use crate::error::Error;
 use crate::{
     agreement::{DkgFailureProof, DkgFailureProofSet, DkgKey, ProofShare, Proposal, Proven},
     crypto::Signature,
-    error::{Error, Result},
+    error::Result,
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
     section::{ElderCandidates, MemberInfo, Section, SectionAuthorityProvider, SectionChain},
@@ -50,6 +51,7 @@ pub(crate) enum Variant {
         genesis_key: bls::PublicKey,
         section_auth: Proven<SectionAuthorityProvider>,
         member_info: Proven<MemberInfo>,
+        section_chain: SectionChain,
     },
     /// Message sent to all members to update them about the state of our section.
     Sync {
@@ -129,44 +131,37 @@ impl Variant {
     pub(crate) fn verify<'a, I>(
         &self,
         _proof_chain: Option<&SectionChain>,
-        _trusted_keys: I,
+        trusted_keys: I,
     ) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
-        let _proof_chain = match self {
+        let proof_chain = match self {
             Self::NodeApproval {
-                section_auth: _,
-                member_info: _,
+                section_auth,
+                member_info,
+                section_chain,
                 ..
             } => {
-                // TODO: Attach SectionChain with Variant::NodeApproval
-                // let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
-                //
-                // if !section_auth.verify(proof_chain) {
-                //     return Err(Error::InvalidMessage);
-                // }
-                //
-                // if !member_info.verify(proof_chain) {
-                //     return Err(Error::InvalidMessage);
-                // }
-                //
-                // proof_chain
-                return Ok(VerifyStatus::Full);
+                if !section_auth.verify(section_chain) {
+                    return Err(Error::InvalidMessage);
+                }
+
+                if !member_info.verify(section_chain) {
+                    return Err(Error::InvalidMessage);
+                }
+
+                section_chain
             }
-            Self::Sync { section, .. } => {
-                section.chain();
-                return Ok(VerifyStatus::Full);
-            }
+            Self::Sync { section, .. } => section.chain(),
             _ => return Ok(VerifyStatus::Full),
         };
 
-        // TODO: Attach SectionChain with Variant::NodeApproval
-        // if proof_chain.check_trust(trusted_keys) {
-        //     Ok(VerifyStatus::Full)
-        // } else {
-        //     Ok(VerifyStatus::Unknown)
-        // }
+        if proof_chain.check_trust(trusted_keys) {
+            Ok(VerifyStatus::Full)
+        } else {
+            Ok(VerifyStatus::Unknown)
+        }
     }
 }
 
@@ -179,11 +174,13 @@ impl Debug for Variant {
                 genesis_key,
                 section_auth,
                 member_info,
+                section_chain,
             } => f
                 .debug_struct("NodeApproval")
                 .field("genesis_key", genesis_key)
                 .field("section_auth", section_auth)
                 .field("member_info", member_info)
+                .field("section_chain", section_chain)
                 .finish(),
             Self::Sync { section, network } => f
                 .debug_struct("Sync")

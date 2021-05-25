@@ -45,6 +45,7 @@ impl Core {
             genesis_key: *self.section.genesis_key(),
             section_auth: self.section.proven_authority_provider().clone(),
             member_info,
+            section_chain: self.section.chain().clone(),
         };
 
         let message = RoutingMsg::single_src(
@@ -280,6 +281,7 @@ impl Core {
             dst,
             variant,
             self.section.authority_provider().section_key,
+            self.section.chain().clone(),
         )?;
 
         trace!(

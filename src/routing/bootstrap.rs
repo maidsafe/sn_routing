@@ -367,7 +367,7 @@ impl<'a> State<'a> {
                 JoinResponse::Approval {
                     section_auth,
                     genesis_key,
-                    // section_chain,
+                    section_chain,
                 } => {
                     return Ok((
                         self.node,
@@ -532,6 +532,7 @@ impl<'a> State<'a> {
                     genesis_key,
                     section_auth,
                     member_info,
+                    section_chain,
                 } => {
                     if member_info.value.peer.name() != &self.node.name() {
                         trace!("Ignore NodeApproval not for us");
@@ -564,7 +565,7 @@ impl<'a> State<'a> {
                         JoinResponse::Approval {
                             section_auth: section_auth.clone(),
                             genesis_key: *genesis_key,
-                            // section_chain,
+                            section_chain: section_chain.clone(),
                         },
                         sender,
                         dest_info,
@@ -609,8 +610,7 @@ enum JoinResponse {
     Approval {
         section_auth: Proven<SectionAuthorityProvider>,
         genesis_key: bls::PublicKey,
-        // TODO: Re-enable when SecuredLinkedList is attached to Variant::NodeApproval
-        // section_chain: SecuredLinkedList,
+        section_chain: SecuredLinkedList,
     },
     Retry {
         section_auth: SectionAuthorityProvider,
@@ -797,6 +797,7 @@ mod tests {
                     genesis_key: pk,
                     section_auth: section_auth.clone(),
                     member_info,
+                    section_chain: proof_chain,
                 },
                 section_auth.value.section_key,
             )?;

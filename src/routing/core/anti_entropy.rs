@@ -114,6 +114,7 @@ mod tests {
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
     use secured_linked_list::SecuredLinkedList;
+    use secured_linked_list::SecuredLinkedList;
     use sn_messaging::DstLocation;
     use xor_name::Prefix;
 
@@ -144,50 +145,9 @@ mod tests {
     }
 
     #[test]
-    fn new_src_key_from_other_section() -> Result<()> {
-        let env = Env::new(1)?;
-
-        let root_key =
-            bls::PublicKey::from_bytes(env.their_sk.public_keys().public_key_share(0).to_bytes())
-                .map_err(|_| Error::InvalidPayload)?;
-        let their_new_pk = bls::SecretKey::random().public_key();
-
-        let msg = env.create_message(
-            &env.their_prefix,
-            env.section.authority_provider().section_key,
-        )?;
-        let dest_info = DestInfo {
-            dest: env.node.name(),
-            dest_section_pk: *env.section.chain().last_key(),
-        };
-
-        let (mut actions, _) = process(
-            &env.node,
-            &env.section,
-            &mut LaggingMessages::default(),
-            &msg,
-            dest_info,
-            None,
-        )?;
-
-        assert_matches!(&actions.send.pop(), Some(message) => {
-            assert_matches!(
-                message.variant(),
-                Variant::SectionKnowledgeQuery { last_known_key, .. } => {
-                    assert!(last_known_key.is_some());
-                    assert_eq!(last_known_key.ok_or(Error::InvalidMessage)?, env.their_pk);
-                }
-            );
-        });
-
-        Ok(())
-    }
-
-    #[test]
     fn new_src_key_from_our_section() -> Result<()> {
         let env = Env::new(1)?;
 
-        let our_old_pk = env.our_sk.public_key();
         let our_new_sk = bls::SecretKey::random();
         let our_new_pk = our_new_sk.public_key();
 
@@ -276,11 +236,7 @@ mod tests {
     struct Env {
         node: Node,
         section: Section,
-        network: Network,
-        our_sk: bls::SecretKey,
         their_prefix: Prefix,
-        their_sk: bls::SecretKeySet,
-        their_pk: bls::PublicKey,
     }
 
     impl Env {
@@ -298,21 +254,10 @@ mod tests {
             let section = Section::new(*chain.root_key(), chain, section_auth0)
                 .context("failed to create section")?;
 
-            let (section_auth1, _, their_sk) = gen_section_authority_provider(prefix1, ELDER_SIZE);
-            let their_pk = their_sk.public_keys().public_key();
-            let section_auth1 = proven(&our_sk, section_auth1)?;
-
-            let mut network = Network::new();
-            assert!(network.update_section(section_auth1, None, section.chain()));
-
             Ok(Self {
                 node,
                 section,
-                network,
-                our_sk,
                 their_prefix: prefix1,
-                their_sk,
-                their_pk,
             })
         }
 
