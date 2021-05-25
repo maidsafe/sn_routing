@@ -146,11 +146,12 @@ impl Routing {
         for (message, sender, dest_info) in backlog {
             dispatcher
                 .clone()
-                .spawn_handle_commands(Command::HandleMessage {
+                .handle_commands(Command::HandleMessage {
                     message,
                     sender: Some(sender),
                     dest_info,
-                });
+                })
+                .await?;
         }
 
         // Start listening to incoming connections.
@@ -167,8 +168,7 @@ impl Routing {
     /// Sets the JoinsAllowed flag.
     pub async fn set_joins_allowed(&self, joins_allowed: bool) -> Result<()> {
         let command = Command::SetJoinsAllowed(joins_allowed);
-        self.dispatcher.clone().spawn_handle_commands(command);
-        Ok(())
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Starts a proposal that a node has gone offline.
@@ -178,8 +178,7 @@ impl Routing {
             return Err(Error::InvalidState);
         }
         let command = Command::ProposeOffline(name);
-        self.dispatcher.clone().spawn_handle_commands(command);
-        Ok(())
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Returns the current age of this node.
@@ -397,7 +396,7 @@ impl Routing {
             additional_proof_chain_key,
         };
        
-        self.dispatcher.clone().spawn_handle_commands(command);
+        let _ = tokio::spawn( self.dispatcher.clone().handle_commands(command));
 
         Ok(())
     }
@@ -439,10 +438,7 @@ impl Routing {
                 },
             },
         };
-
-        self.dispatcher.clone().spawn_handle_commands(command);
-
-        Ok(())
+        self.dispatcher.clone().handle_commands(command).await
     }
 
     /// Returns the current BLS public key set if this node has one, or
@@ -484,8 +480,8 @@ async fn handle_connection_events(
                 trace!("Lost connection to {:?}", addr);
                 let _ = dispatcher
                     .clone()
-                    .spawn_handle_commands(Command::HandleConnectionLost(addr))
-                    ;
+                    .handle_commands(Command::HandleConnectionLost(addr))
+                    .await;
             }
         }
     }
@@ -516,7 +512,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                 message: msg,
                 dest_info,
             };
-            dispatcher.spawn_handle_commands(command);
+            let _ = task::spawn(dispatcher.handle_commands(command));
         }
         MessageType::Routing {
             msg: RoutingMsg(msg_bytes),
@@ -528,7 +524,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                     sender: Some(sender),
                     dest_info,
                 };
-                dispatcher.spawn_handle_commands(command);
+                let _ = task::spawn(dispatcher.handle_commands(command));
             }
             Err(error) => {
                 error!("Failed to deserialize node message: {}", error);
@@ -571,7 +567,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
                             },
                         },
                     };
-                    dispatcher.spawn_handle_commands(command);
+                    let _ = task::spawn(dispatcher.handle_commands(command));
                     return;
                 }
             };
