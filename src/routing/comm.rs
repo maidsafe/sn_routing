@@ -277,13 +277,20 @@ impl Comm {
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
-        self.endpoint.connect_to(recipient).await?;
-
-        self
+        // This will attempt to use a cached connection
+        if self
             .endpoint
-            .send_message(msg, recipient)
+            .send_message(Bytes::from("boop"), recipient)
             .await
-       
+            .is_err()
+        {
+        
+                // If the sending of a message failed the connection would no longer
+                // exist in the pool. So we connect again and then send the message.
+                self.endpoint.connect_to(recipient).await?;
+        }
+
+        self.endpoint.send_message(msg, recipient).await
     }
 }
 
