@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.71.0](https://github.com/maidsafe/sn_routing/compare/v0.70.0...v0.71.0) (2021-05-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* removing support for Ping messages.
+
+* upgrading sn_messaging to v25.0.0 ([7acb16a](https://github.com/maidsafe/sn_routing/commit/7acb16addfb921f8997a134e15cf26e7e2907dd9))
+
 ## [0.70.0](https://github.com/maidsafe/sn_routing/compare/v0.69.2...v0.70.0) (2021-05-24)
 
 
