@@ -302,8 +302,7 @@ impl<'a> State<'a> {
                 }
                 MessageType::Node { .. }
                 | MessageType::SectionInfo { .. }
-                | MessageType::Client { .. }
-                | MessageType::Ping(_) => {}
+                | MessageType::Client { .. } => {}
             }
         }
 
@@ -481,7 +480,6 @@ impl<'a> State<'a> {
                     dest_info,
                 } => (Message::from_bytes(Bytes::from(msg_bytes))?, dest_info),
                 MessageType::Node { .. }
-                | MessageType::Ping(_)
                 | MessageType::Client { .. }
                 | MessageType::SectionInfo { .. } => continue,
             };
