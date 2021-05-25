@@ -514,7 +514,7 @@
         <span class="ident">message</span>: <span class="ident">MessageType</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">cmds</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">message</span> {
-            <span class="ident">MessageType</span>::<span class="ident">Ping</span>(<span class="kw">_</span>) <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. } <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Routing</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. } <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Routing</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">status</span> <span class="op">=</span> <span class="self">self</span>
                     .<span class="ident">comm</span>
                     .<span class="ident">send</span>(<span class="ident">recipients</span>, <span class="ident">delivery_group_size</span>, <span class="ident">message</span>)

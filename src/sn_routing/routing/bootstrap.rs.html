@@ -1304,8 +1304,6 @@
 <span id="1303">1303</span>
 <span id="1304">1304</span>
 <span id="1305">1305</span>
-<span id="1306">1306</span>
-<span id="1307">1307</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1611,8 +1609,7 @@
                 }
                 <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. }
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> { .. }
-                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Client</span> { .. }
-                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Ping</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {}
+                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Client</span> { .. } <span class="op">=</span><span class="op">&gt;</span> {}
             }
         }
 
@@ -1790,7 +1787,6 @@
                     <span class="ident">dest_info</span>,
                 } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>))<span class="question-mark">?</span>, <span class="ident">dest_info</span>),
                 <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. }
-                <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Ping</span>(<span class="kw">_</span>)
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Client</span> { .. }
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="kw">continue</span>,
             };
