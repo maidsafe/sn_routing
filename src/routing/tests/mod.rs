@@ -195,7 +195,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
             relocate_payload: None,
             resource_proof_response: None,
         })),
-        None,
+        section_key,
     )?;
     let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
@@ -257,7 +257,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
                 nonce_signature,
             }),
         })),
-        None,
+        section_key,
     )?;
 
     let commands = dispatcher
@@ -362,7 +362,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
             relocate_payload: Some(relocate_payload),
             resource_proof_response: None,
         })),
-        None,
+        section_key,
     )?;
 
     let commands = dispatcher
@@ -429,7 +429,7 @@ async fn aggregate_proposals() -> Result<()> {
                 content: proposal.clone(),
                 proof_share,
             },
-            None,
+            section_auth.section_key,
         )?;
 
         let commands = dispatcher
@@ -457,7 +457,7 @@ async fn aggregate_proposals() -> Result<()> {
             content: proposal.clone(),
             proof_share,
         },
-        None,
+        section_auth.section_key,
     )?;
     let mut commands = dispatcher
         .handle_command(Command::HandleMessage {
@@ -1024,13 +1024,13 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             public_key: pk1,
             signature,
         },
-        proof_chain,
+        chain.clone(),
     )?;
 
     // Create our node.
     let state = Core::new(
         node,
-        section,
+        section.clone(),
         Some(section_key_share),
         mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
@@ -1048,7 +1048,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             msg: Box::new(original_message),
             dest_info: dest_info.clone(),
         },
-        None,
+        *section.chain().last_key(),
     )?;
 
     let commands = dispatcher
@@ -1075,7 +1075,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             Variant::UserMessage(content) => {
                 assert_eq!(recipients, [(other_node.name(), other_node.addr)]);
                 assert_eq!(*content, original_message_content);
-                assert_eq!(*message.proof_chain()?, chain);
+                assert_eq!(message.section_pk(), *chain.last_key());
 
                 message_sent = true;
             }
@@ -1143,7 +1143,7 @@ async fn handle_sync() -> Result<()> {
             section: new_section.clone(),
             network: Network::new(),
         },
-        None,
+        *new_section.chain().last_key(),
     )?;
 
     // Handle the message.
@@ -1211,7 +1211,7 @@ async fn handle_untrusted_sync() -> Result<()> {
             section: new_section.clone(),
             network: Network::new(),
         },
-        None,
+        *new_section.chain().last_key(),
     )?;
 
     let commands = dispatcher
@@ -1293,10 +1293,10 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         &node,
         DstLocation::DirectAndUnrouted,
         Variant::Sync {
-            section: section_full,
+            section: section_full.clone(),
             network: Network::new(),
         },
-        None,
+        *section_full.chain().last_key(),
     )?;
 
     let dest_info = DestInfo {
@@ -1312,7 +1312,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
             msg: Box::new(orig_message),
             dest_info: dest_info.clone(),
         },
-        None,
+        bls::SecretKey::random().public_key(),
     )?;
 
     let commands = dispatcher
@@ -1374,7 +1374,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
     let member_info = MemberInfo::joined(non_elder_peer);
     let member_info = proven(sk_set.secret_key(), member_info)?;
     assert!(section.update_member(member_info));
-
+    println!("non_elder joined.");
     let node = nodes.remove(0);
     let state = Core::new(
         node,

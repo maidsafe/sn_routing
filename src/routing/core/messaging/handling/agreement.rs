@@ -68,7 +68,7 @@ impl Core {
                 let dest_section_pk = message.dst_key;
                 Ok(vec![self.handle_accumulate_at_src_agreement(
                     *message,
-                    self.section.authority_provider().section_key,
+                    self.section.chain().clone(),
                     proof,
                     DestInfo {
                         dest: dest_name,
@@ -289,12 +289,11 @@ impl Core {
     fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
-        section_pk: bls::PublicKey,
-        proof_chain: SecuredLinkedList,
+        section_chain: SecuredLinkedList,
         proof: Proof,
         dest_info: DestInfo,
     ) -> Result<Command> {
-        let message = RoutingMsg::section_src(message, proof, section_pk, proof_chain)?;
+        let message = Message::section_src(message, proof, section_chain)?;
 
         Ok(Command::HandleMessage {
             message,
