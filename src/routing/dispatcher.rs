@@ -191,7 +191,7 @@ impl Dispatcher {
 
     // Note: this indirecton is needed. Trying to call `spawn(self.handle_commands(...))` directly
     // inside `handle_commands` causes compile error about type check cycle.
-    fn spawn_handle_commands(self: Arc<Self>, command: Command) {
+    pub fn spawn_handle_commands(self: Arc<Self>, command: Command) {
         let _ = tokio::spawn(self.handle_commands(command));
     }
 
