@@ -10,7 +10,7 @@ use crate::routing::command::Command;
 use crate::routing::core::LaggingMessages;
 use crate::{
     error::Result,
-    messages::{RoutingMsgUtils, SrcAuthorityUtils},
+    messages::{RoutingMsgUtils, SrcAuthorityUtils, Variant},
     network::NetworkUtils,
     node::Node,
     section::SectionUtils,
@@ -29,7 +29,6 @@ use std::net::SocketAddr;
 pub(crate) fn process(
     node: &Node,
     section: &Section,
-    network: &Network,
     lagging_messages: &mut LaggingMessages,
     msg: &RoutingMsg,
     dest_info: DestInfo,
@@ -45,43 +44,6 @@ pub(crate) fn process(
     }
 
     let dst = msg.src.src_location().to_dst();
-
-    if let Ok(src_chain) = msg.proof_chain() {
-        if let Ok(key) = network.key_by_name(&src_name) {
-            match src_chain.cmp_by_position(src_chain.last_key(), key) {
-                Ordering::Greater => {
-                    trace!("Anti-Entropy: We do not know source's key, need to update ourselves");
-                    let msg = RoutingMsg::single_src(
-                        node,
-                        dst,
-                        Variant::SectionKnowledgeQuery {
-                            last_known_key: Some(*key),
-                            msg: Box::new(msg.clone()),
-                        },
-                        section.authority_provider().section_key,
-                        None,
-                    )?;
-                    actions.send.push(msg);
-                }
-                Ordering::Less => {
-                    info!("Anti-Entropy: Src is lagging and needs to update himself. Do nothing as he will update himself");
-                }
-                Ordering::Equal => {}
-            }
-        } else {
-            let msg = RoutingMsg::single_src(
-                node,
-                dst,
-                Variant::SectionKnowledgeQuery {
-                    last_known_key: None,
-                    msg: Box::new(msg.clone()),
-                },
-                section.authority_provider().section_key,
-                None,
-            )?;
-            actions.send.push(msg);
-        }
-    }
 
     if let Ordering::Less = section
         .chain()
@@ -125,7 +87,6 @@ pub(crate) fn process(
                 dst,
                 variant,
                 section.authority_provider().section_key,
-                None,
             )?;
             actions.send.push(msg);
             return Ok((actions, true));
@@ -160,11 +121,9 @@ mod tests {
     fn everything_up_to_date() -> Result<()> {
         let env = Env::new(1)?;
 
-        let proof_chain = SecuredLinkedList::new(env.their_pk);
         let msg = env.create_message(
             &env.their_prefix,
             env.section.authority_provider().section_key,
-            proof_chain,
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -174,7 +133,6 @@ mod tests {
         let (actions, _) = process(
             &env.node,
             &env.section,
-            &env.network,
             &mut LaggingMessages::default(),
             &msg,
             dest_info,
@@ -193,20 +151,10 @@ mod tests {
             bls::PublicKey::from_bytes(env.their_sk.public_keys().public_key_share(0).to_bytes())
                 .map_err(|_| Error::InvalidPayload)?;
         let their_new_pk = bls::SecretKey::random().public_key();
-        let mut proof_chain = SecuredLinkedList::new(root_key);
-        proof_chain.insert(
-            &root_key,
-            their_new_pk,
-            env.their_sk
-                .secret_key_share(0)
-                .sign(&bincode::serialize(&their_new_pk)?)
-                .0,
-        )?;
 
         let msg = env.create_message(
             &env.their_prefix,
             env.section.authority_provider().section_key,
-            proof_chain,
         )?;
         let dest_info = DestInfo {
             dest: env.node.name(),
@@ -216,7 +164,6 @@ mod tests {
         let (mut actions, _) = process(
             &env.node,
             &env.section,
-            &env.network,
             &mut LaggingMessages::default(),
             &msg,
             dest_info,
@@ -243,17 +190,10 @@ mod tests {
         let our_old_pk = env.our_sk.public_key();
         let our_new_sk = bls::SecretKey::random();
         let our_new_pk = our_new_sk.public_key();
-        let mut proof_chain = SecuredLinkedList::new(our_old_pk);
-        proof_chain.insert(
-            &our_old_pk,
-            our_new_pk,
-            env.our_sk.sign(&bincode::serialize(&our_new_pk)?),
-        )?;
 
         let msg = env.create_message(
             env.section.prefix(),
             env.section.authority_provider().section_key,
-            proof_chain,
         )?;
         let dest_info = DestInfo {
             dest: env.node.name(),
@@ -263,7 +203,6 @@ mod tests {
         let (actions, _) = process(
             &env.node,
             &env.section,
-            &env.network,
             &mut LaggingMessages::default(),
             &msg,
             dest_info,
@@ -279,11 +218,9 @@ mod tests {
     fn outdated_dst_key_from_other_section() -> Result<()> {
         let env = Env::new(2)?;
 
-        let proof_chain = SecuredLinkedList::new(env.their_pk);
         let msg = env.create_message(
             &env.their_prefix,
             env.section.authority_provider().section_key,
-            proof_chain,
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -293,7 +230,6 @@ mod tests {
         let (mut actions, _) = process(
             &env.node,
             &env.section,
-            &env.network,
             &mut LaggingMessages::default(),
             &msg,
             dest_info,
@@ -314,11 +250,9 @@ mod tests {
     fn outdated_dst_key_from_our_section() -> Result<()> {
         let env = Env::new(2)?;
 
-        let proof_chain = SecuredLinkedList::new(*env.section.chain().root_key());
         let msg = env.create_message(
             env.section.prefix(),
             env.section.authority_provider().section_key,
-            proof_chain,
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -328,7 +262,6 @@ mod tests {
         let (actions, _) = process(
             &env.node,
             &env.section,
-            &env.network,
             &mut LaggingMessages::default(),
             &msg,
             dest_info,
@@ -387,7 +320,6 @@ mod tests {
             &self,
             src_section: &Prefix,
             section_pk: bls::PublicKey,
-            proof_chain: SecuredLinkedList,
         ) -> Result<RoutingMsg> {
             let sender = Node::new(
                 crypto::gen_keypair(&src_section.range_inclusive(), MIN_ADULT_AGE),
@@ -399,7 +331,6 @@ mod tests {
                 DstLocation::Section(self.node.name()),
                 Variant::UserMessage(b"hello".to_vec()),
                 section_pk,
-                Some(proof_chain),
             )?)
         }
     }

@@ -67,8 +67,8 @@ pub enum Event {
         dst: DstLocation,
         /// The proof if the message was set to be aggregated at source.
         proof: Option<Proof>,
-        /// The proof chain for the message, if any.
-        proof_chain: Option<SecuredLinkedList>,
+        /// The Sender's Section PK.
+        section_pk: bls::PublicKey,
     },
     /// A new peer joined our section.
     MemberJoined {

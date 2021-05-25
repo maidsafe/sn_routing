@@ -44,7 +44,6 @@ impl Core {
                 dest_info: received_dest_info,
             },
             self.section.authority_provider().section_key,
-            None,
         )?;
 
         let cmd = if let Some(sender) = sender {
@@ -83,15 +82,10 @@ impl Core {
                     DstLocation::DirectAndUnrouted,
                     Variant::Sync { section, network },
                     self.section.authority_provider().section_key,
-                    None,
                 )?
             }
             _ => bounced_msg
-                .extend_proof_chain(
-                    &dst_key,
-                    self.section.authority_provider().section_key,
-                    self.section.chain(),
-                )
+                .updated_with_latest_key(self.section.authority_provider().section_key)
                 .map_err(|err| {
                     error!("extending proof chain failed: {:?}", err);
                     Error::InvalidMessage // TODO: more specific error

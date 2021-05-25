@@ -124,7 +124,6 @@ impl Core {
         let (actions, can_be_executed) = anti_entropy::process(
             &self.node,
             &self.section,
-            &self.network,
             &mut self.lagging_messages,
             msg,
             dest_info,

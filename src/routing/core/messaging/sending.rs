@@ -31,11 +31,7 @@ use xor_name::XorName;
 // RoutingMsg sending
 impl Core {
     // Send NodeApproval to a joining node which makes them a section member
-    pub(crate) fn send_node_approval(
-        &self,
-        member_info: Proven<MemberInfo>,
-        their_knowledge: Option<bls::PublicKey>,
-    ) -> Result<Command> {
+    pub(crate) fn send_node_approval(&self, member_info: Proven<MemberInfo>) -> Result<Command> {
         info!(
             "Our section with {:?} has approved peer {:?}.",
             self.section.prefix(),
@@ -44,14 +40,6 @@ impl Core {
 
         let addr = *member_info.value.peer.addr();
         let name = *member_info.value.peer.name();
-
-        // Attach proof chain that includes the key the approved node knows (if any), the key its
-        // `MemberInfo` is signed with and the last key of our section chain.
-        let proof_chain = self.section.chain().minimize(
-            iter::once(self.section.chain().last_key())
-                .chain(their_knowledge.as_ref())
-                .chain(iter::once(&member_info.proof.public_key)),
-        )?;
 
         let variant = Variant::NodeApproval {
             genesis_key: *self.section.genesis_key(),
@@ -64,7 +52,6 @@ impl Core {
             DstLocation::DirectAndUnrouted,
             variant,
             self.section.authority_provider().section_key,
-            Some(proof_chain),
         )?;
 
         Ok(Command::send_message_to_node(
@@ -86,7 +73,6 @@ impl Core {
                 DstLocation::DirectAndUnrouted,
                 variant,
                 self.section.authority_provider().section_key,
-                None,
             )?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
@@ -133,7 +119,6 @@ impl Core {
                 DstLocation::DirectAndUnrouted,
                 variant,
                 self.section.authority_provider().section_key,
-                None,
             )?;
 
             Ok(Command::send_message_to_nodes(
@@ -180,13 +165,7 @@ impl Core {
         let dst = DstLocation::Node(details.pub_id);
         let variant = Variant::Relocate(details);
 
-        self.send_message_for_dst_accumulation(
-            src,
-            dst,
-            variant,
-            Some(known_key),
-            slice::from_ref(recipient),
-        )
+        self.send_message_for_dst_accumulation(src, dst, variant, slice::from_ref(recipient))
     }
 
     pub(crate) fn send_relocate_promise(
@@ -201,7 +180,7 @@ impl Core {
         let dst = DstLocation::Section(promise.name);
         let variant = Variant::RelocatePromise(promise);
 
-        self.send_message_for_dst_accumulation(src, dst, variant, None, slice::from_ref(recipient))
+        self.send_message_for_dst_accumulation(src, dst, variant, slice::from_ref(recipient))
     }
 
     pub(crate) fn return_relocate_promise(&self) -> Option<Command> {
@@ -244,7 +223,6 @@ impl Core {
             src_prefix.name(),
             DstLocation::DirectAndUnrouted,
             variant,
-            None,
             recipients,
         )
     }
@@ -285,10 +263,8 @@ impl Core {
         src: XorName,
         dst: DstLocation,
         variant: Variant,
-        additional_proof_chain_key: Option<&bls::PublicKey>,
         recipients: &[Peer],
     ) -> Result<Vec<Command>> {
-        let proof_chain = self.create_proof_chain(additional_proof_chain_key)?;
         let key_share = self.section_keys_provider.key_share().map_err(|err| {
             trace!(
                 "Can't create message {:?} for accumulation at dst {:?}: {}",
@@ -304,7 +280,6 @@ impl Core {
             dst,
             variant,
             self.section.authority_provider().section_key,
-            proof_chain,
         )?;
 
         trace!(
@@ -397,7 +372,6 @@ impl Core {
             DstLocation::DirectAndUnrouted,
             variant,
             self.section.authority_provider().section_key,
-            None,
         )?;
         Ok(Command::send_message_to_node(
             recipient,

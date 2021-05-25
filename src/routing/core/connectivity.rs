@@ -150,7 +150,6 @@ impl Core {
                 self.node.name(),
                 DstLocation::DirectAndUnrouted,
                 variant,
-                None,
                 &recipients,
             );
         }

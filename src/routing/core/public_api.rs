@@ -155,11 +155,11 @@ impl Core {
         }
 
         trace!(
-            "relay {:?} to first {:?} of {:?} (proof_chain: {:?})",
+            "relay {:?} to first {:?} of {:?} (Section PK: {:?})",
             msg,
             dg_size,
             targets,
-            msg.proof_chain().ok()
+            msg.section_pk(),
         );
 
         let targets: Vec<_> = targets
@@ -213,7 +213,6 @@ impl Core {
         &mut self,
         itinerary: Itinerary,
         content: Bytes,
-        additional_proof_chain_key: Option<&bls::PublicKey>,
     ) -> Result<Vec<Command>> {
         let are_we_src = itinerary.src.equals(&self.node.name())
             || itinerary.src.equals(&self.section().prefix().name());
@@ -244,14 +243,12 @@ impl Core {
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
-            let proof_chain = self.create_proof_chain(additional_proof_chain_key)?;
             RoutingMsg::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
                 itinerary.src.name(),
                 itinerary.dst,
                 variant,
                 self.section.authority_provider().section_key,
-                proof_chain,
             )?
         } else if itinerary.aggregate_at_src() {
             let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
@@ -262,7 +259,6 @@ impl Core {
                 itinerary.dst,
                 variant,
                 self.section.authority_provider().section_key,
-                None,
             )?
         };
         let mut commands = vec![];
