@@ -167,11 +167,12 @@ mod tests {
         crypto,
         section::{
             test_utils::{gen_addr, gen_section_authority_provider},
-            MemberInfo, SectionAuthorityProvider, SectionChain, MIN_ADULT_AGE,
+            MemberInfo, SectionAuthorityProvider, MIN_ADULT_AGE,
         },
     };
     use anyhow::{Context, Result};
     use rand::seq::IteratorRandom;
+    use secured_linked_list::SecuredLinkedList;
     use xor_name::Prefix;
 
     #[test]
@@ -442,7 +443,7 @@ mod tests {
 
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
-        let chain = SectionChain::new(pk);
+        let chain = SecuredLinkedList::new(pk);
 
         let (section_auth0, _, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
         let elders0: Vec<_> = section_auth0.peers().collect();
@@ -472,7 +473,7 @@ mod tests {
 
         let sk = bls::SecretKey::random();
         let pk = sk.public_key();
-        let chain = SectionChain::new(pk);
+        let chain = SecuredLinkedList::new(pk);
 
         let (section_auth, _, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
         let section_auth = proven(&sk, section_auth)?;

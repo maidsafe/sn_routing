@@ -75,8 +75,8 @@ pub use self::{
     event::{Event, NodeElderChange, SendStream},
     routing::{Config, EventStream, Routing},
     section::{
-        SectionAuthorityProvider, SectionChain, SectionChainError, FIRST_SECTION_MAX_AGE,
-        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
+        SectionAuthorityProvider, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
+        MIN_AGE,
     },
 };
 pub use qp2p::Config as TransportConfig;

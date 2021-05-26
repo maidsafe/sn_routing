@@ -8,7 +8,6 @@
 
 mod member_info;
 mod section_authority_provider;
-mod section_chain;
 mod section_keys;
 mod section_peers;
 
@@ -20,7 +19,6 @@ pub use self::{
         MemberInfo, PeerState, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     section_authority_provider::{ElderCandidates, SectionAuthorityProvider},
-    section_chain::{Error as SectionChainError, SectionChain},
     section_keys::{SectionKeyShare, SectionKeysProvider},
 };
 
@@ -31,6 +29,7 @@ use crate::{
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
 use bls_signature_aggregator::Proof;
+use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, convert::TryInto, iter, net::SocketAddr};
 use xor_name::{Prefix, XorName};
@@ -38,7 +37,7 @@ use xor_name::{Prefix, XorName};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Section {
     genesis_key: bls::PublicKey,
-    chain: SectionChain,
+    chain: SecuredLinkedList,
     section_auth: Proven<SectionAuthorityProvider>,
     members: SectionPeers,
 }
@@ -50,7 +49,7 @@ impl Section {
     /// Returns error if `section_auth` is not signed with the last key of `chain`.
     pub fn new(
         genesis_key: bls::PublicKey,
-        chain: SectionChain,
+        chain: SecuredLinkedList,
         section_auth: Proven<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
         if section_auth.proof.public_key != *chain.last_key() {
@@ -78,7 +77,7 @@ impl Section {
 
         let mut section = Self::new(
             section_auth.proof.public_key,
-            SectionChain::new(section_auth.proof.public_key),
+            SecuredLinkedList::new(section_auth.proof.public_key),
             section_auth,
         )?;
 
@@ -184,7 +183,7 @@ impl Section {
         self.members.update(member_info)
     }
 
-    pub fn chain(&self) -> &SectionChain {
+    pub fn chain(&self) -> &SecuredLinkedList {
         &self.chain
     }
 
@@ -192,11 +191,11 @@ impl Section {
     pub(crate) fn extend_chain(
         &self,
         trusted_key: &bls::PublicKey,
-        full_chain: &SectionChain,
-    ) -> Result<Self, SectionChainError> {
+        full_chain: &SecuredLinkedList,
+    ) -> Result<Self, SecuredLinkedListError> {
         let chain = match self.chain.extend(trusted_key, full_chain) {
             Ok(chain) => chain,
-            Err(SectionChainError::InvalidOperation) => {
+            Err(SecuredLinkedListError::InvalidOperation) => {
                 // This means the tip of the chain is not reachable from `trusted_key`.
                 // Use the full chain instead as it is always trusted.
                 self.chain.clone()

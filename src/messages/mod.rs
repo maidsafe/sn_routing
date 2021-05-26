@@ -20,10 +20,11 @@ use crate::{
     crypto::{self, Verifier},
     error::{Error, Result},
     node::Node,
-    section::{SectionChain, SectionChainError, SectionKeyShare},
+    section::SectionKeyShare,
 };
 use bls_signature_aggregator::{Proof, ProofShare};
 use bytes::Bytes;
+use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::{Deserialize, Serialize};
 use sn_messaging::{Aggregation, DstLocation};
 use std::fmt::{self, Debug, Formatter};
@@ -45,7 +46,7 @@ pub(crate) struct Message {
     /// The body of the message.
     variant: Variant,
     /// Proof chain to verify the message trust. Does not need to be signed.
-    proof_chain: Option<SectionChain>,
+    proof_chain: Option<SecuredLinkedList>,
     /// Serialised message, this is a signed and fully serialised message ready to send.
     #[serde(skip)]
     serialized: Bytes,
@@ -123,7 +124,7 @@ impl Message {
         src: SrcAuthority,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: Option<SectionChain>,
+        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<Message, Error> {
         let mut msg = Message {
             dst,
@@ -149,7 +150,7 @@ impl Message {
         src_name: XorName,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: SectionChain,
+        proof_chain: SecuredLinkedList,
     ) -> Result<Self, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -217,7 +218,7 @@ impl Message {
         node: &Node,
         dst: DstLocation,
         variant: Variant,
-        proof_chain: Option<SectionChain>,
+        proof_chain: Option<SecuredLinkedList>,
     ) -> Result<Self> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
@@ -238,7 +239,7 @@ impl Message {
     pub(crate) fn section_src(
         plain: PlainMessage,
         proof: Proof,
-        proof_chain: SectionChain,
+        proof_chain: SecuredLinkedList,
     ) -> Result<Self> {
         Self::new_signed(
             SrcAuthority::Section {
@@ -348,7 +349,7 @@ impl Message {
     }
 
     /// Returns the attached proof chain, if any.
-    pub(crate) fn proof_chain(&self) -> Result<&SectionChain> {
+    pub(crate) fn proof_chain(&self) -> Result<&SecuredLinkedList> {
         self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
     }
 
@@ -364,7 +365,7 @@ impl Message {
     pub(crate) fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
-        full_chain: &SectionChain,
+        full_chain: &SecuredLinkedList,
     ) -> Result<Self, Error> {
         let proof_chain = self
             .proof_chain
@@ -373,7 +374,7 @@ impl Message {
 
         *proof_chain = match proof_chain.extend(new_first_key, full_chain) {
             Ok(chain) => chain,
-            Err(SectionChainError::InvalidOperation) => {
+            Err(SecuredLinkedListError::InvalidOperation) => {
                 // This means the tip of the proof chain is not reachable from `new_first_key`.
                 // Extend it from the root key of the full chain instead as that should be the
                 // genesis key which is implicitly trusted.
@@ -443,7 +444,7 @@ pub enum ExtendProofChainError {
     #[error("message has no proof chain")]
     NoProofChain,
     #[error("failed to extend proof chain: {}", .0)]
-    Extend(#[from] SectionChainError),
+    Extend(#[from] SecuredLinkedListError),
     #[error("failed to re-create message: {}", .0)]
     Create(#[from] CreateError),
 }
@@ -482,7 +483,7 @@ mod tests {
         let sk1 = bls::SecretKey::random();
         let pk1 = sk1.public_key();
 
-        let mut full_proof_chain = SectionChain::new(pk0);
+        let mut full_proof_chain = SecuredLinkedList::new(pk0);
         let pk1_sig = sk0.sign(&bincode::serialize(&pk1)?);
         let _ = full_proof_chain.insert(&pk0, pk1, pk1_sig);
 

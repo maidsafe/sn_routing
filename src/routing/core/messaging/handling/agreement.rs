@@ -9,6 +9,7 @@
 use std::cmp;
 
 use bls_signature_aggregator::Proof;
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{DestInfo, DstLocation};
 use xor_name::XorName;
 
@@ -18,7 +19,7 @@ use crate::{
     messages::{Message, PlainMessage, Variant},
     routing::command::Command,
     section::{MemberInfo, PeerState, SectionAuthorityProvider},
-    Error, Event, SectionChain, MIN_AGE,
+    Error, Event, MIN_AGE,
 };
 
 use super::Core;
@@ -281,7 +282,7 @@ impl Core {
     fn handle_accumulate_at_src_agreement(
         &self,
         message: PlainMessage,
-        proof_chain: SectionChain,
+        proof_chain: SecuredLinkedList,
         proof: Proof,
         dest_info: DestInfo,
     ) -> Result<Command> {

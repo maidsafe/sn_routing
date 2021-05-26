@@ -10,8 +10,9 @@ use super::{Proof, ProofShare, Proven, SignatureAggregator};
 use crate::{
     error::Result,
     messages::PlainMessage,
-    section::{MemberInfo, SectionAuthorityProvider, SectionChain},
+    section::{MemberInfo, SectionAuthorityProvider},
 };
+use secured_linked_list::SecuredLinkedList;
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 use xor_name::XorName;
@@ -55,7 +56,7 @@ pub(crate) enum Proposal {
     // its destination.
     AccumulateAtSrc {
         message: Box<PlainMessage>,
-        proof_chain: SectionChain,
+        proof_chain: SecuredLinkedList,
     },
 
     // Proposal to change whether new nodes are allowed to join our section.

@@ -289,17 +289,15 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::proven,
-        peer::test_utils::arbitrary_unique_peers,
-        routing::tests::SecretKeySet,
-        section::{SectionAuthorityProvider, SectionChain},
-        ELDER_SIZE, MIN_AGE,
+        agreement::test_utils::proven, peer::test_utils::arbitrary_unique_peers,
+        routing::tests::SecretKeySet, section::SectionAuthorityProvider, ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
     use assert_matches::assert_matches;
     use itertools::Itertools;
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use secured_linked_list::SecuredLinkedList;
     use xor_name::Prefix;
 
     #[test]
@@ -352,7 +350,7 @@ mod tests {
         );
         let section_auth = proven(sk, section_auth)?;
 
-        let mut section = Section::new(pk, SectionChain::new(pk), section_auth)?;
+        let mut section = Section::new(pk, SecuredLinkedList::new(pk), section_auth)?;
 
         for peer in &peers {
             let info = MemberInfo::joined(*peer);

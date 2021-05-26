@@ -15,9 +15,10 @@ use crate::{
     peer::Peer,
     relocation::{RelocateDetails, RelocatePromise, RelocateState},
     routing::command::Command,
-    section::{ElderCandidates, MemberInfo, Section, SectionChain},
+    section::{ElderCandidates, MemberInfo, Section},
 };
 use bytes::Bytes;
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{DestInfo, DstLocation};
 use std::{cmp::Ordering, iter, net::SocketAddr, slice};
 use xor_name::XorName;
@@ -334,7 +335,7 @@ impl Core {
     pub(crate) fn create_proof_chain(
         &self,
         additional_key: Option<&bls::PublicKey>,
-    ) -> Result<SectionChain> {
+    ) -> Result<SecuredLinkedList> {
         // The last key of the proof chain is the last section key for which we also have the
         // secret key share. Ideally this is our current section key unless we haven't observed the
         // DKG completion yet.

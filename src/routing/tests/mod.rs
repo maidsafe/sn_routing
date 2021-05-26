@@ -19,8 +19,8 @@ use crate::{
     peer::Peer,
     relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     section::{
-        test_utils::*, MemberInfo, PeerState, Section, SectionAuthorityProvider, SectionChain,
-        SectionKeyShare, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
+        test_utils::*, MemberInfo, PeerState, Section, SectionAuthorityProvider, SectionKeyShare,
+        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     supermajority, ELDER_SIZE,
 };
@@ -29,6 +29,7 @@ use assert_matches::assert_matches;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use resource_proof::ResourceProof;
+use secured_linked_list::SecuredLinkedList;
 use sn_data_types::{Keypair, PublicKey};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
@@ -322,7 +323,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let signature = sk_set
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
-    let proof_chain = SectionChain::new(section_key);
+    let proof_chain = SecuredLinkedList::new(section_key);
     let relocate_message = Message::section_src(
         relocate_message,
         Proof {
@@ -494,7 +495,7 @@ async fn handle_agreement_on_online() -> Result<()> {
 #[tokio::test]
 async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     let sk_set = SecretKeySet::random();
-    let chain = SectionChain::new(sk_set.secret_key().public_key());
+    let chain = SecuredLinkedList::new(sk_set.secret_key().public_key());
 
     // Creates nodes where everybody has age 6 except one has 5.
     let mut nodes: Vec<_> = gen_sorted_nodes(&Prefix::default(), ELDER_SIZE, true);
@@ -878,7 +879,7 @@ enum UntrustedMessageSource {
 async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> {
     let sk0 = bls::SecretKey::random();
     let pk0 = sk0.public_key();
-    let chain = SectionChain::new(pk0);
+    let chain = SecuredLinkedList::new(pk0);
 
     let (section_auth, _) = create_section_auth();
 
@@ -924,7 +925,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
             public_key: pk1,
             signature,
         },
-        SectionChain::new(pk1),
+        SecuredLinkedList::new(pk1),
     )?;
 
     let commands = dispatcher
@@ -988,7 +989,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     let pk1 = sk1_set.secret_key().public_key();
     let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
 
-    let mut chain = SectionChain::new(pk0);
+    let mut chain = SecuredLinkedList::new(pk0);
     let _ = chain.insert(&pk0, pk1, pk1_signature);
 
     let proven_section_auth = proven(sk1_set.secret_key(), section_auth)?;
@@ -1099,7 +1100,7 @@ async fn handle_sync() -> Result<()> {
     let pk1 = sk1_set.secret_key().public_key();
     let pk1_signature = sk0.sign(bincode::serialize(&pk1)?);
 
-    let mut chain = SectionChain::new(pk0);
+    let mut chain = SecuredLinkedList::new(pk0);
     assert_eq!(chain.insert(&pk0, pk1, pk1_signature), Ok(()));
 
     let (old_section_auth, mut nodes) = create_section_auth();
@@ -1187,13 +1188,13 @@ async fn handle_untrusted_sync() -> Result<()> {
     let pk2 = sk2.public_key();
     let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
 
-    let mut chain = SectionChain::new(pk0);
+    let mut chain = SecuredLinkedList::new(pk0);
     chain.insert(&pk0, pk1, sig1)?;
     chain.insert(&pk1, pk2, sig2)?;
 
     let (old_section_auth, _) = create_section_auth();
     let proven_old_section_auth = proven(&sk0, old_section_auth.clone())?;
-    let old_section = Section::new(pk0, SectionChain::new(pk0), proven_old_section_auth)?;
+    let old_section = Section::new(pk0, SecuredLinkedList::new(pk0), proven_old_section_auth)?;
 
     let (new_section_auth, _) = create_section_auth();
     let proven_new_section_auth = proven(&sk2, new_section_auth.clone())?;
@@ -1275,7 +1276,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     let pk2 = sk2.public_key();
     let sig2 = sk1.sign(&bincode::serialize(&pk2)?);
 
-    let mut chain = SectionChain::new(pk0);
+    let mut chain = SecuredLinkedList::new(pk0);
     chain.insert(&pk0, pk1, sig1)?;
     chain.insert(&pk1, pk2, sig2)?;
 
@@ -1802,7 +1803,7 @@ fn create_section(
     sk_set: &SecretKeySet,
     section_auth: &SectionAuthorityProvider,
 ) -> Result<(Section, SectionKeyShare)> {
-    let section_chain = SectionChain::new(sk_set.secret_key().public_key());
+    let section_chain = SecuredLinkedList::new(sk_set.secret_key().public_key());
     let proven_section_auth = proven(sk_set.secret_key(), section_auth.clone())?;
 
     let mut section = Section::new(

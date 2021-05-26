@@ -15,7 +15,7 @@ use crate::{
     node::Node,
     relocation::{RelocatePayload, SignedRelocateDetails},
     routing::comm::SendStatus,
-    section::{Section, SectionAuthorityProvider, SectionChain},
+    section::{Section, SectionAuthorityProvider},
     FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
 use bytes::Bytes;
@@ -23,6 +23,7 @@ use futures::future;
 use itertools::Itertools;
 use rand::seq::IteratorRandom;
 use resource_proof::ResourceProof;
+use secured_linked_list::SecuredLinkedList;
 use sn_data_types::PublicKey;
 use sn_messaging::{
     node::RoutingMsg,
@@ -611,7 +612,7 @@ enum JoinResponse {
     Approval {
         section_auth: Proven<SectionAuthorityProvider>,
         genesis_key: bls::PublicKey,
-        section_chain: SectionChain,
+        section_chain: SecuredLinkedList,
     },
     Retry {
         section_auth: SectionAuthorityProvider,
@@ -789,7 +790,7 @@ mod tests {
             // Send NodeApproval
             let section_auth = proven(sk, section_auth.clone())?;
             let member_info = proven(sk, MemberInfo::joined(peer))?;
-            let proof_chain = SectionChain::new(pk);
+            let proof_chain = SecuredLinkedList::new(pk);
             let message = Message::single_src(
                 &bootstrap_node,
                 DstLocation::Direct,
