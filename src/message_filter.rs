@@ -13,7 +13,7 @@ use std::time::Duration;
 const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
 const MAX_ENTRIES: usize = 5_000;
 
-// Structure to filter (throttle) incoming and outgoing messages.
+// Structure to filter (throttle) incoming messages.
 pub(crate) struct MessageFilter {
     incoming: LruCache<MessageId, ()>,
 }
@@ -28,12 +28,13 @@ impl MessageFilter {
         }
     }
 
-    pub fn contains_incoming(&mut self, msg_id: &MessageId) -> bool {
+    // Returns `true` if not already having it.
+    pub fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
         let cur_value = self.incoming.insert(*msg_id, ());
-        cur_value.is_some()
+        cur_value.is_none()
     }
 
-    // Resets both incoming and outgoing filters.
+    // Resets the incoming filter.
     pub fn reset(&mut self) {
         self.incoming.clear();
     }
