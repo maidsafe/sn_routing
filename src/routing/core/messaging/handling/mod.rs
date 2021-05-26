@@ -62,12 +62,6 @@ impl Core {
             return Ok(commands);
         }
 
-        // Filter messages which were already handled
-        if self.msg_filter.contains_incoming(&msg) {
-            trace!("not handling message - already handled: {:?}", msg);
-            return Ok(commands);
-        }
-
         match self.decide_message_status(&msg)? {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
@@ -252,8 +246,6 @@ impl Core {
         msg: Message,
         dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
-        self.msg_filter.insert_incoming(&msg);
-
         let msg = if let Some(msg) = self.aggregate_message(msg)? {
             msg
         } else {
