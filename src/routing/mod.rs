@@ -33,12 +33,13 @@ use crate::{
     messages::Message,
     node::Node,
     peer::Peer,
-    section::{SectionAuthorityProvider, SectionChain},
+    section::SectionAuthorityProvider,
     Error, TransportConfig, MIN_ADULT_AGE,
 };
 use bytes::Bytes;
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     client::ClientMsg, node::RoutingMsg, DestInfo, DstLocation, EndUser, Itinerary, MessageType,
     WireMsg,
@@ -237,7 +238,7 @@ impl Routing {
     }
 
     /// Returns the Section Proof Chain
-    pub async fn section_chain(&self) -> SectionChain {
+    pub async fn section_chain(&self) -> SecuredLinkedList {
         self.dispatcher.core.lock().await.section_chain().clone()
     }
 
@@ -420,7 +421,7 @@ impl Routing {
     }
 
     /// Returns our section proof chain.
-    pub async fn our_history(&self) -> SectionChain {
+    pub async fn our_history(&self) -> SecuredLinkedList {
         self.dispatcher.core.lock().await.section().chain().clone()
     }
 

@@ -6,12 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::section::SectionChain;
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{client::ClientMsg, DstLocation, EndUser, SrcLocation};
 use std::{
     collections::BTreeSet,
@@ -68,7 +68,7 @@ pub enum Event {
         /// The proof if the message was set to be aggregated at source.
         proof: Option<Proof>,
         /// The proof chain for the message, if any.
-        proof_chain: Option<SectionChain>,
+        proof_chain: Option<SecuredLinkedList>,
     },
     /// A new peer joined our section.
     MemberJoined {

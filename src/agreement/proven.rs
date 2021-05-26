@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{verify_proof, Proof};
-use crate::section::SectionChain;
+use secured_linked_list::SecuredLinkedList;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, fmt::Debug};
 use xor_name::Prefix;
@@ -24,7 +24,7 @@ impl<T: Serialize> Proven<T> {
         Self { value, proof }
     }
 
-    pub fn verify(&self, section_chain: &SectionChain) -> bool {
+    pub fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
         section_chain.has_key(&self.proof.public_key) && self.self_verify()
     }
 

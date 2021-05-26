@@ -13,9 +13,10 @@ use self::{prefix_map::PrefixMap, stats::NetworkStats};
 use crate::{
     agreement::{verify_proof, Proof, Proven},
     peer::Peer,
-    section::{SectionAuthorityProvider, SectionChain},
+    section::SectionAuthorityProvider,
 };
 
+use secured_linked_list::SecuredLinkedList;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, iter};
 use xor_name::{Prefix, XorName};
@@ -80,7 +81,7 @@ impl Network {
     /// Merge two `Network`s into one.
     /// TODO: make this operation commutative, associative and idempotent (CRDT)
     /// TODO: return bool indicating whether anything changed.
-    pub fn merge(&mut self, other: Self, section_chain: &SectionChain) {
+    pub fn merge(&mut self, other: Self, section_chain: &SecuredLinkedList) {
         // FIXME: these operations are not commutative:
 
         for entry in other.sections {
@@ -103,7 +104,7 @@ impl Network {
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
         key_proof: Option<Proof>,
-        section_chain: &SectionChain,
+        section_chain: &SecuredLinkedList,
     ) -> bool {
         let info = OtherSection {
             section_auth: section_auth.clone(),
@@ -207,7 +208,7 @@ struct OtherSection {
 }
 
 impl OtherSection {
-    fn verify(&self, section_chain: &SectionChain) -> bool {
+    fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
         if let Some(key_proof) = &self.key_proof {
             section_chain.has_key(&key_proof.public_key)
                 && verify_proof(key_proof, &self.section_auth.proof.public_key)
@@ -233,7 +234,7 @@ mod tests {
     #[test]
     fn closest() {
         let sk = bls::SecretKey::random();
-        let chain = SectionChain::new(sk.public_key());
+        let chain = SecuredLinkedList::new(sk.public_key());
 
         let p01: Prefix = "01".parse().unwrap();
         let p10: Prefix = "10".parse().unwrap();

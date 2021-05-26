@@ -136,15 +136,13 @@ mod tests {
     use crate::{
         agreement::test_utils::proven,
         crypto,
-        section::{
-            test_utils::{gen_addr, gen_section_authority_provider},
-            SectionChain,
-        },
+        section::test_utils::{gen_addr, gen_section_authority_provider},
         Error, XorName, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
     use bytes::Bytes;
+    use secured_linked_list::SecuredLinkedList;
     use sn_messaging::DstLocation;
     use xor_name::Prefix;
 
@@ -152,7 +150,7 @@ mod tests {
     fn everything_up_to_date() -> Result<()> {
         let env = Env::new(1)?;
 
-        let proof_chain = SectionChain::new(env.their_pk);
+        let proof_chain = SecuredLinkedList::new(env.their_pk);
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -181,7 +179,7 @@ mod tests {
             bls::PublicKey::from_bytes(env.their_sk.public_keys().public_key_share(0).to_bytes())
                 .map_err(|_| Error::InvalidPayload)?;
         let their_new_pk = bls::SecretKey::random().public_key();
-        let mut proof_chain = SectionChain::new(root_key);
+        let mut proof_chain = SecuredLinkedList::new(root_key);
         proof_chain.insert(
             &root_key,
             their_new_pk,
@@ -227,7 +225,7 @@ mod tests {
         let our_old_pk = env.our_sk.public_key();
         let our_new_sk = bls::SecretKey::random();
         let our_new_pk = our_new_sk.public_key();
-        let mut proof_chain = SectionChain::new(our_old_pk);
+        let mut proof_chain = SecuredLinkedList::new(our_old_pk);
         proof_chain.insert(
             &our_old_pk,
             our_new_pk,
@@ -259,7 +257,7 @@ mod tests {
     fn outdated_dst_key_from_other_section() -> Result<()> {
         let env = Env::new(2)?;
 
-        let proof_chain = SectionChain::new(env.their_pk);
+        let proof_chain = SecuredLinkedList::new(env.their_pk);
         let msg = env.create_message(&env.their_prefix, proof_chain)?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -290,7 +288,7 @@ mod tests {
     fn outdated_dst_key_from_our_section() -> Result<()> {
         let env = Env::new(2)?;
 
-        let proof_chain = SectionChain::new(*env.section.chain().root_key());
+        let proof_chain = SecuredLinkedList::new(*env.section.chain().root_key());
         let msg = env.create_message(env.section.prefix(), proof_chain)?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -358,7 +356,7 @@ mod tests {
         fn create_message(
             &self,
             src_section: &Prefix,
-            proof_chain: SectionChain,
+            proof_chain: SecuredLinkedList,
         ) -> Result<Message> {
             let sender = Node::new(
                 crypto::gen_keypair(&src_section.range_inclusive(), MIN_ADULT_AGE),
@@ -374,9 +372,9 @@ mod tests {
         }
     }
 
-    fn create_chain(len: usize) -> Result<(SectionChain, bls::SecretKey)> {
+    fn create_chain(len: usize) -> Result<(SecuredLinkedList, bls::SecretKey)> {
         let mut sk = bls::SecretKey::random();
-        let mut chain = SectionChain::new(sk.public_key());
+        let mut chain = SecuredLinkedList::new(sk.public_key());
 
         for _ in 1..len {
             let old_pk = *chain.last_key();

@@ -13,12 +13,13 @@ use crate::{
     error::{Error, Result},
     network::Network,
     relocation::{RelocateDetails, RelocatePayload, RelocatePromise},
-    section::{ElderCandidates, MemberInfo, Section, SectionAuthorityProvider, SectionChain},
+    section::{ElderCandidates, MemberInfo, Section, SectionAuthorityProvider},
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
+use secured_linked_list::SecuredLinkedList;
 use serde::{Deserialize, Serialize};
 use sn_messaging::DestInfo;
 use std::{
@@ -33,8 +34,8 @@ use xor_name::XorName;
 pub(crate) enum Variant {
     /// Inform other sections about our section or vice-versa.
     SectionKnowledge {
-        /// `SectionAuthorityProvider` and `SectionChain` of the sender's section, with the proof chain.
-        src_info: (Proven<SectionAuthorityProvider>, SectionChain),
+        /// `SectionAuthorityProvider` and `SecuredLinkedList` of the sender's section, with the proof chain.
+        src_info: (Proven<SectionAuthorityProvider>, SecuredLinkedList),
         /// Message
         msg: Option<Box<Message>>,
         // Nonce that is derived from the incoming message that triggered sending this
@@ -128,7 +129,7 @@ pub(crate) enum Variant {
 impl Variant {
     pub(crate) fn verify<'a, I>(
         &self,
-        proof_chain: Option<&SectionChain>,
+        proof_chain: Option<&SecuredLinkedList>,
         trusted_keys: I,
     ) -> Result<VerifyStatus>
     where

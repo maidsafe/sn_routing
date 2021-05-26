@@ -9,9 +9,9 @@
 use crate::{
     agreement::ProposalError,
     messages::{CreateError, ExtendProofChainError},
-    section::SectionChainError,
 };
 use qp2p::Error as Qp2pError;
+use secured_linked_list::error::Error as SecuredLinkedListError;
 use std::net::SocketAddr;
 use thiserror::Error;
 use xor_name::XorName;
@@ -61,7 +61,7 @@ pub enum Error {
     #[error("Connection closed locally")]
     ConnectionClosed,
     #[error("Invalid section chain: {0}")]
-    InvalidSectionChain(#[from] SectionChainError),
+    InvalidSectionChain(#[from] SecuredLinkedListError),
     #[error("Messaging protocol error: {0}")]
     Messaging(#[from] sn_messaging::Error),
     #[error("proposal error: {0}")]

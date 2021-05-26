@@ -26,11 +26,11 @@ use crate::{
     node::Node,
     relocation::RelocateState,
     section::{Section, SectionAuthorityProvider, SectionKeyShare, SectionKeysProvider},
-    SectionChain,
 };
 use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::DestInfo;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -145,7 +145,7 @@ impl Core {
     pub(crate) fn update_section_knowledge(
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
-        section_chain: SectionChain,
+        section_chain: SecuredLinkedList,
     ) {
         let prefix = section_auth.value.prefix;
         if self

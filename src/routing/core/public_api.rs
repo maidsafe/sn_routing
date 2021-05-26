@@ -16,9 +16,10 @@ use crate::{
     peer::Peer,
     routing::{command::Command, enduser_registry::SocketId},
     section::{MemberInfo, Section, SectionAuthorityProvider},
-    Error, Event, SectionChain,
+    Error, Event,
 };
 use bytes::Bytes;
+use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     section_info::{Error as TargetSectionError, SectionInfo},
     DestInfo, EndUser, Itinerary, SrcLocation,
@@ -55,7 +56,7 @@ impl Core {
         &self.section
     }
 
-    pub fn section_chain(&self) -> &SectionChain {
+    pub fn section_chain(&self) -> &SecuredLinkedList {
         self.section.chain()
     }
 
