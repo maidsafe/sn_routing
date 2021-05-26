@@ -174,6 +174,7 @@
 <span id="173">173</span>
 <span id="174">174</span>
 <span id="175">175</span>
+<span id="176">176</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -187,8 +188,9 @@
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">PlainMessage</span>,
-    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
+    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">SectionAuthorityProvider</span>},
 };
+<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
 <span class="kw">use</span> <span class="ident">thiserror</span>::<span class="ident">Error</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -232,7 +234,7 @@
     <span class="comment">// its destination.</span>
     <span class="ident">AccumulateAtSrc</span> {
         <span class="ident">message</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">PlainMessage</span><span class="op">&gt;</span>,
-        <span class="ident">proof_chain</span>: <span class="ident">SectionChain</span>,
+        <span class="ident">proof_chain</span>: <span class="ident">SecuredLinkedList</span>,
     },
 
     <span class="comment">// Proposal to change whether new nodes are allowed to join our section.</span>

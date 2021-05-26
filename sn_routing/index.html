@@ -21,8 +21,6 @@ consisting of all names that start with this sequence.</p>
 routing node.</p>
 </td></tr><tr class="module-item"><td><a class="struct" href="struct.SectionAuthorityProvider.html" title="sn_routing::SectionAuthorityProvider struct">SectionAuthorityProvider</a></td><td class="docblock-short"><p>A new <code>SectionAuthorityProvider</code> is created whenever the elders change,
 due to an elder being added or removed, or the section splitting or merging.</p>
-</td></tr><tr class="module-item"><td><a class="struct" href="struct.SectionChain.html" title="sn_routing::SectionChain struct">SectionChain</a></td><td class="docblock-short"><p>Chain of section BLS keys where every key is proven (signed) by its parent key, except the
-first one.</p>
 </td></tr><tr class="module-item"><td><a class="struct" href="struct.SendStream.html" title="sn_routing::SendStream struct">SendStream</a></td><td class="docblock-short"><p>Stream of outgoing messages</p>
 </td></tr><tr class="module-item"><td><a class="struct" href="struct.TransportConfig.html" title="sn_routing::TransportConfig struct">TransportConfig</a></td><td class="docblock-short"><p>QuicP2p configurations</p>
 </td></tr><tr class="module-item"><td><a class="struct" href="struct.XorName.html" title="sn_routing::XorName struct">XorName</a></td><td class="docblock-short"><p>A 256-bit number, viewed as a point in XOR space.</p>
@@ -31,7 +29,6 @@ first one.</p>
 </td></tr><tr class="module-item"><td><a class="enum" href="enum.Event.html" title="sn_routing::Event enum">Event</a></td><td class="docblock-short"><p>An Event raised by a <code>Node</code> or <code>Client</code> via its event sender.</p>
 </td></tr><tr class="module-item"><td><a class="enum" href="enum.NodeElderChange.html" title="sn_routing::NodeElderChange enum">NodeElderChange</a></td><td class="docblock-short"><p>A flag in EldersChanged event, indicating
 whether the node got promoted, demoted or did not change.</p>
-</td></tr><tr class="module-item"><td><a class="enum" href="enum.SectionChainError.html" title="sn_routing::SectionChainError enum">SectionChainError</a></td><td class="docblock-short"><p>Error resulting from operations on <code>SectionChain</code>.</p>
 </td></tr></table><h2 id="constants" class="section-header"><a href="#constants">Constants</a></h2>
 <table><tr class="module-item"><td><a class="constant" href="constant.ELDER_SIZE.html" title="sn_routing::ELDER_SIZE constant">ELDER_SIZE</a></td><td class="docblock-short"><p>Number of elders per section.</p>
 </td></tr><tr class="module-item"><td><a class="constant" href="constant.FIRST_SECTION_MAX_AGE.html" title="sn_routing::FIRST_SECTION_MAX_AGE constant">FIRST_SECTION_MAX_AGE</a></td><td class="docblock-short"><p>Defines the higher bound of this range.</p>

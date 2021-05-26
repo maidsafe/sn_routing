@@ -549,6 +549,7 @@
 <span id="548">548</span>
 <span id="549">549</span>
 <span id="550">550</span>
+<span id="551">551</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -585,12 +586,13 @@
     <span class="ident">messages</span>::<span class="ident">Message</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionChain</span>},
+    <span class="ident">section</span>::<span class="ident">SectionAuthorityProvider</span>,
     <span class="ident">Error</span>, <span class="ident">TransportConfig</span>, <span class="ident">MIN_ADULT_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::{<span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Signer</span>, <span class="ident">KEYPAIR_LENGTH</span>};
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
+<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">client</span>::<span class="ident">ClientMsg</span>, <span class="ident">node</span>::<span class="ident">RoutingMsg</span>, <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>,
     <span class="ident">WireMsg</span>,
@@ -789,7 +791,7 @@
     }
 
     <span class="doccomment">/// Returns the Section Proof Chain</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_chain</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_chain</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SecuredLinkedList</span> {
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section_chain</span>().<span class="ident">clone</span>()
     }
 
@@ -972,7 +974,7 @@
     }
 
     <span class="doccomment">/// Returns our section proof chain.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SectionChain</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SecuredLinkedList</span> {
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
     }
 
