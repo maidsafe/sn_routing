@@ -103,8 +103,8 @@ impl Core {
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn contains_incoming(&mut self, msg_id: &MessageId) -> bool {
-        self.msg_filter.contains_incoming(msg_id)
+    pub fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
+        self.msg_filter.add_to_filter(msg_id)
     }
 
     fn check_for_entropy(
