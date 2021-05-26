@@ -11,7 +11,7 @@ use crate::{
     error::Result, event::Event, relocation::SignedRelocateDetails, routing::comm::SendStatus,
     Error, XorName,
 };
-use sn_messaging::MessageType;
+use sn_messaging::{MessageId, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},
@@ -40,6 +40,10 @@ impl Dispatcher {
             cancel_timer_tx,
             cancel_timer_rx,
         }
+    }
+
+    pub async fn contains_incoming(&self, msg_id: &MessageId) -> bool {
+        self.core.lock().await.contains_incoming(msg_id)
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream

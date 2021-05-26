@@ -19,17 +19,6 @@ use xor_name::{XorName, XOR_NAME_LEN};
 /// SHA3-256 hash digest.
 pub type Digest256 = [u8; 32];
 
-/// SHA3-256 hash function.
-pub fn sha3_256(input: &[u8]) -> Digest256 {
-    use tiny_keccak::{Hasher, Sha3};
-
-    let mut hasher = Sha3::v256();
-    let mut output = Digest256::default();
-    hasher.update(input);
-    hasher.finalize(&mut output);
-    output
-}
-
 pub fn sign(msg: &[u8], keypair: &Keypair) -> Signature {
     let expanded_secret_key = ExpandedSecretKey::from(&keypair.secret);
     expanded_secret_key.sign(msg, &keypair.public)

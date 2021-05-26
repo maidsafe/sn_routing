@@ -31,7 +31,7 @@ use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
-use sn_messaging::DestInfo;
+use sn_messaging::{DestInfo, MessageId};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
@@ -102,6 +102,10 @@ impl Core {
     ////////////////////////////////////////////////////////////////////////////
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
+
+    pub fn contains_incoming(&mut self, msg_id: &MessageId) -> bool {
+        self.msg_filter.contains_incoming(msg_id)
+    }
 
     fn check_for_entropy(
         &mut self,
