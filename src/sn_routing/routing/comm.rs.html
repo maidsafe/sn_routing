@@ -667,6 +667,11 @@
 <span id="666">666</span>
 <span id="667">667</span>
 <span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -683,6 +688,7 @@
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">Endpoint</span>, <span class="ident">QuicP2p</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">WireMsg</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
@@ -791,6 +797,7 @@
         <span class="kw-2">mut</span> <span class="ident">msg</span>: <span class="ident">MessageType</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="ident">msg</span>.<span class="ident">update_dest_info</span>(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="ident">recipient</span>.<span class="number">0</span>));
+
         <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">serialize</span>()<span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">endpoint</span>
             .<span class="ident">send_message</span>(<span class="ident">bytes</span>, <span class="kw-2">&amp;</span><span class="ident">recipient</span>.<span class="number">1</span>)
@@ -798,7 +805,9 @@
             .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
                 <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Sending to {:?} failed with {}&quot;</span>, <span class="ident">recipient</span>, <span class="ident">err</span>);
                 <span class="ident">Error</span>::<span class="ident">FailedSend</span>(<span class="ident">recipient</span>.<span class="number">1</span>, <span class="ident">recipient</span>.<span class="number">0</span>)
-            })
+            })<span class="question-mark">?</span>;
+
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Tests whether the peer is reachable.</span>
@@ -860,12 +869,13 @@
 
         <span class="kw">let</span> <span class="ident">delivery_group_size</span> <span class="op">=</span> <span class="ident">delivery_group_size</span>.<span class="ident">min</span>(<span class="ident">recipients</span>.<span class="ident">len</span>());
 
+        <span class="kw">let</span> <span class="ident">wire_msg</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">to_wire_msg</span>()<span class="question-mark">?</span>;
         <span class="comment">// Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick</span>
         <span class="comment">// the next recipient and try to send to them. Proceed until the needed number of sends</span>
         <span class="comment">// succeeds or if there are no more recipients to pick.</span>
-        <span class="kw">let</span> <span class="ident">send</span> <span class="op">=</span> <span class="op">|</span><span class="ident">recipient</span>: (<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>), <span class="kw-2">mut</span> <span class="ident">msg</span>: <span class="ident">MessageType</span><span class="op">|</span> <span class="kw">async</span> <span class="kw">move</span> {
-            <span class="ident">msg</span>.<span class="ident">update_dest_info</span>(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="ident">recipient</span>.<span class="number">0</span>));
-            <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">serialize</span>() {
+        <span class="kw">let</span> <span class="ident">send</span> <span class="op">=</span> <span class="op">|</span><span class="ident">recipient</span>: (<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>), <span class="kw-2">mut</span> <span class="ident">wire_msg</span>: <span class="ident">WireMsg</span><span class="op">|</span> <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">wire_msg</span>.<span class="ident">update_dest_info</span>(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="ident">recipient</span>.<span class="number">0</span>));
+            <span class="kw">match</span> <span class="ident">wire_msg</span>.<span class="ident">serialize</span>() {
                 <span class="prelude-val">Ok</span>(<span class="ident">bytes</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(
                         <span class="string">&quot;Sending message ({} bytes) to {} of {:?}&quot;</span>,
@@ -893,7 +903,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tasks</span>: <span class="ident">FuturesUnordered</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">recipients</span>[<span class="number">0</span>..<span class="ident">delivery_group_size</span>]
             .<span class="ident">iter</span>()
-            .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">name</span>, <span class="ident">recipient</span>)<span class="op">|</span> <span class="ident">send</span>((<span class="kw-2">*</span><span class="ident">name</span>, <span class="kw-2">*</span><span class="ident">recipient</span>), <span class="ident">msg</span>.<span class="ident">clone</span>()))
+            .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">name</span>, <span class="ident">recipient</span>)<span class="op">|</span> <span class="ident">send</span>((<span class="kw-2">*</span><span class="ident">name</span>, <span class="kw-2">*</span><span class="ident">recipient</span>), <span class="ident">wire_msg</span>.<span class="ident">clone</span>()))
             .<span class="ident">collect</span>();
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">next</span> <span class="op">=</span> <span class="ident">delivery_group_size</span>;
@@ -912,7 +922,7 @@
                     <span class="ident">failed_recipients</span>.<span class="ident">push</span>(<span class="ident">addr</span>);
 
                     <span class="kw">if</span> <span class="ident">next</span> <span class="op">&lt;</span> <span class="ident">recipients</span>.<span class="ident">len</span>() {
-                        <span class="ident">tasks</span>.<span class="ident">push</span>(<span class="ident">send</span>(<span class="ident">recipients</span>[<span class="ident">next</span>], <span class="ident">msg</span>.<span class="ident">clone</span>()));
+                        <span class="ident">tasks</span>.<span class="ident">push</span>(<span class="ident">send</span>(<span class="ident">recipients</span>[<span class="ident">next</span>], <span class="ident">wire_msg</span>.<span class="ident">clone</span>()));
                         <span class="ident">next</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                     }
                 }
