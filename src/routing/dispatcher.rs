@@ -42,8 +42,8 @@ impl Dispatcher {
         }
     }
 
-    pub async fn contains_incoming(&self, msg_id: &MessageId) -> bool {
-        self.core.lock().await.contains_incoming(msg_id)
+    pub async fn add_to_filter(&self, msg_id: &MessageId) -> bool {
+        self.core.lock().await.add_to_filter(msg_id)
     }
 
     /// Send provided Event to the user which shall receive it through the EventStream

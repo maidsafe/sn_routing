@@ -486,7 +486,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             return;
         }
     };
-    if dispatcher.contains_incoming(&wire_msg.msg_id()).await {
+    if !dispatcher.add_to_filter(&wire_msg.msg_id()).await {
         trace!(
             "not handling message - already handled: {:?}",
             wire_msg.msg_id()
