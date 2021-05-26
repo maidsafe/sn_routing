@@ -479,10 +479,29 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     };
     let _span_guard = span.enter();
 
-    let message_type = match WireMsg::deserialize(bytes) {
+    let wire_msg = match WireMsg::from(bytes) {
+        Ok(wire_msg) => wire_msg,
+        Err(error) => {
+            error!("Failed to deserialize wired_message: {}", error);
+            return;
+        }
+    };
+    if dispatcher.contains_incoming(&wire_msg.msg_id()).await {
+        trace!(
+            "not handling message - already handled: {:?}",
+            wire_msg.msg_id()
+        );
+        return;
+    }
+
+    let message_type = match wire_msg.to_message() {
         Ok(message_type) => message_type,
         Err(error) => {
-            error!("Failed to deserialize message: {}", error);
+            error!(
+                "Failed to deserialize message({:?}): {}",
+                wire_msg.msg_id(),
+                error
+            );
             return;
         }
     };
