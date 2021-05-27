@@ -176,7 +176,7 @@ impl Comm {
         &self,
         recipients: &[(XorName, SocketAddr)],
         delivery_group_size: usize,
-        msg: MessageType,
+        mut msg: MessageType,
     ) -> Result<SendStatus> {
         trace!(
             "Sending message to {} of {:?}",
@@ -194,41 +194,45 @@ impl Comm {
 
         let delivery_group_size = delivery_group_size.min(recipients.len());
 
-        let wire_msg = msg.to_wire_msg()?;
+        if recipients.is_empty() {
+            return Err(Error::EmptyRecipientList);
+        }
+        // Use the first Xor address recipient to represent the destination section.
+        // So that only one copy of MessageType need to be constructed.
+        msg.update_dest_info(None, Some(recipients[0].0));
+        let msg_bytes = match msg.serialize() {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(Error::Messaging(e)),
+        };
+
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
-        let send = |recipient: (XorName, SocketAddr), mut wire_msg: WireMsg| async move {
-            wire_msg.update_dest_info(None, Some(recipient.0));
-            match wire_msg.serialize() {
-                Ok(bytes) => {
-                    trace!(
-                        "Sending message ({} bytes) to {} of {:?}",
-                        bytes.len(),
-                        delivery_group_size,
-                        recipient.1
-                    );
+        let send = |recipient: (XorName, SocketAddr), msg_bytes: Bytes| async move {
+            trace!(
+                "Sending message ({} bytes) to {} of {:?}",
+                msg_bytes.len(),
+                delivery_group_size,
+                recipient.1
+            );
 
-                    let result = self
-                        .send_to(&recipient.1, bytes)
-                        .await
-                        .map_err(|err| match err {
-                            qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)
-                            | qp2p::Error::Connection(qp2p::ConnectionError::TimedOut) => {
-                                Error::AddressNotReachable { err }
-                            }
-                            _ => Error::ConnectionClosed,
-                        });
+            let result = self
+                .send_to(&recipient.1, msg_bytes)
+                .await
+                .map_err(|err| match err {
+                    qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)
+                    | qp2p::Error::Connection(qp2p::ConnectionError::TimedOut) => {
+                        Error::AddressNotReachable { err }
+                    }
+                    _ => Error::ConnectionClosed,
+                });
 
-                    (result, recipient.1)
-                }
-                Err(e) => (Err(Error::Messaging(e)), recipient.1),
-            }
+            (result, recipient.1)
         };
 
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|(name, recipient)| send((*name, *recipient), wire_msg.clone()))
+            .map(|(name, recipient)| send((*name, *recipient), msg_bytes.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -247,7 +251,7 @@ impl Comm {
                     failed_recipients.push(addr);
 
                     if next < recipients.len() {
-                        tasks.push(send(recipients[next], wire_msg.clone()));
+                        tasks.push(send(recipients[next], msg_bytes.clone()));
                         next += 1;
                     }
                 }
@@ -380,7 +384,6 @@ mod tests {
         }
 
         if let Some(bytes) = peer1.rx.recv().await {
-            original_message.update_dest_info(None, Some(peer1._name));
             assert_eq!(WireMsg::deserialize(bytes)?, original_message);
         }
 
@@ -462,18 +465,20 @@ mod tests {
         .await?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
+        let name = XorName::random();
 
         let mut message = new_section_info_message();
         let _ = comm
             .send(
-                &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
+                &[(name, invalid_addr), (peer._name, peer.addr)],
                 1,
                 message.clone(),
             )
             .await?;
 
+        // Using first name of the recipients to represent section_name.
         if let Some(bytes) = peer.rx.recv().await {
-            message.update_dest_info(None, Some(peer._name));
+            message.update_dest_info(None, Some(name));
             assert_eq!(WireMsg::deserialize(bytes)?, message);
         }
         Ok(())
@@ -492,11 +497,12 @@ mod tests {
         .await?;
         let mut peer = Peer::new().await?;
         let invalid_addr = get_invalid_addr().await?;
+        let name = XorName::random();
 
         let mut message = new_section_info_message();
         let status = comm
             .send(
-                &[(XorName::random(), invalid_addr), (peer._name, peer.addr)],
+                &[(name, invalid_addr), (peer._name, peer.addr)],
                 2,
                 message.clone(),
             )
@@ -507,8 +513,9 @@ mod tests {
             SendStatus::MinDeliveryGroupSizeFailed(_) => vec![invalid_addr]
         );
 
+        // Using first name of the recipients to represent section_name.
         if let Some(bytes) = peer.rx.recv().await {
-            message.update_dest_info(None, Some(peer._name));
+            message.update_dest_info(None, Some(name));
             assert_eq!(WireMsg::deserialize(bytes)?, message);
         }
         Ok(())

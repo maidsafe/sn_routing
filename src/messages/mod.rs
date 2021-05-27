@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod hash;
 mod plain_message;
 mod src_authority;
 mod variant;
 
-pub use self::src_authority::SrcAuthority;
+pub use self::{hash::MessageHash, src_authority::SrcAuthority};
 pub(crate) use self::{
     plain_message::PlainMessage,
     variant::{JoinRequest, ResourceProofResponse, Variant},
@@ -49,6 +50,8 @@ pub(crate) struct Message {
     /// Serialised message, this is a signed and fully serialised message ready to send.
     #[serde(skip)]
     serialized: Bytes,
+    #[serde(skip)]
+    hash: MessageHash,
 }
 
 impl Message {
@@ -105,6 +108,7 @@ impl Message {
             }
         }
 
+        msg.hash = MessageHash::from_bytes(&msg_bytes);
         msg.serialized = msg_bytes;
 
         Ok(msg)
@@ -129,11 +133,13 @@ impl Message {
             proof_chain,
             variant,
             serialized: Default::default(),
+            hash: Default::default(),
         };
 
         msg.serialized = bincode::serialize(&msg)
             .map_err(|_| Error::InvalidMessage)?
             .into();
+        msg.hash = MessageHash::from_bytes(&msg.serialized);
 
         Ok(msg)
     }
@@ -335,6 +341,11 @@ impl Message {
     /// Getter
     pub fn src(&self) -> &SrcAuthority {
         &self.src
+    }
+
+    /// Getter
+    pub fn hash(&self) -> &MessageHash {
+        &self.hash
     }
 
     /// Returns the attached proof chain, if any.
