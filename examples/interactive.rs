@@ -44,7 +44,10 @@ use tui::text::Span;
 use tui::style::{Color, Style, Modifier};
 use tui::symbols::Marker;
 use crossterm::event::{read, Event as TerminalEvent, KeyEvent, KeyCode};
-use crossterm::event::{read, Event as TerminalEvent, KeyEvent, KeyCode};
+use futures::channel::mpsc::{unbounded, channel};
+use tokio::sync::mpsc::{unbounded_channel, Sender};
+use std::collections::HashSet;
+use futures::stream::FuturesUnordered;
 
 // Minimal delay between two consecutive prints of the network status.
 const MIN_PRINT_DELAY: Duration = Duration::from_millis(500);
@@ -108,65 +111,83 @@ async fn main() -> Result<()> {
     let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = unbounded_channel();
     let mut network = Network::new();
     let probe_interval = Duration::from_secs_f64(1.0);
     let mut probes = time::interval(probe_interval);
     let app = App::default();
 
-    let (tx, rx) = std::sync::mpsc::channel();
-    let kx = tx.clone();
-    std::thread::spawn(move || {
-        loop {
-            tx.send(Event::Tick);
-            std::thread::sleep(probe_interval);
-        }
-    });
+    let (mut tx, mut rx) = channel(5);
+    let mut kx = tx.clone();
 
     std::thread::spawn(move || {
         loop {
+            let _ = tx.try_send(Event::Tick);
+            std::thread::sleep(probe_interval);
+        }
+    });
+    std::thread::spawn(move || {
+        loop {
             if let Ok(key) = read() {
-                kx.send(Event::Input(key));
+                let _ = kx.try_send(Event::Input(key));
             }
         }
     });
 
-
     // Create the genesis node
-    network.create_node(event_tx.clone()).await;
+    network.create_nodes(event_tx.clone(), 1u32).await;
     terminal.clear();
+    let mut option_selected: Option<MenuOption> = None;
+    let (tcx, mut rcx) = unbounded_channel();
+    let mut buffer = vec![];
     loop {
-        let mut option_selected: Option<MenuOption> = None;
-        match rx.recv() {
-            Ok(Event::Input(input)) => {
+        match rx.try_next()? {
+            Some(Event::Input(input)) => {
                match input {
                    TerminalEvent::Key(KeyEvent {
-                                  code: KeyCode::Char(f), ..
+                                  code: KeyCode::Char(ch), ..
                               }) => {
-                       match f {
-                           'q' => break,
-                           _  => {}
+                       match (&option_selected, ch) {
+                           (_, 'q')  => break,
+                           (None, '1') => { option_selected = Some(MenuOption::Add); continue },
+                           (None, '2') => { option_selected = Some(MenuOption::Remove); continue },
+                           (Some(_), n) => {
+                                   buffer.push(n);
+                               },
+                           (Some(MenuOption::Add), '\n') =>{
+                               let buf = buffer.clone().into_iter().collect::<String>();
+                               let n = buf.parse::<u32>().unwrap_or(0);
+                               if n > 0 {
+                                   network.create_nodes(tcx.clone(), n).await;
+                               }
+                           }
+                           (Some(MenuOption::Remove), '\n') =>{
+                               let buf = buffer.clone().into_iter().collect::<String>();
+                               let n = buf.parse::<u32>().unwrap_or(0);
+                               if n > 0 {
+                                   network.remove_random_nodes(n);
+                               }
+                           }
+                           _ => {}
                        }
-                       break
                    },
                    TerminalEvent::Mouse(_) => {}
                    TerminalEvent::Resize(_, _) => {}
                    _ => {}
                }
             }
-            Ok(Event::Tick) => {
-                // match event_rx.recv().await {
-                //     Some(event) =>
-                //         network.handle_event(event).await?,
-                //     _ => break,
-                // }
+            Some(Event::Tick) => {
+                if let Some(event) =  rcx.recv().await {
+                        network.handle_event(event).await?;
+                }
                 let _ = terminal.draw(|f| {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .margin(1)
                         .constraints(
                             [
-                                Constraint::Percentage(40),
+                                Constraint::Percentage(20),
+                                Constraint::Percentage(20),
                                 Constraint::Percentage(60),
                             ].as_ref()
                         )
@@ -176,7 +197,8 @@ async fn main() -> Result<()> {
                         .borders(Borders::ALL);
 
                     f.render_widget(block, chunks[0]);
-                    let stats = Paragraph::new(format!("{:?} \n 1. Add Node 2. Remove Node", network.stats))
+
+                    let stats = Paragraph::new(format!("{:?} \n", network.stats))
                         .style(Style::default().fg(Color::LightCyan))
                         .alignment(Alignment::Center)
                         .block(
@@ -189,11 +211,23 @@ async fn main() -> Result<()> {
 
                     f.render_widget(stats, chunks[0]);
 
+                    let message = if option_selected.is_none() {
+                        String::from( "1. Add Node 2. Remove Node")
+                    } else {
+                        String::from("Enter the number of nodes")
+                    };
 
-                    let block = Block::default()
-                        .title("Block 2")
-                        .borders(Borders::ALL);
-                    f.render_widget(block, chunks[1]);
+                    let menu = Paragraph::new(message)
+                        .style(Style::default().fg(Color::Cyan))
+                        .alignment(Alignment::Center)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .style(Style::default().fg(Color::White))
+                                .title("Menu")
+                                .border_type(BorderType::Plain)
+                        );
+                    f.render_widget(menu, chunks[1]);
 
                     let datasets = vec![Dataset::default()
                         .name("data")
@@ -235,9 +269,9 @@ async fn main() -> Result<()> {
                                     Span::styled("5.0", Style::default().add_modifier(Modifier::BOLD)),
                                 ]),
                         );
-                    f.render_widget(chart, chunks[1]);
+                    f.render_widget(chart, chunks[2]);
                 });
-            }
+            },
             _ => {}
         }
 }
@@ -285,6 +319,7 @@ struct Network {
     probe_tracker: ProbeTracker,
     stats: Stats,
 }
+
 impl Network {
     fn new() -> Self {
         Self {
@@ -298,24 +333,28 @@ impl Network {
     }
 
     // Create new node and let it join the network.
-    async fn create_node(&mut self, event_tx: UnboundedSender<NodeEvent>) {
+    async fn create_nodes(&mut self, event_tx: UnboundedSender<NodeEvent>, number: u32) {
         let bootstrap_addrs = self.get_bootstrap_addrs();
+        let first = bootstrap_addrs.is_empty();
+        let contacts: HashSet<_> = bootstrap_addrs.into_iter().collect();
 
-        let id = self.new_node_id();
-        let _ = self.nodes.insert(id, Node::Joining);
-        self.stats.join_attempts += 1;
+        for i in 1..=number {
+            let id = self.new_node_id();
+            let _ = self.nodes.insert(id, Node::Joining);
+            self.stats.join_attempts += 1;
 
-        let config = Config {
-            first: bootstrap_addrs.is_empty(),
-            transport_config: TransportConfig {
-                hard_coded_contacts: bootstrap_addrs.into_iter().collect(),
-                local_ip: Some(Ipv4Addr::LOCALHOST.into()),
+            let config = Config {
+                first,
+                transport_config: TransportConfig {
+                    hard_coded_contacts: contacts.clone(),
+                    local_ip: Some(Ipv4Addr::LOCALHOST.into()),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
+            };
 
-        let _ = task::spawn(add_node(id, config, event_tx));
+            let _ = task::spawn(add_node(id, config, event_tx.clone()));
+        }
 
         self.try_print_status();
     }
@@ -323,7 +362,7 @@ impl Network {
     // Remove a random node where the probability of a node to be removed is inversely proportional
     // to its age. That is, younger nodes are more likely to be dropped than older nodes. More
     // specifically, a node with age N is twice a likely to be dropped than a node with age N + 1.
-    fn remove_random_node(&mut self) {
+    fn remove_random_nodes(&mut self, n: u32) {
         let weighted_ids: Vec<_> = self
             .nodes
             .iter()
