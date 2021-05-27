@@ -473,12 +473,6 @@ async fn handle_connection_events(
 }
 
 async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: SocketAddr) {
-    let span = {
-        let state = dispatcher.core.lock().await;
-        trace_span!("handle_message", name = %state.node().name(), %sender)
-    };
-    let _span_guard = span.enter();
-
     let wire_msg = match WireMsg::from(bytes) {
         Ok(wire_msg) => wire_msg,
         Err(error) => {
@@ -486,13 +480,20 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             return;
         }
     };
-    if !dispatcher.add_to_filter(&wire_msg.msg_id()).await {
-        trace!(
-            "not handling message - already handled: {:?}",
-            wire_msg.msg_id()
-        );
-        return;
-    }
+    let span = {
+        let mut state = dispatcher.core.lock().await;
+
+        if !state.add_to_filter(&wire_msg.msg_id()) {
+            trace!(
+                "not handling message - already handled: {:?}",
+                wire_msg.msg_id()
+            );
+            return;
+        }
+
+        trace_span!("handle_message", name = %state.node().name(), %sender)
+    };
+    let _span_guard = span.enter();
 
     let message_type = match wire_msg.to_message() {
         Ok(message_type) => message_type,
