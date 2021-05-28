@@ -563,7 +563,7 @@
 
             <span class="ident">candidates</span>(<span class="ident">target_name</span>, <span class="ident">our_name</span>, <span class="ident">section</span>, <span class="ident">network</span>)<span class="question-mark">?</span>
         }
-        <span class="ident">DstLocation</span>::<span class="ident">Direct</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CannotRoute</span>),
+        <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">CannotRoute</span>),
     };
 
     <span class="prelude-val">Ok</span>((<span class="ident">best_section</span>, <span class="ident">dg_size</span>))

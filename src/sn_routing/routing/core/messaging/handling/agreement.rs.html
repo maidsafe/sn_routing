@@ -513,7 +513,7 @@
             <span class="kw">if</span> <span class="op">!</span><span class="ident">sync_recipients</span>.<span class="ident">is_empty</span>() {
                 <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
                     <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-                    <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
+                    <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                     <span class="ident">Variant</span>::<span class="ident">Sync</span> {
                         <span class="ident">section</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">clone</span>(),
                         <span class="ident">network</span>: <span class="self">self</span>.<span class="ident">network</span>.<span class="ident">clone</span>(),

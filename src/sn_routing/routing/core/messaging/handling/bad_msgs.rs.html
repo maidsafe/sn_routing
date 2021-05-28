@@ -143,7 +143,7 @@
         };
         <span class="kw">let</span> <span class="ident">bounce_msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-            <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
+            <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
             <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span> {
                 <span class="ident">msg</span>: <span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">msg</span>),
                 <span class="ident">dest_info</span>: <span class="ident">received_dest_info</span>,
@@ -186,7 +186,7 @@
 
                 <span class="ident">Message</span>::<span class="ident">single_src</span>(
                     <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
-                    <span class="ident">DstLocation</span>::<span class="ident">Direct</span>,
+                    <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                     <span class="ident">Variant</span>::<span class="ident">Sync</span> {
                         <span class="ident">section</span>,
                         <span class="ident">network</span>: <span class="ident">network</span>.<span class="ident">clone</span>(),
