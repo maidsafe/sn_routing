@@ -693,14 +693,6 @@
 <span id="692">692</span>
 <span id="693">693</span>
 <span id="694">694</span>
-<span id="695">695</span>
-<span id="696">696</span>
-<span id="697">697</span>
-<span id="698">698</span>
-<span id="699">699</span>
-<span id="700">700</span>
-<span id="701">701</span>
-<span id="702">702</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -763,12 +755,6 @@
         }
         <span class="kw">if</span> <span class="op">!</span><span class="ident">in_dst_location</span> {
             <span class="comment">// Message not for us.</span>
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
-        }
-
-        <span class="comment">// Filter messages which were already handled</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">msg_filter</span>.<span class="ident">contains_incoming</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>) {
-            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;not handling message - already handled: {:?}&quot;</span>, <span class="ident">msg</span>);
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">commands</span>);
         }
 
@@ -956,8 +942,6 @@
         <span class="ident">msg</span>: <span class="ident">Message</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">msg_filter</span>.<span class="ident">insert_incoming</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>);
-
         <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">aggregate_message</span>(<span class="ident">msg</span>)<span class="question-mark">?</span> {
             <span class="ident">msg</span>
         } <span class="kw">else</span> {
