@@ -41,7 +41,25 @@
     unused_extern_crates,
     unused_import_braces,
     unused_qualifications,
-    unused_results
+    unused_results,
+    bad_style,
+    improper_ctypes,
+    missing_docs,
+    non_shorthand_field_patterns,
+    overflowing_literals,
+    stable_features,
+    unconditional_recursion,
+    unknown_lints,
+    unused,
+    unused_allocation,
+    unused_attributes,
+    unused_comparisons,
+    unused_features,
+    unused_parens,
+    while_true,
+    clippy::unicode_not_nfc,
+    clippy::wrong_pub_self_convention,
+    deprecated
 )]
 
 #[macro_use]
