@@ -63,11 +63,7 @@ impl MessageFilter {
             return FilteringResult::NewMessage;
         }
 
-        if self
-            .outgoing
-            .insert((msg.id().clone(), pub_id.clone()), ())
-            .is_some()
-        {
+        if self.outgoing.insert((*msg.id(), *pub_id), ()).is_some() {
             debug!("&&&& Outgoing message filtered: {:?}", msg);
             FilteringResult::KnownMessage
         } else {
