@@ -12,7 +12,7 @@ use bytes::Bytes;
 use futures::stream::{FuturesUnordered, StreamExt};
 use hex_fmt::HexFmt;
 use qp2p::{Endpoint, QuicP2p};
-use sn_messaging::MessageType;
+use sn_messaging::{MessageType, WireMsg};
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -175,7 +175,7 @@ impl Comm {
         &self,
         recipients: &[(XorName, SocketAddr)],
         delivery_group_size: usize,
-        mut msg: MessageType,
+        msg: MessageType,
     ) -> Result<SendStatus> {
         trace!(
             "Sending message to {} of {:?}",
@@ -193,45 +193,41 @@ impl Comm {
 
         let delivery_group_size = delivery_group_size.min(recipients.len());
 
-        if recipients.is_empty() {
-            return Err(Error::EmptyRecipientList);
-        }
-        // Use the first Xor address recipient to represent the destination section.
-        // So that only one copy of MessageType need to be constructed.
-        msg.update_dest_info(None, Some(recipients[0].0));
-        let msg_bytes = match msg.serialize() {
-            Ok(bytes) => bytes,
-            Err(e) => return Err(Error::Messaging(e)),
-        };
-
+        let wire_msg = msg.to_wire_msg()?;
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends
         // succeeds or if there are no more recipients to pick.
-        let send = |recipient: (XorName, SocketAddr), msg_bytes: Bytes| async move {
-            trace!(
-                "Sending message ({} bytes) to {} of {:?}",
-                msg_bytes.len(),
-                delivery_group_size,
-                recipient.1
-            );
+        let send = |recipient: (XorName, SocketAddr), mut wire_msg: WireMsg| async move {
+            wire_msg.update_dest_info(None, Some(recipient.0));
+            match wire_msg.serialize() {
+                Ok(bytes) => {
+                    trace!(
+                        "Sending message ({} bytes) to {} of {:?}",
+                        bytes.len(),
+                        delivery_group_size,
+                        recipient.1
+                    );
 
-            let result = self
-                .send_to(&recipient.1, msg_bytes)
-                .await
-                .map_err(|err| match err {
-                    qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)
-                    | qp2p::Error::Connection(qp2p::ConnectionError::TimedOut) => {
-                        Error::AddressNotReachable { err }
-                    }
-                    _ => Error::ConnectionClosed,
-                });
+                    let result = self
+                        .send_to(&recipient.1, bytes)
+                        .await
+                        .map_err(|err| match err {
+                            qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)
+                            | qp2p::Error::Connection(qp2p::ConnectionError::TimedOut) => {
+                                Error::AddressNotReachable { err }
+                            }
+                            _ => Error::ConnectionClosed,
+                        });
 
-            (result, recipient.1)
+                    (result, recipient.1)
+                }
+                Err(e) => (Err(Error::Messaging(e)), recipient.1),
+            }
         };
 
         let mut tasks: FuturesUnordered<_> = recipients[0..delivery_group_size]
             .iter()
-            .map(|(name, recipient)| send((*name, *recipient), msg_bytes.clone()))
+            .map(|(name, recipient)| send((*name, *recipient), wire_msg.clone()))
             .collect();
 
         let mut next = delivery_group_size;
@@ -250,7 +246,7 @@ impl Comm {
                     failed_recipients.push(addr);
 
                     if next < recipients.len() {
-                        tasks.push(send(recipients[next], msg_bytes.clone()));
+                        tasks.push(send(recipients[next], wire_msg.clone()));
                         next += 1;
                     }
                 }
@@ -275,6 +271,7 @@ impl Comm {
             Ok(SendStatus::MinDeliveryGroupSizeFailed(failed_recipients))
         }
     }
+
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
