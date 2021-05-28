@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.71.4](https://github.com/maidsafe/sn_routing/compare/v0.71.3...v0.71.4) (2021-05-28)
+
+
+### Features
+
+* use message_id instead of hash for message_filter ([9f937a7](https://github.com/maidsafe/sn_routing/commit/9f937a75074076d31592537580c81ffa2be93763))
+* use msg id for outgoing filter ([cc3e144](https://github.com/maidsafe/sn_routing/commit/cc3e14405190e6c7588f1207265868a40ffb148c))
+* use signature as outgoing message_id ([02dffda](https://github.com/maidsafe/sn_routing/commit/02dffda7de5b892e831e344978fbc9d2910d0fb1))
+
+
+### Bug Fixes
+
+* restore outgoing filter and only have one wire_msg copy for multiple recipients ([ba98b41](https://github.com/maidsafe/sn_routing/commit/ba98b41380193397d8bbeabd3b2a876c572a0235))
+
 ### [0.71.3](https://github.com/maidsafe/sn_routing/compare/v0.71.2...v0.71.3) (2021-05-28)
 
 
