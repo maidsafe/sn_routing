@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::messages::{Message, MessageHash};
+use crate::messages::Message;
 use lru_time_cache::LruCache;
 use sn_messaging::{DstLocation, MessageId};
 use std::time::Duration;
@@ -37,7 +37,7 @@ impl FilteringResult {
 // Structure to filter (throttle) incoming and outgoing messages.
 pub(crate) struct MessageFilter {
     incoming: LruCache<MessageId, ()>,
-    outgoing: LruCache<(MessageHash, XorName), ()>,
+    outgoing: LruCache<(MessageId, XorName), ()>,
 }
 
 impl MessageFilter {
@@ -63,7 +63,12 @@ impl MessageFilter {
             return FilteringResult::NewMessage;
         }
 
-        if self.outgoing.insert((*msg.hash(), *pub_id), ()).is_some() {
+        if self
+            .outgoing
+            .insert((msg.id().clone(), pub_id.clone()), ())
+            .is_some()
+        {
+            debug!("&&&& Outgoing message filtered: {:?}", msg);
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage
@@ -73,6 +78,11 @@ impl MessageFilter {
     // Returns `true` if not already having it.
     pub fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
         let cur_value = self.incoming.insert(*msg_id, ());
+
+        if cur_value.is_some() {
+            debug!("&&&& invoming message filtered: {:?}", msg_id);
+        }
+
         cur_value.is_none()
     }
 

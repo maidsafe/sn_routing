@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod hash;
 mod plain_message;
 mod src_authority;
 mod variant;
 
-pub use self::{hash::MessageHash, src_authority::SrcAuthority};
+pub use self::src_authority::SrcAuthority;
 pub(crate) use self::{
     plain_message::PlainMessage,
     variant::{JoinRequest, ResourceProofResponse, Variant},
@@ -26,7 +25,7 @@ use bls_signature_aggregator::{Proof, ProofShare};
 use bytes::Bytes;
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::{Deserialize, Serialize};
-use sn_messaging::{Aggregation, DstLocation};
+use sn_messaging::{Aggregation, DstLocation, MessageId, WireMsg};
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
 use xor_name::XorName;
@@ -50,8 +49,8 @@ pub(crate) struct Message {
     /// Serialised message, this is a signed and fully serialised message ready to send.
     #[serde(skip)]
     serialized: Bytes,
-    #[serde(skip)]
-    hash: MessageHash,
+    /// message id
+    id: MessageId,
 }
 
 impl Message {
@@ -108,7 +107,6 @@ impl Message {
             }
         }
 
-        msg.hash = MessageHash::from_bytes(&msg_bytes);
         msg.serialized = msg_bytes;
 
         Ok(msg)
@@ -126,6 +124,14 @@ impl Message {
         variant: Variant,
         proof_chain: Option<SecuredLinkedList>,
     ) -> Result<Message, Error> {
+        let msg_id = match variant.clone() {
+            Variant::UserMessage(bytes) => {
+                let wire_msg = WireMsg::from(bytes)?;
+                wire_msg.msg_id()
+            }
+            _ => MessageId::new(),
+        };
+
         let mut msg = Message {
             dst,
             src,
@@ -133,13 +139,12 @@ impl Message {
             proof_chain,
             variant,
             serialized: Default::default(),
-            hash: Default::default(),
+            id: msg_id,
         };
 
         msg.serialized = bincode::serialize(&msg)
             .map_err(|_| Error::InvalidMessage)?
             .into();
-        msg.hash = MessageHash::from_bytes(&msg.serialized);
 
         Ok(msg)
     }
@@ -333,6 +338,11 @@ impl Message {
         &self.dst
     }
 
+    /// Get the MessageId
+    pub fn id(&self) -> &MessageId {
+        &self.id
+    }
+
     /// Getter
     pub fn variant(&self) -> &Variant {
         &self.variant
@@ -341,11 +351,6 @@ impl Message {
     /// Getter
     pub fn src(&self) -> &SrcAuthority {
         &self.src
-    }
-
-    /// Getter
-    pub fn hash(&self) -> &MessageHash {
-        &self.hash
     }
 
     /// Returns the attached proof chain, if any.
@@ -393,6 +398,7 @@ impl PartialEq for Message {
     fn eq(&self, other: &Self) -> bool {
         self.src == other.src
             && self.dst == other.dst
+            && self.id == other.id
             && self.variant == other.variant
             && self.proof_chain == other.proof_chain
     }
@@ -402,6 +408,7 @@ impl Debug for Message {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         formatter
             .debug_struct("Message")
+            .field("id", &self.id)
             .field("src", &self.src.src_location())
             .field("dst", &self.dst)
             .field("variant", &self.variant)
