@@ -44,7 +44,13 @@ use sn_messaging::{
     client::ClientMsg, node::RoutingMsg, DestInfo, DstLocation, EndUser, Itinerary, MessageType,
     WireMsg,
 };
-use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+    sync::Arc,
+};
+
 use tokio::{sync::mpsc, task};
 use xor_name::{Prefix, XorName};
 
@@ -435,6 +441,12 @@ impl Routing {
 impl Drop for Routing {
     fn drop(&mut self) {
         self.dispatcher.terminate()
+    }
+}
+
+impl Debug for Routing {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Routing")
     }
 }
 
