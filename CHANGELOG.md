@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.71.3](https://github.com/maidsafe/sn_routing/compare/v0.71.2...v0.71.3) (2021-05-28)
+
+
+### Features
+
+* update sn_messaging. ([14e1f04](https://github.com/maidsafe/sn_routing/commit/14e1f04dfab2f67051e887738d377b3808699054))
+
 ### [0.71.2](https://github.com/maidsafe/sn_routing/compare/v0.71.1...v0.71.2) (2021-05-26)
 
 ### [0.71.1](https://github.com/maidsafe/sn_routing/compare/v0.71.0...v0.71.1) (2021-05-26)
