@@ -12,8 +12,9 @@ use crate::{
     peer::Peer,
 };
 use bls_signature_aggregator::{Proof, ProofShare};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use sn_messaging::SrcLocation;
+use sn_messaging::{MessageId, SrcLocation};
 use std::net::SocketAddr;
 use xor_name::XorName;
 
@@ -74,6 +75,24 @@ impl SrcAuthority {
         match self {
             Self::Node { public_key, .. } => Ok(Peer::new(crypto::name(&*public_key), addr)),
             Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
+        }
+    }
+
+    // Use signature as id
+    pub(crate) fn id(&self) -> MessageId {
+        match self {
+            Self::Node { signature, .. } => {
+                MessageId::from_content(&Bytes::copy_from_slice(&signature.to_bytes()))
+                    .unwrap_or_default()
+            }
+            Self::BlsShare { proof_share, .. } => MessageId::from_content(&Bytes::copy_from_slice(
+                &proof_share.signature_share.0.to_bytes(),
+            ))
+            .unwrap_or_default(),
+            Self::Section { proof, .. } => {
+                MessageId::from_content(&Bytes::copy_from_slice(&proof.signature.to_bytes()))
+                    .unwrap_or_default()
+            }
         }
     }
 }

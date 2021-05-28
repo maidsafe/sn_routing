@@ -59,7 +59,7 @@ impl MessageFilter {
     //
     pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &XorName) -> FilteringResult {
         // Not filtering direct messages.
-        if let DstLocation::Direct = msg.dst() {
+        if let DstLocation::DirectAndUnrouted = msg.dst() {
             return FilteringResult::NewMessage;
         }
 
