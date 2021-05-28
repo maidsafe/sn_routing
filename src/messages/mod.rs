@@ -502,7 +502,7 @@ mod tests {
         };
         let message = Message::single_src(
             &node,
-            DstLocation::Direct,
+            DstLocation::DirectAndUnrouted,
             variant,
             Some(full_proof_chain.truncate(1)),
         )?;

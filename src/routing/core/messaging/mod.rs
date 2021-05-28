@@ -66,7 +66,8 @@ impl Core {
             content: proposal,
             proof_share,
         };
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+        let message =
+            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }

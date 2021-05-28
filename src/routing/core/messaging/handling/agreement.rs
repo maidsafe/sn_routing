@@ -214,7 +214,7 @@ impl Core {
             if !sync_recipients.is_empty() {
                 let sync_message = Message::single_src(
                     &self.node,
-                    DstLocation::Direct,
+                    DstLocation::DirectAndUnrouted,
                     Variant::Sync {
                         section: self.section.clone(),
                         network: self.network.clone(),
