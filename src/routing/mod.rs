@@ -476,7 +476,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
     let wire_msg = match WireMsg::from(bytes) {
         Ok(wire_msg) => wire_msg,
         Err(error) => {
-            error!("Failed to deserialize wired_message: {}", error);
+            error!("Failed to deserialize message header: {}", error);
             return;
         }
     };
@@ -499,7 +499,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
         Ok(message_type) => message_type,
         Err(error) => {
             error!(
-                "Failed to deserialize message({:?}): {}",
+                "Failed to deserialize message payload ({:?}): {}",
                 wire_msg.msg_id(),
                 error
             );

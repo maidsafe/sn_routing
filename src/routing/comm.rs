@@ -13,7 +13,6 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use hex_fmt::HexFmt;
 use qp2p::{Endpoint, QuicP2p};
 use sn_messaging::MessageType;
-use sn_messaging::WireMsg;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,

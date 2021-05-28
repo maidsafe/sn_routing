@@ -25,7 +25,7 @@ use bls_signature_aggregator::{Proof, ProofShare};
 use bytes::Bytes;
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::{Deserialize, Serialize};
-use sn_messaging::{Aggregation, DstLocation, MessageId, WireMsg};
+use sn_messaging::{Aggregation, DstLocation, MessageId};
 use std::fmt::{self, Debug, Formatter};
 use thiserror::Error;
 use xor_name::XorName;
@@ -124,14 +124,7 @@ impl Message {
         variant: Variant,
         proof_chain: Option<SecuredLinkedList>,
     ) -> Result<Message, Error> {
-        let msg_id = match variant.clone() {
-            Variant::UserMessage(bytes) => {
-                let wire_msg = WireMsg::from(bytes)?;
-                wire_msg.msg_id()
-            }
-            _ => MessageId::new(),
-        };
-
+        let id = src.id();
         let mut msg = Message {
             dst,
             src,
@@ -139,7 +132,7 @@ impl Message {
             proof_chain,
             variant,
             serialized: Default::default(),
-            id: msg_id,
+            id,
         };
 
         msg.serialized = bincode::serialize(&msg)
