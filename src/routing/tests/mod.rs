@@ -173,7 +173,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let message = Message::single_src(
         &new_node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
@@ -231,7 +231,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
 
     let message = Message::single_src(
         &new_node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: None,
@@ -341,7 +341,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
 
     let join_request = Message::single_src(
         &relocated_node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
             relocate_payload: Some(relocate_payload),
@@ -409,7 +409,7 @@ async fn aggregate_proposals() -> Result<()> {
         let proof_share = proposal.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
         let message = Message::single_src(
             &nodes[index],
-            DstLocation::Direct,
+            DstLocation::DirectAndUnrouted,
             Variant::Propose {
                 content: proposal.clone(),
                 proof_share,
@@ -437,7 +437,7 @@ async fn aggregate_proposals() -> Result<()> {
     )?;
     let message = Message::single_src(
         &nodes[THRESHOLD],
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::Propose {
             content: proposal.clone(),
             proof_share,
@@ -1042,7 +1042,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     // Create the bounced message, indicating the last key the peer knows is `pk0`
     let bounced_message = Message::single_src(
         &other_node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::BouncedUntrustedMessage {
             msg: Box::new(original_message),
             dest_info: dest_info.clone(),
@@ -1141,7 +1141,7 @@ async fn handle_sync() -> Result<()> {
     // Create the `Sync` message containing the new `Section`.
     let message = Message::single_src(
         &old_node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::Sync {
             section: new_section.clone(),
             network: Network::new(),
@@ -1209,7 +1209,7 @@ async fn handle_untrusted_sync() -> Result<()> {
     let sender = create_node(MIN_ADULT_AGE);
     let orig_message = Message::single_src(
         &sender,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::Sync {
             section: new_section.clone(),
             network: Network::new(),
@@ -1298,7 +1298,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
 
     let orig_message = Message::single_src(
         &node,
-        DstLocation::Direct,
+        DstLocation::DirectAndUnrouted,
         Variant::Sync {
             section: section_full,
             network: Network::new(),

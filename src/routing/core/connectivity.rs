@@ -145,7 +145,7 @@ impl Core {
 
             return self.send_message_for_dst_accumulation(
                 self.node.name(),
-                DstLocation::Direct,
+                DstLocation::DirectAndUnrouted,
                 variant,
                 None,
                 &recipients,

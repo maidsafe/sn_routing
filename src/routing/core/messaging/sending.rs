@@ -54,8 +54,12 @@ impl Core {
             member_info,
         };
 
-        let message =
-            Message::single_src(&self.node, DstLocation::Direct, variant, Some(proof_chain))?;
+        let message = Message::single_src(
+            &self.node,
+            DstLocation::DirectAndUnrouted,
+            variant,
+            Some(proof_chain),
+        )?;
 
         Ok(Command::send_message_to_node(
             (name, addr),
@@ -71,7 +75,8 @@ impl Core {
         let send = |variant, recipients: Vec<(XorName, SocketAddr)>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+            let message =
+                Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: *self.section.chain().last_key(),
@@ -112,7 +117,8 @@ impl Core {
         let send = |variant, recipients: Vec<_>| -> Result<_> {
             trace!("Send {:?} to {:?}", variant, recipients);
 
-            let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+            let message =
+                Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
 
             Ok(Command::send_message_to_nodes(
                 recipients.clone(),
@@ -220,7 +226,7 @@ impl Core {
 
         self.send_message_for_dst_accumulation(
             src_prefix.name(),
-            DstLocation::Direct,
+            DstLocation::DirectAndUnrouted,
             variant,
             None,
             recipients,
@@ -363,7 +369,8 @@ impl Core {
         variant: Variant,
         dst_pk: bls::PublicKey,
     ) -> Result<Command> {
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+        let message =
+            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
         Ok(Command::send_message_to_node(
             recipient,
             message.to_bytes(),

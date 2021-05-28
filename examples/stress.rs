@@ -360,7 +360,7 @@ impl Network {
                     let dst = match dst {
                         DstLocation::Section(name) => name,
                         DstLocation::Node(name) => name,
-                        DstLocation::Direct | DstLocation::EndUser(_) => {
+                        DstLocation::DirectAndUnrouted | DstLocation::EndUser(_) => {
                             return Err(format_err!("unexpected probe message dst: {:?}", dst))
                         }
                     };

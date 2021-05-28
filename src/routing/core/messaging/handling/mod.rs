@@ -215,7 +215,8 @@ impl Core {
 
     pub(crate) fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
         let variant = Variant::DkgFailureAgreement(proofs);
-        let message = Message::single_src(&self.node, DstLocation::Direct, variant, None)?;
+        let message =
+            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
         Ok(self.send_message_to_our_elders(message.to_bytes()))
     }
 

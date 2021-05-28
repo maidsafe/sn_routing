@@ -34,7 +34,7 @@ impl Core {
         };
         let bounce_msg = Message::single_src(
             &self.node,
-            DstLocation::Direct,
+            DstLocation::DirectAndUnrouted,
             Variant::BouncedUntrustedMessage {
                 msg: Box::new(msg),
                 dest_info: received_dest_info,
@@ -77,7 +77,7 @@ impl Core {
 
                 Message::single_src(
                     &self.node,
-                    DstLocation::Direct,
+                    DstLocation::DirectAndUnrouted,
                     Variant::Sync {
                         section,
                         network: network.clone(),
