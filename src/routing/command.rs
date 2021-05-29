@@ -6,19 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::routing::Peer;
-use crate::{
-    agreement::{DkgFailureProofSet, Proposal},
-    messages::Message,
-    relocation::SignedRelocateDetails,
-    section::{SectionAuthorityProvider, SectionKeyShare},
-    XorName,
-};
+use crate::{routing::Peer, section::SectionKeyShare, XorName};
 use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::RoutingMsg, section_info::Message as SectionInfoMsg, DestInfo, Itinerary, MessageType,
+    node::{
+        DkgFailureProofSet, Proposal, RoutingMsg, SectionAuthorityProvider, SignedRelocateDetails,
+    },
+    section_info::Message as SectionInfoMsg,
+    DestInfo, Itinerary, MessageType,
 };
 use std::{
     fmt::{self, Debug, Formatter},
@@ -36,7 +33,7 @@ pub(crate) enum Command {
     /// and `None` if it is an aggregated message.
     HandleMessage {
         sender: Option<SocketAddr>,
-        message: Message,
+        message: RoutingMsg,
         dest_info: DestInfo,
     },
     /// Handle network info message.
@@ -82,7 +79,7 @@ pub(crate) enum Command {
         bootstrap_addrs: Vec<SocketAddr>,
         /// Details of the relocation
         details: SignedRelocateDetails,
-        /// Message receiver to pass to the bootstrap task.
+        /// RoutingMsg receiver to pass to the bootstrap task.
         message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     },
     /// Attempt to set JoinsAllowed flag.
@@ -103,20 +100,19 @@ impl Command {
     /// Convenience method to create `Command::SendMessage` with a single recipient.
     pub fn send_message_to_node(
         recipient: (XorName, SocketAddr),
-        message_bytes: Bytes,
+        routing_msg: RoutingMsg,
         dest_info: DestInfo,
     ) -> Self {
-        Self::send_message_to_nodes(vec![recipient], 1, message_bytes, dest_info)
+        Self::send_message_to_nodes(vec![recipient], 1, routing_msg, dest_info)
     }
 
     /// Convenience method to create `Command::SendMessage` with multiple recipients.
     pub fn send_message_to_nodes(
         recipients: Vec<(XorName, SocketAddr)>,
         delivery_group_size: usize,
-        message_bytes: Bytes,
+        msg: RoutingMsg,
         dest_info: DestInfo,
     ) -> Self {
-        let msg = RoutingMsg::new(message_bytes);
         Self::SendMessage {
             recipients,
             delivery_group_size,

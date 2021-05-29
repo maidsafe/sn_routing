@@ -6,66 +6,26 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, ProofShare, Proven, SignatureAggregator};
-use crate::{
-    error::Result,
-    messages::PlainMessage,
-    section::{MemberInfo, SectionAuthorityProvider},
-};
-use secured_linked_list::SecuredLinkedList;
-use serde::{Deserialize, Serialize, Serializer};
+use super::{Proof, ProofShare, SignatureAggregator};
+use crate::{error::Result, messages::PlainMessageUtils};
+use serde::{Serialize, Serializer};
+use sn_messaging::node::Proposal;
 use thiserror::Error;
-use xor_name::XorName;
 
-#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum Proposal {
-    // Proposal to add a node to oursection
-    Online {
-        member_info: MemberInfo,
-        // Previous name if relocated.
-        previous_name: Option<XorName>,
-        // The key of the destination section that the joining node knows, if any.
-        their_knowledge: Option<bls::PublicKey>,
-    },
+pub trait ProposalUtils {
+    fn prove(
+        &self,
+        public_key_set: bls::PublicKeySet,
+        index: usize,
+        secret_key_share: &bls::SecretKeyShare,
+    ) -> Result<ProofShare>;
 
-    // Proposal to remove a node from our section
-    Offline(MemberInfo),
-
-    // Proposal to update info about a section. This has two purposes:
-    //
-    // 1. To signal the completion of a DKG by the elder candidates to the current elders.
-    //    This proposal is then signed by the newly generated section key.
-    // 2. To update information about other section in the network. In this case the proposal is
-    //    signed by an existing key from the chain.
-    SectionInfo(SectionAuthorityProvider),
-
-    // Proposal to change the elders (and possibly the prefix) of our section.
-    // NOTE: the `SectionAuthorityProvider` is already signed with the new key. This proposal is only to signs the
-    // new key with the current key. That way, when it aggregates, we obtain all the following
-    // pieces of information at the same time:
-    //   1. the new section authority provider
-    //   2. the new key
-    //   3. the signature of the new section authority provider using the new key
-    //   4. the signature of the new key using the current key
-    // Which we can use to update the section section authority provider and the section chain at
-    // the same time as a single atomic operation without needing to cache anything.
-    OurElders(Proven<SectionAuthorityProvider>),
-
-    // Proposal to accumulate the message at the source (that is, our section) and then send it to
-    // its destination.
-    AccumulateAtSrc {
-        message: Box<PlainMessage>,
-        proof_chain: SecuredLinkedList,
-    },
-
-    // Proposal to change whether new nodes are allowed to join our section.
-    JoinsAllowed(bool),
+    fn as_signable(&self) -> SignableView;
 }
 
-impl Proposal {
+impl ProposalUtils for Proposal {
     /// Create ProofShare for this proposal.
-    pub fn prove(
+    fn prove(
         &self,
         public_key_set: bls::PublicKeySet,
         index: usize,
@@ -75,19 +35,17 @@ impl Proposal {
             public_key_set,
             index,
             secret_key_share,
-            &bincode::serialize(&SignableView(self)).map_err(|_| ProposalError::Invalid)?,
+            &bincode::serialize(&self.as_signable()).map_err(|_| ProposalError::Invalid)?,
         ))
     }
 
-    #[cfg(test)]
-    #[allow(unused)]
-    pub fn as_signable(&self) -> SignableView {
+    fn as_signable(&self) -> SignableView {
         SignableView(self)
     }
 }
 
 // View of a `Proposal` that can be serialized for the purpose of signing.
-pub(crate) struct SignableView<'a>(&'a Proposal);
+pub struct SignableView<'a>(pub &'a Proposal);
 
 impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

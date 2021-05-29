@@ -7,17 +7,19 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod dkg;
+mod dkg_msgs_utils;
 mod proposal;
 mod proven;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use self::{dkg::DkgKey, proven::Proven};
 pub(crate) use self::{
-    dkg::{DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgVoter},
-    proposal::{Proposal, ProposalAggregator, ProposalError},
+    dkg::{DkgCommands, DkgVoter},
+    dkg_msgs_utils::{DkgFailureProofSetUtils, DkgFailureProofUtils, DkgKeyUtils},
+    proposal::{ProposalAggregator, ProposalError, ProposalUtils},
 };
 pub(crate) use bls_signature_aggregator::{Proof, ProofShare, SignatureAggregator};
+pub use proven::ProvenUtils;
 use serde::Serialize;
 
 // Verify the integrity of `message` against `proof`.

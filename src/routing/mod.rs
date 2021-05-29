@@ -30,10 +30,11 @@ use crate::{
     crypto,
     error::Result,
     event::{Elders, Event, NodeElderChange},
-    messages::Message,
+    messages::RoutingMsgUtils,
+    network::NetworkUtils,
     node::Node,
-    peer::Peer,
-    section::SectionAuthorityProvider,
+    peer::PeerUtils,
+    section::{SectionAuthorityProviderUtils, SectionUtils},
     Error, TransportConfig, MIN_ADULT_AGE,
 };
 use bytes::Bytes;
@@ -41,8 +42,9 @@ use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, KEYPAIR_LENGTH};
 use itertools::Itertools;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    client::ClientMsg, node::RoutingMsg, DestInfo, DstLocation, EndUser, Itinerary, MessageType,
-    WireMsg,
+    client::ClientMsg,
+    node::{Peer, RoutingMsg, SectionAuthorityProvider},
+    DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
 };
 use std::{
     collections::BTreeSet,
@@ -516,22 +518,22 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
             };
             let _ = task::spawn(dispatcher.handle_commands(command));
         }
-        MessageType::Routing {
-            msg: RoutingMsg(msg_bytes),
-            dest_info,
-        } => match Message::from_bytes(Bytes::from(msg_bytes)) {
-            Ok(message) => {
-                let command = Command::HandleMessage {
-                    message,
-                    sender: Some(sender),
-                    dest_info,
-                };
-                let _ = task::spawn(dispatcher.handle_commands(command));
+        MessageType::Routing { msg, dest_info } => {
+            if let Err(err) = RoutingMsg::check_signature(&msg) {
+                error!(
+                    "Discarding message received ({:?}) due to invalid signature: {:?}",
+                    msg.id, err
+                );
+                return;
             }
-            Err(error) => {
-                error!("Failed to deserialize node message: {}", error);
-            }
-        },
+
+            let command = Command::HandleMessage {
+                message: msg,
+                sender: Some(sender),
+                dest_info,
+            };
+            let _ = task::spawn(dispatcher.handle_commands(command));
+        }
         MessageType::Node {
             msg: _,
             dest_info: _,

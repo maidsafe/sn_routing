@@ -199,10 +199,8 @@ impl Comm {
         // Use the first Xor address recipient to represent the destination section.
         // So that only one copy of MessageType need to be constructed.
         msg.update_dest_info(None, Some(recipients[0].0));
-        let msg_bytes = match msg.serialize() {
-            Ok(bytes) => bytes,
-            Err(e) => return Err(Error::Messaging(e)),
-        };
+
+        let msg_bytes = msg.serialize().map_err(Error::Messaging)?;
 
         // Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick
         // the next recipient and try to send to them. Proceed until the needed number of sends

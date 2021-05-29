@@ -10,13 +10,16 @@
 
 use crate::{
     error::{Error, Result},
-    network::Network,
-    peer::Peer,
-    section::Section,
+    network::NetworkUtils,
+    peer::PeerUtils,
+    section::{SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
     supermajority, ELDER_SIZE,
 };
 use itertools::Itertools;
-use sn_messaging::DstLocation;
+use sn_messaging::{
+    node::{Network, Peer, Section},
+    DstLocation,
+};
 use std::{cmp, iter};
 use xor_name::XorName;
 
@@ -167,12 +170,13 @@ mod tests {
         crypto,
         section::{
             test_utils::{gen_addr, gen_section_authority_provider},
-            MemberInfo, SectionAuthorityProvider, MIN_ADULT_AGE,
+            MemberInfoUtils, SectionAuthorityProviderUtils, MIN_ADULT_AGE,
         },
     };
     use anyhow::{Context, Result};
     use rand::seq::IteratorRandom;
     use secured_linked_list::SecuredLinkedList;
+    use sn_messaging::node::{MemberInfo, SectionAuthorityProvider};
     use xor_name::Prefix;
 
     #[test]
@@ -231,7 +235,12 @@ mod tests {
             .authority_provider()
             .peers()
             .filter(|peer| peer.name() != &our_name);
-        assert_eq!(dg_size, expected_recipients.clone().count());
+        assert_eq!(dg_size, expected_recipients.count());
+
+        let expected_recipients = section
+            .authority_provider()
+            .peers()
+            .filter(|peer| peer.name() != &our_name);
         itertools::assert_equal(recipients, expected_recipients);
 
         Ok(())

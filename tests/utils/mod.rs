@@ -14,7 +14,10 @@ use anyhow::{bail, format_err, Error, Result};
 use ed25519_dalek::Keypair;
 use futures::future;
 use itertools::Itertools;
-use sn_routing::{Config, Event, EventStream, NodeElderChange, Routing, TransportConfig, MIN_AGE};
+use sn_routing::{
+    Config, Event, EventStream, NodeElderChange, Routing, SectionAuthorityProviderUtils,
+    TransportConfig, MIN_AGE,
+};
 use std::{
     collections::{BTreeSet, HashSet},
     iter,

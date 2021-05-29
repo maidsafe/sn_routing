@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{error::Error, peer::Peer};
-use serde::{Deserialize, Serialize};
+use crate::{error::Error, peer::PeerUtils};
+use sn_messaging::node::{MemberInfo, Peer, PeerState};
 use xor_name::XorName;
 
 /// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
@@ -25,53 +25,50 @@ pub const FIRST_SECTION_MIN_AGE: u8 = MIN_ADULT_AGE + 1;
 pub const FIRST_SECTION_MAX_AGE: u8 = 100;
 
 /// Information about a member of our section.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
-pub struct MemberInfo {
-    pub peer: Peer,
-    pub state: PeerState,
+pub trait MemberInfoUtils {
+    // Creates a `MemberInfo` in the `Joined` state.
+    fn joined(peer: Peer) -> MemberInfo;
+
+    // Is the age > `MIN_AGE`?
+    fn is_mature(&self) -> bool;
+
+    fn leave(self) -> Result<MemberInfo, Error>;
+
+    // Convert this info into one with the state changed to `Relocated`.
+    fn relocate(self, destination: XorName) -> MemberInfo;
 }
 
-impl MemberInfo {
+impl MemberInfoUtils for MemberInfo {
     // Creates a `MemberInfo` in the `Joined` state.
-    pub fn joined(peer: Peer) -> Self {
-        Self {
+    fn joined(peer: Peer) -> MemberInfo {
+        MemberInfo {
             peer,
             state: PeerState::Joined,
         }
     }
 
     // Is the age > `MIN_AGE`?
-    pub fn is_mature(&self) -> bool {
+    fn is_mature(&self) -> bool {
         self.peer.age() > MIN_AGE
     }
 
-    pub fn leave(self) -> Result<Self, Error> {
+    fn leave(self) -> Result<MemberInfo, Error> {
         // Do not allow switching to `Left` when already relocated, to avoid rejoining with the
         // same name.
         if let PeerState::Relocated(_) = self.state {
             return Err(Error::InvalidState);
         }
-        Ok(Self {
+        Ok(MemberInfo {
             state: PeerState::Left,
             ..self
         })
     }
 
     // Convert this info into one with the state changed to `Relocated`.
-    pub fn relocate(self, destination: XorName) -> Self {
-        Self {
+    fn relocate(self, destination: XorName) -> MemberInfo {
+        MemberInfo {
             state: PeerState::Relocated(destination),
             ..self
         }
     }
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug)]
-pub enum PeerState {
-    // Node is active member of the section.
-    Joined,
-    // Node went offline.
-    Left,
-    // Node was relocated to a different section.
-    Relocated(XorName),
 }

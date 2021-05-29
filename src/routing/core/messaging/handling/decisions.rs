@@ -6,21 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use bls_signature_aggregator::ProofShare;
-use sn_messaging::DstLocation;
-use xor_name::XorName;
-
 use super::Core;
 use crate::{
-    agreement::Proposal,
-    messages::{Message, MessageStatus, Variant},
-    relocation::RelocatePromise,
+    messages::{MessageStatus, RoutingMsgUtils, SrcAuthorityUtils},
+    section::{SectionAuthorityProviderUtils, SectionUtils},
     Result,
 };
+use bls_signature_aggregator::ProofShare;
+use sn_messaging::{
+    node::{Proposal, RelocatePromise, RoutingMsg, Variant},
+    DstLocation,
+};
+use xor_name::XorName;
 
 // Decisions
 impl Core {
-    pub(crate) fn decide_message_status(&self, msg: &Message) -> Result<MessageStatus> {
+    pub(crate) fn decide_message_status(&self, msg: &RoutingMsg) -> Result<MessageStatus> {
         match msg.variant() {
             Variant::SectionKnowledge { .. } | Variant::ConnectivityComplaint(_) => {
                 if !self.is_elder() {
@@ -70,7 +71,7 @@ impl Core {
                 ..
             } => {
                 if let Some(status) =
-                    self.decide_propose_status(&msg.src().name(), content, proof_share)
+                    self.decide_propose_status(&msg.src.name(), content, proof_share)
                 {
                     return Ok(status);
                 }

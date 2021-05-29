@@ -6,10 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, Proven};
-use crate::error::Result;
-use crate::Error;
+use super::{Proof, ProvenUtils};
+use crate::{Error, Result};
 use serde::Serialize;
+use sn_messaging::node::Proven;
 
 // Create proof for the given payload using the given secret key.
 pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Proof> {

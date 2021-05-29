@@ -9,15 +9,16 @@
 use super::Core;
 use crate::{
     crypto,
-    messages::{ResourceProofResponse, Variant},
-    peer::Peer,
+    peer::PeerUtils,
     routing::{
         command::Command,
         core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
     },
+    section::SectionUtils,
     Error, Result,
 };
 use ed25519_dalek::Verifier;
+use sn_messaging::node::{Peer, ResourceProofResponse, Variant};
 use xor_name::XorName;
 
 // Resource proof

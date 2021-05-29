@@ -6,26 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{SignableView, Variant};
-use serde::{Deserialize, Serialize};
-use sn_messaging::DstLocation;
-use xor_name::XorName;
+use super::SignableView;
+use sn_messaging::node::PlainMessage;
 
 /// Section-source message without signature and proof.
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-pub(crate) struct PlainMessage {
-    /// Name in the source section.
-    pub src: XorName,
-    /// Destination location.
-    pub dst: DstLocation,
-    /// The latest key of the destination section according to the sender's knowledge.
-    pub dst_key: bls::PublicKey,
-    /// Message body.
-    pub variant: Variant,
+pub trait PlainMessageUtils {
+    fn as_signable(&self) -> SignableView;
 }
 
-impl PlainMessage {
-    pub fn as_signable(&self) -> SignableView {
+impl PlainMessageUtils for PlainMessage {
+    fn as_signable(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
             variant: &self.variant,

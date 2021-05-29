@@ -17,21 +17,23 @@ use super::{
     enduser_registry::EndUserRegistry, split_barrier::SplitBarrier,
 };
 use crate::{
-    agreement::{DkgVoter, Proposal, ProposalAggregator, Proven},
+    agreement::{DkgVoter, ProposalAggregator},
     error::Result,
     event::{Elders, Event, NodeElderChange},
     message_filter::MessageFilter,
-    messages::Message,
-    network::Network,
+    network::NetworkUtils,
     node::Node,
     relocation::RelocateState,
-    section::{Section, SectionAuthorityProvider, SectionKeyShare, SectionKeysProvider},
+    section::{SectionAuthorityProviderUtils, SectionKeyShare, SectionKeysProvider, SectionUtils},
 };
 use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
-use sn_messaging::{DestInfo, MessageId};
+use sn_messaging::{
+    node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider},
+    DestInfo, MessageId,
+};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
@@ -109,7 +111,7 @@ impl Core {
 
     fn check_for_entropy(
         &mut self,
-        msg: &Message,
+        msg: &RoutingMsg,
         dest_info: DestInfo,
         sender: Option<SocketAddr>,
     ) -> Result<(Vec<Command>, bool)> {

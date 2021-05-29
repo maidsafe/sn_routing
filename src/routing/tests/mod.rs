@@ -7,20 +7,23 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Comm, Command, Core, Dispatcher};
-use crate::agreement::test_utils::{prove, proven};
-use crate::agreement::{Proposal, Proven};
-use crate::routing::core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY};
 use crate::{
+    agreement::{
+        test_utils::{prove, proven},
+        ProposalUtils,
+    },
     crypto,
     event::Event,
-    messages::{JoinRequest, Message, PlainMessage, ResourceProofResponse, Variant, VerifyStatus},
-    network::Network,
+    messages::{PlainMessageUtils, RoutingMsgUtils, SrcAuthorityUtils, VerifyStatus},
+    network::NetworkUtils,
     node::Node,
-    peer::Peer,
-    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    peer::PeerUtils,
+    relocation::{self, RelocatePayloadUtils, SignedRelocateDetailsUtils},
+    routing::core::{RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY},
     section::{
-        test_utils::*, MemberInfo, PeerState, Section, SectionAuthorityProvider, SectionKeyShare,
-        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
+        test_utils::*, ElderCandidatesUtils, MemberInfoUtils, SectionAuthorityProviderUtils,
+        SectionKeyShare, SectionPeersUtils, SectionUtils, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
+        MIN_AGE,
     },
     supermajority, ELDER_SIZE,
 };
@@ -33,7 +36,11 @@ use secured_linked_list::SecuredLinkedList;
 use sn_data_types::{Keypair, PublicKey};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
-    node::RoutingMsg,
+    node::{
+        JoinRequest, MemberInfo, Network, Peer, PeerState, PlainMessage, Proposal, Proven,
+        RelocateDetails, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
+        SectionAuthorityProvider, SignedRelocateDetails, Variant,
+    },
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
     DestInfo, DstLocation, MessageType, SrcLocation,
 };
@@ -43,8 +50,10 @@ use std::{
     net::Ipv4Addr,
     ops::Deref,
 };
-use tokio::sync::mpsc;
-use tokio::time::{timeout, Duration};
+use tokio::{
+    sync::mpsc,
+    time::{timeout, Duration},
+};
 use xor_name::{Prefix, XorName};
 
 #[tokio::test]
@@ -171,7 +180,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     );
     let section_key = *dispatcher.core.lock().await.section().chain().last_key();
 
-    let message = Message::single_src(
+    let message = RoutingMsg::single_src(
         &new_node,
         DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
@@ -195,9 +204,8 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let response_message = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message: MessageType::Routing { msg: RoutingMsg(message), .. }, .. }) => message
+        Some(Command::SendMessage { message: MessageType::Routing { msg, .. }, .. }) => msg
     );
-    let response_message = Message::from_bytes(Bytes::from(response_message))?;
 
     assert_matches!(
         response_message.variant(),
@@ -229,7 +237,7 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let mut prover = rp.create_prover(data.clone());
     let solution = prover.solve();
 
-    let message = Message::single_src(
+    let message = RoutingMsg::single_src(
         &new_node,
         DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
@@ -324,7 +332,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&relocate_message.as_signable())?);
     let proof_chain = SecuredLinkedList::new(section_key);
-    let relocate_message = Message::section_src(
+    let relocate_message = RoutingMsg::section_src(
         relocate_message,
         Proof {
             public_key: section_key,
@@ -339,7 +347,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         &relocated_node_old_keypair,
     );
 
-    let join_request = Message::single_src(
+    let join_request = RoutingMsg::single_src(
         &relocated_node,
         DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
@@ -407,7 +415,7 @@ async fn aggregate_proposals() -> Result<()> {
 
     for index in 0..THRESHOLD {
         let proof_share = proposal.prove(pk_set.clone(), index, &sk_set.secret_key_share(index))?;
-        let message = Message::single_src(
+        let message = RoutingMsg::single_src(
             &nodes[index],
             DstLocation::DirectAndUnrouted,
             Variant::Propose {
@@ -435,7 +443,7 @@ async fn aggregate_proposals() -> Result<()> {
         THRESHOLD,
         &sk_set.secret_key_share(THRESHOLD),
     )?;
-    let message = Message::single_src(
+    let message = RoutingMsg::single_src(
         &nodes[THRESHOLD],
         DstLocation::DirectAndUnrouted,
         Variant::Propose {
@@ -558,13 +566,9 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -616,16 +620,12 @@ async fn handle_online_command(
     };
 
     for command in commands {
-        let (message, recipients) = match command {
+        let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (Message::from_bytes(Bytes::from(msg_bytes))?, recipients),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -776,11 +776,8 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     let _ = section.update_member(member_info);
 
     // Pick the elder to remove.
-    let remove_peer = section_auth
-        .peers()
-        .rev()
-        .next()
-        .expect("section_auth is empty");
+    let remove_peer = section_auth.peers().last().expect("section_auth is empty");
+
     let remove_member_info = section
         .members()
         .get(remove_peer.name())
@@ -809,13 +806,9 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -916,10 +909,10 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
         src: Prefix::default().name(),
         dst: DstLocation::Node(node_name),
         dst_key: pk1,
-        variant: Variant::UserMessage(Bytes::from_static(b"hello")),
+        variant: Variant::UserMessage(b"hello".to_vec()),
     };
     let signature = sk1.sign(&bincode::serialize(&message.as_signable())?);
-    let original_message = Message::section_src(
+    let original_message = RoutingMsg::section_src(
         message,
         Proof {
             public_key: pk1,
@@ -944,15 +937,11 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
     for command in commands {
         let (recipients, message) = if let Command::SendMessage {
             recipients,
-            message:
-                MessageType::Routing {
-                    msg: RoutingMsg(msg_bytes),
-                    ..
-                },
+            message: MessageType::Routing { msg, .. },
             ..
         } = command
         {
-            (recipients, Message::from_bytes(Bytes::from(msg_bytes))?)
+            (recipients, msg)
         } else {
             continue;
         };
@@ -1006,7 +995,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         gen_addr(),
     );
 
-    let original_message_content = Bytes::from_static(b"unknown message");
+    let original_message_content = b"unknown message".to_vec();
     let original_message = PlainMessage {
         src: Prefix::default().name(),
         dst: DstLocation::Node(other_node.name()),
@@ -1017,7 +1006,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         .secret_key()
         .sign(&bincode::serialize(&original_message.as_signable())?);
     let proof_chain = chain.truncate(1);
-    let original_message = Message::section_src(
+    let original_message = RoutingMsg::section_src(
         original_message,
         Proof {
             public_key: pk1,
@@ -1040,7 +1029,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         dest_section_pk: pk0,
     };
     // Create the bounced message, indicating the last key the peer knows is `pk0`
-    let bounced_message = Message::single_src(
+    let bounced_message = RoutingMsg::single_src(
         &other_node,
         DstLocation::DirectAndUnrouted,
         Variant::BouncedUntrustedMessage {
@@ -1064,13 +1053,9 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -1139,7 +1124,7 @@ async fn handle_sync() -> Result<()> {
     let new_section = Section::new(pk0, chain, proven_new_section_auth)?;
 
     // Create the `Sync` message containing the new `Section`.
-    let message = Message::single_src(
+    let message = RoutingMsg::single_src(
         &old_node,
         DstLocation::DirectAndUnrouted,
         Variant::Sync {
@@ -1207,7 +1192,7 @@ async fn handle_untrusted_sync() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sender = create_node(MIN_ADULT_AGE);
-    let orig_message = Message::single_src(
+    let orig_message = RoutingMsg::single_src(
         &sender,
         DstLocation::DirectAndUnrouted,
         Variant::Sync {
@@ -1234,13 +1219,9 @@ async fn handle_untrusted_sync() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -1296,7 +1277,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
-    let orig_message = Message::single_src(
+    let orig_message = RoutingMsg::single_src(
         &node,
         DstLocation::DirectAndUnrouted,
         Variant::Sync {
@@ -1312,7 +1293,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     };
 
     let sender = create_node(MIN_ADULT_AGE);
-    let bounced_message = Message::single_src(
+    let bounced_message = RoutingMsg::single_src(
         &sender,
         DstLocation::Node(node.name()),
         Variant::BouncedUntrustedMessage {
@@ -1336,13 +1317,9 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -1411,13 +1388,9 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -1579,13 +1552,9 @@ async fn handle_elders_update() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 
@@ -1708,13 +1677,9 @@ async fn handle_demote_during_split() -> Result<()> {
         let (recipients, message) = match command {
             Command::SendMessage {
                 recipients,
-                message:
-                    MessageType::Routing {
-                        msg: RoutingMsg(msg_bytes),
-                        ..
-                    },
+                message: MessageType::Routing { msg, .. },
                 ..
-            } => (recipients, Message::from_bytes(Bytes::from(msg_bytes))?),
+            } => (recipients, msg),
             _ => continue,
         };
 

@@ -6,30 +6,34 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{self, Display, Formatter},
-    hash::Hash,
-    net::SocketAddr,
-};
+use sn_messaging::node::Peer;
+use std::net::SocketAddr;
 use xor_name::{XorName, XOR_NAME_LEN};
 
-/// Network p2p peer identity.
-/// When a node knows another p2p_node as a `Peer` it's implicitly connected to it. This is separate
-/// from being connected at the network layer, which currently is handled by quic-p2p.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Ord, Eq, Serialize, Deserialize)]
-pub struct Peer {
-    name: XorName,
-    addr: SocketAddr,
-    // A node's connectivity will be checked when first time join the network or got relocated.
-    // An adult can only got promoted to elder when this flag is set to `true`.
-    // Taking a default of `false` to enforce the connectivity check.
-    reachable: bool,
+///
+pub trait PeerUtils {
+    /// Creates a new `Peer` given `Name`, `SocketAddr`.
+    fn new(name: XorName, addr: SocketAddr) -> Self;
+
+    /// Set the reachable flag.
+    fn set_reachable(&mut self, reachable: bool);
+
+    /// Returns the `XorName` of the peer.
+    fn name(&self) -> &XorName;
+
+    /// Returns the `SocketAddr`.
+    fn addr(&self) -> &SocketAddr;
+
+    /// Returns the age.
+    fn age(&self) -> u8;
+
+    /// Returns the reachable flag.
+    fn is_reachable(&self) -> bool;
 }
 
-impl Peer {
+impl PeerUtils for Peer {
     /// Creates a new `Peer` given `Name`, `SocketAddr`.
-    pub fn new(name: XorName, addr: SocketAddr) -> Self {
+    fn new(name: XorName, addr: SocketAddr) -> Self {
         Self {
             name,
             addr,
@@ -38,34 +42,28 @@ impl Peer {
     }
 
     /// Set the reachable flag.
-    pub fn set_reachable(&mut self, reachable: bool) {
+    fn set_reachable(&mut self, reachable: bool) {
         self.reachable = reachable;
     }
 
     /// Returns the `XorName` of the peer.
-    pub fn name(&self) -> &XorName {
+    fn name(&self) -> &XorName {
         &self.name
     }
 
     /// Returns the `SocketAddr`.
-    pub fn addr(&self) -> &SocketAddr {
+    fn addr(&self) -> &SocketAddr {
         &self.addr
     }
 
     /// Returns the age.
-    pub fn age(&self) -> u8 {
+    fn age(&self) -> u8 {
         self.name[XOR_NAME_LEN - 1]
     }
 
     /// Returns the reachable flag.
-    pub fn is_reachable(&self) -> bool {
+    fn is_reachable(&self) -> bool {
         self.reachable
-    }
-}
-
-impl Display for Peer {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{} at {}", self.name, self.addr)
     }
 }
 

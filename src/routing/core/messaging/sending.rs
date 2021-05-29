@@ -8,22 +8,27 @@
 
 use super::super::Core;
 use crate::{
-    agreement::{DkgKey, Proposal, Proven},
+    agreement::DkgKeyUtils,
     error::Result,
-    messages::{Message, PlainMessage, Variant},
-    network::Network,
-    peer::Peer,
-    relocation::{RelocateDetails, RelocatePromise, RelocateState},
+    messages::RoutingMsgUtils,
+    network::NetworkUtils,
+    peer::PeerUtils,
+    relocation::RelocateState,
     routing::command::Command,
-    section::{ElderCandidates, MemberInfo, Section},
+    section::{ElderCandidatesUtils, SectionAuthorityProviderUtils, SectionUtils},
 };
-use bytes::Bytes;
 use secured_linked_list::SecuredLinkedList;
-use sn_messaging::{DestInfo, DstLocation};
+use sn_messaging::{
+    node::{
+        DkgKey, ElderCandidates, MemberInfo, Network, Peer, PlainMessage, Proposal, Proven,
+        RelocateDetails, RelocatePromise, RoutingMsg, Section, Variant,
+    },
+    DestInfo, DstLocation,
+};
 use std::{cmp::Ordering, iter, net::SocketAddr, slice};
 use xor_name::XorName;
 
-// Message sending
+// RoutingMsg sending
 impl Core {
     // Send NodeApproval to a joining node which makes them a section member
     pub(crate) fn send_node_approval(
@@ -54,7 +59,7 @@ impl Core {
             member_info,
         };
 
-        let message = Message::single_src(
+        let message = RoutingMsg::single_src(
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
@@ -63,7 +68,7 @@ impl Core {
 
         Ok(Command::send_message_to_node(
             (name, addr),
-            message.to_bytes(),
+            message,
             DestInfo {
                 dest: name,
                 dest_section_pk: *self.section.chain().last_key(),
@@ -76,7 +81,7 @@ impl Core {
             trace!("Send {:?} to {:?}", variant, recipients);
 
             let message =
-                Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+                RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: *self.section.chain().last_key(),
@@ -84,7 +89,7 @@ impl Core {
             Ok(Command::send_message_to_nodes(
                 recipients.clone(),
                 recipients.len(),
-                message.to_bytes(),
+                message,
                 dest_info,
             ))
         };
@@ -118,12 +123,12 @@ impl Core {
             trace!("Send {:?} to {:?}", variant, recipients);
 
             let message =
-                Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+                RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
 
             Ok(Command::send_message_to_nodes(
                 recipients.clone(),
                 recipients.len(),
-                message.to_bytes(),
+                message,
                 DestInfo {
                     dest: XorName::random(),
                     dest_section_pk: *self.section_chain().last_key(),
@@ -190,8 +195,8 @@ impl Core {
 
     pub(crate) fn return_relocate_promise(&self) -> Option<Command> {
         // TODO: keep sending this periodically until we get relocated.
-        if let Some(RelocateState::Delayed(bytes)) = &self.relocate_state {
-            Some(self.send_message_to_our_elders(bytes.clone()))
+        if let Some(RelocateState::Delayed(msg)) = &self.relocate_state {
+            Some(self.send_message_to_our_elders(msg.clone()))
         } else {
             None
         }
@@ -282,7 +287,7 @@ impl Core {
             );
             err
         })?;
-        let message = Message::for_dst_accumulation(key_share, src, dst, variant, proof_chain)?;
+        let message = RoutingMsg::for_dst_accumulation(key_share, src, dst, variant, proof_chain)?;
 
         trace!(
             "Send {:?} for accumulation at dst to {:?}",
@@ -295,7 +300,7 @@ impl Core {
 
     // Send the message to all `recipients`. If one of the recipients is us, don't send it over the
     // network but handle it directly.
-    pub(crate) fn send_or_handle(&self, message: Message, recipients: &[Peer]) -> Vec<Command> {
+    pub(crate) fn send_or_handle(&self, message: RoutingMsg, recipients: &[Peer]) -> Vec<Command> {
         let mut commands = vec![];
         let mut others = Vec::new();
         let mut handle = false;
@@ -316,7 +321,7 @@ impl Core {
             commands.push(Command::send_message_to_nodes(
                 others,
                 count,
-                message.to_bytes(),
+                message.clone(),
                 DestInfo {
                     dest: XorName::random(), // will be updated when sending
                     dest_section_pk,
@@ -370,10 +375,10 @@ impl Core {
         dst_pk: bls::PublicKey,
     ) -> Result<Command> {
         let message =
-            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
         Ok(Command::send_message_to_node(
             recipient,
-            message.to_bytes(),
+            message,
             DestInfo {
                 dest: recipient.0,
                 dest_section_pk: dst_pk,
@@ -383,7 +388,7 @@ impl Core {
 
     // TODO: consider changing this so it sends only to a subset of the elders
     // (say 1/3 of the ones closest to our name or so)
-    pub(crate) fn send_message_to_our_elders(&self, msg: Bytes) -> Command {
+    pub(crate) fn send_message_to_our_elders(&self, msg: RoutingMsg) -> Command {
         let targets: Vec<_> = self
             .section
             .authority_provider()

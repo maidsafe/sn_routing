@@ -10,12 +10,15 @@ use crate::routing::command::Command;
 use crate::routing::core::LaggingMessages;
 use crate::{
     error::Result,
-    messages::{Message, Variant},
-    network::Network,
+    messages::{RoutingMsgUtils, SrcAuthorityUtils},
+    network::NetworkUtils,
     node::Node,
-    section::Section,
+    section::SectionUtils,
 };
-use sn_messaging::DestInfo;
+use sn_messaging::{
+    node::{Network, RoutingMsg, Section, Variant},
+    DestInfo,
+};
 use std::cmp::Ordering;
 use std::net::SocketAddr;
 
@@ -28,27 +31,27 @@ pub(crate) fn process(
     section: &Section,
     network: &Network,
     lagging_messages: &mut LaggingMessages,
-    msg: &Message,
+    msg: &RoutingMsg,
     dest_info: DestInfo,
     sender: Option<SocketAddr>,
 ) -> Result<(Actions, bool)> {
     let mut actions = Actions::default();
 
-    let src_name = msg.src().name();
+    let src_name = msg.src.name();
     if section.prefix().matches(&src_name) {
         // This message is from our section. We update our members via the `Sync` message which is
         // done elsewhere.
         return Ok((actions, true));
     }
 
-    let dst = msg.src().src_location().to_dst();
+    let dst = msg.src.src_location().to_dst();
 
     if let Ok(src_chain) = msg.proof_chain() {
         if let Some(key) = network.key_by_name(&src_name) {
             match src_chain.cmp_by_position(src_chain.last_key(), key) {
                 Ordering::Greater => {
                     trace!("Anti-Entropy: We do not know source's key, need to update ourselves");
-                    let msg = Message::single_src(
+                    let msg = RoutingMsg::single_src(
                         node,
                         dst,
                         Variant::SectionKnowledgeQuery {
@@ -65,7 +68,7 @@ pub(crate) fn process(
                 Ordering::Equal => {}
             }
         } else {
-            let msg = Message::single_src(
+            let msg = RoutingMsg::single_src(
                 node,
                 dst,
                 Variant::SectionKnowledgeQuery {
@@ -115,7 +118,7 @@ pub(crate) fn process(
                 src_info: (section_auth.clone(), chain),
                 msg: None,
             };
-            let msg = Message::single_src(node, dst, variant, None)?;
+            let msg = RoutingMsg::single_src(node, dst, variant, None)?;
             actions.send.push(msg);
             return Ok((actions, true));
         }
@@ -126,8 +129,8 @@ pub(crate) fn process(
 
 #[derive(Default)]
 pub(crate) struct Actions {
-    // Message to send.
-    pub send: Vec<Message>,
+    // RoutingMsg to send.
+    pub send: Vec<RoutingMsg>,
 }
 
 #[cfg(test)]
@@ -141,7 +144,6 @@ mod tests {
     };
     use anyhow::{Context, Result};
     use assert_matches::assert_matches;
-    use bytes::Bytes;
     use secured_linked_list::SecuredLinkedList;
     use sn_messaging::DstLocation;
     use xor_name::Prefix;
@@ -357,16 +359,16 @@ mod tests {
             &self,
             src_section: &Prefix,
             proof_chain: SecuredLinkedList,
-        ) -> Result<Message> {
+        ) -> Result<RoutingMsg> {
             let sender = Node::new(
                 crypto::gen_keypair(&src_section.range_inclusive(), MIN_ADULT_AGE),
                 gen_addr(),
             );
 
-            Ok(Message::single_src(
+            Ok(RoutingMsg::single_src(
                 &sender,
                 DstLocation::Section(self.node.name()),
-                Variant::UserMessage(Bytes::from_static(b"hello")),
+                Variant::UserMessage(b"hello".to_vec()),
                 Some(proof_chain),
             )?)
         }

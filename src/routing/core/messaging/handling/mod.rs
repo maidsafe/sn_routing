@@ -14,24 +14,27 @@ mod resource_proof;
 
 use super::super::Core;
 use crate::{
-    agreement::{DkgCommands, DkgFailureProofSet, ProofShare, Proposal, ProposalError},
+    agreement::{DkgCommands, ProofShare, ProposalError},
     error::{Error, Result},
     event::Event,
-    messages::{JoinRequest, Message, MessageStatus, SrcAuthority, Variant, VerifyStatus},
-    network::Network,
-    peer::Peer,
-    relocation::{RelocateState, SignedRelocateDetails},
+    messages::{MessageStatus, RoutingMsgUtils, SrcAuthorityUtils, VerifyStatus},
+    network::NetworkUtils,
+    peer::PeerUtils,
+    relocation::{RelocatePayloadUtils, RelocateState, SignedRelocateDetailsUtils},
     routing::command::Command,
     section::{
-        Section, SectionAuthorityProvider, SectionKeyShare, FIRST_SECTION_MAX_AGE,
-        FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
+        SectionAuthorityProviderUtils, SectionKeyShare, SectionPeersUtils, SectionUtils,
+        FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
     },
 };
 use bls_signature_aggregator::Error as AggregatorError;
 use bytes::Bytes;
 use sn_messaging::{
     client::ClientMsg,
-    node::RoutingMsg,
+    node::{
+        DkgFailureProofSet, JoinRequest, Network, Peer, Proposal, RoutingMsg, Section,
+        SectionAuthorityProvider, SignedRelocateDetails, SrcAuthority, Variant,
+    },
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, EndUser, MessageType,
 };
@@ -43,7 +46,7 @@ impl Core {
     pub(crate) async fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Message,
+        msg: RoutingMsg,
         dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
@@ -58,7 +61,7 @@ impl Core {
             }
         }
         if !in_dst_location {
-            // Message not for us.
+            // RoutingMsg not for us.
             return Ok(commands);
         }
 
@@ -210,11 +213,11 @@ impl Core {
     pub(crate) fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
         let variant = Variant::DkgFailureAgreement(proofs);
         let message =
-            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
-        Ok(self.send_message_to_our_elders(message.to_bytes()))
+            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+        Ok(self.send_message_to_our_elders(message))
     }
 
-    pub(crate) fn aggregate_message(&mut self, msg: Message) -> Result<Option<Message>> {
+    pub(crate) fn aggregate_message(&mut self, msg: RoutingMsg) -> Result<Option<RoutingMsg>> {
         let proof_share = if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
             proof_share
         } else {
@@ -243,7 +246,7 @@ impl Core {
     pub(crate) async fn handle_useful_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: Message,
+        msg: RoutingMsg,
         dest_info: DestInfo,
     ) -> Result<Vec<Command>> {
         let msg = if let Some(msg) = self.aggregate_message(msg)? {
@@ -251,9 +254,9 @@ impl Core {
         } else {
             return Ok(vec![]);
         };
-        let src_name = msg.src().name();
+        let src_name = msg.src.name();
 
-        match msg.variant() {
+        match &msg.variant {
             Variant::SectionKnowledge { src_info, msg } => {
                 let src_info = src_info.clone();
                 self.update_section_knowledge(src_info.0, src_info.1);
@@ -271,28 +274,31 @@ impl Core {
                 self.handle_sync(section.clone(), network.clone())
             }
             Variant::Relocate(_) => {
-                if msg.src().is_section() {
-                    let signed_relocate = SignedRelocateDetails::new(msg)?;
+                if msg.src.is_section() {
+                    let signed_relocate = SignedRelocateDetails::new(msg.clone())?;
                     Ok(self.handle_relocate(signed_relocate)?.into_iter().collect())
                 } else {
                     Err(Error::InvalidSrcLocation)
                 }
             }
             Variant::RelocatePromise(promise) => {
-                self.handle_relocate_promise(*promise, msg.to_bytes())
+                self.handle_relocate_promise(*promise, msg.clone())
             }
             Variant::JoinRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                self.handle_join_request(msg.src().peer(sender)?, *join_request.clone())
+                self.handle_join_request(msg.src.peer(sender)?, *join_request.clone())
             }
-            Variant::UserMessage(content) => self.handle_user_message(&msg, content.clone()),
+            Variant::UserMessage(content) => {
+                let bytes = Bytes::from(content.clone());
+                self.handle_user_message(msg, bytes)
+            }
             Variant::BouncedUntrustedMessage {
                 msg: bounced_msg,
                 dest_info,
             } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_bounced_untrusted_message(
-                    msg.src().peer(sender)?,
+                    msg.src.peer(sender)?,
                     dest_info.dest_section_pk,
                     *bounced_msg.clone(),
                 )?])
@@ -307,7 +313,7 @@ impl Core {
                     returned_msg.clone(),
                     sender,
                     src_name,
-                    msg.src().src_location().to_dst(),
+                    msg.src.src_location().to_dst(),
                 )?])
             }
             Variant::DkgStart {
@@ -323,7 +329,7 @@ impl Core {
                 non_participants,
             } => self.handle_dkg_failure_observation(*dkg_key, non_participants, *proof),
             Variant::DkgFailureAgreement(proofs) => {
-                self.handle_dkg_failure_agreement(&msg.src().name(), proofs)
+                self.handle_dkg_failure_agreement(&msg.src.name(), proofs)
             }
             Variant::Propose {
                 content,
@@ -340,7 +346,7 @@ impl Core {
                 Ok(commands)
             }
             Variant::ConnectivityComplaint(elder_name) => {
-                self.handle_connectivity_complaint(msg.src().name(), *elder_name)
+                self.handle_connectivity_complaint(msg.src.name(), *elder_name)
             }
             Variant::NodeApproval { .. }
             | Variant::JoinRetry { .. }
@@ -348,11 +354,10 @@ impl Core {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let node_msg = RoutingMsg::new(msg.to_bytes());
                         let _ = message_tx
                             .send((
                                 MessageType::Routing {
-                                    msg: node_msg,
+                                    msg: msg.clone(),
                                     dest_info: DestInfo {
                                         dest: src_name,
                                         dest_section_pk: *self.section.chain().last_key(),
@@ -374,7 +379,7 @@ impl Core {
     fn handle_section_knowledge_query(
         &self,
         given_key: Option<bls::PublicKey>,
-        msg: Box<Message>,
+        msg: Box<RoutingMsg>,
         sender: SocketAddr,
         src_name: XorName,
         dst_location: DstLocation,
@@ -392,11 +397,11 @@ impl Core {
             msg: Some(msg),
         };
 
-        let msg = Message::single_src(self.node(), dst_location, variant, None)?;
+        let msg = RoutingMsg::single_src(self.node(), dst_location, variant, None)?;
         let key = self.section_key_by_name(&src_name);
         Ok(Command::send_message_to_node(
             (src_name, sender),
-            msg.to_bytes(),
+            msg,
             DestInfo {
                 dest: src_name,
                 dest_section_pk: *key,
@@ -404,7 +409,7 @@ impl Core {
         ))
     }
 
-    pub(crate) fn verify_message(&self, msg: &Message) -> Result<bool> {
+    pub(crate) fn verify_message(&self, msg: &RoutingMsg) -> Result<bool> {
         let known_keys = self
             .section
             .chain()
@@ -422,7 +427,7 @@ impl Core {
         }
     }
 
-    fn handle_user_message(&mut self, msg: &Message, content: Bytes) -> Result<Vec<Command>> {
+    fn handle_user_message(&mut self, msg: RoutingMsg, content: Bytes) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(EndUser { xorname, socket_id }) = msg.dst() {
             if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
@@ -449,7 +454,7 @@ impl Core {
 
         self.send_event(Event::MessageReceived {
             content,
-            src: msg.src().src_location(),
+            src: msg.src.src_location(),
             dst: *msg.dst(),
             proof: msg.proof(),
             proof_chain: msg.proof_chain().ok().cloned(),

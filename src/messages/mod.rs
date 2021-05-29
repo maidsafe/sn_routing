@@ -8,57 +8,116 @@
 
 mod plain_message;
 mod src_authority;
-mod variant;
 
-pub use self::src_authority::SrcAuthority;
-pub(crate) use self::{
-    plain_message::PlainMessage,
-    variant::{JoinRequest, ResourceProofResponse, Variant},
-};
+pub use self::{plain_message::PlainMessageUtils, src_authority::SrcAuthorityUtils};
 use crate::{
+    agreement::ProvenUtils,
     crypto::{self, Verifier},
     error::{Error, Result},
     node::Node,
-    section::SectionKeyShare,
+    section::{SectionKeyShare, SectionUtils},
 };
 use bls_signature_aggregator::{Proof, ProofShare};
-use bytes::Bytes;
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
-use serde::{Deserialize, Serialize};
-use sn_messaging::{Aggregation, DstLocation, MessageId};
-use std::fmt::{self, Debug, Formatter};
+use serde::Serialize;
+use sn_messaging::{
+    node::{PlainMessage, RoutingMsg, SrcAuthority, Variant},
+    Aggregation, DstLocation, MessageId,
+};
+use std::fmt::Debug;
 use thiserror::Error;
 use xor_name::XorName;
 
 /// Message sent over the network.
-#[derive(Clone, Eq, Serialize, Deserialize)]
-pub(crate) struct Message {
-    /// Source authority.
-    /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
-    /// agains the public key and we know the pub key then we are good. If the proof is not recognised we
-    /// ask for a longer chain that can be recognised). Therefore we don't need to sign this field.
-    src: SrcAuthority,
-    /// Destination location.
-    dst: DstLocation,
-    /// The aggregation scheme to be used.
-    aggregation: Aggregation,
-    /// The body of the message.
-    variant: Variant,
-    /// Proof chain to verify the message trust. Does not need to be signed.
-    proof_chain: Option<SecuredLinkedList>,
-    /// Serialised message, this is a signed and fully serialised message ready to send.
-    #[serde(skip)]
-    serialized: Bytes,
-    /// message id
-    id: MessageId,
+pub trait RoutingMsgUtils {
+    /// Check the signature is valid. Only called on message receipt.
+    fn check_signature(msg: &RoutingMsg) -> Result<()>;
+
+    /// Creates a signed message where signature is assumed valid.
+    fn new_signed(
+        src: SrcAuthority,
+        dst: DstLocation,
+        variant: Variant,
+        proof_chain: Option<SecuredLinkedList>,
+    ) -> Result<RoutingMsg, Error>;
+
+    /// Creates a message signed using a BLS KeyShare for destination accumulation
+    fn for_dst_accumulation(
+        key_share: &SectionKeyShare,
+        src_name: XorName,
+        dst: DstLocation,
+        variant: Variant,
+        proof_chain: SecuredLinkedList,
+    ) -> Result<RoutingMsg, Error>;
+
+    /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
+    /// Returns errors if src is not `BlsShare` or if the proof is invalid.
+    fn into_dst_accumulated(self, proof: Proof) -> Result<RoutingMsg>;
+
+    fn signable_view(&self) -> SignableView;
+
+    /// Creates a signed message from single node.
+    fn single_src(
+        node: &Node,
+        dst: DstLocation,
+        variant: Variant,
+        proof_chain: Option<SecuredLinkedList>,
+    ) -> Result<RoutingMsg>;
+
+    /// Creates a signed message from a section.
+    /// Note: `proof` isn't verified and is assumed valid.
+    fn section_src(
+        plain: PlainMessage,
+        proof: Proof,
+        proof_chain: SecuredLinkedList,
+    ) -> Result<RoutingMsg>;
+
+    /// Verify this message is properly signed and trusted.
+    fn verify<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
+        &self,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>;
+
+    /// Getter
+    fn proof(&self) -> Option<Proof>;
+
+    /// Getter
+    fn dst(&self) -> &DstLocation;
+
+    fn id(&self) -> &MessageId;
+
+    /// Getter
+    fn variant(&self) -> &Variant;
+
+    /// Getter
+    fn src(&self) -> &SrcAuthority;
+
+    /// Returns the attached proof chain, if any.
+    fn proof_chain(&self) -> Result<&SecuredLinkedList>;
+
+    /// Returns the last key of the attached the proof chain, if any.
+    fn proof_chain_last_key(&self) -> Result<&bls::PublicKey>;
+
+    // Extend the current message proof chain so it starts at `new_first_key` while keeping the
+    // last key (and therefore the signature) intact.
+    // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
+    // the signed data.
+    fn extend_proof_chain(
+        self,
+        new_first_key: &bls::PublicKey,
+        full_chain: &SecuredLinkedList,
+    ) -> Result<RoutingMsg, Error>;
+
+    fn verify_variant<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
+        &self,
+        proof_chain: Option<&SecuredLinkedList>,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>;
 }
 
-impl Message {
-    /// Deserialize the message. Only called on message receipt.
-    pub(crate) fn from_bytes(msg_bytes: Bytes) -> Result<Self> {
-        let mut msg: Message =
-            bincode::deserialize(&msg_bytes).map_err(|_| Error::InvalidMessage)?;
-
+impl RoutingMsgUtils for RoutingMsg {
+    /// Check the signature is valid. Only called on message receipt.
+    fn check_signature(msg: &RoutingMsg) -> Result<()> {
         let signed_bytes = bincode::serialize(&SignableView {
             dst: &msg.dst,
             variant: &msg.variant,
@@ -107,14 +166,7 @@ impl Message {
             }
         }
 
-        msg.serialized = msg_bytes;
-
-        Ok(msg)
-    }
-
-    /// send across wire
-    pub(crate) fn to_bytes(&self) -> Bytes {
-        self.serialized.clone()
+        Ok(())
     }
 
     /// Creates a signed message where signature is assumed valid.
@@ -123,55 +175,61 @@ impl Message {
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SecuredLinkedList>,
-    ) -> Result<Message, Error> {
-        let id = src.id();
-        let mut msg = Message {
-            dst,
-            src,
-            aggregation: Aggregation::None,
-            proof_chain,
-            variant,
-            serialized: Default::default(),
-            id,
-        };
+    ) -> Result<RoutingMsg, Error> {
+        // Create message id from src authority signature
+        let id = match &src {
+            SrcAuthority::Node { signature, .. } => MessageId::from_content(signature),
+            SrcAuthority::BlsShare { proof_share, .. } => {
+                MessageId::from_content(&proof_share.signature_share.0)
+            }
+            SrcAuthority::Section { proof, .. } => MessageId::from_content(&proof.signature),
+        }
+        .unwrap_or_default();
 
-        msg.serialized = bincode::serialize(&msg)
-            .map_err(|_| Error::InvalidMessage)?
-            .into();
+        let msg = RoutingMsg {
+            id,
+            src,
+            dst,
+            aggregation: Aggregation::None,
+            variant,
+            proof_chain,
+        };
 
         Ok(msg)
     }
 
     /// Creates a message signed using a BLS KeyShare for destination accumulation
-    pub(crate) fn for_dst_accumulation(
+    fn for_dst_accumulation(
         key_share: &SectionKeyShare,
         src_name: XorName,
         dst: DstLocation,
         variant: Variant,
         proof_chain: SecuredLinkedList,
-    ) -> Result<Self, Error> {
+    ) -> Result<RoutingMsg, Error> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             variant: &variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
+
         let signature_share = key_share.secret_key_share.sign(&serialized);
         let proof_share = ProofShare {
             public_key_set: key_share.public_key_set.clone(),
             index: key_share.index,
             signature_share,
         };
+
         let src = SrcAuthority::BlsShare {
             src_name,
             proof_share,
         };
 
-        Self::new_signed(src, dst, variant, Some(proof_chain))
+        RoutingMsg::new_signed(src, dst, variant, Some(proof_chain))
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
     /// Returns errors if src is not `BlsShare` or if the proof is invalid.
-    pub(crate) fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
+    fn into_dst_accumulated(mut self, proof: Proof) -> Result<RoutingMsg> {
         let (proof_share, src_name) = if let SrcAuthority::BlsShare {
             proof_share,
             src_name,
@@ -204,7 +262,7 @@ impl Message {
         Ok(self)
     }
 
-    pub(crate) fn signable_view(&self) -> SignableView {
+    fn signable_view(&self) -> SignableView {
         SignableView {
             dst: &self.dst,
             variant: &self.variant,
@@ -212,34 +270,35 @@ impl Message {
     }
 
     /// Creates a signed message from single node.
-    pub(crate) fn single_src(
+    fn single_src(
         node: &Node,
         dst: DstLocation,
         variant: Variant,
         proof_chain: Option<SecuredLinkedList>,
-    ) -> Result<Self> {
+    ) -> Result<RoutingMsg> {
         let serialized = bincode::serialize(&SignableView {
             dst: &dst,
             variant: &variant,
         })
         .map_err(|_| Error::InvalidMessage)?;
+
         let signature = crypto::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
             public_key: node.keypair.public,
             signature,
         };
 
-        Self::new_signed(src, dst, variant, proof_chain)
+        RoutingMsg::new_signed(src, dst, variant, proof_chain)
     }
 
     /// Creates a signed message from a section.
     /// Note: `proof` isn't verified and is assumed valid.
-    pub(crate) fn section_src(
+    fn section_src(
         plain: PlainMessage,
         proof: Proof,
         proof_chain: SecuredLinkedList,
-    ) -> Result<Self> {
-        Self::new_signed(
+    ) -> Result<RoutingMsg> {
+        RoutingMsg::new_signed(
             SrcAuthority::Section {
                 src_name: plain.src,
                 proof,
@@ -251,7 +310,7 @@ impl Message {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub(crate) fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
+    fn verify<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
@@ -272,7 +331,7 @@ impl Message {
                 }
 
                 // Variant-specific verification.
-                self.variant.verify(self.proof_chain.as_ref(), trusted_keys)
+                self.verify_variant(self.proof_chain.as_ref(), trusted_keys)
             }
             SrcAuthority::BlsShare { proof_share, .. } => {
                 // Proof chain is required for accumulation at destination.
@@ -318,7 +377,7 @@ impl Message {
     }
 
     /// Getter
-    pub fn proof(&self) -> Option<Proof> {
+    fn proof(&self) -> Option<Proof> {
         if let SrcAuthority::Section { proof, .. } = &self.src {
             Some(proof.clone())
         } else {
@@ -327,32 +386,32 @@ impl Message {
     }
 
     /// Getter
-    pub fn dst(&self) -> &DstLocation {
+    fn dst(&self) -> &DstLocation {
         &self.dst
     }
 
     /// Get the MessageId
-    pub fn id(&self) -> &MessageId {
+    fn id(&self) -> &MessageId {
         &self.id
     }
 
     /// Getter
-    pub fn variant(&self) -> &Variant {
+    fn variant(&self) -> &Variant {
         &self.variant
     }
 
     /// Getter
-    pub fn src(&self) -> &SrcAuthority {
+    fn src(&self) -> &SrcAuthority {
         &self.src
     }
 
     /// Returns the attached proof chain, if any.
-    pub(crate) fn proof_chain(&self) -> Result<&SecuredLinkedList> {
+    fn proof_chain(&self) -> Result<&SecuredLinkedList> {
         self.proof_chain.as_ref().ok_or(Error::InvalidMessage)
     }
 
     /// Returns the last key of the attached the proof chain, if any.
-    pub(crate) fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
+    fn proof_chain_last_key(&self) -> Result<&bls::PublicKey> {
         self.proof_chain().map(|proof_chain| proof_chain.last_key())
     }
 
@@ -360,11 +419,11 @@ impl Message {
     // last key (and therefore the signature) intact.
     // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
     // the signed data.
-    pub(crate) fn extend_proof_chain(
+    fn extend_proof_chain(
         mut self,
         new_first_key: &bls::PublicKey,
         full_chain: &SecuredLinkedList,
-    ) -> Result<Self, Error> {
+    ) -> Result<RoutingMsg, Error> {
         let proof_chain = self
             .proof_chain
             .as_mut()
@@ -381,31 +440,44 @@ impl Message {
             Err(error) => return Err(error.into()),
         };
 
-        Self::new_signed(self.src, self.dst, self.variant, self.proof_chain)
+        RoutingMsg::new_signed(self.src, self.dst, self.variant, self.proof_chain)
     }
-}
 
-// Ignore `serialized` and `hash` fields because they are only computed from the other fields and
-// in some cases might be even absent.
-impl PartialEq for Message {
-    fn eq(&self, other: &Self) -> bool {
-        self.src == other.src
-            && self.dst == other.dst
-            && self.id == other.id
-            && self.variant == other.variant
-            && self.proof_chain == other.proof_chain
-    }
-}
+    fn verify_variant<'a, I>(
+        &self,
+        proof_chain: Option<&SecuredLinkedList>,
+        trusted_keys: I,
+    ) -> Result<VerifyStatus>
+    where
+        I: IntoIterator<Item = &'a bls::PublicKey>,
+    {
+        let proof_chain = match &self.variant {
+            Variant::NodeApproval {
+                section_auth,
+                member_info,
+                ..
+            } => {
+                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
 
-impl Debug for Message {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        formatter
-            .debug_struct("Message")
-            .field("id", &self.id)
-            .field("src", &self.src.src_location())
-            .field("dst", &self.dst)
-            .field("variant", &self.variant)
-            .finish()
+                if !section_auth.verify(proof_chain) {
+                    return Err(Error::InvalidMessage);
+                }
+
+                if !member_info.verify(proof_chain) {
+                    return Err(Error::InvalidMessage);
+                }
+
+                proof_chain
+            }
+            Variant::Sync { section, .. } => section.chain(),
+            _ => return Ok(VerifyStatus::Full),
+        };
+
+        if proof_chain.check_trust(trusted_keys) {
+            Ok(VerifyStatus::Full)
+        } else {
+            Ok(VerifyStatus::Unknown)
+        }
     }
 }
 
@@ -438,7 +510,7 @@ pub enum CreateError {
     PublicKeyMismatch,
 }
 
-/// Error returned from `Message::extend_proof_chain`.
+/// Error returned from `RoutingMsg::extend_proof_chain`.
 #[derive(Debug, Error)]
 pub enum ExtendProofChainError {
     #[error("message has no proof chain")]
@@ -451,7 +523,7 @@ pub enum ExtendProofChainError {
 
 // View of a message that can be serialized for the purpose of signing.
 #[derive(Serialize)]
-pub(crate) struct SignableView<'a> {
+pub struct SignableView<'a> {
     // TODO: why don't we include also `src`?
     pub dst: &'a DstLocation,
     pub variant: &'a Variant,
@@ -462,11 +534,12 @@ mod tests {
     use super::*;
     use crate::{
         agreement, crypto,
-        peer::Peer,
-        section::{self, test_utils::gen_addr, MemberInfo},
+        peer::PeerUtils,
+        section::{self, test_utils::gen_addr, MemberInfoUtils},
         MIN_ADULT_AGE,
     };
     use anyhow::Result;
+    use sn_messaging::node::{MemberInfo, Peer};
     use std::iter;
     use xor_name::Prefix;
 
@@ -500,7 +573,7 @@ mod tests {
             section_auth,
             member_info,
         };
-        let message = Message::single_src(
+        let message = RoutingMsg::single_src(
             &node,
             DstLocation::DirectAndUnrouted,
             variant,

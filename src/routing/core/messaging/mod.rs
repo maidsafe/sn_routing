@@ -11,14 +11,16 @@ mod sending;
 
 use super::Core;
 use crate::{
-    agreement::{ProofShare, Proposal},
+    agreement::{ProofShare, ProposalUtils},
     error::Result,
-    messages::{Message, Variant},
-    peer::Peer,
+    messages::RoutingMsgUtils,
     routing::command::Command,
-    section::SectionKeyShare,
+    section::{SectionAuthorityProviderUtils, SectionKeyShare, SectionUtils},
 };
-use sn_messaging::DstLocation;
+use sn_messaging::{
+    node::{Peer, Proposal, RoutingMsg, Variant},
+    DstLocation,
+};
 use std::net::SocketAddr;
 use xor_name::XorName;
 
@@ -67,7 +69,7 @@ impl Core {
             proof_share,
         };
         let message =
-            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
+            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
 
         Ok(self.send_or_handle(message, recipients))
     }

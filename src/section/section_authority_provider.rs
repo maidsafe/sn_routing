@@ -6,30 +6,31 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{peer::Peer, Prefix, XorName};
-use bls::{PublicKey, PublicKeyShare};
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use crate::{peer::PeerUtils, Prefix, XorName};
+use bls::PublicKey;
 use sn_data_types::ReplicaPublicKeySet;
+use sn_messaging::node::{ElderCandidates, Peer, SectionAuthorityProvider};
 use std::{
-    borrow::Borrow,
     collections::{BTreeMap, BTreeSet},
-    fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
 };
 
 /// The information about elder candidates in a DKG round.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct ElderCandidates {
-    /// The section's complete set of elders as a map from their name to their socket address.
-    pub elders: BTreeMap<XorName, SocketAddr>,
-    /// The section prefix. It matches all the members' names.
-    pub prefix: Prefix,
+pub trait ElderCandidatesUtils {
+    /// Creates a new `ElderCandidates` with the given members and prefix.
+    fn new<I: IntoIterator<Item = Peer>>(elders: I, prefix: Prefix) -> Self;
+
+    fn peers(&'_ self) -> Box<dyn Iterator<Item = Peer> + '_>;
+
+    /// Returns the index of the elder with `name` in this set of elders.
+    /// This is useful for BLS signatures where the signature share needs to be mapped to a
+    /// "field element" which is typically a numeric index.
+    fn position(&self, name: &XorName) -> Option<usize>;
 }
 
-impl ElderCandidates {
+impl ElderCandidatesUtils for ElderCandidates {
     /// Creates a new `ElderCandidates` with the given members and prefix.
-    pub(crate) fn new<I>(elders: I, prefix: Prefix) -> Self
+    fn new<I>(elders: I, prefix: Prefix) -> Self
     where
         I: IntoIterator<Item = Peer>,
     {
@@ -42,42 +43,75 @@ impl ElderCandidates {
         }
     }
 
-    pub(crate) fn peers(
-        &'_ self,
-    ) -> impl Iterator<Item = Peer> + DoubleEndedIterator + ExactSizeIterator + Clone + '_ {
+    fn peers(&'_ self) -> Box<dyn Iterator<Item = Peer> + '_> {
         // The `reachable` flag of Peer is defaulted to `false` during the construction.
         // As the SectionAuthorityProvider only holds the list of alive elders, it shall be safe
         // to set the flag as true here during the mapping.
-        self.elders.iter().map(|(name, addr)| {
+        Box::new(self.elders.iter().map(|(name, addr)| {
             let mut peer = Peer::new(*name, *addr);
             peer.set_reachable(true);
             peer
-        })
+        }))
     }
 
     /// Returns the index of the elder with `name` in this set of elders.
     /// This is useful for BLS signatures where the signature share needs to be mapped to a
     /// "field element" which is typically a numeric index.
-    pub(crate) fn position(&self, name: &XorName) -> Option<usize> {
+    fn position(&self, name: &XorName) -> Option<usize> {
         self.elders.keys().position(|other_name| other_name == name)
     }
 }
 
 /// A new `SectionAuthorityProvider` is created whenever the elders change,
 /// due to an elder being added or removed, or the section splitting or merging.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
-pub struct SectionAuthorityProvider {
-    /// The section prefix. It matches all the members' names.
-    pub prefix: Prefix,
-    /// Public key of the section.
-    pub section_key: PublicKey,
-    // The section's complete set of elders as a map from their name to their socket address.
-    elders: BTreeMap<XorName, (PublicKeyShare, SocketAddr)>,
+pub trait SectionAuthorityProviderUtils {
+    /// Creates a new `SectionAuthorityProvider` with the given members, prefix and public keyset.
+    fn new<I: IntoIterator<Item = Peer>>(
+        elders: I,
+        prefix: Prefix,
+        pk_set: ReplicaPublicKeySet,
+    ) -> Self;
+
+    /// Creates a new `SectionAuthorityProvider` from ElderCandidates and public keyset.
+    fn from_elder_candidates(
+        elder_candidates: ElderCandidates,
+        pk_set: ReplicaPublicKeySet,
+    ) -> SectionAuthorityProvider;
+
+    /// Returns `ElderCandidates`, which doesn't have key related infos.
+    fn elder_candidates(&self) -> ElderCandidates;
+
+    /// Returns an iterator to the list of peers.
+    fn peers(&'_ self) -> Box<dyn Iterator<Item = Peer> + '_>;
+
+    /// Returns the number of elders in the section.
+    fn elder_count(&self) -> usize;
+
+    /// Returns a map of name to socket_addr.
+    fn contains_elder(&self, name: &XorName) -> bool;
+
+    /// Returns a socket_addr of an elder.
+    fn get_addr(&self, name: &XorName) -> Option<SocketAddr>;
+
+    /// Returns the set of elder names.
+    fn names(&self) -> BTreeSet<XorName>;
+
+    /// Returns a map of name to socket_addr.
+    fn elders(&self) -> BTreeMap<XorName, SocketAddr>;
+
+    /// Returns the list of socket addresses.
+    fn addresses(&self) -> Vec<SocketAddr>;
+
+    /// Returns its prefix.
+    fn prefix(&self) -> Prefix;
+
+    /// Key of the section.
+    fn section_key(&self) -> PublicKey;
 }
 
-impl SectionAuthorityProvider {
+impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
     /// Creates a new `SectionAuthorityProvider` with the given members, prefix and public keyset.
-    pub fn new<I>(elders: I, prefix: Prefix, pk_set: ReplicaPublicKeySet) -> Self
+    fn new<I>(elders: I, prefix: Prefix, pk_set: ReplicaPublicKeySet) -> Self
     where
         I: IntoIterator<Item = Peer>,
     {
@@ -86,6 +120,7 @@ impl SectionAuthorityProvider {
             .enumerate()
             .map(|(index, peer)| (*peer.name(), (pk_set.public_key_share(index), *peer.addr())))
             .collect();
+
         Self {
             prefix,
             section_key: pk_set.public_key(),
@@ -94,17 +129,17 @@ impl SectionAuthorityProvider {
     }
 
     /// Creates a new `SectionAuthorityProvider` from ElderCandidates and public keyset.
-    pub fn from_elder_candidates(
+    fn from_elder_candidates(
         elder_candidates: ElderCandidates,
         pk_set: ReplicaPublicKeySet,
-    ) -> Self {
+    ) -> SectionAuthorityProvider {
         let elders = elder_candidates
             .elders
             .iter()
             .enumerate()
             .map(|(index, (name, addr))| (*name, (pk_set.public_key_share(index), *addr)))
             .collect();
-        Self {
+        SectionAuthorityProvider {
             prefix: elder_candidates.prefix,
             section_key: pk_set.public_key(),
             elders,
@@ -112,94 +147,63 @@ impl SectionAuthorityProvider {
     }
 
     /// Returns `ElderCandidates`, which doesn't have key related infos.
-    pub fn elder_candidates(&self) -> ElderCandidates {
+    fn elder_candidates(&self) -> ElderCandidates {
         ElderCandidates {
             elders: self.elders(),
             prefix: self.prefix,
         }
     }
 
-    pub(crate) fn peers(
-        &'_ self,
-    ) -> impl Iterator<Item = Peer> + DoubleEndedIterator + ExactSizeIterator + Clone + '_ {
+    fn peers(&'_ self) -> Box<dyn Iterator<Item = Peer> + '_> {
         // The `reachable` flag of Peer is defaulted to `false` during the construction.
         // As the SectionAuthorityProvider only holds the list of alive elders, it shall be safe
         // to set the flag as true here during the mapping.
-        self.elders.iter().map(|(name, (_, addr))| {
+        Box::new(self.elders.iter().map(|(name, (_, addr))| {
             let mut peer = Peer::new(*name, *addr);
             peer.set_reachable(true);
             peer
-        })
+        }))
     }
 
     /// Returns the number of elders in the section.
-    pub fn elder_count(&self) -> usize {
+    fn elder_count(&self) -> usize {
         self.elders.len()
     }
 
     /// Returns a map of name to socket_addr.
-    pub(crate) fn contains_elder(&self, name: &XorName) -> bool {
+    fn contains_elder(&self, name: &XorName) -> bool {
         self.elders.contains_key(name)
     }
 
     /// Returns a socket_addr of an elder.
-    pub(crate) fn get_addr(&self, name: &XorName) -> Option<SocketAddr> {
+    fn get_addr(&self, name: &XorName) -> Option<SocketAddr> {
         self.elders.get(name).map(|(_, addr)| *addr)
     }
 
     /// Returns the set of elder names.
-    pub fn names(&self) -> BTreeSet<XorName> {
+    fn names(&self) -> BTreeSet<XorName> {
         self.elders.keys().copied().collect()
     }
 
     /// Returns a map of name to socket_addr.
-    pub fn elders(&self) -> BTreeMap<XorName, SocketAddr> {
+    fn elders(&self) -> BTreeMap<XorName, SocketAddr> {
         self.elders
             .iter()
             .map(|(name, (_, addr))| (*name, *addr))
             .collect()
     }
 
-    pub(crate) fn addresses(&self) -> Vec<SocketAddr> {
+    fn addresses(&self) -> Vec<SocketAddr> {
         self.elders.values().map(|(_, addr)| *addr).collect()
     }
 
-    pub(crate) fn prefix(&self) -> Prefix {
+    fn prefix(&self) -> Prefix {
         self.prefix
     }
 
     /// Key of the section.
-    pub fn section_key(&self) -> PublicKey {
+    fn section_key(&self) -> PublicKey {
         self.section_key
-    }
-}
-
-impl Borrow<Prefix> for SectionAuthorityProvider {
-    fn borrow(&self) -> &Prefix {
-        &self.prefix
-    }
-}
-
-impl Debug for SectionAuthorityProvider {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionAuthorityProvider {{ prefix: ({:b}), section_key: {:?}, elders: {{{:?}}} }}",
-            self.prefix,
-            self.section_key,
-            self.elders.iter().format(", "),
-        )
-    }
-}
-
-impl Display for SectionAuthorityProvider {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{{{}}}/({:b})",
-            self.elders.keys().format(", "),
-            self.prefix,
-        )
     }
 }
 

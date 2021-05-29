@@ -9,17 +9,21 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    crypto::{self, Keypair, Signature, Verifier},
+    crypto::{self, Keypair, Verifier},
     error::Error,
-    messages::{Message, Variant},
-    network::Network,
-    peer::Peer,
-    section::{MemberInfo, Section},
+    messages::RoutingMsgUtils,
+    network::NetworkUtils,
+    peer::PeerUtils,
+    section::{SectionPeersUtils, SectionUtils},
 };
-use bytes::Bytes;
-use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
-use sn_messaging::MessageType;
-use std::net::SocketAddr;
+use sn_messaging::{
+    node::{
+        MemberInfo, Network, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
+        Section, SignedRelocateDetails, Variant,
+    },
+    MessageType,
+};
+use std::{marker::Sized, net::SocketAddr};
 use tokio::sync::mpsc;
 use xor_name::XorName;
 
@@ -38,7 +42,7 @@ pub(crate) fn actions(
         .filter(|info| check(info.peer.age(), churn_signature))
         .collect();
 
-    let max_age = if let Some(age) = candidates.iter().map(|info| info.peer.age()).max() {
+    let max_age = if let Some(age) = candidates.iter().map(|info| (*info).peer.age()).max() {
         age
     } else {
         return vec![];
@@ -58,26 +62,20 @@ pub(crate) fn actions(
 
 /// Details of a relocation: which node to relocate, where to relocate it to and what age it should
 /// get once relocated.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct RelocateDetails {
-    /// Public id of the node to relocate.
-    pub pub_id: XorName,
-    /// Relocation destination - the node will be relocated to a section whose prefix matches this
-    /// name.
-    pub destination: XorName,
-    /// The BLS key of the destination section used by the relocated node to verify messages.
-    pub destination_key: bls::PublicKey,
-    /// The age the node will have post-relocation.
-    pub age: u8,
-}
+pub trait RelocateDetailsUtils {
+    fn new(section: &Section, network: &Network, peer: &Peer, destination: XorName) -> Self;
 
-impl RelocateDetails {
-    pub(crate) fn new(
+    fn with_age(
         section: &Section,
         network: &Network,
         peer: &Peer,
         destination: XorName,
-    ) -> Self {
+        age: u8,
+    ) -> RelocateDetails;
+}
+
+impl RelocateDetailsUtils for RelocateDetails {
+    fn new(section: &Section, network: &Network, peer: &Peer, destination: XorName) -> Self {
         Self::with_age(
             section,
             network,
@@ -87,18 +85,18 @@ impl RelocateDetails {
         )
     }
 
-    pub(crate) fn with_age(
+    fn with_age(
         section: &Section,
         network: &Network,
         peer: &Peer,
         destination: XorName,
         age: u8,
-    ) -> Self {
+    ) -> RelocateDetails {
         let destination_key = *network
             .key_by_name(&destination)
             .unwrap_or_else(|| section.chain().root_key());
 
-        Self {
+        RelocateDetails {
             pub_id: *peer.name(),
             destination,
             destination_key,
@@ -107,15 +105,21 @@ impl RelocateDetails {
     }
 }
 
-/// Message with Variant::Relocate in a convenient wrapper.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub(crate) struct SignedRelocateDetails {
-    /// Signed message whose content is Variant::Relocate
-    signed_msg: Message,
+/// RoutingMsg with Variant::Relocate in a convenient wrapper.
+pub trait SignedRelocateDetailsUtils {
+    fn new(signed_msg: RoutingMsg) -> Result<Self, Error>
+    where
+        Self: Sized;
+
+    fn relocate_details(&self) -> Result<&RelocateDetails, Error>;
+
+    fn signed_msg(&self) -> &RoutingMsg;
+
+    fn destination(&self) -> Result<&XorName, Error>;
 }
 
-impl SignedRelocateDetails {
-    pub fn new(signed_msg: Message) -> Result<Self, Error> {
+impl SignedRelocateDetailsUtils for SignedRelocateDetails {
+    fn new(signed_msg: RoutingMsg) -> Result<Self, Error> {
         if let Variant::Relocate(_) = signed_msg.variant() {
             Ok(Self { signed_msg })
         } else {
@@ -123,52 +127,34 @@ impl SignedRelocateDetails {
         }
     }
 
-    pub fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
+    fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
         if let Variant::Relocate(details) = &self.signed_msg.variant() {
-            Ok(details)
+            Ok(&details)
         } else {
             error!("SignedRelocateDetails does not contain Variant::Relocate");
             Err(Error::InvalidMessage)
         }
     }
 
-    pub fn signed_msg(&self) -> &Message {
+    fn signed_msg(&self) -> &RoutingMsg {
         &self.signed_msg
     }
 
-    pub fn destination(&self) -> Result<&XorName, Error> {
+    fn destination(&self) -> Result<&XorName, Error> {
         Ok(&self.relocate_details()?.destination)
     }
 }
 
-impl Serialize for SignedRelocateDetails {
-    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        self.signed_msg.serialize(serialiser)
-    }
+pub trait RelocatePayloadUtils {
+    fn new(details: SignedRelocateDetails, new_name: &XorName, old_keypair: &Keypair) -> Self;
+
+    fn verify_identity(&self, new_name: &XorName) -> bool;
+
+    fn relocate_details(&self) -> Result<&RelocateDetails, Error>;
 }
 
-impl<'de> Deserialize<'de> for SignedRelocateDetails {
-    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let signed_msg = Deserialize::deserialize(deserialiser)?;
-        Self::new(signed_msg).map_err(|err| {
-            D::Error::custom(format!(
-                "failed to construct SignedRelocateDetails: {:?}",
-                err
-            ))
-        })
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub(crate) struct RelocatePayload {
-    /// The Relocate Signed message.
-    pub details: SignedRelocateDetails,
-    /// The new name of the node signed using its old public_key, to prove the node identity.
-    pub signature_of_new_name_with_old_key: Signature,
-}
-
-impl RelocatePayload {
-    pub fn new(details: SignedRelocateDetails, new_name: &XorName, old_keypair: &Keypair) -> Self {
+impl RelocatePayloadUtils for RelocatePayload {
+    fn new(details: SignedRelocateDetails, new_name: &XorName, old_keypair: &Keypair) -> Self {
         let signature_of_new_name_with_old_key = crypto::sign(&new_name.0, old_keypair);
 
         Self {
@@ -177,7 +163,7 @@ impl RelocatePayload {
         }
     }
 
-    pub fn verify_identity(&self, new_name: &XorName) -> bool {
+    fn verify_identity(&self, new_name: &XorName) -> bool {
         let details = if let Ok(details) = self.details.relocate_details() {
             details
         } else {
@@ -195,15 +181,9 @@ impl RelocatePayload {
             .is_ok()
     }
 
-    pub fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
+    fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
         self.details.relocate_details()
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
-pub(crate) struct RelocatePromise {
-    pub name: XorName,
-    pub destination: XorName,
 }
 
 pub(crate) enum RelocateState {
@@ -211,7 +191,7 @@ pub(crate) enum RelocateState {
     // while being an elder. It must keep fulfilling its duties as elder until its demoted, then it
     // can send the bytes (which are serialized `RelocatePromise` message) back to the elders who
     // will exchange it for an actual `Relocate` message.
-    Delayed(Bytes),
+    Delayed(RoutingMsg),
     // Relocation in progress. The sender is used to pass messages to the bootstrap task.
     InProgress(mpsc::Sender<(MessageType, SocketAddr)>),
 }
@@ -289,8 +269,11 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::proven, peer::test_utils::arbitrary_unique_peers,
-        routing::tests::SecretKeySet, section::SectionAuthorityProvider, ELDER_SIZE, MIN_AGE,
+        agreement::test_utils::proven,
+        peer::test_utils::arbitrary_unique_peers,
+        routing::tests::SecretKeySet,
+        section::{MemberInfoUtils, SectionAuthorityProviderUtils},
+        ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
     use assert_matches::assert_matches;
@@ -298,6 +281,7 @@ mod tests {
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
     use secured_linked_list::SecuredLinkedList;
+    use sn_messaging::node::SectionAuthorityProvider;
     use xor_name::Prefix;
 
     #[test]

@@ -8,17 +8,18 @@
 
 use super::Core;
 use crate::{
-    agreement::Proposal,
     error::Result,
-    peer::Peer,
+    peer::PeerUtils,
     relocation::{
-        self, RelocateAction, RelocateDetails, RelocatePromise, RelocateState,
-        SignedRelocateDetails,
+        self, RelocateAction, RelocateDetailsUtils, RelocateState, SignedRelocateDetailsUtils,
     },
     routing::command::Command,
+    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
     Event, ELDER_SIZE,
 };
-use bytes::Bytes;
+use sn_messaging::node::{
+    Peer, Proposal, RelocateDetails, RelocatePromise, RoutingMsg, SignedRelocateDetails,
+};
 use tokio::sync::mpsc;
 use xor_name::XorName;
 
@@ -132,7 +133,7 @@ impl Core {
     pub(crate) fn handle_relocate_promise(
         &mut self,
         promise: RelocatePromise,
-        msg_bytes: Bytes,
+        msg: RoutingMsg,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -145,7 +146,7 @@ impl Core {
                         "Received RelocatePromise to section at {}",
                         promise.destination
                     );
-                    self.relocate_state = Some(RelocateState::Delayed(msg_bytes.clone()));
+                    self.relocate_state = Some(RelocateState::Delayed(msg.clone()));
                     self.send_event(Event::RelocationStarted {
                         previous_name: self.node.name(),
                     });
@@ -160,7 +161,7 @@ impl Core {
 
             // We are no longer elder. Send the promise back already.
             if !self.is_elder() {
-                commands.push(self.send_message_to_our_elders(msg_bytes));
+                commands.push(self.send_message_to_our_elders(msg));
             }
 
             return Ok(commands);

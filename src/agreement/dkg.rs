@@ -6,65 +6,38 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::{DkgFailureProofSetUtils, DkgFailureProofUtils};
 use crate::{
-    crypto::{self, Digest256, Keypair, PublicKey, Signature, Verifier},
+    crypto::{self, Keypair},
     error::Result,
-    messages::{Message, Variant},
+    messages::RoutingMsgUtils,
     node::Node,
     routing::command::{self, Command},
-    section::{ElderCandidates, SectionAuthorityProvider, SectionKeyShare},
+    section::{ElderCandidatesUtils, SectionAuthorityProviderUtils, SectionKeyShare},
     supermajority,
 };
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
-use hex_fmt::HexFmt;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use sn_messaging::{DestInfo, DstLocation};
+use sn_messaging::{
+    node::{
+        DkgFailureProof, DkgFailureProofSet, DkgKey, ElderCandidates, RoutingMsg,
+        SectionAuthorityProvider, Variant,
+    },
+    DestInfo, DstLocation,
+};
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},
-    fmt::{self, Debug, Formatter},
+    fmt::Debug,
     iter, mem,
     net::SocketAddr,
     time::Duration,
 };
-use tiny_keccak::{Hasher, Sha3};
 use xor_name::XorName;
 
 // Interval to progress DKG timed phase
 const DKG_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 const BACKLOG_CAPACITY: usize = 100;
-
-/// Unique identified of a DKG session.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct DkgKey {
-    hash: Digest256,
-    generation: u64,
-}
-
-impl DkgKey {
-    pub fn new(elder_candidates: &ElderCandidates, generation: u64) -> Self {
-        // Calculate the hash without involving serialization to avoid having to return `Result`.
-        let mut hasher = Sha3::v256();
-        let mut hash = Digest256::default();
-
-        for peer in elder_candidates.peers() {
-            hasher.update(&peer.name().0);
-        }
-
-        hasher.update(&elder_candidates.prefix.name().0);
-        hasher.update(&elder_candidates.prefix.bit_count().to_le_bytes());
-        hasher.finalize(&mut hash);
-
-        Self { hash, generation }
-    }
-}
-
-impl Debug for DkgKey {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "DkgKey({:10}/{})", HexFmt(&self.hash), self.generation)
-    }
-}
 
 /// DKG voter carries out the work of participating and/or observing a DKG.
 ///
@@ -471,99 +444,6 @@ impl Session {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub(crate) struct DkgFailureProof {
-    public_key: PublicKey,
-    signature: Signature,
-}
-
-impl DkgFailureProof {
-    fn new(keypair: &Keypair, non_participants: &BTreeSet<XorName>, dkg_key: &DkgKey) -> Self {
-        Self {
-            public_key: keypair.public,
-            signature: crypto::sign(&failure_proof_hash(dkg_key, non_participants), keypair),
-        }
-    }
-
-    fn verify(&self, dkg_key: &DkgKey, non_participants: &BTreeSet<XorName>) -> bool {
-        let hash = failure_proof_hash(dkg_key, non_participants);
-        self.public_key.verify(&hash, &self.signature).is_ok()
-    }
-}
-
-#[derive(Default, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub(crate) struct DkgFailureProofSet {
-    proofs: Vec<DkgFailureProof>,
-    pub non_participants: BTreeSet<XorName>,
-}
-
-impl DkgFailureProofSet {
-    // Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was
-    // not already present in the set and `false` otherwise.
-    fn insert(&mut self, proof: DkgFailureProof, non_participants: &BTreeSet<XorName>) -> bool {
-        if self.non_participants.is_empty() {
-            self.non_participants = non_participants.clone();
-        }
-        if self
-            .proofs
-            .iter()
-            .all(|existing_proof| existing_proof.public_key != proof.public_key)
-        {
-            self.proofs.push(proof);
-            true
-        } else {
-            false
-        }
-    }
-
-    // Check whether we have enough proofs to reach agreement on the failure. The contained proofs
-    // are assumed valid.
-    fn has_agreement(&self, elder_candidates: &ElderCandidates) -> bool {
-        has_failure_agreement(elder_candidates.elders.len(), self.proofs.len())
-    }
-
-    pub fn verify(&self, elder_candidates: &ElderCandidates, generation: u64) -> bool {
-        let hash = failure_proof_hash(
-            &DkgKey::new(elder_candidates, generation),
-            &self.non_participants,
-        );
-        let votes = self
-            .proofs
-            .iter()
-            .filter(|proof| {
-                elder_candidates
-                    .elders
-                    .contains_key(&crypto::name(&proof.public_key))
-                    && proof.public_key.verify(&hash, &proof.signature).is_ok()
-            })
-            .count();
-
-        has_failure_agreement(elder_candidates.elders.len(), votes)
-    }
-}
-
-// Check whether we have enough proofs to reach agreement on the failure. We only need
-// `N - supermajority(N) + 1` proofs, because that already makes a supermajority agreement on a
-// successful outcome impossible.
-fn has_failure_agreement(num_participants: usize, num_votes: usize) -> bool {
-    num_votes > num_participants - supermajority(num_participants)
-}
-
-// Create a value whose signature serves as the proof that a failure of a DKG session with the given
-// `dkg_key` was observed.
-fn failure_proof_hash(dkg_key: &DkgKey, non_participants: &BTreeSet<XorName>) -> Digest256 {
-    let mut hasher = Sha3::v256();
-    let mut hash = Digest256::default();
-    hasher.update(&dkg_key.hash);
-    hasher.update(&dkg_key.generation.to_le_bytes());
-    for name in non_participants.iter() {
-        hasher.update(&name.0);
-    }
-    hasher.update(b"failure");
-    hasher.finalize(&mut hash);
-    hash
-}
-
 struct Backlog(VecDeque<(DkgKey, DkgMessage)>);
 
 impl Backlog {
@@ -636,12 +516,12 @@ impl DkgCommand {
             } => {
                 let variant = Variant::DkgMessage { dkg_key, message };
                 let message =
-                    Message::single_src(node, DstLocation::DirectAndUnrouted, variant, None)?;
+                    RoutingMsg::single_src(node, DstLocation::DirectAndUnrouted, variant, None)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),
                     recipients.len(),
-                    message.to_bytes(),
+                    message,
                     DestInfo {
                         dest: XorName::random(),
                         dest_section_pk: key,
@@ -670,12 +550,12 @@ impl DkgCommand {
                     non_participants,
                 };
                 let message =
-                    Message::single_src(node, DstLocation::DirectAndUnrouted, variant, None)?;
+                    RoutingMsg::single_src(node, DstLocation::DirectAndUnrouted, variant, None)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),
                     recipients.len(),
-                    message.to_bytes(),
+                    message,
                     DestInfo {
                         dest: XorName::random(),
                         dest_section_pk: key,
@@ -711,8 +591,8 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        crypto, node::test_utils::arbitrary_unique_nodes, section::test_utils::gen_addr,
-        ELDER_SIZE, MIN_ADULT_AGE,
+        agreement::DkgKeyUtils, crypto, node::test_utils::arbitrary_unique_nodes,
+        section::test_utils::gen_addr, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use assert_matches::assert_matches;
     use proptest::prelude::*;
