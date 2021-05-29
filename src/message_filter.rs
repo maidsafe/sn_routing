@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::messages::Message;
+use crate::messages::RoutingMsgUtils;
 use lru_time_cache::LruCache;
-use sn_messaging::{DstLocation, MessageId};
+use sn_messaging::{node::RoutingMsg, DstLocation, MessageId};
 use std::time::Duration;
 use xor_name::XorName;
 
@@ -57,13 +57,13 @@ impl MessageFilter {
     // Filter outgoing `SNRoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    pub fn filter_outgoing(&mut self, msg: &Message, pub_id: &XorName) -> FilteringResult {
+    pub fn filter_outgoing(&mut self, msg: &RoutingMsg, pub_id: &XorName) -> FilteringResult {
         // Not filtering direct messages.
         if let DstLocation::DirectAndUnrouted = msg.dst() {
             return FilteringResult::NewMessage;
         }
 
-        if self.outgoing.insert((*msg.id(), *pub_id), ()).is_some() {
+        if self.outgoing.insert((msg.id(), *pub_id), ()).is_some() {
             debug!("&&&& Outgoing message filtered: {:?}", msg);
             FilteringResult::KnownMessage
         } else {
@@ -76,7 +76,7 @@ impl MessageFilter {
         let cur_value = self.incoming.insert(*msg_id, ());
 
         if cur_value.is_some() {
-            debug!("&&&& invoming message filtered: {:?}", msg_id);
+            debug!("&&&& Incoming message filtered: {:?}", msg_id);
         }
 
         cur_value.is_none()

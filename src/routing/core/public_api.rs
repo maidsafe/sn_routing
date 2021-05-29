@@ -8,19 +8,21 @@
 
 use super::{delivery_group, Core};
 use crate::{
-    agreement::Proposal,
     error::Result,
-    messages::{Message, Variant},
-    network::Network,
+    messages::RoutingMsgUtils,
+    network::NetworkUtils,
     node::Node,
-    peer::Peer,
+    peer::PeerUtils,
     routing::{command::Command, enduser_registry::SocketId},
-    section::{MemberInfo, Section, SectionAuthorityProvider},
+    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionUtils},
     Error, Event,
 };
 use bytes::Bytes;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
+    node::{
+        MemberInfo, Network, Peer, Proposal, RoutingMsg, Section, SectionAuthorityProvider, Variant,
+    },
     section_info::{Error as TargetSectionError, SectionInfo},
     DestInfo, EndUser, Itinerary, SrcLocation,
 };
@@ -138,7 +140,7 @@ impl Core {
     // ----------------------------------------------------------------------------------------
 
     // Send message over the network.
-    pub fn relay_message(&mut self, msg: &Message) -> Result<Option<Command>> {
+    pub fn relay_message(&mut self, msg: &RoutingMsg) -> Result<Option<Command>> {
         let (targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
@@ -173,7 +175,7 @@ impl Core {
         let command = Command::send_message_to_nodes(
             targets,
             dg_size,
-            msg.to_bytes(),
+            msg.clone(),
             DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: dest_pk,
@@ -243,13 +245,13 @@ impl Core {
         };
         let dest_section_pk = self.section_key_by_name(&dst_name);
 
-        let variant = Variant::UserMessage(content);
+        let variant = Variant::UserMessage(content.to_vec());
 
         // If the msg is to be aggregated at dst, we don't vote among our peers, we simply send the
         // msg as our vote to the dst.
         let msg = if itinerary.aggregate_at_dst() {
             let proof_chain = self.create_proof_chain(additional_proof_chain_key)?;
-            Message::for_dst_accumulation(
+            RoutingMsg::for_dst_accumulation(
                 self.section_keys_provider.key_share()?,
                 itinerary.src.name(),
                 itinerary.dst,
@@ -260,7 +262,7 @@ impl Core {
             let proposal = self.create_aggregate_at_src_proposal(itinerary.dst, variant, None)?;
             return self.propose(proposal);
         } else {
-            Message::single_src(&self.node, itinerary.dst, variant, None)?
+            RoutingMsg::single_src(&self.node, itinerary.dst, variant, None)?
         };
         let mut commands = vec![];
 

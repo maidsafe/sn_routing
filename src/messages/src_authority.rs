@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::{self, PublicKey, Signature as SimpleSignature},
+    crypto::{self},
     error::{Error, Result},
-    peer::Peer,
+    peer::PeerUtils,
 };
-use bls_signature_aggregator::{Proof, ProofShare};
-use bytes::Bytes;
-use serde::{Deserialize, Serialize};
-use sn_messaging::{MessageId, SrcLocation};
+use sn_messaging::{
+    node::{Peer, SrcAuthority},
+    SrcLocation,
+};
 use std::net::SocketAddr;
 use xor_name::XorName;
 
@@ -23,75 +23,44 @@ use xor_name::XorName;
 /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
 /// agains the pub key and we know th epub key then we are good. If the proof is not recognised we
 /// ask for a longer chain that can be recognised). Therefore we don't need to sign this field.
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub enum SrcAuthority {
-    /// Authority of a single peer.
-    Node {
-        /// Public key of the source peer.
-        public_key: PublicKey,
-        /// ed-25519 signature of the message corresponding to the public key of the source peer.
-        signature: SimpleSignature,
-    },
-    /// Authority of a single peer that uses it's BLS Keyshare to sign the message.
-    BlsShare {
-        /// Name in the source section
-        src_name: XorName,
-        /// Proof Share signed by the peer's BLS KeyShare
-        proof_share: ProofShare,
-    },
-    /// Authority of a whole section.
-    Section {
-        /// Name in the source section.
-        src_name: XorName,
-        /// BLS proof of the message corresponding to the source section.
-        proof: Proof,
-    },
+pub trait SrcAuthorityUtils {
+    fn src_location(&self) -> SrcLocation;
+
+    fn is_section(&self) -> bool;
+
+    fn name(&self) -> XorName;
+
+    // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
+    fn peer(&self, addr: SocketAddr) -> Result<Peer>;
 }
 
-impl SrcAuthority {
-    pub(crate) fn src_location(&self) -> SrcLocation {
+impl SrcAuthorityUtils for SrcAuthority {
+    fn src_location(&self) -> SrcLocation {
         match self {
-            Self::Node { public_key, .. } => SrcLocation::Node(crypto::name(&*public_key)),
-            Self::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
-            Self::Section { src_name, .. } => SrcLocation::Section(*src_name),
+            SrcAuthority::Node { public_key, .. } => SrcLocation::Node(crypto::name(public_key)),
+            SrcAuthority::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
+            SrcAuthority::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
     }
 
-    pub(crate) fn is_section(&self) -> bool {
-        matches!(self, Self::Section { .. })
+    fn is_section(&self) -> bool {
+        matches!(self, SrcAuthority::Section { .. })
     }
 
-    pub(crate) fn name(&self) -> XorName {
+    fn name(&self) -> XorName {
         match self {
-            Self::Node { public_key, .. } => crypto::name(&*public_key),
-            Self::BlsShare { src_name, .. } => *src_name,
-            Self::Section { src_name, .. } => *src_name,
+            SrcAuthority::Node { public_key, .. } => crypto::name(public_key),
+            SrcAuthority::BlsShare { src_name, .. } => *src_name,
+            SrcAuthority::Section { src_name, .. } => *src_name,
         }
     }
 
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
-    pub(crate) fn peer(&self, addr: SocketAddr) -> Result<Peer> {
+    fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            Self::Node { public_key, .. } => Ok(Peer::new(crypto::name(&*public_key), addr)),
-            Self::Section { .. } | Self::BlsShare { .. } => Err(Error::InvalidSrcLocation),
-        }
-    }
-
-    // Use signature as id
-    pub(crate) fn id(&self) -> MessageId {
-        match self {
-            Self::Node { signature, .. } => {
-                MessageId::from_content(&Bytes::copy_from_slice(&signature.to_bytes()))
-                    .unwrap_or_default()
-            }
-            Self::BlsShare { proof_share, .. } => MessageId::from_content(&Bytes::copy_from_slice(
-                &proof_share.signature_share.0.to_bytes(),
-            ))
-            .unwrap_or_default(),
-            Self::Section { proof, .. } => {
-                MessageId::from_content(&Bytes::copy_from_slice(&proof.signature.to_bytes()))
-                    .unwrap_or_default()
+            SrcAuthority::Node { public_key, .. } => Ok(Peer::new(crypto::name(public_key), addr)),
+            SrcAuthority::Section { .. } | SrcAuthority::BlsShare { .. } => {
+                Err(Error::InvalidSrcLocation)
             }
         }
     }

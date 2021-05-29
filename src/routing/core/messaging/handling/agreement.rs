@@ -8,19 +8,28 @@
 
 use std::cmp;
 
-use bls_signature_aggregator::Proof;
-use secured_linked_list::SecuredLinkedList;
-use sn_messaging::{DestInfo, DstLocation};
-use xor_name::XorName;
-
 use crate::{
-    agreement::{Proposal, Proven},
+    agreement::ProvenUtils,
     error::Result,
-    messages::{Message, PlainMessage, Variant},
+    messages::RoutingMsgUtils,
+    network::NetworkUtils,
+    peer::PeerUtils,
     routing::command::Command,
-    section::{MemberInfo, PeerState, SectionAuthorityProvider},
+    section::{
+        ElderCandidatesUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils,
+    },
     Error, Event, MIN_AGE,
 };
+use bls_signature_aggregator::Proof;
+use secured_linked_list::SecuredLinkedList;
+use sn_messaging::{
+    node::{
+        MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg,
+        SectionAuthorityProvider, Variant,
+    },
+    DestInfo, DstLocation,
+};
+use xor_name::XorName;
 
 use super::Core;
 
@@ -212,7 +221,7 @@ impl Core {
                 .map(|peer| (*peer.name(), *peer.addr()))
                 .collect();
             if !sync_recipients.is_empty() {
-                let sync_message = Message::single_src(
+                let sync_message = RoutingMsg::single_src(
                     &self.node,
                     DstLocation::DirectAndUnrouted,
                     Variant::Sync {
@@ -225,7 +234,7 @@ impl Core {
                 commands.push(Command::send_message_to_nodes(
                     sync_recipients,
                     len,
-                    sync_message.to_bytes(),
+                    sync_message,
                     DestInfo {
                         dest: XorName::random(),
                         dest_section_pk: proof.public_key,
@@ -286,7 +295,7 @@ impl Core {
         proof: Proof,
         dest_info: DestInfo,
     ) -> Result<Command> {
-        let message = Message::section_src(message, proof, proof_chain)?;
+        let message = RoutingMsg::section_src(message, proof, proof_chain)?;
 
         Ok(Command::HandleMessage {
             message,

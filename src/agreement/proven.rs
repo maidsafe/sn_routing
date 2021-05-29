@@ -8,36 +8,27 @@
 
 use super::{verify_proof, Proof};
 use secured_linked_list::SecuredLinkedList;
-use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, fmt::Debug};
-use xor_name::Prefix;
+use serde::Serialize;
+use sn_messaging::node::Proven;
 
-/// A value together with the proof that it was agreed on by the majority of the section elders.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
-pub struct Proven<T: Serialize> {
-    pub value: T,
-    pub proof: Proof,
+pub trait ProvenUtils<T: Serialize> {
+    fn new(value: T, proof: Proof) -> Self;
+
+    fn verify(&self, section_chain: &SecuredLinkedList) -> bool;
+
+    fn self_verify(&self) -> bool;
 }
 
-impl<T: Serialize> Proven<T> {
-    pub fn new(value: T, proof: Proof) -> Self {
+impl<T: Serialize> ProvenUtils<T> for Proven<T> {
+    fn new(value: T, proof: Proof) -> Self {
         Self { value, proof }
     }
 
-    pub fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
+    fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
         section_chain.has_key(&self.proof.public_key) && self.self_verify()
     }
 
-    pub fn self_verify(&self) -> bool {
+    fn self_verify(&self) -> bool {
         verify_proof(&self.proof, &self.value)
-    }
-}
-
-impl<T> Borrow<Prefix> for Proven<T>
-where
-    T: Borrow<Prefix> + Serialize,
-{
-    fn borrow(&self) -> &Prefix {
-        self.value.borrow()
     }
 }

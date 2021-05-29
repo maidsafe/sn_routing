@@ -8,10 +8,10 @@
 
 use super::{bootstrap, Comm, Command, Core};
 use crate::{
-    error::Result, event::Event, relocation::SignedRelocateDetails, routing::comm::SendStatus,
+    error::Result, event::Event, peer::PeerUtils, routing::comm::SendStatus, section::SectionUtils,
     Error, XorName,
 };
-use sn_messaging::MessageType;
+use sn_messaging::{node::SignedRelocateDetails, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, Mutex},

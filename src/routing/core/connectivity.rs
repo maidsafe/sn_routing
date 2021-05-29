@@ -8,15 +8,18 @@
 
 use super::Core;
 use crate::{
-    agreement::{DkgCommands, DkgFailureProof, DkgFailureProofSet, DkgKey, Proposal},
+    agreement::{DkgCommands, DkgFailureProofSetUtils},
     error::Result,
-    messages::Variant,
+    peer::PeerUtils,
     routing::command::Command,
-    section::ElderCandidates,
+    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
     Error,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
-use sn_messaging::DstLocation;
+use sn_messaging::{
+    node::{DkgFailureProof, DkgFailureProofSet, DkgKey, ElderCandidates, Proposal, Variant},
+    DstLocation,
+};
 use std::{collections::BTreeSet, iter, net::SocketAddr, slice};
 use xor_name::XorName;
 

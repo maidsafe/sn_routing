@@ -8,17 +8,16 @@
 
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
-    agreement::Proven,
     crypto::{self, Signature},
     error::{Error, Result},
-    messages::{JoinRequest, Message, ResourceProofResponse, Variant, VerifyStatus},
+    messages::{RoutingMsgUtils, VerifyStatus},
     node::Node,
-    relocation::{RelocatePayload, SignedRelocateDetails},
+    peer::PeerUtils,
+    relocation::{RelocatePayloadUtils, SignedRelocateDetailsUtils},
     routing::comm::SendStatus,
-    section::{Section, SectionAuthorityProvider},
+    section::{SectionAuthorityProviderUtils, SectionUtils},
     FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
-use bytes::Bytes;
 use futures::future;
 use itertools::Itertools;
 use rand::seq::IteratorRandom;
@@ -26,7 +25,10 @@ use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
 use sn_data_types::PublicKey;
 use sn_messaging::{
-    node::RoutingMsg,
+    node::{
+        JoinRequest, Proven, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
+        SectionAuthorityProvider, SignedRelocateDetails, Variant,
+    },
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, MessageType, WireMsg,
 };
@@ -51,7 +53,7 @@ pub(crate) async fn initial(
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
+) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
@@ -80,7 +82,7 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     genesis_key: bls::PublicKey,
     relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
+) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
@@ -101,7 +103,7 @@ struct State<'a> {
     recv_rx: MessageReceiver<'a>,
     node: Node,
     // Backlog for unknown messages
-    backlog: VecDeque<(Message, SocketAddr, DestInfo)>,
+    backlog: VecDeque<(RoutingMsg, SocketAddr, DestInfo)>,
 }
 
 impl<'a> State<'a> {
@@ -123,7 +125,7 @@ impl<'a> State<'a> {
         bootstrap_addrs: Vec<SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
+    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
         let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -294,12 +296,8 @@ impl<'a> State<'a> {
                         return Ok((response, sender, dest_info))
                     }
                 },
-                MessageType::Routing {
-                    msg: RoutingMsg(msg_bytes),
-                    dest_info,
-                } => {
-                    let message = Message::from_bytes(Bytes::from(msg_bytes))?;
-                    self.backlog_message(message, sender, dest_info)
+                MessageType::Routing { msg, dest_info } => {
+                    self.backlog_message(msg, sender, dest_info)
                 }
                 MessageType::Node { .. }
                 | MessageType::SectionInfo { .. }
@@ -307,7 +305,7 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("Message sender unexpectedly closed");
+        error!("RoutingMsg sender unexpectedly closed");
         // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
@@ -347,7 +345,7 @@ impl<'a> State<'a> {
         elders: BTreeMap<XorName, SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<(Node, Section, Vec<(Message, SocketAddr, DestInfo)>)> {
+    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
         let join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
@@ -449,14 +447,13 @@ impl<'a> State<'a> {
 
         let variant = Variant::JoinRequest(Box::new(join_request));
         let message =
-            Message::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
-        let node_msg = RoutingMsg::new(message.to_bytes());
+            RoutingMsg::single_src(&self.node, DstLocation::DirectAndUnrouted, variant, None)?;
 
         let _ = self
             .send_tx
             .send((
                 MessageType::Routing {
-                    msg: node_msg,
+                    msg: message,
                     dest_info: DestInfo {
                         // Will be overridden while sending to multiple elders
                         dest: XorName::random(),
@@ -477,10 +474,7 @@ impl<'a> State<'a> {
     ) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
         while let Some((message, sender)) = self.recv_rx.next().await {
             let (message, dest_info) = match message {
-                MessageType::Routing {
-                    msg: RoutingMsg(msg_bytes),
-                    dest_info,
-                } => (Message::from_bytes(Bytes::from(msg_bytes))?, dest_info),
+                MessageType::Routing { msg, dest_info } => (msg, dest_info),
                 MessageType::Node { .. }
                 | MessageType::Client { .. }
                 | MessageType::SectionInfo { .. } => continue,
@@ -579,12 +573,12 @@ impl<'a> State<'a> {
             }
         }
 
-        error!("Message sender unexpectedly closed");
+        error!("RoutingMsg sender unexpectedly closed");
         // TODO: consider more specific error here (e.g. `BootstrapInterrupted`)
         Err(Error::InvalidState)
     }
 
-    fn verify_message(&self, message: &Message, trusted_key: Option<&bls::PublicKey>) -> bool {
+    fn verify_message(&self, message: &RoutingMsg, trusted_key: Option<&bls::PublicKey>) -> bool {
         match message.verify(trusted_key) {
             Ok(VerifyStatus::Full) => true,
             Ok(VerifyStatus::Unknown) if trusted_key.is_none() => true,
@@ -600,7 +594,7 @@ impl<'a> State<'a> {
         }
     }
 
-    fn backlog_message(&mut self, message: Message, sender: SocketAddr, dest_info: DestInfo) {
+    fn backlog_message(&mut self, message: RoutingMsg, sender: SocketAddr, dest_info: DestInfo) {
         while self.backlog.len() >= BACKLOG_CAPACITY {
             let _ = self.backlog.pop_front();
         }
@@ -628,7 +622,7 @@ enum JoinResponse {
 }
 
 // Receiver of incoming messages that can be backed either by a raw `qp2p::ConnectionEvent` receiver
-// or by receiver of deserialized `Message` and provides a unified interface on top of them.
+// or by receiver of deserialized `RoutingMsg` and provides a unified interface on top of them.
 enum MessageReceiver<'a> {
     Raw(&'a mut mpsc::Receiver<ConnectionEvent>),
     Deserialized(mpsc::Receiver<(MessageType, SocketAddr)>),
@@ -681,8 +675,9 @@ async fn send_messages(
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::*, error::Error as RoutingError, routing::tests::SecretKeySet,
-        section::test_utils::*, section::MemberInfo, ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
+        agreement::test_utils::*, error::Error as RoutingError, messages::RoutingMsgUtils,
+        routing::tests::SecretKeySet, section::test_utils::*, section::MemberInfoUtils, ELDER_SIZE,
+        MIN_ADULT_AGE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};
     use assert_matches::assert_matches;
@@ -690,7 +685,7 @@ mod tests {
         future::{self, Either},
         pin_mut,
     };
-    use sn_messaging::section_info::SectionInfo;
+    use sn_messaging::{node::MemberInfo, section_info::SectionInfo};
     use tokio::task;
 
     #[tokio::test]
@@ -771,8 +766,8 @@ mod tests {
                 .recv()
                 .await
                 .ok_or_else(|| anyhow!("JoinRequest was not received"))?;
-            let (message, dest_info) = assert_matches!(message, MessageType::Routing { msg: RoutingMsg(bytes), dest_info } =>
-                (Message::from_bytes(Bytes::from(bytes))?, dest_info));
+            let (message, dest_info) = assert_matches!(message, MessageType::Routing { msg, dest_info } =>
+                (msg, dest_info));
 
             assert_eq!(dest_info.dest_section_pk, pk);
             itertools::assert_equal(
@@ -792,7 +787,7 @@ mod tests {
             let section_auth = proven(sk, section_auth.clone())?;
             let member_info = proven(sk, MemberInfo::joined(peer))?;
             let proof_chain = SecuredLinkedList::new(pk);
-            let message = Message::single_src(
+            let message = RoutingMsg::single_src(
                 &bootstrap_node,
                 DstLocation::DirectAndUnrouted,
                 Variant::NodeApproval {
@@ -805,7 +800,7 @@ mod tests {
 
             recv_tx.try_send((
                 MessageType::Routing {
-                    msg: RoutingMsg::new(message.to_bytes()),
+                    msg: message,
                     dest_info: DestInfo {
                         dest: *peer.name(),
                         dest_section_pk: pk,
@@ -1237,11 +1232,11 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg, .. } => msg);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             // Send `Rejoin` with bad prefix
-            let message = Message::single_src(
+            let message = RoutingMsg::single_src(
                 &bootstrap_node,
                 DstLocation::DirectAndUnrouted,
                 Variant::JoinRetry {
@@ -1253,7 +1248,7 @@ mod tests {
 
             recv_tx.try_send((
                 MessageType::Routing {
-                    msg: RoutingMsg::new(message.to_bytes()),
+                    msg: message,
                     dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
@@ -1264,7 +1259,7 @@ mod tests {
             task::yield_now().await;
 
             // Send `Rejoin` with good prefix
-            let message = Message::single_src(
+            let message = RoutingMsg::single_src(
                 &bootstrap_node,
                 DstLocation::DirectAndUnrouted,
                 Variant::JoinRetry {
@@ -1276,7 +1271,7 @@ mod tests {
 
             recv_tx.try_send((
                 MessageType::Routing {
-                    msg: RoutingMsg::new(message.to_bytes()),
+                    msg: message,
                     dest_info: DestInfo {
                         dest: node_name,
                         dest_section_pk: section_key,
@@ -1290,7 +1285,7 @@ mod tests {
                 .await
                 .ok_or_else(|| anyhow!("RoutingMsg was not received"))?;
 
-            let message = assert_matches!(message, MessageType::Routing{ msg: RoutingMsg(bytes), .. } => Message::from_bytes(Bytes::from(bytes))?);
+            let message = assert_matches!(message, MessageType::Routing{ msg, .. } => msg);
             assert_matches!(message.variant(), Variant::JoinRequest(_));
 
             Ok(())

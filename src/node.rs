@@ -6,9 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::peer::Peer;
+use crate::peer::PeerUtils;
 use ed25519_dalek::Keypair;
 use sn_data_types::PublicKey;
+use sn_messaging::node::Peer;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
@@ -18,7 +19,7 @@ use xor_name::{XorName, XOR_NAME_LEN};
 
 /// Information and state of our node
 #[derive(Clone)]
-pub(crate) struct Node {
+pub struct Node {
     // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
     // memory which might be insecure.
     // TODO: find a way to not require `Clone`.
