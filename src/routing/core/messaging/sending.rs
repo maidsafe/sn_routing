@@ -163,7 +163,7 @@ impl Core {
         let known_key = self
             .network
             .key_by_name(&details.destination)
-            .unwrap_or_else(|| self.section.chain().root_key());
+            .unwrap_or_else(|_| self.section.chain().root_key());
 
         let src = details.pub_id;
         let dst = DstLocation::Node(details.pub_id);

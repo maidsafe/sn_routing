@@ -94,7 +94,7 @@ impl RelocateDetailsUtils for RelocateDetails {
     ) -> RelocateDetails {
         let destination_key = *network
             .key_by_name(&destination)
-            .unwrap_or_else(|| section.chain().root_key());
+            .unwrap_or_else(|_| section.chain().root_key());
 
         RelocateDetails {
             pub_id: *peer.name(),

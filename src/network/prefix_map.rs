@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
@@ -88,12 +89,13 @@ where
 
     /// Get the entry at the prefix that matches `name`. In case of multiple matches, returns the
     /// one with the longest prefix.
-    pub fn get_matching(&self, name: &XorName) -> Option<&T> {
+    pub fn get_matching(&self, name: &XorName) -> Result<&T> {
         self.0
             .iter()
             .filter(|entry| entry.prefix().matches(name))
             .max_by_key(|entry| entry.prefix().bit_count())
             .map(|entry| &entry.0)
+            .ok_or(Error::NoMatchingSection)
     }
 
     /// Returns an iterator over the entries, in order by prefixes.
@@ -382,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn get_matching() {
+    fn get_matching() -> Result<()> {
         let mut rng = rand::thread_rng();
 
         let mut map = PrefixMap::new();
@@ -391,19 +393,20 @@ mod tests {
         let _ = map.insert((prefix("10"), 10));
 
         assert_eq!(
-            map.get_matching(&prefix("0").substituted_in(rng.gen())),
-            Some(&(prefix("0"), 0))
+            map.get_matching(&prefix("0").substituted_in(rng.gen()))?,
+            &(prefix("0"), 0)
         );
 
         assert_eq!(
-            map.get_matching(&prefix("11").substituted_in(rng.gen())),
-            Some(&(prefix("1"), 1))
+            map.get_matching(&prefix("11").substituted_in(rng.gen()))?,
+            &(prefix("1"), 1)
         );
 
         assert_eq!(
-            map.get_matching(&prefix("10").substituted_in(rng.gen())),
-            Some(&(prefix("10"), 10))
+            map.get_matching(&prefix("10").substituted_in(rng.gen()))?,
+            &(prefix("10"), 10)
         );
+        Ok(())
     }
 
     fn prefix(s: &str) -> Prefix {

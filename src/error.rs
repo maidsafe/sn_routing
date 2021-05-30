@@ -74,4 +74,8 @@ pub enum Error {
     InvalidPayload,
     #[error("Routing is set to not allow taking any new node")]
     TryJoinLater,
+    #[error("No matching Section")]
+    NoMatchingSection,
+    #[error("No matching Elder")]
+    NoMatchingElder,
 }

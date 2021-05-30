@@ -15,6 +15,7 @@ use crate::{
     agreement::{verify_proof, Proof, ProvenUtils},
     peer::PeerUtils,
     section::SectionAuthorityProviderUtils,
+    Error, Result,
 };
 
 use secured_linked_list::SecuredLinkedList;
@@ -66,7 +67,7 @@ pub trait NetworkUtils {
     fn keys(&self) -> Box<dyn Iterator<Item = (&Prefix, &bls::PublicKey)> + '_>;
 
     /// Returns the latest known key for the prefix that matches `name`.
-    fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey>;
+    fn key_by_name(&self, name: &XorName) -> Result<&bls::PublicKey>;
 
     /// Returns the latest known key for a section with `prefix`.
     /// If this returns `None` that means the latest known key is the genesis key.
@@ -74,10 +75,7 @@ pub trait NetworkUtils {
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
     /// excluding self section.
-    fn section_by_name(
-        &self,
-        name: &XorName,
-    ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>);
+    fn section_by_name(&self, name: &XorName) -> Result<SectionAuthorityProvider>;
 
     /// Returns network statistics.
     fn network_stats(&self, our: &SectionAuthorityProvider) -> NetworkStats;
@@ -187,9 +185,10 @@ impl NetworkUtils for Network {
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
-    fn key_by_name(&self, name: &XorName) -> Option<&bls::PublicKey> {
+    fn key_by_name(&self, name: &XorName) -> Result<&bls::PublicKey> {
         self.sections
             .get_matching(name)
+            .ok_or(Error::NoMatchingSection)
             .map(|entry| &entry.section_auth.value.section_key)
     }
 
@@ -203,18 +202,11 @@ impl NetworkUtils for Network {
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
     /// excluding self section.
-    fn section_by_name(
-        &self,
-        name: &XorName,
-    ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
-        (
-            self.sections
-                .get_matching(name)
-                .map(|entry| &entry.section_auth.value.section_key),
-            self.sections
-                .get_matching(name)
-                .map(|entry| &entry.section_auth.value),
-        )
+    fn section_by_name(&self, name: &XorName) -> Result<SectionAuthorityProvider> {
+        self.sections
+            .get_matching(name)
+            .ok_or(Error::NoMatchingSection)
+            .map(|value| value.section_auth.value.clone())
     }
 
     /// Returns network statistics.
