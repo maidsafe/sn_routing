@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.72.0](https://github.com/maidsafe/sn_routing/compare/v0.71.4...v0.72.0) (2021-05-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **msgs:** some of these changes impact the pubic API requiring some newly introduced traits usage.
+
+* **msgs:** move all routing message definitions out to sn_messaging ([2259b7b](https://github.com/maidsafe/sn_routing/commit/2259b7b7b120c92f3f8e441ddd694dc5b2d43386))
+
 ### [0.71.4](https://github.com/maidsafe/sn_routing/compare/v0.71.3...v0.71.4) (2021-05-28)
 
 
