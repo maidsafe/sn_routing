@@ -422,22 +422,6 @@
 <span id="421">421</span>
 <span id="422">422</span>
 <span id="423">423</span>
-<span id="424">424</span>
-<span id="425">425</span>
-<span id="426">426</span>
-<span id="427">427</span>
-<span id="428">428</span>
-<span id="429">429</span>
-<span id="430">430</span>
-<span id="431">431</span>
-<span id="432">432</span>
-<span id="433">433</span>
-<span id="434">434</span>
-<span id="435">435</span>
-<span id="436">436</span>
-<span id="437">437</span>
-<span id="438">438</span>
-<span id="439">439</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2019 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -450,17 +434,21 @@
 <span class="doccomment">//! Relocation related types and utilities.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Keypair</span>, <span class="ident">Signature</span>, <span class="ident">Verifier</span>},
+    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Keypair</span>, <span class="ident">Verifier</span>},
     <span class="ident">error</span>::<span class="ident">Error</span>,
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
-    <span class="ident">network</span>::<span class="ident">Network</span>,
-    <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">Section</span>},
+    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
+    <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
+    <span class="ident">section</span>::{<span class="ident">SectionPeersUtils</span>, <span class="ident">SectionUtils</span>},
 };
-<span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
-<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">de</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SerdeDeError</span>, <span class="ident">Deserialize</span>, <span class="ident">Deserializer</span>, <span class="ident">Serialize</span>, <span class="ident">Serializer</span>};
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{
+        <span class="ident">MemberInfo</span>, <span class="ident">Network</span>, <span class="ident">Peer</span>, <span class="ident">RelocateDetails</span>, <span class="ident">RelocatePayload</span>, <span class="ident">RelocatePromise</span>, <span class="ident">RoutingMsg</span>,
+        <span class="ident">Section</span>, <span class="ident">SignedRelocateDetails</span>, <span class="ident">Variant</span>,
+    },
+    <span class="ident">MessageType</span>,
+};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">marker</span>::<span class="ident">Sized</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">sync</span>::<span class="ident">mpsc</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
@@ -479,7 +467,7 @@
         .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">check</span>(<span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>(), <span class="ident">churn_signature</span>))
         .<span class="ident">collect</span>();
 
-    <span class="kw">let</span> <span class="ident">max_age</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">age</span>) <span class="op">=</span> <span class="ident">candidates</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> <span class="ident">info</span>.<span class="ident">peer</span>.<span class="ident">age</span>()).<span class="ident">max</span>() {
+    <span class="kw">let</span> <span class="ident">max_age</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">age</span>) <span class="op">=</span> <span class="ident">candidates</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">info</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">info</span>).<span class="ident">peer</span>.<span class="ident">age</span>()).<span class="ident">max</span>() {
         <span class="ident">age</span>
     } <span class="kw">else</span> {
         <span class="kw">return</span> <span class="macro">vec</span><span class="macro">!</span>[];
@@ -499,26 +487,20 @@
 
 <span class="doccomment">/// Details of a relocation: which node to relocate, where to relocate it to and what age it should</span>
 <span class="doccomment">/// get once relocated.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Hash</span>, <span class="ident">Clone</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RelocateDetails</span> {
-    <span class="doccomment">/// Public id of the node to relocate.</span>
-    <span class="kw">pub</span> <span class="ident">pub_id</span>: <span class="ident">XorName</span>,
-    <span class="doccomment">/// Relocation destination - the node will be relocated to a section whose prefix matches this</span>
-    <span class="doccomment">/// name.</span>
-    <span class="kw">pub</span> <span class="ident">destination</span>: <span class="ident">XorName</span>,
-    <span class="doccomment">/// The BLS key of the destination section used by the relocated node to verify messages.</span>
-    <span class="kw">pub</span> <span class="ident">destination_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    <span class="doccomment">/// The age the node will have post-relocation.</span>
-    <span class="kw">pub</span> <span class="ident">age</span>: <span class="ident">u8</span>,
-}
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">RelocateDetailsUtils</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>, <span class="ident">network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>, <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>;
 
-<span class="kw">impl</span> <span class="ident">RelocateDetails</span> {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">new</span>(
+    <span class="kw">fn</span> <span class="ident">with_age</span>(
         <span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>,
         <span class="ident">network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>,
         <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>,
         <span class="ident">destination</span>: <span class="ident">XorName</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">age</span>: <span class="ident">u8</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RelocateDetails</span>;
+}
+
+<span class="kw">impl</span> <span class="ident">RelocateDetailsUtils</span> <span class="kw">for</span> <span class="ident">RelocateDetails</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>, <span class="ident">network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>, <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span>::<span class="ident">with_age</span>(
             <span class="ident">section</span>,
             <span class="ident">network</span>,
@@ -528,18 +510,18 @@
         )
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">with_age</span>(
+    <span class="kw">fn</span> <span class="ident">with_age</span>(
         <span class="ident">section</span>: <span class="kw-2">&amp;</span><span class="ident">Section</span>,
         <span class="ident">network</span>: <span class="kw-2">&amp;</span><span class="ident">Network</span>,
         <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">Peer</span>,
         <span class="ident">destination</span>: <span class="ident">XorName</span>,
         <span class="ident">age</span>: <span class="ident">u8</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RelocateDetails</span> {
         <span class="kw">let</span> <span class="ident">destination_key</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">network</span>
             .<span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">destination</span>)
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">root_key</span>());
 
-        <span class="self">Self</span> {
+        <span class="ident">RelocateDetails</span> {
             <span class="ident">pub_id</span>: <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(),
             <span class="ident">destination</span>,
             <span class="ident">destination_key</span>,
@@ -548,15 +530,21 @@
     }
 }
 
-<span class="doccomment">/// Message with Variant::Relocate in a convenient wrapper.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">SignedRelocateDetails</span> {
-    <span class="doccomment">/// Signed message whose content is Variant::Relocate</span>
-    <span class="ident">signed_msg</span>: <span class="ident">Message</span>,
+<span class="doccomment">/// RoutingMsg with Variant::Relocate in a convenient wrapper.</span>
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">SignedRelocateDetailsUtils</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">signed_msg</span>: <span class="ident">RoutingMsg</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span>
+    <span class="kw">where</span>
+        <span class="self">Self</span>: <span class="ident">Sized</span>;
+
+    <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+
+    <span class="kw">fn</span> <span class="ident">signed_msg</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">RoutingMsg</span>;
+
+    <span class="kw">fn</span> <span class="ident">destination</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">SignedRelocateDetails</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">signed_msg</span>: <span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+<span class="kw">impl</span> <span class="ident">SignedRelocateDetailsUtils</span> <span class="kw">for</span> <span class="ident">SignedRelocateDetails</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">signed_msg</span>: <span class="ident">RoutingMsg</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="kw">_</span>) <span class="op">=</span> <span class="ident">signed_msg</span>.<span class="ident">variant</span>() {
             <span class="prelude-val">Ok</span>(<span class="self">Self</span> { <span class="ident">signed_msg</span> })
         } <span class="kw">else</span> {
@@ -564,52 +552,34 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Variant</span>::<span class="ident">Relocate</span>(<span class="ident">details</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signed_msg</span>.<span class="ident">variant</span>() {
-            <span class="prelude-val">Ok</span>(<span class="ident">details</span>)
+            <span class="prelude-val">Ok</span>(<span class="kw-2">&amp;</span><span class="ident">details</span>)
         } <span class="kw">else</span> {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;SignedRelocateDetails does not contain Variant::Relocate&quot;</span>);
             <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidMessage</span>)
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">signed_msg</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Message</span> {
+    <span class="kw">fn</span> <span class="ident">signed_msg</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">RoutingMsg</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signed_msg</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">destination</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">destination</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">relocate_details</span>()<span class="question-mark">?</span>.<span class="ident">destination</span>)
     }
 }
 
-<span class="kw">impl</span> <span class="ident">Serialize</span> <span class="kw">for</span> <span class="ident">SignedRelocateDetails</span> {
-    <span class="kw">fn</span> <span class="ident">serialize</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Serializer</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">serialiser</span>: <span class="ident">S</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">S</span>::<span class="prelude-val">Ok</span>, <span class="ident">S</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">signed_msg</span>.<span class="ident">serialize</span>(<span class="ident">serialiser</span>)
-    }
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">RelocatePayloadUtils</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>;
+
+    <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
+
+    <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;de</span><span class="op">&gt;</span> <span class="ident">Deserialize</span><span class="op">&lt;</span><span class="lifetime">&#39;de</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">SignedRelocateDetails</span> {
-    <span class="kw">fn</span> <span class="ident">deserialize</span><span class="op">&lt;</span><span class="ident">D</span>: <span class="ident">Deserializer</span><span class="op">&lt;</span><span class="lifetime">&#39;de</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">deserialiser</span>: <span class="ident">D</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">D</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">signed_msg</span> <span class="op">=</span> <span class="ident">Deserialize</span>::<span class="ident">deserialize</span>(<span class="ident">deserialiser</span>)<span class="question-mark">?</span>;
-        <span class="self">Self</span>::<span class="ident">new</span>(<span class="ident">signed_msg</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
-            <span class="ident">D</span>::<span class="ident">Error</span>::<span class="ident">custom</span>(<span class="macro">format</span><span class="macro">!</span>(
-                <span class="string">&quot;failed to construct SignedRelocateDetails: {:?}&quot;</span>,
-                <span class="ident">err</span>
-            ))
-        })
-    }
-}
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">RelocatePayload</span> {
-    <span class="doccomment">/// The Relocate Signed message.</span>
-    <span class="kw">pub</span> <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
-    <span class="doccomment">/// The new name of the node signed using its old public_key, to prove the node identity.</span>
-    <span class="kw">pub</span> <span class="ident">signature_of_new_name_with_old_key</span>: <span class="ident">Signature</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">RelocatePayload</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+<span class="kw">impl</span> <span class="ident">RelocatePayloadUtils</span> <span class="kw">for</span> <span class="ident">RelocatePayload</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>, <span class="ident">old_keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">signature_of_new_name_with_old_key</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">new_name</span>.<span class="number">0</span>, <span class="ident">old_keypair</span>);
 
         <span class="self">Self</span> {
@@ -618,7 +588,7 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">verify_identity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">details</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">details</span>.<span class="ident">relocate_details</span>() {
             <span class="ident">details</span>
         } <span class="kw">else</span> {
@@ -636,15 +606,9 @@
             .<span class="ident">is_ok</span>()
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">relocate_details</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">RelocateDetails</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">details</span>.<span class="ident">relocate_details</span>()
     }
-}
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">RelocatePromise</span> {
-    <span class="kw">pub</span> <span class="ident">name</span>: <span class="ident">XorName</span>,
-    <span class="kw">pub</span> <span class="ident">destination</span>: <span class="ident">XorName</span>,
 }
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum</span> <span class="ident">RelocateState</span> {
@@ -652,7 +616,7 @@
     <span class="comment">// while being an elder. It must keep fulfilling its duties as elder until its demoted, then it</span>
     <span class="comment">// can send the bytes (which are serialized `RelocatePromise` message) back to the elders who</span>
     <span class="comment">// will exchange it for an actual `Relocate` message.</span>
-    <span class="ident">Delayed</span>(<span class="ident">Bytes</span>),
+    <span class="ident">Delayed</span>(<span class="ident">RoutingMsg</span>),
     <span class="comment">// Relocation in progress. The sender is used to pass messages to the bootstrap task.</span>
     <span class="ident">InProgress</span>(<span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>),
 }
@@ -730,8 +694,11 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>, <span class="ident">peer</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_unique_peers</span>,
-        <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>, <span class="ident">section</span>::<span class="ident">SectionAuthorityProvider</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="ident">proven</span>,
+        <span class="ident">peer</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_unique_peers</span>,
+        <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>,
+        <span class="ident">section</span>::{<span class="ident">MemberInfoUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>},
+        <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_AGE</span>,
     };
     <span class="kw">use</span> <span class="ident">anyhow</span>::<span class="prelude-ty">Result</span>;
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
@@ -739,6 +706,7 @@
     <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="ident">rand</span>::{<span class="ident">rngs</span>::<span class="ident">SmallRng</span>, <span class="ident">Rng</span>, <span class="ident">SeedableRng</span>};
     <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
+    <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::<span class="ident">SectionAuthorityProvider</span>;
     <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>

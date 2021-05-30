@@ -731,126 +731,6 @@
 <span id="730">730</span>
 <span id="731">731</span>
 <span id="732">732</span>
-<span id="733">733</span>
-<span id="734">734</span>
-<span id="735">735</span>
-<span id="736">736</span>
-<span id="737">737</span>
-<span id="738">738</span>
-<span id="739">739</span>
-<span id="740">740</span>
-<span id="741">741</span>
-<span id="742">742</span>
-<span id="743">743</span>
-<span id="744">744</span>
-<span id="745">745</span>
-<span id="746">746</span>
-<span id="747">747</span>
-<span id="748">748</span>
-<span id="749">749</span>
-<span id="750">750</span>
-<span id="751">751</span>
-<span id="752">752</span>
-<span id="753">753</span>
-<span id="754">754</span>
-<span id="755">755</span>
-<span id="756">756</span>
-<span id="757">757</span>
-<span id="758">758</span>
-<span id="759">759</span>
-<span id="760">760</span>
-<span id="761">761</span>
-<span id="762">762</span>
-<span id="763">763</span>
-<span id="764">764</span>
-<span id="765">765</span>
-<span id="766">766</span>
-<span id="767">767</span>
-<span id="768">768</span>
-<span id="769">769</span>
-<span id="770">770</span>
-<span id="771">771</span>
-<span id="772">772</span>
-<span id="773">773</span>
-<span id="774">774</span>
-<span id="775">775</span>
-<span id="776">776</span>
-<span id="777">777</span>
-<span id="778">778</span>
-<span id="779">779</span>
-<span id="780">780</span>
-<span id="781">781</span>
-<span id="782">782</span>
-<span id="783">783</span>
-<span id="784">784</span>
-<span id="785">785</span>
-<span id="786">786</span>
-<span id="787">787</span>
-<span id="788">788</span>
-<span id="789">789</span>
-<span id="790">790</span>
-<span id="791">791</span>
-<span id="792">792</span>
-<span id="793">793</span>
-<span id="794">794</span>
-<span id="795">795</span>
-<span id="796">796</span>
-<span id="797">797</span>
-<span id="798">798</span>
-<span id="799">799</span>
-<span id="800">800</span>
-<span id="801">801</span>
-<span id="802">802</span>
-<span id="803">803</span>
-<span id="804">804</span>
-<span id="805">805</span>
-<span id="806">806</span>
-<span id="807">807</span>
-<span id="808">808</span>
-<span id="809">809</span>
-<span id="810">810</span>
-<span id="811">811</span>
-<span id="812">812</span>
-<span id="813">813</span>
-<span id="814">814</span>
-<span id="815">815</span>
-<span id="816">816</span>
-<span id="817">817</span>
-<span id="818">818</span>
-<span id="819">819</span>
-<span id="820">820</span>
-<span id="821">821</span>
-<span id="822">822</span>
-<span id="823">823</span>
-<span id="824">824</span>
-<span id="825">825</span>
-<span id="826">826</span>
-<span id="827">827</span>
-<span id="828">828</span>
-<span id="829">829</span>
-<span id="830">830</span>
-<span id="831">831</span>
-<span id="832">832</span>
-<span id="833">833</span>
-<span id="834">834</span>
-<span id="835">835</span>
-<span id="836">836</span>
-<span id="837">837</span>
-<span id="838">838</span>
-<span id="839">839</span>
-<span id="840">840</span>
-<span id="841">841</span>
-<span id="842">842</span>
-<span id="843">843</span>
-<span id="844">844</span>
-<span id="845">845</span>
-<span id="846">846</span>
-<span id="847">847</span>
-<span id="848">848</span>
-<span id="849">849</span>
-<span id="850">850</span>
-<span id="851">851</span>
-<span id="852">852</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -860,65 +740,38 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">DkgFailureProofSetUtils</span>, <span class="ident">DkgFailureProofUtils</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Digest256</span>, <span class="ident">Keypair</span>, <span class="ident">PublicKey</span>, <span class="ident">Signature</span>, <span class="ident">Verifier</span>},
+    <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Keypair</span>},
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
+    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::{<span class="self">self</span>, <span class="ident">Command</span>},
-    <span class="ident">section</span>::{<span class="ident">ElderCandidates</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionKeyShare</span>},
+    <span class="ident">section</span>::{<span class="ident">ElderCandidatesUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionKeyShare</span>},
     <span class="ident">supermajority</span>,
 };
 <span class="kw">use</span> <span class="ident">bls_dkg</span>::<span class="ident">key_gen</span>::{<span class="ident">message</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">DkgMessage</span>, <span class="ident">KeyGen</span>};
-<span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
-<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{
+        <span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ElderCandidates</span>, <span class="ident">RoutingMsg</span>,
+        <span class="ident">SectionAuthorityProvider</span>, <span class="ident">Variant</span>,
+    },
+    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>,
+};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::{<span class="ident">BTreeSet</span>, <span class="ident">HashMap</span>, <span class="ident">VecDeque</span>},
-    <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
+    <span class="ident">fmt</span>::<span class="ident">Debug</span>,
     <span class="ident">iter</span>, <span class="ident">mem</span>,
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
     <span class="ident">time</span>::<span class="ident">Duration</span>,
 };
-<span class="kw">use</span> <span class="ident">tiny_keccak</span>::{<span class="ident">Hasher</span>, <span class="ident">Sha3</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="comment">// Interval to progress DKG timed phase</span>
 <span class="kw">const</span> <span class="ident">DKG_PROGRESS_INTERVAL</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">30</span>);
 
 <span class="kw">const</span> <span class="ident">BACKLOG_CAPACITY</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">100</span>;
-
-<span class="doccomment">/// Unique identified of a DKG session.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">DkgKey</span> {
-    <span class="ident">hash</span>: <span class="ident">Digest256</span>,
-    <span class="ident">generation</span>: <span class="ident">u64</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">DkgKey</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>, <span class="ident">generation</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="comment">// Calculate the hash without involving serialization to avoid having to return `Result`.</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">Sha3</span>::<span class="ident">v256</span>();
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">Digest256</span>::<span class="ident">default</span>();
-
-        <span class="kw">for</span> <span class="ident">peer</span> <span class="kw">in</span> <span class="ident">elder_candidates</span>.<span class="ident">peers</span>() {
-            <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>.<span class="ident">name</span>().<span class="number">0</span>);
-        }
-
-        <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">elder_candidates</span>.<span class="ident">prefix</span>.<span class="ident">name</span>().<span class="number">0</span>);
-        <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">elder_candidates</span>.<span class="ident">prefix</span>.<span class="ident">bit_count</span>().<span class="ident">to_le_bytes</span>());
-        <span class="ident">hasher</span>.<span class="ident">finalize</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">hash</span>);
-
-        <span class="self">Self</span> { <span class="ident">hash</span>, <span class="ident">generation</span> }
-    }
-}
-
-<span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">DkgKey</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;DkgKey({:10}/{})&quot;</span>, <span class="ident">HexFmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">hash</span>), <span class="self">self</span>.<span class="ident">generation</span>)
-    }
-}
 
 <span class="doccomment">/// DKG voter carries out the work of participating and/or observing a DKG.</span>
 <span class="doccomment">///</span>
@@ -1325,99 +1178,6 @@
     }
 }
 
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">DkgFailureProof</span> {
-    <span class="ident">public_key</span>: <span class="ident">PublicKey</span>,
-    <span class="ident">signature</span>: <span class="ident">Signature</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">DkgFailureProof</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span> {
-            <span class="ident">public_key</span>: <span class="ident">keypair</span>.<span class="ident">public</span>,
-            <span class="ident">signature</span>: <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>), <span class="ident">keypair</span>),
-        }
-    }
-
-    <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>);
-        <span class="self">self</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
-    }
-}
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">DkgFailureProofSet</span> {
-    <span class="ident">proofs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">DkgFailureProof</span><span class="op">&gt;</span>,
-    <span class="kw">pub</span> <span class="ident">non_participants</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
-}
-
-<span class="kw">impl</span> <span class="ident">DkgFailureProofSet</span> {
-    <span class="comment">// Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was</span>
-    <span class="comment">// not already present in the set and `false` otherwise.</span>
-    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">non_participants</span>.<span class="ident">is_empty</span>() {
-            <span class="self">self</span>.<span class="ident">non_participants</span> <span class="op">=</span> <span class="ident">non_participants</span>.<span class="ident">clone</span>();
-        }
-        <span class="kw">if</span> <span class="self">self</span>
-            .<span class="ident">proofs</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">all</span>(<span class="op">|</span><span class="ident">existing_proof</span><span class="op">|</span> <span class="ident">existing_proof</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">proof</span>.<span class="ident">public_key</span>)
-        {
-            <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">push</span>(<span class="ident">proof</span>);
-            <span class="bool-val">true</span>
-        } <span class="kw">else</span> {
-            <span class="bool-val">false</span>
-        }
-    }
-
-    <span class="comment">// Check whether we have enough proofs to reach agreement on the failure. The contained proofs</span>
-    <span class="comment">// are assumed valid.</span>
-    <span class="kw">fn</span> <span class="ident">has_agreement</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="ident">has_failure_agreement</span>(<span class="ident">elder_candidates</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">len</span>())
-    }
-
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>, <span class="ident">generation</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(
-            <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="ident">elder_candidates</span>, <span class="ident">generation</span>),
-            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">non_participants</span>,
-        );
-        <span class="kw">let</span> <span class="ident">votes</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">proofs</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">proof</span><span class="op">|</span> {
-                <span class="ident">elder_candidates</span>
-                    .<span class="ident">elders</span>
-                    .<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">proof</span>.<span class="ident">public_key</span>))
-                    <span class="op">&amp;&amp;</span> <span class="ident">proof</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="ident">proof</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
-            })
-            .<span class="ident">count</span>();
-
-        <span class="ident">has_failure_agreement</span>(<span class="ident">elder_candidates</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="ident">votes</span>)
-    }
-}
-
-<span class="comment">// Check whether we have enough proofs to reach agreement on the failure. We only need</span>
-<span class="comment">// `N - supermajority(N) + 1` proofs, because that already makes a supermajority agreement on a</span>
-<span class="comment">// successful outcome impossible.</span>
-<span class="kw">fn</span> <span class="ident">has_failure_agreement</span>(<span class="ident">num_participants</span>: <span class="ident">usize</span>, <span class="ident">num_votes</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="ident">num_votes</span> <span class="op">&gt;</span> <span class="ident">num_participants</span> <span class="op">-</span> <span class="ident">supermajority</span>(<span class="ident">num_participants</span>)
-}
-
-<span class="comment">// Create a value whose signature serves as the proof that a failure of a DKG session with the given</span>
-<span class="comment">// `dkg_key` was observed.</span>
-<span class="kw">fn</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Digest256</span> {
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">Sha3</span>::<span class="ident">v256</span>();
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">Digest256</span>::<span class="ident">default</span>();
-    <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>.<span class="ident">hash</span>);
-    <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>.<span class="ident">generation</span>.<span class="ident">to_le_bytes</span>());
-    <span class="kw">for</span> <span class="ident">name</span> <span class="kw">in</span> <span class="ident">non_participants</span>.<span class="ident">iter</span>() {
-        <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">name</span>.<span class="number">0</span>);
-    }
-    <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="string">b&quot;failure&quot;</span>);
-    <span class="ident">hasher</span>.<span class="ident">finalize</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">hash</span>);
-    <span class="ident">hash</span>
-}
-
 <span class="kw">struct</span> <span class="ident">Backlog</span>(<span class="ident">VecDeque</span><span class="op">&lt;</span>(<span class="ident">DkgKey</span>, <span class="ident">DkgMessage</span>)<span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">Backlog</span> {
@@ -1490,12 +1250,12 @@
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-                    <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="ident">recipients</span>.<span class="ident">clone</span>(),
                     <span class="ident">recipients</span>.<span class="ident">len</span>(),
-                    <span class="ident">message</span>.<span class="ident">to_bytes</span>(),
+                    <span class="ident">message</span>,
                     <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
                         <span class="ident">dest_section_pk</span>: <span class="ident">key</span>,
@@ -1524,12 +1284,12 @@
                     <span class="ident">non_participants</span>,
                 };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-                    <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="ident">recipients</span>.<span class="ident">clone</span>(),
                     <span class="ident">recipients</span>.<span class="ident">len</span>(),
-                    <span class="ident">message</span>.<span class="ident">to_bytes</span>(),
+                    <span class="ident">message</span>,
                     <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
                         <span class="ident">dest_section_pk</span>: <span class="ident">key</span>,
@@ -1565,8 +1325,8 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">crypto</span>, <span class="ident">node</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_unique_nodes</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_addr</span>,
-        <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_ADULT_AGE</span>,
+        <span class="ident">agreement</span>::<span class="ident">DkgKeyUtils</span>, <span class="ident">crypto</span>, <span class="ident">node</span>::<span class="ident">test_utils</span>::<span class="ident">arbitrary_unique_nodes</span>,
+        <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="ident">gen_addr</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_ADULT_AGE</span>,
     };
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
     <span class="kw">use</span> <span class="ident">proptest</span>::<span class="ident">prelude</span>::<span class="kw-2">*</span>;

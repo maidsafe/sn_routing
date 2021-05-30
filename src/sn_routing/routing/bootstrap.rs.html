@@ -1301,11 +1301,6 @@
 <span id="1300">1300</span>
 <span id="1301">1301</span>
 <span id="1302">1302</span>
-<span id="1303">1303</span>
-<span id="1304">1304</span>
-<span id="1305">1305</span>
-<span id="1306">1306</span>
-<span id="1307">1307</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1317,17 +1312,16 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">ConnectionEvent</span>, <span class="ident">Comm</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::<span class="ident">Proven</span>,
     <span class="ident">crypto</span>::{<span class="self">self</span>, <span class="ident">Signature</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">messages</span>::{<span class="ident">JoinRequest</span>, <span class="ident">Message</span>, <span class="ident">ResourceProofResponse</span>, <span class="ident">Variant</span>, <span class="ident">VerifyStatus</span>},
+    <span class="ident">messages</span>::{<span class="ident">RoutingMsgUtils</span>, <span class="ident">VerifyStatus</span>},
     <span class="ident">node</span>::<span class="ident">Node</span>,
-    <span class="ident">relocation</span>::{<span class="ident">RelocatePayload</span>, <span class="ident">SignedRelocateDetails</span>},
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
+    <span class="ident">relocation</span>::{<span class="ident">RelocatePayloadUtils</span>, <span class="ident">SignedRelocateDetailsUtils</span>},
     <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>,
-    <span class="ident">section</span>::{<span class="ident">Section</span>, <span class="ident">SectionAuthorityProvider</span>},
+    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
     <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>,
 };
-<span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">seq</span>::<span class="ident">IteratorRandom</span>;
@@ -1335,7 +1329,10 @@
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_data_types</span>::<span class="ident">PublicKey</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::<span class="ident">RoutingMsg</span>,
+    <span class="ident">node</span>::{
+        <span class="ident">JoinRequest</span>, <span class="ident">Proven</span>, <span class="ident">RelocatePayload</span>, <span class="ident">ResourceProofResponse</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>,
+        <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SignedRelocateDetails</span>, <span class="ident">Variant</span>,
+    },
     <span class="ident">section_info</span>::{<span class="ident">GetSectionResponse</span>, <span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>, <span class="ident">SectionInfo</span>},
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
 };
@@ -1360,7 +1357,7 @@
     <span class="ident">comm</span>: <span class="kw-2">&amp;</span><span class="ident">Comm</span>,
     <span class="ident">incoming_conns</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>,
     <span class="ident">bootstrap_addr</span>: <span class="ident">SocketAddr</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
+) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Raw</span>(<span class="ident">incoming_conns</span>);
 
@@ -1389,7 +1386,7 @@
     <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
     <span class="ident">genesis_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     <span class="ident">relocate_details</span>: <span class="ident">SignedRelocateDetails</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
+) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">send_tx</span>, <span class="ident">send_rx</span>) <span class="op">=</span> <span class="ident">mpsc</span>::<span class="ident">channel</span>(<span class="number">1</span>);
     <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
@@ -1410,7 +1407,7 @@
     <span class="ident">recv_rx</span>: <span class="ident">MessageReceiver</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>,
     <span class="ident">node</span>: <span class="ident">Node</span>,
     <span class="comment">// Backlog for unknown messages</span>
-    <span class="ident">backlog</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>,
+    <span class="ident">backlog</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">State</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
@@ -1432,7 +1429,7 @@
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">genesis_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">relocate_details</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SignedRelocateDetails</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">prefix</span>, <span class="ident">section_key</span>, <span class="ident">elders</span>) <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">bootstrap</span>(<span class="ident">bootstrap_addrs</span>, <span class="ident">relocate_details</span>.<span class="ident">as_ref</span>())
             .<span class="kw">await</span><span class="question-mark">?</span>;
@@ -1603,12 +1600,8 @@
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">response</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>))
                     }
                 },
-                <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">msg_bytes</span>),
-                    <span class="ident">dest_info</span>,
-                } <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>))<span class="question-mark">?</span>;
-                    <span class="self">self</span>.<span class="ident">backlog_message</span>(<span class="ident">message</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>)
+                <span class="ident">MessageType</span>::<span class="ident">Routing</span> { <span class="ident">msg</span>, <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="self">self</span>.<span class="ident">backlog_message</span>(<span class="ident">msg</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>)
                 }
                 <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. }
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> { .. }
@@ -1616,7 +1609,7 @@
             }
         }
 
-        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Message sender unexpectedly closed&quot;</span>);
+        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;RoutingMsg sender unexpectedly closed&quot;</span>);
         <span class="comment">// TODO: consider more specific error here (e.g. `BootstrapInterrupted`)</span>
         <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
     }
@@ -1656,7 +1649,7 @@
         <span class="ident">elders</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="ident">genesis_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
         <span class="ident">relocate_payload</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocatePayload</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">Message</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Node</span>, <span class="ident">Section</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">join_request</span> <span class="op">=</span> <span class="ident">JoinRequest</span> {
             <span class="ident">section_key</span>,
             <span class="ident">relocate_payload</span>: <span class="ident">relocate_payload</span>.<span class="ident">clone</span>(),
@@ -1758,14 +1751,13 @@
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">join_request</span>));
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-            <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">node_msg</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">new</span>(<span class="ident">message</span>.<span class="ident">to_bytes</span>());
+            <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">send_tx</span>
             .<span class="ident">send</span>((
                 <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">node_msg</span>,
+                    <span class="ident">msg</span>: <span class="ident">message</span>,
                     <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                         <span class="comment">// Will be overridden while sending to multiple elders</span>
                         <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
@@ -1786,10 +1778,7 @@
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">JoinResponse</span>, <span class="ident">SocketAddr</span>, <span class="ident">DestInfo</span>)<span class="op">&gt;</span> {
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">message</span>, <span class="ident">sender</span>)) <span class="op">=</span> <span class="self">self</span>.<span class="ident">recv_rx</span>.<span class="ident">next</span>().<span class="kw">await</span> {
             <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">dest_info</span>) <span class="op">=</span> <span class="kw">match</span> <span class="ident">message</span> {
-                <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">msg_bytes</span>),
-                    <span class="ident">dest_info</span>,
-                } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>))<span class="question-mark">?</span>, <span class="ident">dest_info</span>),
+                <span class="ident">MessageType</span>::<span class="ident">Routing</span> { <span class="ident">msg</span>, <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">msg</span>, <span class="ident">dest_info</span>),
                 <span class="ident">MessageType</span>::<span class="ident">Node</span> { .. }
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">Client</span> { .. }
                 <span class="op">|</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="kw">continue</span>,
@@ -1888,12 +1877,12 @@
             }
         }
 
-        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Message sender unexpectedly closed&quot;</span>);
+        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;RoutingMsg sender unexpectedly closed&quot;</span>);
         <span class="comment">// TODO: consider more specific error here (e.g. `BootstrapInterrupted`)</span>
         <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">verify_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">message</span>: <span class="kw-2">&amp;</span><span class="ident">Message</span>, <span class="ident">trusted_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">verify_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">message</span>: <span class="kw-2">&amp;</span><span class="ident">RoutingMsg</span>, <span class="ident">trusted_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">match</span> <span class="ident">message</span>.<span class="ident">verify</span>(<span class="ident">trusted_key</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Full</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="bool-val">true</span>,
             <span class="prelude-val">Ok</span>(<span class="ident">VerifyStatus</span>::<span class="ident">Unknown</span>) <span class="kw">if</span> <span class="ident">trusted_key</span>.<span class="ident">is_none</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="bool-val">true</span>,
@@ -1909,7 +1898,7 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">backlog_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">Message</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>, <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>) {
+    <span class="kw">fn</span> <span class="ident">backlog_message</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">RoutingMsg</span>, <span class="ident">sender</span>: <span class="ident">SocketAddr</span>, <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>) {
         <span class="kw">while</span> <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="ident">BACKLOG_CAPACITY</span> {
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">backlog</span>.<span class="ident">pop_front</span>();
         }
@@ -1937,7 +1926,7 @@
 }
 
 <span class="comment">// Receiver of incoming messages that can be backed either by a raw `qp2p::ConnectionEvent` receiver</span>
-<span class="comment">// or by receiver of deserialized `Message` and provides a unified interface on top of them.</span>
+<span class="comment">// or by receiver of deserialized `RoutingMsg` and provides a unified interface on top of them.</span>
 <span class="kw">enum</span> <span class="ident">MessageReceiver</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="ident">Raw</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">ConnectionEvent</span><span class="op">&gt;</span>),
     <span class="ident">Deserialized</span>(<span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>),
@@ -1990,8 +1979,9 @@
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::{
-        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">RoutingError</span>, <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>,
-        <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">MemberInfo</span>, <span class="ident">ELDER_SIZE</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
+        <span class="ident">agreement</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">RoutingError</span>, <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
+        <span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>, <span class="ident">section</span>::<span class="ident">test_utils</span>::<span class="kw-2">*</span>, <span class="ident">section</span>::<span class="ident">MemberInfoUtils</span>, <span class="ident">ELDER_SIZE</span>,
+        <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>,
     };
     <span class="kw">use</span> <span class="ident">anyhow</span>::{<span class="ident">anyhow</span>, <span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
     <span class="kw">use</span> <span class="ident">assert_matches</span>::<span class="ident">assert_matches</span>;
@@ -1999,7 +1989,7 @@
         <span class="ident">future</span>::{<span class="self">self</span>, <span class="ident">Either</span>},
         <span class="ident">pin_mut</span>,
     };
-    <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">section_info</span>::<span class="ident">SectionInfo</span>;
+    <span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">node</span>::<span class="ident">MemberInfo</span>, <span class="ident">section_info</span>::<span class="ident">SectionInfo</span>};
     <span class="kw">use</span> <span class="ident">tokio</span>::<span class="ident">task</span>;
 
     <span class="attribute">#[<span class="ident">tokio</span>::<span class="ident">test</span>]</span>
@@ -2080,8 +2070,8 @@
                 .<span class="ident">recv</span>()
                 .<span class="kw">await</span>
                 .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;JoinRequest was not received&quot;</span>))<span class="question-mark">?</span>;
-            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">dest_info</span>) <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span> { <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">bytes</span>), <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span>
-                (<span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>, <span class="ident">dest_info</span>));
+            <span class="kw">let</span> (<span class="ident">message</span>, <span class="ident">dest_info</span>) <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span> { <span class="ident">msg</span>, <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span>
+                (<span class="ident">msg</span>, <span class="ident">dest_info</span>));
 
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dest_info</span>.<span class="ident">dest_section_pk</span>, <span class="ident">pk</span>);
             <span class="ident">itertools</span>::<span class="ident">assert_equal</span>(
@@ -2101,7 +2091,7 @@
             <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">section_auth</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">member_info</span> <span class="op">=</span> <span class="ident">proven</span>(<span class="ident">sk</span>, <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>))<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">proof_chain</span> <span class="op">=</span> <span class="ident">SecuredLinkedList</span>::<span class="ident">new</span>(<span class="ident">pk</span>);
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
                 <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                 <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
@@ -2114,7 +2104,7 @@
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
                 <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>::<span class="ident">new</span>(<span class="ident">message</span>.<span class="ident">to_bytes</span>()),
+                    <span class="ident">msg</span>: <span class="ident">message</span>,
                     <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(),
                         <span class="ident">dest_section_pk</span>: <span class="ident">pk</span>,
@@ -2546,11 +2536,11 @@
                 .<span class="kw">await</span>
                 .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;RoutingMsg was not received&quot;</span>))<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span>{ <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">bytes</span>), .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span>{ <span class="ident">msg</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">msg</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="kw">_</span>));
 
             <span class="comment">// Send `Rejoin` with bad prefix</span>
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
                 <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                 <span class="ident">Variant</span>::<span class="ident">JoinRetry</span> {
@@ -2562,7 +2552,7 @@
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
                 <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>::<span class="ident">new</span>(<span class="ident">message</span>.<span class="ident">to_bytes</span>()),
+                    <span class="ident">msg</span>: <span class="ident">message</span>,
                     <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="ident">node_name</span>,
                         <span class="ident">dest_section_pk</span>: <span class="ident">section_key</span>,
@@ -2573,7 +2563,7 @@
             <span class="ident">task</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
 
             <span class="comment">// Send `Rejoin` with good prefix</span>
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
                 <span class="kw-2">&amp;</span><span class="ident">bootstrap_node</span>,
                 <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                 <span class="ident">Variant</span>::<span class="ident">JoinRetry</span> {
@@ -2585,7 +2575,7 @@
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
                 <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                    <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>::<span class="ident">new</span>(<span class="ident">message</span>.<span class="ident">to_bytes</span>()),
+                    <span class="ident">msg</span>: <span class="ident">message</span>,
                     <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="ident">node_name</span>,
                         <span class="ident">dest_section_pk</span>: <span class="ident">section_key</span>,
@@ -2599,7 +2589,7 @@
                 .<span class="kw">await</span>
                 .<span class="ident">ok_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">anyhow</span><span class="macro">!</span>(<span class="string">&quot;RoutingMsg was not received&quot;</span>))<span class="question-mark">?</span>;
 
-            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span>{ <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">bytes</span>), .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">bytes</span>))<span class="question-mark">?</span>);
+            <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">Routing</span>{ <span class="ident">msg</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="ident">msg</span>);
             <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>.<span class="ident">variant</span>(), <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="kw">_</span>));
 
             <span class="prelude-val">Ok</span>(())

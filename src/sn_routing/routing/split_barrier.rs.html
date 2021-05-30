@@ -61,8 +61,6 @@
 <span id="60">60</span>
 <span id="61">61</span>
 <span id="62">62</span>
-<span id="63">63</span>
-<span id="64">64</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -74,10 +72,8 @@
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">mem</span>;
 
-<span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::{<span class="ident">Proof</span>, <span class="ident">Proven</span>},
-    <span class="ident">section</span>::<span class="ident">SectionAuthorityProvider</span>,
-};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">agreement</span>::<span class="ident">Proof</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">Proven</span>, <span class="ident">SectionAuthorityProvider</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
 
 <span class="kw">type</span> <span class="ident">Entry</span> <span class="op">=</span> (<span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>, <span class="ident">Proof</span>);

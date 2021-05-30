@@ -102,6 +102,8 @@
 <span id="101">101</span>
 <span id="102">102</span>
 <span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -116,14 +118,16 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Core</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::{<span class="ident">ProofShare</span>, <span class="ident">Proposal</span>},
+    <span class="ident">agreement</span>::{<span class="ident">ProofShare</span>, <span class="ident">ProposalUtils</span>},
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
-    <span class="ident">peer</span>::<span class="ident">Peer</span>,
+    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">section</span>::<span class="ident">SectionKeyShare</span>,
+    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionKeyShare</span>, <span class="ident">SectionUtils</span>},
 };
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{<span class="ident">Peer</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Variant</span>},
+    <span class="ident">DstLocation</span>,
+};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
@@ -172,7 +176,7 @@
             <span class="ident">proof_share</span>,
         };
         <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-            <span class="ident">Message</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+            <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">send_or_handle</span>(<span class="ident">message</span>, <span class="ident">recipients</span>))
     }

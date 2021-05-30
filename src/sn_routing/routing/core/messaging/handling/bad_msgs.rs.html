@@ -105,7 +105,6 @@
 <span id="104">104</span>
 <span id="105">105</span>
 <span id="106">106</span>
-<span id="107">107</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -117,12 +116,16 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Core</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">Variant</span>},
-    <span class="ident">peer</span>::<span class="ident">Peer</span>,
+    <span class="ident">messages</span>::{<span class="ident">RoutingMsgUtils</span>, <span class="ident">SrcAuthorityUtils</span>},
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
+    <span class="ident">section</span>::<span class="ident">SectionUtils</span>,
     <span class="ident">Error</span>, <span class="prelude-ty">Result</span>,
 };
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{<span class="ident">Peer</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Variant</span>},
+    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>,
+};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">SocketAddr</span>;
 
 <span class="comment">// Bad msgs</span>
@@ -132,16 +135,16 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_untrusted_message</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-        <span class="ident">msg</span>: <span class="ident">Message</span>,
+        <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>,
         <span class="ident">received_dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">src_name</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">src</span>().<span class="ident">name</span>();
+        <span class="kw">let</span> <span class="ident">src_name</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">name</span>();
         <span class="kw">let</span> <span class="ident">bounce_dst_key</span> <span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_key_by_name</span>(<span class="kw-2">&amp;</span><span class="ident">src_name</span>);
         <span class="kw">let</span> <span class="ident">dest_info</span> <span class="op">=</span> <span class="ident">DestInfo</span> {
             <span class="ident">dest</span>: <span class="ident">src_name</span>,
             <span class="ident">dest_section_pk</span>: <span class="ident">bounce_dst_key</span>,
         };
-        <span class="kw">let</span> <span class="ident">bounce_msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
+        <span class="kw">let</span> <span class="ident">bounce_msg</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
             <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
             <span class="ident">Variant</span>::<span class="ident">BouncedUntrustedMessage</span> {
@@ -151,12 +154,10 @@
             <span class="prelude-val">None</span>,
         )<span class="question-mark">?</span>;
 
-        <span class="kw">let</span> <span class="ident">bounce_msg_bytes</span> <span class="op">=</span> <span class="ident">bounce_msg</span>.<span class="ident">to_bytes</span>();
-
         <span class="kw">let</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sender</span>) <span class="op">=</span> <span class="ident">sender</span> {
-            <span class="ident">Command</span>::<span class="ident">send_message_to_node</span>((<span class="ident">src_name</span>, <span class="ident">sender</span>), <span class="ident">bounce_msg_bytes</span>, <span class="ident">dest_info</span>)
+            <span class="ident">Command</span>::<span class="ident">send_message_to_node</span>((<span class="ident">src_name</span>, <span class="ident">sender</span>), <span class="ident">bounce_msg</span>, <span class="ident">dest_info</span>)
         } <span class="kw">else</span> {
-            <span class="self">self</span>.<span class="ident">send_message_to_our_elders</span>(<span class="ident">bounce_msg_bytes</span>)
+            <span class="self">self</span>.<span class="ident">send_message_to_our_elders</span>(<span class="ident">bounce_msg</span>)
         };
 
         <span class="prelude-val">Ok</span>(<span class="ident">cmd</span>)
@@ -166,12 +167,12 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">sender</span>: <span class="ident">Peer</span>,
         <span class="ident">dst_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-        <span class="ident">bounced_msg</span>: <span class="ident">Message</span>,
+        <span class="ident">bounced_msg</span>: <span class="ident">RoutingMsg</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">span</span> <span class="op">=</span> <span class="macro">trace_span</span><span class="macro">!</span>(<span class="string">&quot;Received BouncedUntrustedMessage&quot;</span>, <span class="question-mark">?</span><span class="ident">bounced_msg</span>, <span class="op">%</span><span class="ident">sender</span>);
         <span class="kw">let</span> <span class="ident">_span_guard</span> <span class="op">=</span> <span class="ident">span</span>.<span class="ident">enter</span>();
 
-        <span class="kw">let</span> <span class="ident">resend_msg</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">bounced_msg</span>.<span class="ident">variant</span>() {
+        <span class="kw">let</span> <span class="ident">resend_msg</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">bounced_msg</span>.<span class="ident">variant</span> {
             <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// `Sync` messages are handled specially, because they don&#39;t carry a proof chain.</span>
                 <span class="comment">// Instead we use the section chain that&#39;s part of the included `Section` struct.</span>
@@ -184,13 +185,10 @@
                         <span class="ident">Error</span>::<span class="ident">InvalidMessage</span> <span class="comment">// TODO: more specific error</span>
                     })<span class="question-mark">?</span>;
 
-                <span class="ident">Message</span>::<span class="ident">single_src</span>(
+                <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
                     <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
                     <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
-                    <span class="ident">Variant</span>::<span class="ident">Sync</span> {
-                        <span class="ident">section</span>,
-                        <span class="ident">network</span>: <span class="ident">network</span>.<span class="ident">clone</span>(),
-                    },
+                    <span class="ident">Variant</span>::<span class="ident">Sync</span> { <span class="ident">section</span>, <span class="ident">network</span> },
                     <span class="prelude-val">None</span>,
                 )<span class="question-mark">?</span>
             }
@@ -209,7 +207,7 @@
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;resending with extended proof&quot;</span>);
         <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_node</span>(
             (<span class="kw-2">*</span><span class="ident">sender</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">sender</span>.<span class="ident">addr</span>()),
-            <span class="ident">resend_msg</span>.<span class="ident">to_bytes</span>(),
+            <span class="ident">resend_msg</span>,
             <span class="ident">dest_info</span>,
         ))
     }

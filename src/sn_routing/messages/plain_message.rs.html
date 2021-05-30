@@ -23,16 +23,6 @@
 <span id="22">22</span>
 <span id="23">23</span>
 <span id="24">24</span>
-<span id="25">25</span>
-<span id="26">26</span>
-<span id="27">27</span>
-<span id="28">28</span>
-<span id="29">29</span>
-<span id="30">30</span>
-<span id="31">31</span>
-<span id="32">32</span>
-<span id="33">33</span>
-<span id="34">34</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -42,26 +32,16 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">SignableView</span>, <span class="ident">Variant</span>};
-<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">DstLocation</span>;
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
+<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">SignableView</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::<span class="ident">PlainMessage</span>;
 
 <span class="doccomment">/// Section-source message without signature and proof.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">PlainMessage</span> {
-    <span class="doccomment">/// Name in the source section.</span>
-    <span class="kw">pub</span> <span class="ident">src</span>: <span class="ident">XorName</span>,
-    <span class="doccomment">/// Destination location.</span>
-    <span class="kw">pub</span> <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
-    <span class="doccomment">/// The latest key of the destination section according to the sender&#39;s knowledge.</span>
-    <span class="kw">pub</span> <span class="ident">dst_key</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
-    <span class="doccomment">/// Message body.</span>
-    <span class="kw">pub</span> <span class="ident">variant</span>: <span class="ident">Variant</span>,
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">PlainMessageUtils</span> {
+    <span class="kw">fn</span> <span class="ident">as_signable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SignableView</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">PlainMessage</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_signable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SignableView</span> {
+<span class="kw">impl</span> <span class="ident">PlainMessageUtils</span> <span class="kw">for</span> <span class="ident">PlainMessage</span> {
+    <span class="kw">fn</span> <span class="ident">as_signable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SignableView</span> {
         <span class="ident">SignableView</span> {
             <span class="ident">dst</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">dst</span>,
             <span class="ident">variant</span>: <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">variant</span>,

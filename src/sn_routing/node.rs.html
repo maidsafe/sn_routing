@@ -90,6 +90,7 @@
 <span id="89">89</span>
 <span id="90">90</span>
 <span id="91">91</span>
+<span id="92">92</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -99,9 +100,10 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">peer</span>::<span class="ident">Peer</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">peer</span>::<span class="ident">PeerUtils</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">sn_data_types</span>::<span class="ident">PublicKey</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::<span class="ident">Peer</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Display</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
@@ -111,7 +113,7 @@
 
 <span class="doccomment">/// Information and state of our node</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Node</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Node</span> {
     <span class="comment">// Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in</span>
     <span class="comment">// memory which might be insecure.</span>
     <span class="comment">// TODO: find a way to not require `Clone`.</span>

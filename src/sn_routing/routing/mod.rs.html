@@ -582,6 +582,8 @@
 <span id="581">581</span>
 <span id="582">582</span>
 <span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -615,10 +617,11 @@
     <span class="ident">crypto</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">event</span>::{<span class="ident">Elders</span>, <span class="ident">Event</span>, <span class="ident">NodeElderChange</span>},
-    <span class="ident">messages</span>::<span class="ident">Message</span>,
+    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
+    <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
     <span class="ident">node</span>::<span class="ident">Node</span>,
-    <span class="ident">peer</span>::<span class="ident">Peer</span>,
-    <span class="ident">section</span>::<span class="ident">SectionAuthorityProvider</span>,
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
+    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
     <span class="ident">Error</span>, <span class="ident">TransportConfig</span>, <span class="ident">MIN_ADULT_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
@@ -626,8 +629,9 @@
 <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">client</span>::<span class="ident">ClientMsg</span>, <span class="ident">node</span>::<span class="ident">RoutingMsg</span>, <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>,
-    <span class="ident">WireMsg</span>,
+    <span class="ident">client</span>::<span class="ident">ClientMsg</span>,
+    <span class="ident">node</span>::{<span class="ident">Peer</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SectionAuthorityProvider</span>},
+    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
@@ -1101,22 +1105,22 @@
             };
             <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
         }
-        <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-            <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>(<span class="ident">msg_bytes</span>),
-            <span class="ident">dest_info</span>,
-        } <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="ident">Message</span>::<span class="ident">from_bytes</span>(<span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">msg_bytes</span>)) {
-            <span class="prelude-val">Ok</span>(<span class="ident">message</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
-                    <span class="ident">message</span>,
-                    <span class="ident">sender</span>: <span class="prelude-val">Some</span>(<span class="ident">sender</span>),
-                    <span class="ident">dest_info</span>,
-                };
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+        <span class="ident">MessageType</span>::<span class="ident">Routing</span> { <span class="ident">msg</span>, <span class="ident">dest_info</span> } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">check_signature</span>(<span class="kw-2">&amp;</span><span class="ident">msg</span>) {
+                <span class="macro">error</span><span class="macro">!</span>(
+                    <span class="string">&quot;Discarding message received ({:?}) due to invalid signature: {:?}&quot;</span>,
+                    <span class="ident">msg</span>.<span class="ident">id</span>, <span class="ident">err</span>
+                );
+                <span class="kw">return</span>;
             }
-            <span class="prelude-val">Err</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to deserialize node message: {}&quot;</span>, <span class="ident">error</span>);
-            }
-        },
+
+            <span class="kw">let</span> <span class="ident">command</span> <span class="op">=</span> <span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
+                <span class="ident">message</span>: <span class="ident">msg</span>,
+                <span class="ident">sender</span>: <span class="prelude-val">Some</span>(<span class="ident">sender</span>),
+                <span class="ident">dest_info</span>,
+            };
+            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">dispatcher</span>.<span class="ident">handle_commands</span>(<span class="ident">command</span>));
+        }
         <span class="ident">MessageType</span>::<span class="ident">Node</span> {
             <span class="ident">msg</span>: <span class="kw">_</span>,
             <span class="ident">dest_info</span>: <span class="kw">_</span>,

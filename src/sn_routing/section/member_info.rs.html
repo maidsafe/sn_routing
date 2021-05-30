@@ -73,9 +73,6 @@
 <span id="72">72</span>
 <span id="73">73</span>
 <span id="74">74</span>
-<span id="75">75</span>
-<span id="76">76</span>
-<span id="77">77</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2019 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -85,8 +82,8 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error</span>::<span class="ident">Error</span>, <span class="ident">peer</span>::<span class="ident">Peer</span>};
-<span class="kw">use</span> <span class="ident">serde</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">error</span>::<span class="ident">Error</span>, <span class="ident">peer</span>::<span class="ident">PeerUtils</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">MemberInfo</span>, <span class="ident">Peer</span>, <span class="ident">PeerState</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent</span>
@@ -104,55 +101,52 @@
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">FIRST_SECTION_MAX_AGE</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">100</span>;
 
 <span class="doccomment">/// Information about a member of our section.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MemberInfo</span> {
-    <span class="kw">pub</span> <span class="ident">peer</span>: <span class="ident">Peer</span>,
-    <span class="kw">pub</span> <span class="ident">state</span>: <span class="ident">PeerState</span>,
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">MemberInfoUtils</span> {
+    <span class="comment">// Creates a `MemberInfo` in the `Joined` state.</span>
+    <span class="kw">fn</span> <span class="ident">joined</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MemberInfo</span>;
+
+    <span class="comment">// Is the age &gt; `MIN_AGE`?</span>
+    <span class="kw">fn</span> <span class="ident">is_mature</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
+
+    <span class="kw">fn</span> <span class="ident">leave</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">MemberInfo</span>, <span class="ident">Error</span><span class="op">&gt;</span>;
+
+    <span class="comment">// Convert this info into one with the state changed to `Relocated`.</span>
+    <span class="kw">fn</span> <span class="ident">relocate</span>(<span class="self">self</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MemberInfo</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">MemberInfo</span> {
+<span class="kw">impl</span> <span class="ident">MemberInfoUtils</span> <span class="kw">for</span> <span class="ident">MemberInfo</span> {
     <span class="comment">// Creates a `MemberInfo` in the `Joined` state.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">joined</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">joined</span>(<span class="ident">peer</span>: <span class="ident">Peer</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MemberInfo</span> {
+        <span class="ident">MemberInfo</span> {
             <span class="ident">peer</span>,
             <span class="ident">state</span>: <span class="ident">PeerState</span>::<span class="ident">Joined</span>,
         }
     }
 
     <span class="comment">// Is the age &gt; `MIN_AGE`?</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_mature</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_mature</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&gt;</span> <span class="ident">MIN_AGE</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">leave</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">leave</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">MemberInfo</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// Do not allow switching to `Left` when already relocated, to avoid rejoining with the</span>
         <span class="comment">// same name.</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">PeerState</span>::<span class="ident">Relocated</span>(<span class="kw">_</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">state</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidState</span>);
         }
-        <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
+        <span class="prelude-val">Ok</span>(<span class="ident">MemberInfo</span> {
             <span class="ident">state</span>: <span class="ident">PeerState</span>::<span class="ident">Left</span>,
             ..<span class="self">self</span>
         })
     }
 
     <span class="comment">// Convert this info into one with the state changed to `Relocated`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">relocate</span>(<span class="self">self</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">relocate</span>(<span class="self">self</span>, <span class="ident">destination</span>: <span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MemberInfo</span> {
+        <span class="ident">MemberInfo</span> {
             <span class="ident">state</span>: <span class="ident">PeerState</span>::<span class="ident">Relocated</span>(<span class="ident">destination</span>),
             ..<span class="self">self</span>
         }
     }
-}
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">Ord</span>, <span class="ident">PartialOrd</span>, <span class="ident">Hash</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PeerState</span> {
-    <span class="comment">// Node is active member of the section.</span>
-    <span class="ident">Joined</span>,
-    <span class="comment">// Node went offline.</span>
-    <span class="ident">Left</span>,
-    <span class="comment">// Node was relocated to a different section.</span>
-    <span class="ident">Relocated</span>(<span class="ident">XorName</span>),
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="sn_routing" data-search-js="../../../search-index.js"></div>

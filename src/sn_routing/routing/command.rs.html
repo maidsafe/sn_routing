@@ -223,10 +223,6 @@
 <span id="222">222</span>
 <span id="223">223</span>
 <span id="224">224</span>
-<span id="225">225</span>
-<span id="226">226</span>
-<span id="227">227</span>
-<span id="228">228</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -236,19 +232,16 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">routing</span>::<span class="ident">Peer</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::{<span class="ident">DkgFailureProofSet</span>, <span class="ident">Proposal</span>},
-    <span class="ident">messages</span>::<span class="ident">Message</span>,
-    <span class="ident">relocation</span>::<span class="ident">SignedRelocateDetails</span>,
-    <span class="ident">section</span>::{<span class="ident">SectionAuthorityProvider</span>, <span class="ident">SectionKeyShare</span>},
-    <span class="ident">XorName</span>,
-};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">routing</span>::<span class="ident">Peer</span>, <span class="ident">section</span>::<span class="ident">SectionKeyShare</span>, <span class="ident">XorName</span>};
 <span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::<span class="ident">RoutingMsg</span>, <span class="ident">section_info</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>, <span class="ident">DestInfo</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>,
+    <span class="ident">node</span>::{
+        <span class="ident">DkgFailureProofSet</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SignedRelocateDetails</span>,
+    },
+    <span class="ident">section_info</span>::<span class="ident">Message</span> <span class="kw">as</span> <span class="ident">SectionInfoMsg</span>,
+    <span class="ident">DestInfo</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -266,7 +259,7 @@
     <span class="doccomment">/// and `None` if it is an aggregated message.</span>
     <span class="ident">HandleMessage</span> {
         <span class="ident">sender</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-        <span class="ident">message</span>: <span class="ident">Message</span>,
+        <span class="ident">message</span>: <span class="ident">RoutingMsg</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     },
     <span class="doccomment">/// Handle network info message.</span>
@@ -312,7 +305,7 @@
         <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span>,
         <span class="doccomment">/// Details of the relocation</span>
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
-        <span class="doccomment">/// Message receiver to pass to the bootstrap task.</span>
+        <span class="doccomment">/// RoutingMsg receiver to pass to the bootstrap task.</span>
         <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Attempt to set JoinsAllowed flag.</span>
@@ -333,20 +326,19 @@
     <span class="doccomment">/// Convenience method to create `Command::SendMessage` with a single recipient.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send_message_to_node</span>(
         <span class="ident">recipient</span>: (<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>),
-        <span class="ident">message_bytes</span>: <span class="ident">Bytes</span>,
+        <span class="ident">routing_msg</span>: <span class="ident">RoutingMsg</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span>::<span class="ident">send_message_to_nodes</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">recipient</span>], <span class="number">1</span>, <span class="ident">message_bytes</span>, <span class="ident">dest_info</span>)
+        <span class="self">Self</span>::<span class="ident">send_message_to_nodes</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">recipient</span>], <span class="number">1</span>, <span class="ident">routing_msg</span>, <span class="ident">dest_info</span>)
     }
 
     <span class="doccomment">/// Convenience method to create `Command::SendMessage` with multiple recipients.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send_message_to_nodes</span>(
         <span class="ident">recipients</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">XorName</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
         <span class="ident">delivery_group_size</span>: <span class="ident">usize</span>,
-        <span class="ident">message_bytes</span>: <span class="ident">Bytes</span>,
+        <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">new</span>(<span class="ident">message_bytes</span>);
         <span class="self">Self</span>::<span class="ident">SendMessage</span> {
             <span class="ident">recipients</span>,
             <span class="ident">delivery_group_size</span>,

@@ -296,6 +296,15 @@
 <span id="295">295</span>
 <span id="296">296</span>
 <span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -307,19 +316,28 @@
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">cmp</span>;
 
-<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
-<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>};
-<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
-
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::{<span class="ident">Proposal</span>, <span class="ident">Proven</span>},
+    <span class="ident">agreement</span>::<span class="ident">ProvenUtils</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
-    <span class="ident">messages</span>::{<span class="ident">Message</span>, <span class="ident">PlainMessage</span>, <span class="ident">Variant</span>},
+    <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
+    <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
+    <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">routing</span>::<span class="ident">command</span>::<span class="ident">Command</span>,
-    <span class="ident">section</span>::{<span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">SectionAuthorityProvider</span>},
+    <span class="ident">section</span>::{
+        <span class="ident">ElderCandidatesUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionPeersUtils</span>, <span class="ident">SectionUtils</span>,
+    },
     <span class="ident">Error</span>, <span class="ident">Event</span>, <span class="ident">MIN_AGE</span>,
 };
+<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
+<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{
+        <span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>, <span class="ident">Proven</span>, <span class="ident">RoutingMsg</span>,
+        <span class="ident">SectionAuthorityProvider</span>, <span class="ident">Variant</span>,
+    },
+    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>,
+};
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">Core</span>;
 
@@ -511,7 +529,7 @@
                 .<span class="ident">map</span>(<span class="op">|</span><span class="ident">peer</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()))
                 .<span class="ident">collect</span>();
             <span class="kw">if</span> <span class="op">!</span><span class="ident">sync_recipients</span>.<span class="ident">is_empty</span>() {
-                <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">single_src</span>(
+                <span class="kw">let</span> <span class="ident">sync_message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
                     <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
                     <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                     <span class="ident">Variant</span>::<span class="ident">Sync</span> {
@@ -524,7 +542,7 @@
                 <span class="ident">commands</span>.<span class="ident">push</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="ident">sync_recipients</span>,
                     <span class="ident">len</span>,
-                    <span class="ident">sync_message</span>.<span class="ident">to_bytes</span>(),
+                    <span class="ident">sync_message</span>,
                     <span class="ident">DestInfo</span> {
                         <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
                         <span class="ident">dest_section_pk</span>: <span class="ident">proof</span>.<span class="ident">public_key</span>,
@@ -585,7 +603,7 @@
         <span class="ident">proof</span>: <span class="ident">Proof</span>,
         <span class="ident">dest_info</span>: <span class="ident">DestInfo</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">section_src</span>(<span class="ident">message</span>, <span class="ident">proof</span>, <span class="ident">proof_chain</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">section_src</span>(<span class="ident">message</span>, <span class="ident">proof</span>, <span class="ident">proof_chain</span>)<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">HandleMessage</span> {
             <span class="ident">message</span>,

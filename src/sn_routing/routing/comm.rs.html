@@ -677,8 +677,6 @@
 <span id="676">676</span>
 <span id="677">677</span>
 <span id="678">678</span>
-<span id="679">679</span>
-<span id="680">680</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -881,10 +879,8 @@
         <span class="comment">// Use the first Xor address recipient to represent the destination section.</span>
         <span class="comment">// So that only one copy of MessageType need to be constructed.</span>
         <span class="ident">msg</span>.<span class="ident">update_dest_info</span>(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="ident">recipients</span>[<span class="number">0</span>].<span class="number">0</span>));
-        <span class="kw">let</span> <span class="ident">msg_bytes</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">serialize</span>() {
-            <span class="prelude-val">Ok</span>(<span class="ident">bytes</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">bytes</span>,
-            <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Messaging</span>(<span class="ident">e</span>)),
-        };
+
+        <span class="kw">let</span> <span class="ident">msg_bytes</span> <span class="op">=</span> <span class="ident">msg</span>.<span class="ident">serialize</span>().<span class="ident">map_err</span>(<span class="ident">Error</span>::<span class="ident">Messaging</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// Run all the sends concurrently (using `FuturesUnordered`). If any of them fails, pick</span>
         <span class="comment">// the next recipient and try to send to them. Proceed until the needed number of sends</span>

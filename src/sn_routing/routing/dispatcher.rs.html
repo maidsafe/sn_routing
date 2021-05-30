@@ -320,10 +320,10 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">bootstrap</span>, <span class="ident">Comm</span>, <span class="ident">Command</span>, <span class="ident">Core</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">error</span>::<span class="prelude-ty">Result</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">relocation</span>::<span class="ident">SignedRelocateDetails</span>, <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>,
+    <span class="ident">error</span>::<span class="prelude-ty">Result</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">peer</span>::<span class="ident">PeerUtils</span>, <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>, <span class="ident">section</span>::<span class="ident">SectionUtils</span>,
     <span class="ident">Error</span>, <span class="ident">XorName</span>,
 };
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">node</span>::<span class="ident">SignedRelocateDetails</span>, <span class="ident">MessageType</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">time</span>::<span class="ident">Duration</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::{
     <span class="ident">sync</span>::{<span class="ident">mpsc</span>, <span class="ident">watch</span>, <span class="ident">Mutex</span>},
