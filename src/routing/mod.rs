@@ -342,13 +342,9 @@ impl Routing {
     }
 
     /// Returns the info about the section matching the name.
-    pub async fn matching_section(
-        &self,
-        name: &XorName,
-    ) -> (Option<bls::PublicKey>, Option<SectionAuthorityProvider>) {
+    pub async fn matching_section(&self, name: &XorName) -> Result<SectionAuthorityProvider> {
         let state = self.dispatcher.core.lock().await;
-        let (key, section_auth) = state.matching_section(name);
-        (key.copied(), section_auth.cloned())
+        state.matching_section(name)
     }
 
     /// Send a message.

@@ -270,7 +270,7 @@ impl Core {
     pub(crate) fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
         if self.section.prefix().matches(name) {
             self.section.chain().last_key()
-        } else if let Some(key) = self.network.key_by_name(name) {
+        } else if let Ok(key) = self.network.key_by_name(name) {
             key
         } else if self.section.prefix().sibling().matches(name) {
             // For sibling with unknown key, use the previous key in our chain under the assumption

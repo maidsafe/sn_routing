@@ -47,7 +47,7 @@ pub(crate) fn process(
     let dst = msg.src.src_location().to_dst();
 
     if let Ok(src_chain) = msg.proof_chain() {
-        if let Some(key) = network.key_by_name(&src_name) {
+        if let Ok(key) = network.key_by_name(&src_name) {
             match src_chain.cmp_by_position(src_chain.last_key(), key) {
                 Ordering::Greater => {
                     trace!("Anti-Entropy: We do not know source's key, need to update ourselves");

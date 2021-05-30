@@ -108,15 +108,9 @@ impl Core {
     }
 
     /// Returns the info about the section matching the name.
-    pub fn matching_section(
-        &self,
-        name: &XorName,
-    ) -> (Option<&bls::PublicKey>, Option<&SectionAuthorityProvider>) {
+    pub fn matching_section(&self, name: &XorName) -> Result<SectionAuthorityProvider> {
         if self.section.prefix().matches(name) {
-            (
-                Some(self.section.chain().last_key()),
-                Some(self.section.authority_provider()),
-            )
+            Ok(self.section.authority_provider().clone())
         } else {
             self.network.section_by_name(name)
         }
