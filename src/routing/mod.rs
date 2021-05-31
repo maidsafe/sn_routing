@@ -88,6 +88,8 @@ pub struct Routing {
     dispatcher: Arc<Dispatcher>,
 }
 
+static EVENT_CHANNEL_SIZE: usize = 20;
+
 impl Routing {
     ////////////////////////////////////////////////////////////////////////////
     // Public API
@@ -104,7 +106,7 @@ impl Routing {
         });
         let node_name = crypto::name(&keypair.public);
 
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::channel(EVENT_CHANNEL_SIZE);
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
         let (state, comm, backlog) = if config.first {
@@ -128,10 +130,12 @@ impl Routing {
                 removed: BTreeSet::new(),
             };
 
-            state.send_event(Event::EldersChanged {
-                elders,
-                self_status_change: NodeElderChange::Promoted,
-            });
+            state
+                .send_event(Event::EldersChanged {
+                    elders,
+                    self_status_change: NodeElderChange::Promoted,
+                })
+                .await;
 
             (state, comm, vec![])
         } else {

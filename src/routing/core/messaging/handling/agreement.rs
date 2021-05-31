@@ -35,7 +35,7 @@ use super::Core;
 
 // Agreement
 impl Core {
-    pub(crate) fn handle_agreement(
+    pub(crate) async fn handle_agreement(
         &mut self,
         proposal: Proposal,
         proof: Proof,
@@ -47,13 +47,18 @@ impl Core {
                 member_info,
                 previous_name,
                 their_knowledge,
-            } => self.handle_online_agreement(member_info, previous_name, their_knowledge, proof),
-            Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
+            } => {
+                self.handle_online_agreement(member_info, previous_name, their_knowledge, proof)
+                    .await
+            }
+            Proposal::Offline(member_info) => {
+                self.handle_offline_agreement(member_info, proof).await
+            }
             Proposal::SectionInfo(section_auth) => {
                 self.handle_section_info_agreement(section_auth, proof)
             }
             Proposal::OurElders(section_auth) => {
-                self.handle_our_elders_agreement(section_auth, proof)
+                self.handle_our_elders_agreement(section_auth, proof).await
             }
             Proposal::AccumulateAtSrc {
                 message,
@@ -86,7 +91,7 @@ impl Core {
         }
     }
 
-    fn handle_online_agreement(
+    async fn handle_online_agreement(
         &mut self,
         new_info: MemberInfo,
         previous_name: Option<XorName>,
@@ -136,7 +141,8 @@ impl Core {
             name: *new_info.value.peer.name(),
             previous_name,
             age: new_info.value.peer.age(),
-        });
+        })
+        .await;
 
         commands
             .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.proof.signature)?);
@@ -154,7 +160,7 @@ impl Core {
         Ok(commands)
     }
 
-    fn handle_offline_agreement(
+    async fn handle_offline_agreement(
         &mut self,
         member_info: MemberInfo,
         proof: Proof,
@@ -187,7 +193,8 @@ impl Core {
         self.send_event(Event::MemberLeft {
             name: *peer.name(),
             age,
-        });
+        })
+        .await;
 
         Ok(commands)
     }
@@ -259,7 +266,7 @@ impl Core {
         Ok(commands)
     }
 
-    fn handle_our_elders_agreement(
+    async fn handle_our_elders_agreement(
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
         key_proof: Proof,
@@ -285,7 +292,7 @@ impl Core {
             }
         }
 
-        self.update_state(snapshot)
+        self.update_state(snapshot).await
     }
 
     fn handle_accumulate_at_src_agreement(

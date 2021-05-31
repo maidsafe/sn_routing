@@ -36,7 +36,7 @@ use std::{
 };
 use structopt::StructOpt;
 use tokio::{
-    sync::mpsc::{self, UnboundedSender},
+    sync::mpsc::{self, Sender},
     task, time,
 };
 use tokio_util::time::delay_queue::DelayQueue;
@@ -211,7 +211,7 @@ impl Network {
     }
 
     // Create new node and let it join the network.
-    async fn create_node(&mut self, event_tx: UnboundedSender<Event>) {
+    async fn create_node(&mut self, event_tx: Sender<Event>) {
         let bootstrap_addrs = self.get_bootstrap_addrs();
 
         let id = self.new_node_id();
@@ -637,7 +637,7 @@ impl Network {
     }
 }
 
-async fn add_node(id: u64, config: Config, event_tx: UnboundedSender<Event>) {
+async fn add_node(id: u64, config: Config, event_tx: Sender<Event>) {
     let (node, mut events) = match Routing::new(config).await {
         Ok(output) => output,
         Err(error) => {

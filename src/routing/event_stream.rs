@@ -11,11 +11,11 @@ use std::fmt::{self, Debug, Formatter};
 use tokio::sync::mpsc;
 /// Stream of routing node events
 pub struct EventStream {
-    events_rx: mpsc::UnboundedReceiver<Event>,
+    events_rx: mpsc::Receiver<Event>,
 }
 
 impl EventStream {
-    pub(crate) fn new(events_rx: mpsc::UnboundedReceiver<Event>) -> Self {
+    pub(crate) fn new(events_rx: mpsc::Receiver<Event>) -> Self {
         Self { events_rx }
     }
 

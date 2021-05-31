@@ -32,7 +32,7 @@ use xor_name::{Prefix, XorName};
 
 impl Core {
     // Creates `Core` for the first node in the network
-    pub fn first_node(node: Node, event_tx: mpsc::UnboundedSender<Event>) -> Result<Self> {
+    pub fn first_node(node: Node, event_tx: mpsc::Sender<Event>) -> Result<Self> {
         let (section, section_key_share) = Section::first_node(node.peer())?;
         Ok(Self::new(node, section, Some(section_key_share), event_tx))
     }
@@ -122,9 +122,9 @@ impl Core {
         Ok(self.section_keys_provider.key_share()?.index)
     }
 
-    pub fn send_event(&self, event: Event) {
+    pub async fn send_event(&self, event: Event) {
         // Note: cloning the sender to avoid mutable access. Should have negligible cost.
-        if self.event_tx.clone().send(event).is_err() {
+        if self.event_tx.clone().send(event).await.is_err() {
             error!("Event receiver has been closed");
         }
     }

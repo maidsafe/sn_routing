@@ -44,7 +44,7 @@ impl Dispatcher {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
-        self.core.lock().await.send_event(event)
+        self.core.lock().await.send_event(event).await
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
@@ -118,7 +118,11 @@ impl Dispatcher {
                 .await),
             Command::HandleTimeout(token) => self.core.lock().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
-                self.core.lock().await.handle_agreement(proposal, proof)
+                self.core
+                    .lock()
+                    .await
+                    .handle_agreement(proposal, proof)
+                    .await
             }
             Command::HandleConnectionLost(addr) => {
                 self.core.lock().await.handle_connection_lost(addr)
@@ -292,10 +296,12 @@ impl Dispatcher {
         let new_keypair = node.keypair.clone();
         *state = Core::new(node, section, None, event_tx);
 
-        state.send_event(Event::Relocated {
-            previous_name,
-            new_keypair,
-        });
+        state
+            .send_event(Event::Relocated {
+                previous_name,
+                new_keypair,
+            })
+            .await;
 
         let commands = backlog
             .into_iter()

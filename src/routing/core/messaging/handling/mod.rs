@@ -271,18 +271,22 @@ impl Core {
                 }
             }
             Variant::Sync { section, network } => {
-                self.handle_sync(section.clone(), network.clone())
+                self.handle_sync(section.clone(), network.clone()).await
             }
             Variant::Relocate(_) => {
                 if msg.src.is_section() {
                     let signed_relocate = SignedRelocateDetails::new(msg.clone())?;
-                    Ok(self.handle_relocate(signed_relocate)?.into_iter().collect())
+                    Ok(self
+                        .handle_relocate(signed_relocate)
+                        .await?
+                        .into_iter()
+                        .collect())
                 } else {
                     Err(Error::InvalidSrcLocation)
                 }
             }
             Variant::RelocatePromise(promise) => {
-                self.handle_relocate_promise(*promise, msg.clone())
+                self.handle_relocate_promise(*promise, msg.clone()).await
             }
             Variant::JoinRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
@@ -290,7 +294,7 @@ impl Core {
             }
             Variant::UserMessage(content) => {
                 let bytes = Bytes::from(content.clone());
-                self.handle_user_message(msg, bytes)
+                self.handle_user_message(msg, bytes).await
             }
             Variant::BouncedUntrustedMessage {
                 msg: bounced_msg,
@@ -427,7 +431,11 @@ impl Core {
         }
     }
 
-    fn handle_user_message(&mut self, msg: RoutingMsg, content: Bytes) -> Result<Vec<Command>> {
+    async fn handle_user_message(
+        &mut self,
+        msg: RoutingMsg,
+        content: Bytes,
+    ) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
         if let DstLocation::EndUser(EndUser { xorname, socket_id }) = msg.dst() {
             if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
@@ -458,12 +466,13 @@ impl Core {
             dst: *msg.dst(),
             proof: msg.proof(),
             proof_chain: msg.proof_chain().ok().cloned(),
-        });
+        })
+        .await;
 
         Ok(vec![])
     }
 
-    pub(crate) fn handle_sync(
+    pub(crate) async fn handle_sync(
         &mut self,
         section: Section,
         network: Network,
@@ -504,11 +513,12 @@ impl Core {
                     remaining: old_adults.intersection(&current_adults).copied().collect(),
                     added,
                     removed,
-                });
+                })
+                .await;
             }
         }
 
-        self.update_state(snapshot)
+        self.update_state(snapshot).await
     }
 
     pub fn handle_lagging_messages_on_sync(&mut self) -> Result<Vec<Command>> {
