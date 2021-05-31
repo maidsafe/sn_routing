@@ -104,9 +104,11 @@ pub trait RoutingMsgUtils {
 
     fn verify_variant<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
         &self,
-        proof_chain: Option<&SecuredLinkedList>,
         trusted_keys: I,
     ) -> Result<VerifyStatus>;
+
+    /// Returns an updated message with the provided Section key i.e. known to be latest.
+    fn updated_with_latest_key(&mut self, section_pk: bls::PublicKey);
 }
 
 impl RoutingMsgUtils for RoutingMsg {
@@ -213,12 +215,12 @@ impl RoutingMsgUtils for RoutingMsg {
             section_chain: section_chain.clone(),
         };
 
-        Self::new_signed(src, dst, variant, section_chain.last_key())
+        Self::new_signed(src, dst, variant, *section_chain.last_key())
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
     /// Returns errors if src is not `BlsShare` or if the proof is invalid.
-    pub(crate) fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
+    fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
         let (proof_share, src_name, section_chain) = if let SrcAuthority::BlsShare {
             proof_share,
             src_name,
@@ -326,7 +328,7 @@ impl RoutingMsgUtils for RoutingMsg {
                 }
 
                 // Variant-specific verification.
-                self.verify_variant(self.proof_chain.as_ref(), trusted_keys)
+                self.verify_variant(trusted_keys)
             }
             SrcAuthority::BlsShare {
                 proof_share,
@@ -424,11 +426,7 @@ impl RoutingMsgUtils for RoutingMsg {
     //     RoutingMsg::new_signed(self.src, self.dst, self.variant, self.proof_chain)
     // }
 
-    fn verify_variant<'a, I>(
-        &self,
-        proof_chain: Option<&SecuredLinkedList>,
-        trusted_keys: I,
-    ) -> Result<VerifyStatus>
+    fn verify_variant<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
@@ -436,19 +434,18 @@ impl RoutingMsgUtils for RoutingMsg {
             Variant::NodeApproval {
                 section_auth,
                 member_info,
+                section_chain,
                 ..
             } => {
-                let proof_chain = proof_chain.ok_or(Error::InvalidMessage)?;
-
-                if !section_auth.verify(proof_chain) {
+                if !section_auth.verify(section_chain) {
                     return Err(Error::InvalidMessage);
                 }
 
-                if !member_info.verify(proof_chain) {
+                if !member_info.verify(section_chain) {
                     return Err(Error::InvalidMessage);
                 }
 
-                proof_chain
+                section_chain
             }
             Variant::Sync { section, .. } => section.chain(),
             _ => return Ok(VerifyStatus::Full),
@@ -459,6 +456,10 @@ impl RoutingMsgUtils for RoutingMsg {
         } else {
             Ok(VerifyStatus::Unknown)
         }
+    }
+
+    fn updated_with_latest_key(&mut self, section_pk: bls::PublicKey) {
+        self.section_pk = section_pk
     }
 }
 

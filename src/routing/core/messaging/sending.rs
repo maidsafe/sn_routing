@@ -156,12 +156,6 @@ impl Core {
         recipient: &Peer,
         details: RelocateDetails,
     ) -> Result<Vec<Command>> {
-        // We need to construct a proof that would be trusted by the destination section.
-        let known_key = self
-            .network
-            .key_by_name(&details.destination)
-            .unwrap_or_else(|_| self.section.chain().root_key());
-
         let src = details.pub_id;
         let dst = DstLocation::Node(details.pub_id);
         let variant = Variant::Relocate(details);
@@ -280,7 +274,6 @@ impl Core {
             src,
             dst,
             variant,
-            self.section.authority_provider().section_key,
             self.section.chain().clone(),
         )?;
 

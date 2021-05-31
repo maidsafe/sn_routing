@@ -11,7 +11,6 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{client::ClientMsg, DstLocation, EndUser, SrcLocation};
 use std::{
     collections::BTreeSet,

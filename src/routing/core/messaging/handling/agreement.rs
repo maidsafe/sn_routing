@@ -293,7 +293,7 @@ impl Core {
         proof: Proof,
         dest_info: DestInfo,
     ) -> Result<Command> {
-        let message = Message::section_src(message, proof, section_chain)?;
+        let message = RoutingMsg::section_src(message, proof, section_chain)?;
 
         Ok(Command::HandleMessage {
             message,

@@ -248,7 +248,6 @@ impl Core {
                 itinerary.src.name(),
                 itinerary.dst,
                 variant,
-                self.section.authority_provider().section_key,
                 self.section.chain().clone(),
             )?
         } else if itinerary.aggregate_at_src() {

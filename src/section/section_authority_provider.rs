@@ -210,7 +210,8 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::{crypto, node::Node, supermajority, MIN_ADULT_AGE, MIN_AGE};
+    use crate::routing::tests::SecretKeySet;
+    use crate::{crypto, node::Node, MIN_ADULT_AGE, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
@@ -251,7 +252,7 @@ pub(crate) mod test_utils {
     pub(crate) fn gen_section_authority_provider(
         prefix: Prefix,
         count: usize,
-    ) -> (SectionAuthorityProvider, Vec<Node>, bls::SecretKeySet) {
+    ) -> (SectionAuthorityProvider, Vec<Node>, SecretKeySet) {
         let nodes = gen_sorted_nodes(&prefix, count, false);
         let elders = nodes
             .iter()
@@ -262,8 +263,7 @@ pub(crate) mod test_utils {
             })
             .collect();
 
-        let threshold = supermajority(count) - 1;
-        let secret_key_set = bls::SecretKeySet::random(threshold, &mut rand::thread_rng());
+        let secret_key_set = SecretKeySet::random();
         let section_auth = SectionAuthorityProvider::from_elder_candidates(
             ElderCandidates { elders, prefix },
             secret_key_set.public_keys(),
