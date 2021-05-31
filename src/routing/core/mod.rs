@@ -21,6 +21,7 @@ use crate::{
     error::Result,
     event::{Elders, Event, NodeElderChange},
     message_filter::MessageFilter,
+    messages::RoutingMsgUtils,
     network::NetworkUtils,
     node::Node,
     relocation::RelocateState,
@@ -31,8 +32,8 @@ use itertools::Itertools;
 use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider},
-    DestInfo, MessageId,
+    node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider, Variant},
+    DestInfo, DstLocation, MessageId,
 };
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
@@ -176,6 +177,32 @@ impl Core {
                 }
 
                 self.print_network_stats();
+
+                // Sending SectionKnowledge to other sections for new SAP.
+                let section_auth = self.section.proven_authority_provider();
+                let variant = Variant::SectionKnowledge {
+                    src_info: (section_auth.clone(), self.section.chain().clone()),
+                    msg: None,
+                };
+                for sap in self.network.all() {
+                    let msg = RoutingMsg::single_src(
+                        &self.node,
+                        DstLocation::DirectAndUnrouted,
+                        variant.clone(),
+                        section_auth.value.section_key,
+                    )?;
+                    let targets: Vec<_> = sap
+                        .elders()
+                        .iter()
+                        .map(|(name, addr)| (*name, *addr))
+                        .collect();
+                    let len = targets.len();
+                    let dest_info = DestInfo {
+                        dest: XorName::random(),
+                        dest_section_pk: sap.section_key,
+                    };
+                    commands.push(Command::send_message_to_nodes(targets, len, msg, dest_info));
+                }
             }
 
             if new.is_elder || old.is_elder {
