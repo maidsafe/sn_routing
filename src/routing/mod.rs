@@ -107,7 +107,7 @@ impl Routing {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
-        let (state, comm, backlog) = if config.first {
+        let (state, comm) = if config.first {
             // Genesis node having a fix age of 255.
             let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
             let node_name = crypto::name(&keypair.public);
@@ -133,34 +133,22 @@ impl Routing {
                 self_status_change: NodeElderChange::Promoted,
             });
 
-            (state, comm, vec![])
+            (state, comm)
         } else {
             info!("{} Bootstrapping a new node.", node_name);
             let (comm, bootstrap_addr) =
                 Comm::bootstrap(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info());
-            let (node, section, backlog) =
+            let (node, section) =
                 bootstrap::initial(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
             let state = Core::new(node, section, None, event_tx);
 
-            (state, comm, backlog)
+            (state, comm)
         };
 
         let dispatcher = Arc::new(Dispatcher::new(state, comm));
         let event_stream = EventStream::new(event_rx);
         info!("{} Bootstrapped!", node_name);
-
-        // Process message backlog
-        for (message, sender, dest_info) in backlog {
-            dispatcher
-                .clone()
-                .handle_commands(Command::HandleMessage {
-                    message,
-                    sender: Some(sender),
-                    dest_info,
-                })
-                .await?;
-        }
 
         // Start listening to incoming connections.
         let _ = task::spawn(handle_connection_events(

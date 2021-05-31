@@ -33,15 +33,13 @@ use sn_messaging::{
     DestInfo, DstLocation, MessageType, WireMsg,
 };
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashSet},
     mem,
     net::SocketAddr,
 };
 use tokio::sync::mpsc;
 use tracing::Instrument;
 use xor_name::{Prefix, XorName, XOR_NAME_LEN};
-
-const BACKLOG_CAPACITY: usize = 100;
 
 /// Bootstrap into the network as new node.
 ///
@@ -53,7 +51,7 @@ pub(crate) async fn initial(
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
-) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+) -> Result<(Node, Section)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Raw(incoming_conns);
 
@@ -82,7 +80,7 @@ pub(crate) async fn relocate(
     bootstrap_addrs: Vec<SocketAddr>,
     genesis_key: bls::PublicKey,
     relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+) -> Result<(Node, Section)> {
     let (send_tx, send_rx) = mpsc::channel(1);
     let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
@@ -102,8 +100,6 @@ struct State<'a> {
     // Receiver for incoming messages.
     recv_rx: MessageReceiver<'a>,
     node: Node,
-    // Backlog for unknown messages
-    backlog: VecDeque<(RoutingMsg, SocketAddr, DestInfo)>,
 }
 
 impl<'a> State<'a> {
@@ -116,7 +112,6 @@ impl<'a> State<'a> {
             send_tx,
             recv_rx,
             node,
-            backlog: VecDeque::with_capacity(BACKLOG_CAPACITY),
         }
     }
 
@@ -125,7 +120,7 @@ impl<'a> State<'a> {
         bootstrap_addrs: Vec<SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+    ) -> Result<(Node, Section)> {
         let (prefix, section_key, elders) = self
             .bootstrap(bootstrap_addrs, relocate_details.as_ref())
             .await?;
@@ -296,10 +291,8 @@ impl<'a> State<'a> {
                         return Ok((response, sender, dest_info))
                     }
                 },
-                MessageType::Routing { msg, dest_info } => {
-                    self.backlog_message(msg, sender, dest_info)
-                }
-                MessageType::Node { .. }
+                MessageType::Routing { .. }
+                | MessageType::Node { .. }
                 | MessageType::SectionInfo { .. }
                 | MessageType::Client { .. } => {}
             }
@@ -345,7 +338,7 @@ impl<'a> State<'a> {
         elders: BTreeMap<XorName, SocketAddr>,
         genesis_key: Option<bls::PublicKey>,
         relocate_payload: Option<RelocatePayload>,
-    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+    ) -> Result<(Node, Section)> {
         let join_request = JoinRequest {
             section_key,
             relocate_payload: relocate_payload.clone(),
@@ -372,7 +365,6 @@ impl<'a> State<'a> {
                     return Ok((
                         self.node,
                         Section::new(genesis_key, section_chain, section_auth)?,
-                        self.backlog.into_iter().collect(),
                     ));
                 }
                 JoinResponse::Retry {
@@ -568,8 +560,13 @@ impl<'a> State<'a> {
                         dest_info,
                     ));
                 }
-
-                _ => self.backlog_message(message, sender, dest_info),
+                other => {
+                    warn!(
+                        "Discarding unexpected message when expecting join response: {:?}",
+                        other
+                    );
+                    continue;
+                }
             }
         }
 
@@ -592,14 +589,6 @@ impl<'a> State<'a> {
                 false
             }
         }
-    }
-
-    fn backlog_message(&mut self, message: RoutingMsg, sender: SocketAddr, dest_info: DestInfo) {
-        while self.backlog.len() >= BACKLOG_CAPACITY {
-            let _ = self.backlog.pop_front();
-        }
-
-        self.backlog.push_back((message, sender, dest_info))
     }
 }
 
@@ -813,7 +802,7 @@ mod tests {
         };
 
         // Drive both tasks to completion concurrently (but on the same thread).
-        let ((node, section, _backlog), _) = future::try_join(bootstrap, others).await?;
+        let ((node, section), _) = future::try_join(bootstrap, others).await?;
 
         assert_eq!(*section.authority_provider(), section_auth);
         assert_eq!(*section.chain().last_key(), pk);

@@ -168,7 +168,9 @@ impl Dispatcher {
                 message_rx,
             } => {
                 self.handle_relocate(bootstrap_addrs, details, message_rx)
-                    .await
+                    .await?;
+
+                Ok(vec![])
             }
             Command::SetJoinsAllowed(joins_allowed) => {
                 self.core.lock().await.set_joins_allowed(joins_allowed)
@@ -270,14 +272,14 @@ impl Dispatcher {
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
         message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
-    ) -> Result<Vec<Command>> {
+    ) -> Result<()> {
         let (genesis_key, node) = {
             let state = self.core.lock().await;
             (*state.section().genesis_key(), state.node().clone())
         };
         let previous_name = node.name();
 
-        let (node, section, backlog) = bootstrap::relocate(
+        let (node, section) = bootstrap::relocate(
             node,
             &self.comm,
             message_rx,
@@ -297,14 +299,6 @@ impl Dispatcher {
             new_keypair,
         });
 
-        let commands = backlog
-            .into_iter()
-            .map(|(message, sender, dest_info)| Command::HandleMessage {
-                message,
-                sender: Some(sender),
-                dest_info,
-            })
-            .collect();
-        Ok(commands)
+        Ok(())
     }
 }
