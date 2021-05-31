@@ -34,9 +34,7 @@ use sn_messaging::{
     node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider},
     DestInfo, MessageId,
 };
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use xor_name::{Prefix, XorName};
 
@@ -62,13 +60,6 @@ pub(crate) struct Core {
     resource_proof: ResourceProof,
     end_users: EndUserRegistry,
     connectivity_complaints: ConnectivityComplaints,
-    lagging_messages: LaggingMessages,
-}
-
-#[derive(Default)]
-pub(crate) struct LaggingMessages {
-    // Execute upon sync
-    pub src_ahead: BTreeMap<bls::PublicKey, Vec<Command>>,
 }
 
 impl Core {
@@ -97,7 +88,6 @@ impl Core {
             resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
             end_users: EndUserRegistry::new(),
             connectivity_complaints: ConnectivityComplaints::new(),
-            lagging_messages: LaggingMessages::default(),
         }
     }
 
@@ -113,7 +103,6 @@ impl Core {
         &mut self,
         msg: &RoutingMsg,
         dest_info: DestInfo,
-        sender: Option<SocketAddr>,
     ) -> Result<(Vec<Command>, bool)> {
         if !self.is_elder() {
             // Adult nodes do need to carry out entropy checking, however the message shall always
@@ -121,14 +110,8 @@ impl Core {
             return Ok((vec![], true));
         }
 
-        let (actions, can_be_executed) = anti_entropy::process(
-            &self.node,
-            &self.section,
-            &mut self.lagging_messages,
-            msg,
-            dest_info,
-            sender,
-        )?;
+        let (actions, can_be_executed) =
+            anti_entropy::process(&self.node, &self.section, msg, dest_info)?;
         let mut commands = vec![];
 
         for msg in actions.send {
@@ -197,7 +180,6 @@ impl Core {
 
             if new.is_elder || old.is_elder {
                 commands.extend(self.send_sync(self.section.clone(), self.network.clone())?);
-                commands.extend(self.handle_lagging_messages_on_sync()?);
             }
 
             let current: BTreeSet<_> = self.section.authority_provider().names();

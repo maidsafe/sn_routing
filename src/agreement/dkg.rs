@@ -515,13 +515,8 @@ impl DkgCommand {
                 message,
             } => {
                 let variant = Variant::DkgMessage { dkg_key, message };
-                let message = RoutingMsg::single_src(
-                    node,
-                    DstLocation::DirectAndUnrouted,
-                    variant,
-                    key,
-                    None,
-                )?;
+                let message =
+                    RoutingMsg::single_src(node, DstLocation::DirectAndUnrouted, variant, key)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),
@@ -554,13 +549,8 @@ impl DkgCommand {
                     proof,
                     non_participants,
                 };
-                let message = RoutingMsg::single_src(
-                    node,
-                    DstLocation::DirectAndUnrouted,
-                    variant,
-                    key,
-                    None,
-                )?;
+                let message =
+                    RoutingMsg::single_src(node, DstLocation::DirectAndUnrouted, variant, key)?;
 
                 Ok(Command::send_message_to_nodes(
                     recipients.clone(),

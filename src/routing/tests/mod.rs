@@ -980,15 +980,14 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
 #[tokio::test]
 async fn handle_bounced_untrusted_message() -> Result<()> {
-    let (section_auth, mut nodes) = create_section_auth();
+    let (section_auth, mut nodes, sk_set0) =
+        gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
 
     // Create section chain with two keys.
-    let sk0 = bls::SecretKey::random();
-    let pk0 = sk0.public_key();
-
+    let pk0 = sk_set0.public_keys().public_key();
     let sk1_set = SecretKeySet::random();
     let pk1 = sk1_set.secret_key().public_key();
-    let pk1_signature = sk0.sign(&bincode::serialize(&pk1)?);
+    let pk1_signature = sk_set0.key.sign(&bincode::serialize(&pk1)?);
 
     let mut chain = SecuredLinkedList::new(pk0);
     let _ = chain.insert(&pk0, pk1, pk1_signature);
@@ -1024,7 +1023,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             public_key: pk1,
             signature,
         },
-        chain.clone(),
+        proof_chain.clone(),
     )?;
 
     // Create our node.
@@ -1075,7 +1074,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             Variant::UserMessage(content) => {
                 assert_eq!(recipients, [(other_node.name(), other_node.addr)]);
                 assert_eq!(*content, original_message_content);
-                assert_eq!(message.section_pk(), *chain.last_key());
+                assert_eq!(message.section_pk(), pk0);
 
                 message_sent = true;
             }

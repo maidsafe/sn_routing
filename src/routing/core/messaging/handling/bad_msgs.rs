@@ -59,7 +59,7 @@ impl Core {
         &self,
         sender: Peer,
         dst_key: bls::PublicKey,
-        bounced_msg: RoutingMsg,
+        mut bounced_msg: RoutingMsg,
     ) -> Result<Command> {
         let span = trace_span!("Received BouncedUntrustedMessage", ?bounced_msg, %sender);
         let _span_guard = span.enter();
@@ -84,12 +84,10 @@ impl Core {
                     self.section.authority_provider().section_key,
                 )?
             }
-            _ => bounced_msg
-                .updated_with_latest_key(self.section.authority_provider().section_key)
-                .map_err(|err| {
-                    error!("extending proof chain failed: {:?}", err);
-                    Error::InvalidMessage // TODO: more specific error
-                })?,
+            _ => {
+                bounced_msg.updated_with_latest_key(self.section.authority_provider().section_key);
+                bounced_msg
+            }
         };
 
         let dest_info = DestInfo {

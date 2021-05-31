@@ -69,7 +69,7 @@ impl Core {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 let (entropy_commands, shall_be_handled) =
-                    self.check_for_entropy(&msg, dest_info.clone(), sender)?;
+                    self.check_for_entropy(&msg, dest_info.clone())?;
                 commands.extend(entropy_commands);
                 if shall_be_handled {
                     commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
@@ -446,16 +446,20 @@ impl Core {
         content: Bytes,
     ) -> Result<Vec<Command>> {
         trace!("handle user message {:?}", msg);
-        if let DstLocation::EndUser(EndUser { xorname, socket_id }) = msg.dst() {
+        if let DstLocation::EndUser(EndUser {
+            xorname: xor_name,
+            socket_id,
+        }) = msg.dst()
+        {
             if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
                 trace!("sending user message {:?} to client {:?}", msg, socket_addr);
                 return Ok(vec![Command::SendMessage {
-                    recipients: vec![(*xorname, socket_addr)],
+                    recipients: vec![(*xor_name, socket_addr)],
                     delivery_group_size: 1,
                     message: MessageType::Client {
                         msg: ClientMsg::from(content)?,
                         dest_info: DestInfo {
-                            dest: *xorname,
+                            dest: *xor_name,
                             dest_section_pk: *self.section.chain().last_key(),
                         },
                     },
@@ -527,17 +531,6 @@ impl Core {
         }
 
         self.update_state(snapshot).await
-    }
-
-    pub fn handle_lagging_messages_on_sync(&mut self) -> Result<Vec<Command>> {
-        let mut commands = vec![];
-        let latest_key = *self.section_chain().last_key();
-        if let Some(lagged_commands) = self.lagging_messages.src_ahead.remove(&latest_key) {
-            // We now have the latest key, execute the messages that received when we were lagging.
-            commands.extend(lagged_commands);
-        }
-
-        Ok(commands)
     }
 
     pub(crate) fn handle_join_request(
