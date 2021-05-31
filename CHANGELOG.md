@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.73.0](https://github.com/maidsafe/sn_routing/compare/v0.72.0...v0.73.0) (2021-05-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** includes a breaking change to the public API
+
+* **api:** return only SectionAuthorityProvider for matching_section ([eaea2bc](https://github.com/maidsafe/sn_routing/commit/eaea2bcedfe5a5425acc4b266ab75e45a780c268))
+
 ## [0.72.0](https://github.com/maidsafe/sn_routing/compare/v0.71.4...v0.72.0) (2021-05-30)
 
 
