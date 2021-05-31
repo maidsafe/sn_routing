@@ -57,7 +57,7 @@ pub(crate) struct Core {
     dkg_voter: DkgVoter,
     relocate_state: Option<RelocateState>,
     msg_filter: MessageFilter,
-    pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    pub(super) event_tx: mpsc::Sender<Event>,
     joins_allowed: bool,
     resource_proof: ResourceProof,
     end_users: EndUserRegistry,
@@ -77,7 +77,7 @@ impl Core {
         node: Node,
         section: Section,
         section_key_share: Option<SectionKeyShare>,
-        event_tx: mpsc::UnboundedSender<Event>,
+        event_tx: mpsc::Sender<Event>,
     ) -> Self {
         let section_keys_provider = SectionKeysProvider::new(KEY_CACHE_SIZE, section_key_share);
 
@@ -164,7 +164,7 @@ impl Core {
         }
     }
 
-    pub(crate) fn update_state(&mut self, old: StateSnapshot) -> Result<Vec<Command>> {
+    pub(crate) async fn update_state(&mut self, old: StateSnapshot) -> Result<Vec<Command>> {
         let mut commands = vec![];
         let new = self.state_snapshot();
 
@@ -257,7 +257,7 @@ impl Core {
                 }
             };
 
-            self.send_event(event);
+            self.send_event(event).await;
         }
 
         if !new.is_elder {

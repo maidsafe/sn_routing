@@ -90,7 +90,7 @@ impl Core {
         self.send_relocate(peer, details)
     }
 
-    pub(crate) fn handle_relocate(
+    pub(crate) async fn handle_relocate(
         &mut self,
         details: SignedRelocateDetails,
     ) -> Result<Option<Command>> {
@@ -114,7 +114,8 @@ impl Core {
             None => {
                 self.send_event(Event::RelocationStarted {
                     previous_name: self.node.name(),
-                });
+                })
+                .await;
             }
         }
 
@@ -130,7 +131,7 @@ impl Core {
         }))
     }
 
-    pub(crate) fn handle_relocate_promise(
+    pub(crate) async fn handle_relocate_promise(
         &mut self,
         promise: RelocatePromise,
         msg: RoutingMsg,
@@ -149,7 +150,8 @@ impl Core {
                     self.relocate_state = Some(RelocateState::Delayed(msg.clone()));
                     self.send_event(Event::RelocationStarted {
                         previous_name: self.node.name(),
-                    });
+                    })
+                    .await;
                 }
                 Some(RelocateState::InProgress(_)) => {
                     trace!("ignore RelocatePromise - relocation already in progress");

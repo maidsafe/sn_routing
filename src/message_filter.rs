@@ -14,7 +14,7 @@ use xor_name::XorName;
 
 const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
 const OUTGOING_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
-const MAX_ENTRIES: usize = 5_000;
+const MAX_ENTRIES: usize = 15_000;
 
 /// An enum representing a result of message filtering
 #[derive(Eq, PartialEq)]
