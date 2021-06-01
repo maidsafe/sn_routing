@@ -215,7 +215,6 @@
 <span id="214">214</span>
 <span id="215">215</span>
 <span id="216">216</span>
-<span id="217">217</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -230,7 +229,6 @@
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">RecvStream</span>, <span class="ident">SendStream</span>};
-<span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">client</span>::<span class="ident">ClientMsg</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">SrcLocation</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
@@ -286,8 +284,8 @@
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
         <span class="doccomment">/// The proof if the message was set to be aggregated at source.</span>
         <span class="ident">proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
-        <span class="doccomment">/// The proof chain for the message, if any.</span>
-        <span class="ident">proof_chain</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SecuredLinkedList</span><span class="op">&gt;</span>,
+        <span class="doccomment">/// The Sender&#39;s Section PK.</span>
+        <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     },
     <span class="doccomment">/// A new peer joined our section.</span>
     <span class="ident">MemberJoined</span> {

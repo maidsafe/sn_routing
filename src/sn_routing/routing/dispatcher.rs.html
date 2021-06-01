@@ -471,12 +471,12 @@
             <span class="ident">Command</span>::<span class="ident">SendUserMessage</span> {
                 <span class="ident">itinerary</span>,
                 <span class="ident">content</span>,
-                <span class="ident">additional_proof_chain_key</span>,
+                <span class="ident">additional_proof_chain_key</span>: <span class="kw">_</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">core</span>
                     .<span class="ident">lock</span>()
                     .<span class="kw">await</span>
-                    .<span class="ident">send_user_message</span>(<span class="ident">itinerary</span>, <span class="ident">content</span>, <span class="ident">additional_proof_chain_key</span>.<span class="ident">as_ref</span>())
+                    .<span class="ident">send_user_message</span>(<span class="ident">itinerary</span>, <span class="ident">content</span>)
                     .<span class="kw">await</span>
             }
             <span class="ident">Command</span>::<span class="ident">ScheduleTimeout</span> { <span class="ident">duration</span>, <span class="ident">token</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>

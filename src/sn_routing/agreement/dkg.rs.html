@@ -1250,7 +1250,7 @@
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">DkgMessage</span> { <span class="ident">dkg_key</span>, <span class="ident">message</span> };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="ident">key</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="ident">recipients</span>.<span class="ident">clone</span>(),
@@ -1284,7 +1284,7 @@
                     <span class="ident">non_participants</span>,
                 };
                 <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+                    <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="ident">key</span>)<span class="question-mark">?</span>;
 
                 <span class="prelude-val">Ok</span>(<span class="ident">Command</span>::<span class="ident">send_message_to_nodes</span>(
                     <span class="ident">recipients</span>.<span class="ident">clone</span>(),

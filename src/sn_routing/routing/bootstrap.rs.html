@@ -1301,6 +1301,10 @@
 <span id="1300">1300</span>
 <span id="1301">1301</span>
 <span id="1302">1302</span>
+<span id="1303">1303</span>
+<span id="1304">1304</span>
+<span id="1305">1305</span>
+<span id="1306">1306</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1750,8 +1754,12 @@
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {:?}&quot;</span>, <span class="ident">join_request</span>, <span class="ident">recipients</span>);
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">join_request</span>));
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-            <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
+            <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
+            <span class="ident">variant</span>,
+            <span class="ident">section_key</span>,
+        )<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">send_tx</span>
@@ -1832,6 +1840,7 @@
                     <span class="ident">genesis_key</span>,
                     <span class="ident">section_auth</span>,
                     <span class="ident">member_info</span>,
+                    <span class="ident">section_chain</span>,
                 } <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">if</span> <span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>() <span class="op">!</span><span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>() {
                         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Ignore NodeApproval not for us&quot;</span>);
@@ -1855,8 +1864,6 @@
                         <span class="kw">continue</span>;
                     }
 
-                    <span class="kw">let</span> <span class="ident">section_chain</span> <span class="op">=</span> <span class="ident">message</span>.<span class="ident">proof_chain</span>()<span class="question-mark">?</span>.<span class="ident">clone</span>();
-
                     <span class="macro">trace</span><span class="macro">!</span>(
                         <span class="string">&quot;This node has been approved to join the network at {:?}!&quot;</span>,
                         <span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>,
@@ -1866,7 +1873,7 @@
                         <span class="ident">JoinResponse</span>::<span class="ident">Approval</span> {
                             <span class="ident">section_auth</span>: <span class="ident">section_auth</span>.<span class="ident">clone</span>(),
                             <span class="ident">genesis_key</span>: <span class="kw-2">*</span><span class="ident">genesis_key</span>,
-                            <span class="ident">section_chain</span>,
+                            <span class="ident">section_chain</span>: <span class="ident">section_chain</span>.<span class="ident">clone</span>(),
                         },
                         <span class="ident">sender</span>,
                         <span class="ident">dest_info</span>,
@@ -2096,10 +2103,11 @@
                 <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
                 <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> {
                     <span class="ident">genesis_key</span>: <span class="ident">pk</span>,
-                    <span class="ident">section_auth</span>,
+                    <span class="ident">section_auth</span>: <span class="ident">section_auth</span>.<span class="ident">clone</span>(),
                     <span class="ident">member_info</span>,
+                    <span class="ident">section_chain</span>: <span class="ident">proof_chain</span>,
                 },
-                <span class="prelude-val">Some</span>(<span class="ident">proof_chain</span>),
+                <span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>,
             )<span class="question-mark">?</span>;
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
@@ -2547,7 +2555,7 @@
                     <span class="ident">section_auth</span>: <span class="ident">gen_section_authority_provider</span>(<span class="ident">bad_prefix</span>, <span class="ident">ELDER_SIZE</span>).<span class="number">0</span>,
                     <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>(),
                 },
-                <span class="prelude-val">None</span>,
+                <span class="ident">section_key</span>,
             )<span class="question-mark">?</span>;
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((
@@ -2570,7 +2578,7 @@
                     <span class="ident">section_auth</span>: <span class="ident">gen_section_authority_provider</span>(<span class="ident">good_prefix</span>, <span class="ident">ELDER_SIZE</span>).<span class="number">0</span>,
                     <span class="ident">section_key</span>: <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>(),
                 },
-                <span class="prelude-val">None</span>,
+                <span class="ident">section_key</span>,
             )<span class="question-mark">?</span>;
 
             <span class="ident">recv_tx</span>.<span class="ident">try_send</span>((

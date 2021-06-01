@@ -104,6 +104,10 @@
 <span id="103">103</span>
 <span id="104">104</span>
 <span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -175,8 +179,12 @@
             <span class="ident">content</span>: <span class="ident">proposal</span>,
             <span class="ident">proof_share</span>,
         };
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span>
-            <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>, <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>, <span class="ident">variant</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">RoutingMsg</span>::<span class="ident">single_src</span>(
+            <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>,
+            <span class="ident">DstLocation</span>::<span class="ident">DirectAndUnrouted</span>,
+            <span class="ident">variant</span>,
+            <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">section_key</span>,
+        )<span class="question-mark">?</span>;
 
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">send_or_handle</span>(<span class="ident">message</span>, <span class="ident">recipients</span>))
     }

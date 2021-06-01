@@ -255,7 +255,7 @@
 <span class="doccomment">/// Number of elders per section.</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ELDER_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">7</span>;
 
-<span class="doccomment">/// Supermajority of a given group (i.e. &gt; 2/3)</span>
+<span class="doccomment">/// SuperMajority of a given group (i.e. &gt; 2/3)</span>
 <span class="attribute">#[<span class="ident">inline</span>]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">supermajority</span>(<span class="ident">group_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="number">1</span> <span class="op">+</span> <span class="ident">group_size</span> <span class="op">*</span> <span class="number">2</span> <span class="op">/</span> <span class="number">3</span>
