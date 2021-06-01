@@ -56,10 +56,12 @@ use tokio::{
 };
 use xor_name::{Prefix, XorName};
 
+static TEST_EVENT_CHANNEL_SIZE: usize = 20;
+
 #[tokio::test]
 async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let node = create_node(MIN_ADULT_AGE);
-    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
@@ -114,7 +116,12 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let (section, _) = create_section(&sk_set, &section_auth)?;
 
     let node = create_node(MIN_ADULT_AGE);
-    let state = Core::new(node, section, None, mpsc::unbounded_channel().0);
+    let state = Core::new(
+        node,
+        section,
+        None,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
+    );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let mut rng = rand::thread_rng();
@@ -171,7 +178,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let node = create_node(FIRST_SECTION_MIN_AGE);
     let node_name = node.name();
-    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
@@ -219,7 +226,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let node = create_node(FIRST_SECTION_MIN_AGE);
     let node_name = node.name();
-    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
@@ -303,7 +310,7 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
         node,
         section,
         Some(section_key_share),
-        mpsc::unbounded_channel().0,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -401,7 +408,7 @@ async fn aggregate_proposals() -> Result<()> {
         nodes[0].clone(),
         section.clone(),
         Some(section_key_share),
-        mpsc::unbounded_channel().0,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -476,7 +483,7 @@ async fn aggregate_proposals() -> Result<()> {
 
 #[tokio::test]
 async fn handle_agreement_on_online() -> Result<()> {
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
 
     let prefix = Prefix::default();
 
@@ -539,7 +546,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
         node,
         section,
         Some(section_key_share),
-        mpsc::unbounded_channel().0,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -683,7 +690,7 @@ async fn handle_agreement_on_online_of_rejoined_node(phase: NetworkPhase, age: u
     let _ = section.update_member(member_info);
 
     // Make a Node
-    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let (event_tx, _event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let node = nodes.remove(0);
     let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
@@ -739,7 +746,7 @@ async fn handle_agreement_on_offline_of_non_elder() -> Result<()> {
     let member_info = proven(sk_set.secret_key(), member_info)?;
     let _ = section.update_member(member_info);
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let node = nodes.remove(0);
     let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
@@ -785,7 +792,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
         .leave()?;
 
     // Create our node
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let node = nodes.remove(0);
     let node_name = node.name();
     let state = Core::new(node, section, Some(section_key_share), event_tx);
@@ -898,7 +905,12 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
 
     let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
-    let state = Core::new(node, section.clone(), None, mpsc::unbounded_channel().0);
+    let state = Core::new(
+        node,
+        section.clone(),
+        None,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
+    );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let sk1 = bls::SecretKey::random();
@@ -1020,7 +1032,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
         node,
         section,
         Some(section_key_share),
-        mpsc::unbounded_channel().0,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1093,7 +1105,7 @@ async fn handle_sync() -> Result<()> {
     let old_section = Section::new(pk0, chain.clone(), proven_old_section_auth)?;
 
     // Create our node
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let section_key_share = create_section_key_share(&sk1_set, 0);
     let node = nodes.remove(0);
     let node_name = node.name();
@@ -1185,7 +1197,7 @@ async fn handle_untrusted_sync() -> Result<()> {
     let proven_new_section_auth = proven(&sk2, new_section_auth.clone())?;
     let new_section = Section::new(pk0, chain.truncate(2), proven_new_section_auth)?;
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let node = create_node(MIN_ADULT_AGE);
     let node_name = node.name();
     let state = Core::new(node, old_section, None, event_tx);
@@ -1265,7 +1277,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
     let proven_section_auth = proven(sk2, section_auth.clone())?;
     let section_full = Section::new(pk0, chain, proven_section_auth)?;
 
-    let (event_tx, _) = mpsc::unbounded_channel();
+    let (event_tx, _) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let node = nodes.remove(0);
     let node_name = node.name();
     let section_key_share = create_section_key_share(&sk2_set, 0);
@@ -1368,7 +1380,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         node,
         section,
         Some(section_key_share),
-        mpsc::unbounded_channel().0,
+        mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0,
     );
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1448,7 +1460,7 @@ enum MessageDst {
 async fn message_to_self(dst: MessageDst) -> Result<()> {
     let node = create_node(MIN_ADULT_AGE);
     let peer = node.peer();
-    let state = Core::first_node(node, mpsc::unbounded_channel().0)?;
+    let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
     let section_name = XorName::random();
 
@@ -1538,7 +1550,7 @@ async fn handle_elders_update() -> Result<()> {
         public_key: pk0,
     };
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let state = Core::new(node, section0.clone(), Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1633,7 +1645,7 @@ async fn handle_demote_during_split() -> Result<()> {
         assert!(section.update_member(member_info));
     }
 
-    let (event_tx, _) = mpsc::unbounded_channel();
+    let (event_tx, _) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     let state = Core::new(node, section, Some(section_key_share), event_tx);
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
@@ -1739,7 +1751,7 @@ fn create_node(age: u8) -> Node {
 }
 
 async fn create_comm() -> Result<Comm> {
-    let (tx, _rx) = mpsc::channel(1);
+    let (tx, _rx) = mpsc::channel(TEST_EVENT_CHANNEL_SIZE);
     Ok(Comm::new(
         qp2p::Config {
             local_ip: Some(Ipv4Addr::LOCALHOST.into()),

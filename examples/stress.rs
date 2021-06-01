@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
 
     let schedule = ChurnSchedule::parse(&opts.schedule)?;
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let (event_tx, mut event_rx) = mpsc::channel(20);
     let mut network = Network::new();
 
     // Create the genesis node
@@ -652,7 +652,7 @@ async fn add_node(id: u64, config: Config, event_tx: Sender<Event>) {
     let _ = event_tx.send(Event::JoinSuccess { id, node });
 
     while let Some(event) = events.next().await {
-        if event_tx.send(Event::Routing { id, event }).is_err() {
+        if event_tx.send(Event::Routing { id, event }).await.is_err() {
             break;
         }
     }
