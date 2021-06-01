@@ -409,6 +409,10 @@ impl RoutingMsgUtils for RoutingMsg {
 
                 section_chain
             }
+            Variant::SectionKnowledge {
+                src_info: (_, chain),
+                ..
+            } => chain,
             Variant::Sync { section, .. } => section.chain(),
             _ => return Ok(VerifyStatus::Full),
         };

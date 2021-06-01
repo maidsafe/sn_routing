@@ -53,13 +53,10 @@ impl Core {
 
         // Check if the message is for us.
         let in_dst_location = msg.dst().contains(&self.node.name(), self.section.prefix());
+        // TODO: Broadcast message to our section when src is a Node as nodes might not know
+        // all the elders in our section and the msg needs to be propagated.
         if !in_dst_location {
-            info!(
-                "Relaying message to a closer section since msg in_dst_location:{:?}",
-                in_dst_location
-            );
-            // Relay closer to the destination or
-            // broadcast to the rest of our section.
+            info!("Relay closer to the destination");
             if let Some(cmds) = self.relay_message(&msg)? {
                 commands.push(cmds);
             }
@@ -484,7 +481,8 @@ impl Core {
             dst: *msg.dst(),
             proof: msg.proof(),
             section_pk: msg.section_pk(),
-        });
+        })
+        .await;
 
         Ok(vec![])
     }

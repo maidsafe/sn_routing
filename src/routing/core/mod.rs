@@ -201,7 +201,7 @@ impl Core {
                         dest: XorName::random(),
                         dest_section_pk: sap.section_key,
                     };
-                    info!("Sending updated SectionInfo to all known sections");
+                    trace!("Sending updated SectionInfo to all known sections");
                     commands.push(Command::send_message_to_nodes(targets, len, msg, dest_info));
                 }
             }
