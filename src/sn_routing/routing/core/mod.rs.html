@@ -358,7 +358,7 @@
     <span class="ident">dkg_voter</span>: <span class="ident">DkgVoter</span>,
     <span class="ident">relocate_state</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RelocateState</span><span class="op">&gt;</span>,
     <span class="ident">msg_filter</span>: <span class="ident">MessageFilter</span>,
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
     <span class="ident">joins_allowed</span>: <span class="ident">bool</span>,
     <span class="ident">resource_proof</span>: <span class="ident">ResourceProof</span>,
     <span class="ident">end_users</span>: <span class="ident">EndUserRegistry</span>,
@@ -378,7 +378,7 @@
         <span class="ident">node</span>: <span class="ident">Node</span>,
         <span class="ident">section</span>: <span class="ident">Section</span>,
         <span class="ident">section_key_share</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SectionKeyShare</span><span class="op">&gt;</span>,
-        <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">UnboundedSender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
+        <span class="ident">event_tx</span>: <span class="ident">mpsc</span>::<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">section_keys_provider</span> <span class="op">=</span> <span class="ident">SectionKeysProvider</span>::<span class="ident">new</span>(<span class="ident">KEY_CACHE_SIZE</span>, <span class="ident">section_key_share</span>);
 
@@ -465,7 +465,7 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">old</span>: <span class="ident">StateSnapshot</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">update_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">old</span>: <span class="ident">StateSnapshot</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
         <span class="kw">let</span> <span class="ident">new</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">state_snapshot</span>();
 
@@ -558,7 +558,7 @@
                 }
             };
 
-            <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">event</span>);
+            <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">event</span>).<span class="kw">await</span>;
         }
 
         <span class="kw">if</span> <span class="op">!</span><span class="ident">new</span>.<span class="ident">is_elder</span> {

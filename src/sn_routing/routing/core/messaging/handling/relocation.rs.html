@@ -194,6 +194,8 @@
 <span id="193">193</span>
 <span id="194">194</span>
 <span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -287,7 +289,7 @@
         <span class="self">self</span>.<span class="ident">send_relocate</span>(<span class="ident">peer</span>, <span class="ident">details</span>)
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_relocate</span>(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_relocate</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
@@ -311,7 +313,8 @@
             <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">RelocationStarted</span> {
                     <span class="ident">previous_name</span>: <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(),
-                });
+                })
+                .<span class="kw">await</span>;
             }
         }
 
@@ -327,7 +330,7 @@
         }))
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_relocate_promise</span>(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_relocate_promise</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">promise</span>: <span class="ident">RelocatePromise</span>,
         <span class="ident">msg</span>: <span class="ident">RoutingMsg</span>,
@@ -346,7 +349,8 @@
                     <span class="self">self</span>.<span class="ident">relocate_state</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">Delayed</span>(<span class="ident">msg</span>.<span class="ident">clone</span>()));
                     <span class="self">self</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">RelocationStarted</span> {
                         <span class="ident">previous_name</span>: <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>(),
-                    });
+                    })
+                    .<span class="kw">await</span>;
                 }
                 <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="kw">_</span>)) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;ignore RelocatePromise - relocation already in progress&quot;</span>);

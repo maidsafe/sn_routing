@@ -309,6 +309,12 @@
 <span id="308">308</span>
 <span id="309">309</span>
 <span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -356,7 +362,7 @@
 
     <span class="doccomment">/// Send provided Event to the user which shall receive it through the EventStream</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_event</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">event</span>: <span class="ident">Event</span>) {
-        <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_event</span>(<span class="ident">event</span>)
+        <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">send_event</span>(<span class="ident">event</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Handles the given command and transitively any new commands that are produced during its</span>
@@ -430,7 +436,11 @@
                 .<span class="kw">await</span>),
             <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
             <span class="ident">Command</span>::<span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_agreement</span>(<span class="ident">proposal</span>, <span class="ident">proof</span>)
+                <span class="self">self</span>.<span class="ident">core</span>
+                    .<span class="ident">lock</span>()
+                    .<span class="kw">await</span>
+                    .<span class="ident">handle_agreement</span>(<span class="ident">proposal</span>, <span class="ident">proof</span>)
+                    .<span class="kw">await</span>
             }
             <span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">handle_connection_lost</span>(<span class="ident">addr</span>)
@@ -604,10 +614,12 @@
         <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">clone</span>();
         <span class="kw-2">*</span><span class="ident">state</span> <span class="op">=</span> <span class="ident">Core</span>::<span class="ident">new</span>(<span class="ident">node</span>, <span class="ident">section</span>, <span class="prelude-val">None</span>, <span class="ident">event_tx</span>);
 
-        <span class="ident">state</span>.<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Relocated</span> {
-            <span class="ident">previous_name</span>,
-            <span class="ident">new_keypair</span>,
-        });
+        <span class="ident">state</span>
+            .<span class="ident">send_event</span>(<span class="ident">Event</span>::<span class="ident">Relocated</span> {
+                <span class="ident">previous_name</span>,
+                <span class="ident">new_keypair</span>,
+            })
+            .<span class="kw">await</span>;
 
         <span class="kw">let</span> <span class="ident">commands</span> <span class="op">=</span> <span class="ident">backlog</span>
             .<span class="ident">into_iter</span>()
