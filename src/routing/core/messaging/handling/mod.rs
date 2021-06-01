@@ -53,7 +53,11 @@ impl Core {
 
         // Check if the message is for us.
         let in_dst_location = msg.dst().contains(&self.node.name(), self.section.prefix());
-        if !in_dst_location || msg.dst().is_section() {
+        if !in_dst_location {
+            info!(
+                "Relaying message to a closer section since msg in_dst_location:{:?}",
+                in_dst_location
+            );
             // Relay closer to the destination or
             // broadcast to the rest of our section.
             if let Some(cmds) = self.relay_message(&msg)? {
@@ -72,6 +76,7 @@ impl Core {
                     self.check_for_entropy(&msg, dest_info.clone())?;
                 commands.extend(entropy_commands);
                 if shall_be_handled {
+                    info!("Entropy check passed. Handling useful msg!");
                     commands.extend(self.handle_useful_message(sender, msg, dest_info).await?);
                 }
             }

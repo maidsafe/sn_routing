@@ -44,22 +44,21 @@ pub(crate) fn process(
         .cmp_by_position(&dest_info.dest_section_pk, section.chain().last_key())
     {
         info!("Anti-Entropy: Source's knowledge of our key is outdated, send them an update.");
-        info!("We can still execute the message as the key is a part of our chain");
         let chain = section
             .chain()
             .get_proof_chain_to_current(&dest_info.dest_section_pk)?;
         let section_auth = section.proven_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), chain),
-            msg: None,
+            msg: Some(Box::new(msg.clone())),
         };
         let msg =
             RoutingMsg::single_src(node, dst, variant, section.authority_provider().section_key)?;
         actions.send.push(msg);
-        return Ok((actions, true));
+        return Ok((actions, false));
     }
 
-    Ok((actions, false))
+    Ok((actions, true))
 }
 
 #[derive(Default)]

@@ -92,16 +92,6 @@ pub trait RoutingMsgUtils {
     /// Getter
     fn src(&self) -> &SrcAuthority;
 
-    // // Extend the current message proof chain so it starts at `new_first_key` while keeping the
-    // // last key (and therefore the signature) intact.
-    // // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
-    // // the signed data.
-    // fn extend_proof_chain(
-    //     self,
-    //     new_first_key: &bls::PublicKey,
-    //     full_chain: &SecuredLinkedList,
-    // ) -> Result<RoutingMsg, Error>;
-
     fn verify_variant<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
         &self,
         trusted_keys: I,
@@ -397,34 +387,6 @@ impl RoutingMsgUtils for RoutingMsg {
     fn src(&self) -> &SrcAuthority {
         &self.src
     }
-
-    // // Extend the current message proof chain so it starts at `new_first_key` while keeping the
-    // // last key (and therefore the signature) intact.
-    // // NOTE: This operation doesn't invalidate the signatures because the proof chain is not part of
-    // // the signed data.
-    // fn extend_proof_chain(
-    //     mut self,
-    //     new_first_key: &bls::PublicKey,
-    //     full_chain: &SecuredLinkedList,
-    // ) -> Result<RoutingMsg, Error> {
-    //     let proof_chain = self
-    //         .proof_chain
-    //         .as_mut()
-    //         .ok_or(ExtendProofChainError::NoProofChain)?;
-
-    //     *proof_chain = match proof_chain.extend(new_first_key, full_chain) {
-    //         Ok(chain) => chain,
-    //         Err(SecuredLinkedListError::InvalidOperation) => {
-    //             // This means the tip of the proof chain is not reachable from `new_first_key`.
-    //             // Extend it from the root key of the full chain instead as that should be the
-    //             // genesis key which is implicitly trusted.
-    //             proof_chain.extend(full_chain.root_key(), full_chain)?
-    //         }
-    //         Err(error) => return Err(error.into()),
-    //     };
-
-    //     RoutingMsg::new_signed(self.src, self.dst, self.variant, self.proof_chain)
-    // }
 
     fn verify_variant<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
