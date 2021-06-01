@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.73.4](https://github.com/maidsafe/sn_routing/compare/v0.73.3...v0.73.4) (2021-06-01)
+
+
+### Features
+
+* send SectionKnowledge notifications during SAP change ([a99cf78](https://github.com/maidsafe/sn_routing/commit/a99cf78f959515f6065710831879473015855ff0))
+* **message:** add Section PK to Messages ([9251792](https://github.com/maidsafe/sn_routing/commit/9251792acb8aeb4613a4c99988a6ebf05eeedcde))
+
+
+### Bug Fixes
+
+* **tests:** fix tests after refactor and rebase ([20e857e](https://github.com/maidsafe/sn_routing/commit/20e857e2418679de1818a916322917f38cb2f74d))
+* **variant:** verify chain for SectionKnowledge variant also ([056766c](https://github.com/maidsafe/sn_routing/commit/056766c9b1488e38f7c241e7bb969087541d2c0c))
+
 ### [0.73.3](https://github.com/maidsafe/sn_routing/compare/v0.73.2...v0.73.3) (2021-06-01)
 
 ### [0.73.2](https://github.com/maidsafe/sn_routing/compare/v0.73.1...v0.73.2) (2021-06-01)
