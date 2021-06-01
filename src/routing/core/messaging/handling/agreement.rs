@@ -47,8 +47,13 @@ impl Core {
                 member_info,
                 previous_name,
                 ..
-            } => self.handle_online_agreement(member_info, previous_name, proof),
-            Proposal::Offline(member_info) => self.handle_offline_agreement(member_info, proof),
+            } => {
+                self.handle_online_agreement(member_info, previous_name, proof)
+                    .await
+            }
+            Proposal::Offline(member_info) => {
+                self.handle_offline_agreement(member_info, proof).await
+            }
             Proposal::SectionInfo(section_auth) => {
                 self.handle_section_info_agreement(section_auth, proof)
             }
