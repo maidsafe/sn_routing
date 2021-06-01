@@ -276,7 +276,7 @@ impl Comm {
 
     // Low-level send
     async fn send_to(&self, recipient: &SocketAddr, msg: Bytes) -> Result<(), qp2p::Error> {
-        debug!("**** low level send of msg");
+        trace!("Low level send for msg over qp2p");
         // This will attempt to use a cached connection
         if self
             .endpoint

@@ -64,7 +64,7 @@ impl MessageFilter {
         }
 
         if self.outgoing.insert((msg.id(), *pub_id), ()).is_some() {
-            debug!("&&&& Outgoing message filtered: {:?}", msg);
+            trace!("Outgoing message filtered: {:?}", msg.id());
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage
@@ -76,7 +76,7 @@ impl MessageFilter {
         let cur_value = self.incoming.insert(*msg_id, ());
 
         if cur_value.is_some() {
-            debug!("&&&& Incoming message filtered: {:?}", msg_id);
+            trace!("Incoming message filtered: {:?}", msg_id);
         }
 
         cur_value.is_none()
