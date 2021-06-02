@@ -130,10 +130,7 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(2)));
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
-        match value {
-            Some(value) => assert_eq!(value, VALUE),
-            None => panic!("value was not found in cache"),
-        };
+        assert_eq!(value, Some(VALUE), "value was not found in cache");
     }
 
     #[tokio::test]
@@ -141,10 +138,7 @@ mod tests {
         let cache = Cache::new(None);
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
-        match value {
-            Some(value) => assert_eq!(value, VALUE),
-            None => panic!("value was not found in cache"),
-        };
+        assert_eq!(value, Some(VALUE), "value was not found in cache");
     }
 
     #[tokio::test]
@@ -152,10 +146,7 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(0)));
         let _ = cache.set(KEY, VALUE, Some(Duration::from_secs(2))).await;
         let value = cache.get(&KEY).await;
-        match value {
-            Some(value) => assert_eq!(value, VALUE),
-            None => panic!("value was not found in cache"),
-        };
+        assert_eq!(value, Some(VALUE), "value was not found in cache");
     }
 
     #[tokio::test]
@@ -163,9 +154,7 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(0)));
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
-        if value.is_some() {
-            panic!("found expired value in cache")
-        };
+        assert!(value.is_none(), "found expired value in cache");
     }
 
     #[tokio::test]
@@ -175,10 +164,7 @@ mod tests {
         let _ = cache.set(KEY, VALUE, None).await;
         let _ = cache.set(KEY, NEW_VALUE, None).await;
         let value = cache.get(&KEY).await;
-        match value {
-            Some(value) => assert_eq!(value, NEW_VALUE),
-            None => panic!("value was not found in cache"),
-        };
+        assert_eq!(value, Some(NEW_VALUE), "value was not found in cache");
     }
 
     #[tokio::test]
@@ -186,9 +172,10 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(0)));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.remove_expired().await;
-        if cache.items.read().await.get(&KEY).is_some() {
-            panic!("found expired item in cache")
-        };
+        assert!(
+            cache.items.read().await.get(&KEY).is_none(),
+            "found expired value in cache"
+        );
     }
 
     #[tokio::test]
@@ -196,9 +183,10 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(2)));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.remove_expired().await;
-        if cache.items.read().await.get(&KEY).is_none() {
-            panic!("could not find not expired item in cache")
-        };
+        assert!(
+            cache.items.read().await.get(&KEY).is_some(),
+            "could not find not expired item in cache"
+        );
     }
 
     #[tokio::test]
@@ -206,28 +194,32 @@ mod tests {
         let cache = Cache::new(Some(Duration::from_secs(2)));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.clear().await;
-        if cache.items.read().await.get(&KEY).is_some() {
-            panic!("found item in cache")
-        };
+        assert!(
+            cache.items.read().await.get(&KEY).is_none(),
+            "found item in cache"
+        );
     }
 
     #[tokio::test]
     async fn remove_remove_expired_item() {
         let cache = Cache::new(Some(Duration::from_secs(2)));
         let _ = cache.set(KEY, VALUE, None).await;
-        if cache.remove(&KEY).await.is_none() {
-            panic!("none returned from removing existing value")
-        };
-        if cache.items.read().await.get(&KEY).is_some() {
-            panic!("found not expired item in cache")
-        };
+        assert!(
+            cache.remove(&KEY).await.is_some(),
+            "none returned from removing existing value"
+        );
+        assert!(
+            cache.items.read().await.get(&KEY).is_none(),
+            "found not expired item in cache"
+        );
     }
 
     #[tokio::test]
     async fn remove_return_none_if_not_found() {
         let cache: Cache<i8, &str> = Cache::new(Some(Duration::from_secs(2)));
-        if cache.remove(&KEY).await.is_some() {
-            panic!("some value was returned from remove")
-        };
+        assert!(
+            cache.remove(&KEY).await.is_none(),
+            "some value was returned from remove"
+        );
     }
 }
