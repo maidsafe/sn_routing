@@ -211,6 +211,8 @@
 <span id="210">210</span>
 <span id="211">211</span>
 <span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -318,13 +320,14 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_connectivity_complaint</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_connectivity_complaint</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">sender</span>: <span class="ident">XorName</span>,
         <span class="ident">elder_name</span>: <span class="ident">XorName</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">connectivity_complaints</span>
-            .<span class="ident">add_complaint</span>(<span class="ident">sender</span>, <span class="ident">elder_name</span>);
+            .<span class="ident">add_complaint</span>(<span class="ident">sender</span>, <span class="ident">elder_name</span>)
+            .<span class="kw">await</span>;
 
         <span class="kw">let</span> <span class="ident">weighing_adults</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">section</span>
@@ -335,6 +338,7 @@
         <span class="kw">if</span> <span class="self">self</span>
             .<span class="ident">connectivity_complaints</span>
             .<span class="ident">is_complained</span>(<span class="ident">elder_name</span>, <span class="kw-2">&amp;</span><span class="ident">weighing_adults</span>)
+            .<span class="kw">await</span>
         {
             <span class="self">self</span>.<span class="ident">propose_offline</span>(<span class="ident">elder_name</span>)
         } <span class="kw">else</span> {
