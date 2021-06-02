@@ -69,6 +69,7 @@ extern crate tracing;
 // Public API
 // ############################################################################
 pub use self::{
+    cache::Cache,
     error::{Error, Result},
     event::{Event, NodeElderChange, SendStream},
     peer::PeerUtils,
@@ -87,6 +88,7 @@ pub use xor_name::{Prefix, XorName, XOR_NAME_LEN}; // TODO remove pub on API upd
 // ############################################################################
 
 mod agreement;
+mod cache;
 mod crypto;
 mod error;
 mod event;

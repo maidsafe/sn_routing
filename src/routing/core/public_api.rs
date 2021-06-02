@@ -134,8 +134,8 @@ impl Core {
     // ----------------------------------------------------------------------------------------
 
     // Send message over the network.
-    pub fn relay_message(&mut self, msg: &RoutingMsg) -> Result<Option<Command>> {
-        let (targets, dg_size) = delivery_group::delivery_targets(
+    pub async fn relay_message(&self, msg: &RoutingMsg) -> Result<Option<Command>> {
+        let (presumed_targets, dg_size) = delivery_group::delivery_targets(
             msg.dst(),
             &self.node.name(),
             &self.section,
@@ -145,10 +145,18 @@ impl Core {
         let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
         let dest_pk = *self.section_key_by_name(&target_name);
 
-        let targets: Vec<_> = targets
-            .into_iter()
-            .filter(|peer| self.msg_filter.filter_outgoing(msg, peer.name()).is_new())
-            .collect();
+        let mut targets = vec![];
+
+        for peer in presumed_targets {
+            if self
+                .msg_filter
+                .filter_outgoing(msg, peer.name())
+                .await
+                .is_new()
+            {
+                let _ = targets.push((*peer.name(), *peer.addr()));
+            }
+        }
 
         if targets.is_empty() {
             return Ok(None);
@@ -162,10 +170,6 @@ impl Core {
             msg.section_pk(),
         );
 
-        let targets: Vec<_> = targets
-            .into_iter()
-            .map(|node| (*node.name(), *node.addr()))
-            .collect();
         let command = Command::send_message_to_nodes(
             targets,
             dg_size,
@@ -210,7 +214,7 @@ impl Core {
     }
 
     pub async fn send_user_message(
-        &mut self,
+        &self,
         itinerary: Itinerary,
         content: Bytes,
     ) -> Result<Vec<Command>> {
@@ -278,13 +282,13 @@ impl Core {
             });
         }
 
-        commands.extend(self.relay_message(&msg)?);
+        commands.extend(self.relay_message(&msg).await?);
 
         Ok(commands)
     }
 
     // Setting the JoinsAllowed triggers a round Proposal::SetJoinsAllowed to update the flag.
-    pub fn set_joins_allowed(&mut self, joins_allowed: bool) -> Result<Vec<Command>> {
+    pub fn set_joins_allowed(&self, joins_allowed: bool) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         if self.is_elder() && joins_allowed != self.joins_allowed {
             commands.extend(self.propose(Proposal::JoinsAllowed(joins_allowed))?);
@@ -293,7 +297,7 @@ impl Core {
     }
 
     pub async fn make_online_proposal(
-        &mut self,
+        &self,
         peer: Peer,
         previous_name: Option<XorName>,
         their_knowledge: Option<bls::PublicKey>,

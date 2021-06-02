@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::cache::Cache;
 use crate::messages::RoutingMsgUtils;
-use lru_time_cache::LruCache;
 use sn_messaging::{node::RoutingMsg, DstLocation, MessageId};
 use std::time::Duration;
 use xor_name::XorName;
 
 const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
 const OUTGOING_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
-const MAX_ENTRIES: usize = 15_000;
+//const MAX_ENTRIES: usize = 15_000;
 
 /// An enum representing a result of message filtering
 #[derive(Eq, PartialEq)]
@@ -36,20 +36,20 @@ impl FilteringResult {
 
 // Structure to filter (throttle) incoming and outgoing messages.
 pub(crate) struct MessageFilter {
-    incoming: LruCache<MessageId, ()>,
-    outgoing: LruCache<(MessageId, XorName), ()>,
+    incoming: Cache<MessageId, ()>,
+    outgoing: Cache<(MessageId, XorName), ()>,
 }
 
 impl MessageFilter {
     pub fn new() -> Self {
         Self {
-            incoming: LruCache::with_expiry_duration_and_capacity(
-                INCOMING_EXPIRY_DURATION,
-                MAX_ENTRIES,
+            incoming: Cache::new(
+                Some(INCOMING_EXPIRY_DURATION),
+                //MAX_ENTRIES,
             ),
-            outgoing: LruCache::with_expiry_duration_and_capacity(
-                OUTGOING_EXPIRY_DURATION,
-                MAX_ENTRIES,
+            outgoing: Cache::new(
+                Some(OUTGOING_EXPIRY_DURATION),
+                //MAX_ENTRIES,
             ),
         }
     }
@@ -57,13 +57,18 @@ impl MessageFilter {
     // Filter outgoing `SNRoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    pub fn filter_outgoing(&mut self, msg: &RoutingMsg, pub_id: &XorName) -> FilteringResult {
+    pub async fn filter_outgoing(&self, msg: &RoutingMsg, pub_id: &XorName) -> FilteringResult {
         // Not filtering direct messages.
         if let DstLocation::DirectAndUnrouted = msg.dst() {
             return FilteringResult::NewMessage;
         }
 
-        if self.outgoing.insert((msg.id(), *pub_id), ()).is_some() {
+        if self
+            .outgoing
+            .set((msg.id(), *pub_id), (), None)
+            .await
+            .is_some()
+        {
             trace!("Outgoing message filtered: {:?}", msg.id());
             FilteringResult::KnownMessage
         } else {
@@ -72,8 +77,8 @@ impl MessageFilter {
     }
 
     // Returns `true` if not already having it.
-    pub fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
-        let cur_value = self.incoming.insert(*msg_id, ());
+    pub async fn add_to_filter(&self, msg_id: &MessageId) -> bool {
+        let cur_value = self.incoming.set(*msg_id, (), None).await;
 
         if cur_value.is_some() {
             trace!("Incoming message filtered: {:?}", msg_id);
@@ -83,9 +88,9 @@ impl MessageFilter {
     }
 
     // Resets both incoming and outgoing filters.
-    pub fn reset(&mut self) {
-        self.incoming.clear();
-        self.outgoing.clear();
+    pub async fn reset(&mut self) {
+        self.incoming.clear().await;
+        self.outgoing.clear().await;
     }
 }
 

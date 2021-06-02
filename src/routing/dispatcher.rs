@@ -14,14 +14,14 @@ use crate::{
 use sn_messaging::{node::SignedRelocateDetails, MessageType};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
-    sync::{mpsc, watch, Mutex},
+    sync::{mpsc, watch, RwLock},
     time,
 };
 use tracing::Instrument;
 
 // `Command` Dispatcher.
 pub(crate) struct Dispatcher {
-    pub(super) core: Mutex<Core>,
+    pub(super) core: RwLock<Core>,
     pub(super) comm: Comm,
 
     cancel_timer_tx: watch::Sender<bool>,
@@ -35,7 +35,7 @@ impl Dispatcher {
         // Take out the initial value.
 
         Self {
-            core: Mutex::new(state),
+            core: RwLock::new(state),
             comm,
             cancel_timer_tx,
             cancel_timer_rx,
@@ -44,7 +44,7 @@ impl Dispatcher {
 
     /// Send provided Event to the user which shall receive it through the EventStream
     pub async fn send_event(&self, event: Event) {
-        self.core.lock().await.send_event(event).await
+        self.core.read().await.send_event(event).await
     }
 
     /// Handles the given command and transitively any new commands that are produced during its
@@ -64,7 +64,7 @@ impl Dispatcher {
         // analyzing logs produced by running multiple nodes within the same process, for example
         // from integration tests.
         let span = {
-            let state = self.core.lock().await;
+            let state = self.core.read().await;
             trace_span!(
                 "handle_command",
                 name = %state.node().name(),
@@ -101,7 +101,7 @@ impl Dispatcher {
                 dest_info,
             } => {
                 self.core
-                    .lock()
+                    .write()
                     .await
                     .handle_message(sender, message, dest_info)
                     .await
@@ -112,33 +112,33 @@ impl Dispatcher {
                 dest_info,
             } => Ok(self
                 .core
-                .lock()
+                .write()
                 .await
                 .handle_section_info_msg(sender, message, dest_info)
                 .await),
-            Command::HandleTimeout(token) => self.core.lock().await.handle_timeout(token),
+            Command::HandleTimeout(token) => self.core.write().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
                 self.core
-                    .lock()
+                    .write()
                     .await
                     .handle_agreement(proposal, proof)
                     .await
             }
             Command::HandleConnectionLost(addr) => {
-                self.core.lock().await.handle_connection_lost(addr)
+                self.core.read().await.handle_connection_lost(addr)
             }
-            Command::HandlePeerLost(addr) => self.core.lock().await.handle_peer_lost(&addr),
+            Command::HandlePeerLost(addr) => self.core.read().await.handle_peer_lost(&addr),
             Command::HandleDkgOutcome {
                 section_auth,
                 outcome,
             } => self
                 .core
-                .lock()
+                .write()
                 .await
                 .handle_dkg_outcome(section_auth, outcome),
             Command::HandleDkgFailure(proofs) => self
                 .core
-                .lock()
+                .write()
                 .await
                 .handle_dkg_failure(proofs)
                 .map(|command| vec![command]),
@@ -156,7 +156,7 @@ impl Dispatcher {
                 additional_proof_chain_key: _,
             } => {
                 self.core
-                    .lock()
+                    .write()
                     .await
                     .send_user_message(itinerary, content)
                     .await
@@ -175,7 +175,7 @@ impl Dispatcher {
                     .await
             }
             Command::SetJoinsAllowed(joins_allowed) => {
-                self.core.lock().await.set_joins_allowed(joins_allowed)
+                self.core.read().await.set_joins_allowed(joins_allowed)
             }
             Command::TestConnectivity {
                 mut peer,
@@ -184,12 +184,12 @@ impl Dispatcher {
             } => {
                 peer.set_reachable(self.comm.is_reachable(peer.addr()).await.is_ok());
                 self.core
-                    .lock()
+                    .read()
                     .await
                     .make_online_proposal(peer, previous_name, their_knowledge)
                     .await
             }
-            Command::ProposeOffline(name) => self.core.lock().await.propose_offline(name),
+            Command::ProposeOffline(name) => self.core.read().await.propose_offline(name),
         }
     }
 
@@ -276,7 +276,7 @@ impl Dispatcher {
         message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let (genesis_key, node) = {
-            let state = self.core.lock().await;
+            let state = self.core.read().await;
             (*state.section().genesis_key(), state.node().clone())
         };
         let previous_name = node.name();
@@ -291,7 +291,7 @@ impl Dispatcher {
         )
         .await?;
 
-        let mut state = self.core.lock().await;
+        let mut state = self.core.write().await;
         let event_tx = state.event_tx.clone();
         let new_keypair = node.keypair.clone();
         *state = Core::new(node, section, None, event_tx);

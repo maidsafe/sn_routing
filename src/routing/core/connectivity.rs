@@ -104,13 +104,14 @@ impl Core {
         }
     }
 
-    pub(crate) fn handle_connectivity_complaint(
-        &mut self,
+    pub(crate) async fn handle_connectivity_complaint(
+        &self,
         sender: XorName,
         elder_name: XorName,
     ) -> Result<Vec<Command>> {
         self.connectivity_complaints
-            .add_complaint(sender, elder_name);
+            .add_complaint(sender, elder_name)
+            .await;
 
         let weighing_adults: BTreeSet<XorName> = self
             .section
@@ -121,6 +122,7 @@ impl Core {
         if self
             .connectivity_complaints
             .is_complained(elder_name, &weighing_adults)
+            .await
         {
             self.propose_offline(elder_name)
         } else {
