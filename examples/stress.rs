@@ -645,15 +645,17 @@ async fn add_node(id: u64, config: Config, event_tx: Sender<Event>) {
     let (node, mut events) = match Routing::new(config).await {
         Ok(output) => output,
         Err(error) => {
-            let _ = event_tx.send(Event::JoinFailure {
-                id,
-                error: error.into(),
-            });
+            let _ = event_tx
+                .send(Event::JoinFailure {
+                    id,
+                    error: error.into(),
+                })
+                .await;
             return;
         }
     };
 
-    let _ = event_tx.send(Event::JoinSuccess { id, node });
+    let _ = event_tx.send(Event::JoinSuccess { id, node }).await;
 
     while let Some(event) = events.next().await {
         if event_tx.send(Event::Routing { id, event }).await.is_err() {
