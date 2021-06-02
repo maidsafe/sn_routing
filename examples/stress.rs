@@ -14,7 +14,6 @@ use futures::{
     Stream,
 };
 use itertools::Itertools;
-use lru_time_cache::LruCache;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     Rng,
@@ -25,18 +24,23 @@ use sn_messaging::{
     DstLocation, SrcLocation,
 };
 use sn_routing::{
-    Config, Error as RoutingError, Event as RoutingEvent, NodeElderChange, Routing, TransportConfig,
+    Cache, Config, Error as RoutingError, Event as RoutingEvent, NodeElderChange, Routing,
+    TransportConfig,
 };
 use std::{
     collections::BTreeMap,
     fs::File,
     io::BufWriter,
     net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use structopt::StructOpt;
 use tokio::{
-    sync::mpsc::{self, Sender},
+    sync::{
+        mpsc::{self, Sender},
+        Mutex,
+    },
     task, time,
 };
 use tokio_util::time::delay_queue::DelayQueue;
@@ -365,7 +369,7 @@ impl Network {
                         }
                     };
 
-                    self.probe_tracker.receive(&dst, message.proof_share);
+                    self.probe_tracker.receive(&dst, message.proof_share).await;
                 }
                 _ => {
                     // Currently ignore the other event variants. This might change in the future,
@@ -424,7 +428,7 @@ impl Network {
                 .or_insert_with(|| prefix.substituted_in(rand::random()));
 
             if self.try_send_probe(node, dst).await? {
-                self.probe_tracker.send(*prefix, dst);
+                self.probe_tracker.send(*prefix, dst).await;
             }
         }
 
@@ -755,59 +759,64 @@ struct ProbeMessage {
     proof_share: ProofShare,
 }
 
+#[derive(Clone)]
 enum ProbeState {
-    Pending(SignatureAggregator),
+    Pending(Arc<Mutex<SignatureAggregator>>),
     Success,
 }
 
 #[derive(Default)]
 struct ProbeTracker {
-    sections: BTreeMap<Prefix, LruCache<XorName, ProbeState>>,
+    sections: BTreeMap<Prefix, Cache<XorName, ProbeState>>,
 }
 
+use futures::executor::block_on as block;
+
 impl ProbeTracker {
-    fn send(&mut self, src: Prefix, dst: XorName) {
-        let _ = self
+    async fn send(&mut self, src: Prefix, dst: XorName) {
+        let cache = self
             .sections
             .entry(src)
-            .or_insert_with(|| LruCache::with_expiry_duration(PROBE_WINDOW))
-            .entry(dst)
-            .or_insert_with(|| ProbeState::Pending(SignatureAggregator::new()));
+            .or_insert_with(|| Cache::new(Some(PROBE_WINDOW)));
+        if cache.get(&dst).await.is_none() {
+            cache
+                .set(
+                    dst,
+                    ProbeState::Pending(Arc::new(Mutex::new(SignatureAggregator::new()))),
+                    None,
+                )
+                .await;
+        }
     }
 
-    fn receive(&mut self, dst: &XorName, proof_share: ProofShare) {
-        let state = if let Some(state) = self
+    async fn receive(&mut self, dst: &XorName, proof_share: ProofShare) {
+        let result = &self
             .sections
-            .values_mut()
-            .find_map(|section| section.get_mut(dst))
-        {
-            state
-        } else {
-            return;
+            .iter()
+            .find_map(|(prefix, cache)| block(cache.get(dst)).map(|state| (prefix, state, cache)));
+        let (_prefix, state, cache) = match result {
+            None => return,
+            Some(state) => state,
         };
-
         let aggregator = match state {
             ProbeState::Pending(aggregator) => aggregator,
             ProbeState::Success => return,
         };
 
-        if aggregator.add(dst, proof_share).is_ok() {
-            *state = ProbeState::Success;
+        if aggregator.lock().await.add(dst, proof_share).is_ok() {
+            cache.set(*dst, ProbeState::Success, None).await;
         }
     }
 
     // Returns iterator that yields the numbers of (delivered, sent) probe messages for each section.
     fn status(&self) -> impl Iterator<Item = (&Prefix, usize, usize)> {
         self.sections.iter().map(|(prefix, section)| {
-            let success = section
-                .peek_iter()
-                .filter(|(_, state)| match state {
-                    ProbeState::Success => true,
-                    ProbeState::Pending(_) => false,
-                })
-                .count();
+            let success = block(section.count(|(_, state)| match state.object {
+                ProbeState::Success => true,
+                ProbeState::Pending(_) => false,
+            }));
 
-            (prefix, success, section.len())
+            (prefix, success, block(section.len()))
         })
     }
 
@@ -815,7 +824,7 @@ impl ProbeTracker {
         let remove: Vec<_> = self
             .sections
             .iter()
-            .filter(|(_, section)| section.is_empty())
+            .filter(|(_, section)| block(section.is_empty()))
             .map(|(prefix, _)| *prefix)
             .collect();
 

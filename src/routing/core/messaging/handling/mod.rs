@@ -57,7 +57,7 @@ impl Core {
         // all the elders in our section and the msg needs to be propagated.
         if !in_dst_location {
             info!("Relay closer to the destination");
-            if let Some(cmds) = self.relay_message(&msg)? {
+            if let Some(cmds) = self.relay_message(&msg).await? {
                 commands.push(cmds);
             }
         }
@@ -70,7 +70,7 @@ impl Core {
             MessageStatus::Useful => {
                 trace!("Useful message from {:?}: {:?}", sender, msg);
                 let (entropy_commands, shall_be_handled) =
-                    self.check_for_entropy(&msg, dest_info.clone())?;
+                    self.check_for_entropy(&msg, dest_info.clone()).await?;
                 commands.extend(entropy_commands);
                 if shall_be_handled {
                     info!("Entropy check passed. Handling useful msg!");
@@ -357,6 +357,7 @@ impl Core {
             }
             Variant::ConnectivityComplaint(elder_name) => {
                 self.handle_connectivity_complaint(msg.src.name(), *elder_name)
+                    .await
             }
             Variant::NodeApproval { .. }
             | Variant::JoinRetry { .. }

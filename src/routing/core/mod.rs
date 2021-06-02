@@ -96,12 +96,12 @@ impl Core {
     // Miscellaneous
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
-        self.msg_filter.add_to_filter(msg_id)
+    pub async fn add_to_filter(&mut self, msg_id: &MessageId) -> bool {
+        self.msg_filter.add_to_filter(msg_id).await
     }
 
-    fn check_for_entropy(
-        &mut self,
+    async fn check_for_entropy(
+        &self,
         msg: &RoutingMsg,
         dest_info: DestInfo,
     ) -> Result<(Vec<Command>, bool)> {
@@ -116,7 +116,7 @@ impl Core {
         let mut commands = vec![];
 
         for msg in actions.send {
-            commands.extend(self.relay_message(&msg)?);
+            commands.extend(self.relay_message(&msg).await?);
         }
 
         Ok((commands, can_be_executed))
@@ -159,7 +159,7 @@ impl Core {
         }
 
         if new.last_key != old.last_key {
-            self.msg_filter.reset();
+            self.msg_filter.reset().await;
 
             if new.is_elder {
                 info!(

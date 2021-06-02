@@ -6,9 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{supermajority, ELDER_SIZE};
-use lru_time_cache::{Entry, LruCache};
-use std::{collections::BTreeSet, iter, time::Duration};
+//use crate::{supermajority, ELDER_SIZE};
+use crate::cache::Cache;
+use crate::supermajority;
+use dashmap::DashSet;
+use std::iter;
+use std::sync::Arc;
+use std::{collections::BTreeSet, time::Duration};
 use xor_name::XorName;
 
 const COMPLAINT_EXPIRY_DURATION: Duration = Duration::from_secs(60);
@@ -16,53 +20,55 @@ const COMPLAINT_EXPIRY_DURATION: Duration = Duration::from_secs(60);
 // Structure to retain connectivity complaints from adults against an elder.
 // The flag indicates whehter an accumulation has been reported.
 pub(crate) struct ConnectivityComplaints {
-    complaints: LruCache<XorName, (BTreeSet<XorName>, bool)>,
+    complaints: Cache<XorName, (Arc<DashSet<XorName>>, bool)>,
 }
 
 impl ConnectivityComplaints {
     pub fn new() -> Self {
         Self {
-            complaints: LruCache::with_expiry_duration_and_capacity(
-                COMPLAINT_EXPIRY_DURATION,
-                ELDER_SIZE,
+            complaints: Cache::new(
+                Some(COMPLAINT_EXPIRY_DURATION),
+                //ELDER_SIZE,
             ),
         }
     }
 
     // Received a complaint from an adult against an elder.
-    pub fn add_complaint(&mut self, adult_name: XorName, elder_name: XorName) {
-        match self.complaints.entry(elder_name) {
-            Entry::Vacant(entry) => {
-                let _ = entry.insert((iter::once(adult_name).collect(), false));
-            }
-            Entry::Occupied(entry) => {
-                let _ = entry.into_mut().0.insert(adult_name);
-            }
+    pub async fn add_complaint(&self, adult_name: XorName, elder_name: XorName) {
+        if let Some((set, _)) = self.complaints.get(&elder_name).await {
+            let _ = set.insert(adult_name);
         }
+        match self.complaints.get(&elder_name).await {
+            Some((set, _)) => {
+                let _ = set.insert(adult_name);
+            }
+            None => {
+                let set = Arc::new(iter::once(adult_name).collect());
+                let _ = self.complaints.set(elder_name, (set, false), None).await;
+            }
+        };
     }
 
     // Check whether an elder got too many complaints among weighing adults.
-    pub fn is_complained(
-        &mut self,
+    pub async fn is_complained(
+        &self,
         elder_name: XorName,
         weighing_adults: &BTreeSet<XorName>,
     ) -> bool {
         let threshold = supermajority(weighing_adults.len());
-        match self.complaints.entry(elder_name) {
-            Entry::Vacant(_) => false,
-            Entry::Occupied(entry) => {
-                let mut records = entry.into_mut();
-                if records.1 {
+        match self.complaints.get(&elder_name).await {
+            None => false,
+            Some((records, complained)) => {
+                if complained {
                     // Already complained, return with false to avoid duplication.
                     false
                 } else {
                     let complained_adults = records
-                        .0
                         .iter()
                         .filter(|name| weighing_adults.contains(name))
                         .count();
                     if complained_adults >= threshold {
-                        records.1 = true;
+                        let _ = self.complaints.set(elder_name, (records, true), None);
                         true
                     } else {
                         false

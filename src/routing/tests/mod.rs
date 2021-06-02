@@ -185,7 +185,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
         crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         gen_addr(),
     );
-    let section_key = *dispatcher.core.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.core.read().await.section().chain().last_key();
 
     let message = RoutingMsg::single_src(
         &new_node,
@@ -233,11 +233,11 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         gen_addr(),
     );
-    let section_key = *dispatcher.core.lock().await.section().chain().last_key();
+    let section_key = *dispatcher.core.read().await.section().chain().last_key();
 
     let nonce: [u8; 32] = rand::random();
     let serialized = bincode::serialize(&(new_node.name(), nonce))?;
-    let nonce_signature = crypto::sign(&serialized, &dispatcher.core.lock().await.node().keypair);
+    let nonce_signature = crypto::sign(&serialized, &dispatcher.core.read().await.node().keypair);
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
     let data = rp.create_proof_data(&nonce);
@@ -852,7 +852,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
     // The removed peer is still our elder because we haven't yet processed the section update.
     assert!(dispatcher
         .core
-        .lock()
+        .read()
         .await
         .section()
         .authority_provider()

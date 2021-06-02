@@ -195,22 +195,22 @@ impl Routing {
 
     /// Returns the current age of this node.
     pub async fn age(&self) -> u8 {
-        self.dispatcher.core.lock().await.node().age()
+        self.dispatcher.core.read().await.node().age()
     }
 
     /// Returns the ed25519 public key of this node.
     pub async fn public_key(&self) -> PublicKey {
-        self.dispatcher.core.lock().await.node().keypair.public
+        self.dispatcher.core.read().await.node().keypair.public
     }
 
     /// Returns the ed25519 keypair of this node, as bytes.
     pub async fn keypair_as_bytes(&self) -> [u8; KEYPAIR_LENGTH] {
-        self.dispatcher.core.lock().await.node().keypair.to_bytes()
+        self.dispatcher.core.read().await.node().keypair.to_bytes()
     }
 
     /// Signs `data` with the ed25519 key of this node.
     pub async fn sign_as_node(&self, data: &[u8]) -> Signature {
-        self.dispatcher.core.lock().await.node().keypair.sign(data)
+        self.dispatcher.core.read().await.node().keypair.sign(data)
     }
 
     /// Signs `data` with the BLS secret key share of this node, if it has any. Returns
@@ -222,7 +222,7 @@ impl Routing {
     ) -> Result<bls::SignatureShare> {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .sign_with_section_key_share(data, public_key)
     }
@@ -231,7 +231,7 @@ impl Routing {
     pub async fn verify(&self, data: &[u8], signature: &Signature) -> bool {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .node()
             .keypair
@@ -241,7 +241,7 @@ impl Routing {
 
     /// The name of this node.
     pub async fn name(&self) -> XorName {
-        self.dispatcher.core.lock().await.node().name()
+        self.dispatcher.core.read().await.node().name()
     }
 
     /// Returns connection info of this node.
@@ -251,12 +251,12 @@ impl Routing {
 
     /// Returns the Section Proof Chain
     pub async fn section_chain(&self) -> SecuredLinkedList {
-        self.dispatcher.core.lock().await.section_chain().clone()
+        self.dispatcher.core.read().await.section_chain().clone()
     }
 
     /// Prefix of our section
     pub async fn our_prefix(&self) -> Prefix {
-        *self.dispatcher.core.lock().await.section().prefix()
+        *self.dispatcher.core.read().await.section().prefix()
     }
 
     /// Finds out if the given XorName matches our prefix.
@@ -266,14 +266,14 @@ impl Routing {
 
     /// Returns whether the node is Elder.
     pub async fn is_elder(&self) -> bool {
-        self.dispatcher.core.lock().await.is_elder()
+        self.dispatcher.core.read().await.is_elder()
     }
 
     /// Returns the information of all the current section elders.
     pub async fn our_elders(&self) -> Vec<Peer> {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .section()
             .authority_provider()
@@ -294,7 +294,7 @@ impl Routing {
     pub async fn our_adults(&self) -> Vec<Peer> {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .section()
             .adults()
@@ -316,7 +316,7 @@ impl Routing {
     pub async fn our_section(&self) -> SectionAuthorityProvider {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .section()
             .authority_provider()
@@ -327,7 +327,7 @@ impl Routing {
     pub async fn other_sections(&self) -> Vec<SectionAuthorityProvider> {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .network()
             .all()
@@ -339,7 +339,7 @@ impl Routing {
     pub async fn section_key(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
         self.dispatcher
             .core
-            .lock()
+            .read()
             .await
             .section_key(prefix)
             .copied()
@@ -347,7 +347,7 @@ impl Routing {
 
     /// Returns the info about the section matching the name.
     pub async fn matching_section(&self, name: &XorName) -> Result<SectionAuthorityProvider> {
-        let state = self.dispatcher.core.lock().await;
+        let state = self.dispatcher.core.read().await;
         state.matching_section(name)
     }
 
@@ -369,7 +369,7 @@ impl Routing {
                 let addr = self
                     .dispatcher
                     .core
-                    .lock()
+                    .read()
                     .await
                     .get_socket_addr(socket_id)
                     .copied();
@@ -425,18 +425,18 @@ impl Routing {
     /// Returns the current BLS public key set if this node has one, or
     /// `Error::InvalidState` otherwise.
     pub async fn public_key_set(&self) -> Result<bls::PublicKeySet> {
-        self.dispatcher.core.lock().await.public_key_set()
+        self.dispatcher.core.read().await.public_key_set()
     }
 
     /// Returns our section proof chain.
     pub async fn our_history(&self) -> SecuredLinkedList {
-        self.dispatcher.core.lock().await.section().chain().clone()
+        self.dispatcher.core.read().await.section().chain().clone()
     }
 
     /// Returns our index in the current BLS group if this node is a member of one, or
     /// `Error::MissingSecretKeyShare` otherwise.
     pub async fn our_index(&self) -> Result<usize> {
-        self.dispatcher.core.lock().await.our_index()
+        self.dispatcher.core.read().await.our_index()
     }
 }
 
@@ -483,9 +483,9 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
         }
     };
     let span = {
-        let mut state = dispatcher.core.lock().await;
+        let mut state = dispatcher.core.write().await;
 
-        if !state.add_to_filter(&wire_msg.msg_id()) {
+        if !state.add_to_filter(&wire_msg.msg_id()).await {
             trace!(
                 "not handling message - already handled: {:?}",
                 wire_msg.msg_id()
@@ -542,7 +542,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
         MessageType::Client { msg, .. } => {
             let end_user = dispatcher
                 .core
-                .lock()
+                .read()
                 .await
                 .get_enduser_by_addr(&sender)
                 .copied();
@@ -561,7 +561,7 @@ async fn handle_message(dispatcher: Arc<Dispatcher>, bytes: Bytes, sender: Socke
 
                     // TODO: remove the enduser registry and simply encrypt socket addr with
                     // this node's keypair and use that as the socket id
-                    match dispatcher.core.lock().await.try_add(sender) {
+                    match dispatcher.core.write().await.try_add(sender) {
                         Ok(end_user) => end_user,
                         Err(err) => {
                             error!(
