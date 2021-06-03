@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//use crate::{supermajority, ELDER_SIZE};
-use crate::cache::Cache;
-use crate::supermajority;
+use crate::{cache::Cache, supermajority, ELDER_SIZE};
 use dashmap::DashSet;
 use std::iter;
 use std::sync::Arc;
@@ -26,9 +24,9 @@ pub(crate) struct ConnectivityComplaints {
 impl ConnectivityComplaints {
     pub fn new() -> Self {
         Self {
-            complaints: Cache::new(
-                Some(COMPLAINT_EXPIRY_DURATION),
-                //ELDER_SIZE,
+            complaints: Cache::with_expiry_duration_and_capacity(
+                COMPLAINT_EXPIRY_DURATION,
+                ELDER_SIZE,
             ),
         }
     }

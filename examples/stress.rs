@@ -779,7 +779,7 @@ impl ProbeTracker {
         let cache = self
             .sections
             .entry(src)
-            .or_insert_with(|| Cache::new(Some(PROBE_WINDOW)));
+            .or_insert_with(|| Cache::with_expiry_duration(PROBE_WINDOW));
         if cache.get(&dst).await.is_none() {
             cache
                 .set(

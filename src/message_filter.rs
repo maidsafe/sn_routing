@@ -14,7 +14,7 @@ use xor_name::XorName;
 
 const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
 const OUTGOING_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
-//const MAX_ENTRIES: usize = 15_000;
+const MAX_ENTRIES: usize = 15_000;
 
 /// An enum representing a result of message filtering
 #[derive(Eq, PartialEq)]
@@ -43,13 +43,13 @@ pub(crate) struct MessageFilter {
 impl MessageFilter {
     pub fn new() -> Self {
         Self {
-            incoming: Cache::new(
-                Some(INCOMING_EXPIRY_DURATION),
-                //MAX_ENTRIES,
+            incoming: Cache::with_expiry_duration_and_capacity(
+                INCOMING_EXPIRY_DURATION,
+                MAX_ENTRIES,
             ),
-            outgoing: Cache::new(
-                Some(OUTGOING_EXPIRY_DURATION),
-                //MAX_ENTRIES,
+            outgoing: Cache::with_expiry_duration_and_capacity(
+                OUTGOING_EXPIRY_DURATION,
+                MAX_ENTRIES,
             ),
         }
     }

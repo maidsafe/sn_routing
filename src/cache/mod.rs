@@ -9,6 +9,7 @@
 mod item;
 
 use self::item::Item;
+use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::time::Duration;
@@ -22,6 +23,7 @@ where
 {
     items: RwLock<BTreeMap<T, Item<V>>>,
     item_duration: Option<Duration>,
+    capacity: usize,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -29,11 +31,30 @@ impl<T, V> Cache<T, V>
 where
     T: Ord + Hash,
 {
-    ///
-    pub fn new(item_duration: Option<Duration>) -> Self {
-        Cache {
+    /// Creating capacity based `Cache`.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
             items: RwLock::new(BTreeMap::new()),
-            item_duration,
+            item_duration: None,
+            capacity,
+        }
+    }
+
+    /// Creating time based `Cache`.
+    pub fn with_expiry_duration(duration: Duration) -> Self {
+        Self {
+            items: RwLock::new(BTreeMap::new()),
+            item_duration: Some(duration),
+            capacity: usize::MAX,
+        }
+    }
+
+    /// Creating dual-feature capacity and time based `Cache`.
+    pub fn with_expiry_duration_and_capacity(duration: Duration, capacity: usize) -> Self {
+        Self {
+            items: RwLock::new(BTreeMap::new()),
+            item_duration: Some(duration),
+            capacity,
         }
     }
 
@@ -72,34 +93,48 @@ where
     ///
     pub async fn set(&self, key: T, value: V, custom_duration: Option<Duration>) -> Option<V>
     where
-        T: Eq + Hash,
+        T: Eq + Hash + Clone,
     {
-        self.items
+        let replaced = self
+            .items
             .write()
             .await
             .insert(
                 key,
                 Item::new(value, custom_duration.or(self.item_duration)),
             )
-            .map(|item| item.object)
+            .map(|item| item.object);
+        self.remove_expired().await;
+        self.drop_excess().await;
+        replaced
     }
 
     ///
-    pub async fn remove_expired(&self)
-    where
-        T: Eq + Hash + Clone,
-    {
-        let expired_keys: Vec<T> = self
-            .items
-            .read()
-            .await
+    pub async fn remove_expired(&self) {
+        let read_items = self.items.read().await;
+        let expired_keys: Vec<_> = read_items
             .iter()
             .filter(|(_, item)| item.expired())
-            .map(|(key, _)| key.clone())
+            .map(|(key, _)| key)
             .collect();
 
         for key in expired_keys {
-            let _ = self.items.write().await.remove(&key);
+            let _ = self.items.write().await.remove(key);
+        }
+    }
+
+    async fn drop_excess(&self) {
+        let len = self.len().await;
+        if len > self.capacity {
+            let excess = len - self.capacity;
+            let read_items = self.items.read().await;
+            let mut items = read_items.iter().collect_vec();
+
+            items.sort_by(|(_, item_a), (_, item_b)| item_a.elapsed().cmp(&item_b.elapsed()));
+
+            for (key, _) in items.iter().take(excess) {
+                let _ = self.items.write().await.remove(key);
+            }
         }
     }
 
@@ -127,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_and_get_value_with_default_duration() {
-        let cache = Cache::new(Some(Duration::from_secs(2)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(2));
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
         assert_eq!(value, Some(VALUE), "value was not found in cache");
@@ -135,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_and_get_value_without_duration() {
-        let cache = Cache::new(None);
+        let cache = Cache::with_capacity(usize::MAX);
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
         assert_eq!(value, Some(VALUE), "value was not found in cache");
@@ -143,7 +178,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_and_get_value_with_custom_duration() {
-        let cache = Cache::new(Some(Duration::from_secs(0)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(0));
         let _ = cache.set(KEY, VALUE, Some(Duration::from_secs(2))).await;
         let value = cache.get(&KEY).await;
         assert_eq!(value, Some(VALUE), "value was not found in cache");
@@ -151,7 +186,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_do_not_get_expired_value() {
-        let cache = Cache::new(Some(Duration::from_secs(0)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(0));
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
         assert!(value.is_none(), "found expired value in cache");
@@ -160,7 +195,7 @@ mod tests {
     #[tokio::test]
     async fn set_replace_existing_value() {
         const NEW_VALUE: &str = "NEW_VALUE";
-        let cache = Cache::new(Some(Duration::from_secs(2)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(2));
         let _ = cache.set(KEY, VALUE, None).await;
         let _ = cache.set(KEY, NEW_VALUE, None).await;
         let value = cache.get(&KEY).await;
@@ -169,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_expired_item() {
-        let cache = Cache::new(Some(Duration::from_secs(0)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(0));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.remove_expired().await;
         assert!(
@@ -180,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_expired_do_not_remove_not_expired_item() {
-        let cache = Cache::new(Some(Duration::from_secs(2)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(2));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.remove_expired().await;
         assert!(
@@ -191,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn clear_not_expired_item() {
-        let cache = Cache::new(Some(Duration::from_secs(2)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(2));
         let _ = cache.set(KEY, VALUE, None).await;
         cache.clear().await;
         assert!(
@@ -202,7 +237,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_remove_expired_item() {
-        let cache = Cache::new(Some(Duration::from_secs(2)));
+        let cache = Cache::with_expiry_duration(Duration::from_secs(2));
         let _ = cache.set(KEY, VALUE, None).await;
         assert!(
             cache.remove(&KEY).await.is_some(),
@@ -216,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_return_none_if_not_found() {
-        let cache: Cache<i8, &str> = Cache::new(Some(Duration::from_secs(2)));
+        let cache: Cache<i8, &str> = Cache::with_expiry_duration(Duration::from_secs(2));
         assert!(
             cache.remove(&KEY).await.is_none(),
             "some value was returned from remove"
