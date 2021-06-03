@@ -123,6 +123,7 @@ where
         }
     }
 
+    /// removes keys beyond capacity
     async fn drop_excess(&self) {
         let len = self.len().await;
         if len > self.capacity {
@@ -130,8 +131,10 @@ where
             let read_items = self.items.read().await;
             let mut items = read_items.iter().collect_vec();
 
-            items.sort_by(|(_, item_a), (_, item_b)| item_a.elapsed().cmp(&item_b.elapsed()));
+            // reversed sort
+            items.sort_by(|(_, item_a), (_, item_b)| item_b.elapsed().cmp(&item_a.elapsed()));
 
+            // take the excess
             for (key, _) in items.iter().take(excess) {
                 let _ = self.items.write().await.remove(key);
             }

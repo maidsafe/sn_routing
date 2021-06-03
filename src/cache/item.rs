@@ -3,24 +3,36 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub struct Item<T> {
     pub object: T,
-    expiry: Option<Instant>,
+    time: Option<Time>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Time {
+    pub(crate) start: Instant,
+    pub(crate) expiry: Instant,
 }
 
 impl<T> Item<T> {
     pub fn new(object: T, item_duration: Option<Duration>) -> Self {
-        let expiry = item_duration.map(|duration| Instant::now() + duration);
-        Item { object, expiry }
+        let time = item_duration.map(|duration| {
+            let start = Instant::now();
+            Time {
+                start,
+                expiry: start + duration,
+            }
+        });
+        Item { object, time }
     }
 
     pub fn expired(&self) -> bool {
-        self.expiry
-            .map(|expiry| expiry < Instant::now())
+        self.time
+            .map(|time| time.expiry < Instant::now())
             .unwrap_or(false)
     }
 
     pub fn elapsed(&self) -> u128 {
-        self.expiry
-            .map(|expiry| Instant::now() - expiry)
+        self.time
+            .map(|time| Instant::now() - time.start)
             .unwrap_or_default()
             .as_millis()
     }
