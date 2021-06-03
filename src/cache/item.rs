@@ -17,6 +17,13 @@ impl<T> Item<T> {
             .map(|expiry| expiry < Instant::now())
             .unwrap_or(false)
     }
+
+    pub fn elapsed(&self) -> u128 {
+        self.expiry
+            .map(|expiry| Instant::now() - expiry)
+            .unwrap_or_default()
+            .as_millis()
+    }
 }
 
 #[cfg(test)]
