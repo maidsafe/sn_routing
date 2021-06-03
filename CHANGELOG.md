@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.74.0](https://github.com/maidsafe/sn_routing/compare/v0.73.6...v0.74.0) (2021-06-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** the messaging update includes a breaking change
+
+* **deps:** update sn_messaging to v29 ([b360807](https://github.com/maidsafe/sn_routing/commit/b3608074dba4a931111a6cbb53184a7cd86f7b5b))
+
 ### [0.73.6](https://github.com/maidsafe/sn_routing/compare/v0.73.5...v0.73.6) (2021-06-02)
 
 
