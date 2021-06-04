@@ -709,10 +709,6 @@
 <span id="708">708</span>
 <span id="709">709</span>
 <span id="710">710</span>
-<span id="711">711</span>
-<span id="712">712</span>
-<span id="713">713</span>
-<span id="714">714</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1070,10 +1066,6 @@
 
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span><span class="question-mark">?</span>);
                 <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
-            }
-            <span class="ident">Variant</span>::<span class="ident">ConnectivityComplaint</span>(<span class="ident">elder_name</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_connectivity_complaint</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">elder_name</span>)
-                    .<span class="kw">await</span>
             }
             <span class="ident">Variant</span>::<span class="ident">NodeApproval</span> { .. }
             <span class="op">|</span> <span class="ident">Variant</span>::<span class="ident">JoinRetry</span> { .. }

@@ -302,11 +302,6 @@
 <span id="301">301</span>
 <span id="302">302</span>
 <span id="303">303</span>
-<span id="304">304</span>
-<span id="305">305</span>
-<span id="306">306</span>
-<span id="307">307</span>
-<span id="308">308</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -322,10 +317,7 @@
 <span class="kw">mod</span> <span class="ident">messaging</span>;
 <span class="kw">mod</span> <span class="ident">public_api</span>;
 
-<span class="kw">use</span> <span class="kw">super</span>::{
-    <span class="ident">command</span>::<span class="ident">Command</span>, <span class="ident">connectivity_complaints</span>::<span class="ident">ConnectivityComplaints</span>,
-    <span class="ident">enduser_registry</span>::<span class="ident">EndUserRegistry</span>, <span class="ident">split_barrier</span>::<span class="ident">SplitBarrier</span>,
-};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">command</span>::<span class="ident">Command</span>, <span class="ident">enduser_registry</span>::<span class="ident">EndUserRegistry</span>, <span class="ident">split_barrier</span>::<span class="ident">SplitBarrier</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::{<span class="ident">DkgVoter</span>, <span class="ident">ProposalAggregator</span>},
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
@@ -370,7 +362,6 @@
     <span class="ident">joins_allowed</span>: <span class="ident">bool</span>,
     <span class="ident">resource_proof</span>: <span class="ident">ResourceProof</span>,
     <span class="ident">end_users</span>: <span class="ident">EndUserRegistry</span>,
-    <span class="ident">connectivity_complaints</span>: <span class="ident">ConnectivityComplaints</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Core</span> {
@@ -398,7 +389,6 @@
             <span class="ident">joins_allowed</span>: <span class="bool-val">true</span>,
             <span class="ident">resource_proof</span>: <span class="ident">ResourceProof</span>::<span class="ident">new</span>(<span class="ident">RESOURCE_PROOF_DATA_SIZE</span>, <span class="ident">RESOURCE_PROOF_DIFFICULTY</span>),
             <span class="ident">end_users</span>: <span class="ident">EndUserRegistry</span>::<span class="ident">new</span>(),
-            <span class="ident">connectivity_complaints</span>: <span class="ident">ConnectivityComplaints</span>::<span class="ident">new</span>(),
         }
     }
 
