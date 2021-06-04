@@ -12,10 +12,7 @@ mod delivery_group;
 mod messaging;
 mod public_api;
 
-use super::{
-    command::Command, connectivity_complaints::ConnectivityComplaints,
-    enduser_registry::EndUserRegistry, split_barrier::SplitBarrier,
-};
+use super::{command::Command, enduser_registry::EndUserRegistry, split_barrier::SplitBarrier};
 use crate::{
     agreement::{DkgVoter, ProposalAggregator},
     error::Result,
@@ -60,7 +57,6 @@ pub(crate) struct Core {
     joins_allowed: bool,
     resource_proof: ResourceProof,
     end_users: EndUserRegistry,
-    connectivity_complaints: ConnectivityComplaints,
 }
 
 impl Core {
@@ -88,7 +84,6 @@ impl Core {
             joins_allowed: true,
             resource_proof: ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY),
             end_users: EndUserRegistry::new(),
-            connectivity_complaints: ConnectivityComplaints::new(),
         }
     }
 

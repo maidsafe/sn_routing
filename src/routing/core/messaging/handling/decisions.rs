@@ -23,7 +23,7 @@ use xor_name::XorName;
 impl Core {
     pub(crate) fn decide_message_status(&self, msg: &RoutingMsg) -> Result<MessageStatus> {
         match msg.variant() {
-            Variant::SectionKnowledge { .. } | Variant::ConnectivityComplaint(_) => {
+            Variant::SectionKnowledge { .. } => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Useless);
                 }

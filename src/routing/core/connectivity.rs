@@ -16,10 +16,7 @@ use crate::{
     Error,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;
-use sn_messaging::{
-    node::{DkgFailureProof, DkgFailureProofSet, DkgKey, ElderCandidates, Proposal, Variant},
-    DstLocation,
-};
+use sn_messaging::node::{DkgFailureProof, DkgFailureProofSet, DkgKey, ElderCandidates, Proposal};
 use std::{collections::BTreeSet, iter, net::SocketAddr, slice};
 use xor_name::XorName;
 
@@ -104,32 +101,6 @@ impl Core {
         }
     }
 
-    pub(crate) async fn handle_connectivity_complaint(
-        &self,
-        sender: XorName,
-        elder_name: XorName,
-    ) -> Result<Vec<Command>> {
-        self.connectivity_complaints
-            .add_complaint(sender, elder_name)
-            .await;
-
-        let weighing_adults: BTreeSet<XorName> = self
-            .section
-            .members()
-            .joined()
-            .map(|info| *info.peer.name())
-            .collect();
-        if self
-            .connectivity_complaints
-            .is_complained(elder_name, &weighing_adults)
-            .await
-        {
-            self.propose_offline(elder_name)
-        } else {
-            Ok(vec![])
-        }
-    }
-
     pub fn handle_connection_lost(&self, addr: SocketAddr) -> Result<Vec<Command>> {
         if let Some(peer) = self.section.find_joined_member_by_addr(&addr) {
             debug!(
@@ -157,28 +128,8 @@ impl Core {
         };
 
         if !self.is_elder() {
-            // When self is not an elder, then the peer has to be an elder, and we shall complaint
-            // the lost to other elders.
-            let variant = Variant::ConnectivityComplaint(name);
-            let recipients: Vec<_> = self
-                .section
-                .proven_authority_provider()
-                .value
-                .peers()
-                .filter(|peer| *peer.name() != name)
-                .collect();
-            trace!(
-                "Casting connectivity complaint against {:?} {:?}",
-                name,
-                recipients
-            );
-
-            return self.send_message_for_dst_accumulation(
-                self.node.name(),
-                DstLocation::DirectAndUnrouted,
-                variant,
-                &recipients,
-            );
+            // Adults cannot complain about connectivity.
+            return Ok(vec![]);
         }
 
         self.propose_offline(name)
