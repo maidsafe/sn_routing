@@ -117,7 +117,7 @@
 
 <span class="kw">const</span> <span class="ident">INCOMING_EXPIRY_DURATION</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">20</span> <span class="op">*</span> <span class="number">60</span>);
 <span class="kw">const</span> <span class="ident">OUTGOING_EXPIRY_DURATION</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">10</span> <span class="op">*</span> <span class="number">60</span>);
-<span class="comment">//const MAX_ENTRIES: usize = 15_000;</span>
+<span class="kw">const</span> <span class="ident">MAX_ENTRIES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">15_000</span>;
 
 <span class="doccomment">/// An enum representing a result of message filtering</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
@@ -146,13 +146,13 @@
 <span class="kw">impl</span> <span class="ident">MessageFilter</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">incoming</span>: <span class="ident">Cache</span>::<span class="ident">new</span>(
-                <span class="prelude-val">Some</span>(<span class="ident">INCOMING_EXPIRY_DURATION</span>),
-                <span class="comment">//MAX_ENTRIES,</span>
+            <span class="ident">incoming</span>: <span class="ident">Cache</span>::<span class="ident">with_expiry_duration_and_capacity</span>(
+                <span class="ident">INCOMING_EXPIRY_DURATION</span>,
+                <span class="ident">MAX_ENTRIES</span>,
             ),
-            <span class="ident">outgoing</span>: <span class="ident">Cache</span>::<span class="ident">new</span>(
-                <span class="prelude-val">Some</span>(<span class="ident">OUTGOING_EXPIRY_DURATION</span>),
-                <span class="comment">//MAX_ENTRIES,</span>
+            <span class="ident">outgoing</span>: <span class="ident">Cache</span>::<span class="ident">with_expiry_duration_and_capacity</span>(
+                <span class="ident">OUTGOING_EXPIRY_DURATION</span>,
+                <span class="ident">MAX_ENTRIES</span>,
             ),
         }
     }

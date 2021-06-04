@@ -83,8 +83,6 @@
 <span id="82">82</span>
 <span id="83">83</span>
 <span id="84">84</span>
-<span id="85">85</span>
-<span id="86">86</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -94,9 +92,7 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="comment">//use crate::{supermajority, ELDER_SIZE};</span>
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">cache</span>::<span class="ident">Cache</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">supermajority</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">cache</span>::<span class="ident">Cache</span>, <span class="ident">supermajority</span>, <span class="ident">ELDER_SIZE</span>};
 <span class="kw">use</span> <span class="ident">dashmap</span>::<span class="ident">DashSet</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">iter</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
@@ -114,9 +110,9 @@
 <span class="kw">impl</span> <span class="ident">ConnectivityComplaints</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">complaints</span>: <span class="ident">Cache</span>::<span class="ident">new</span>(
-                <span class="prelude-val">Some</span>(<span class="ident">COMPLAINT_EXPIRY_DURATION</span>),
-                <span class="comment">//ELDER_SIZE,</span>
+            <span class="ident">complaints</span>: <span class="ident">Cache</span>::<span class="ident">with_expiry_duration_and_capacity</span>(
+                <span class="ident">COMPLAINT_EXPIRY_DURATION</span>,
+                <span class="ident">ELDER_SIZE</span>,
             ),
         }
     }
