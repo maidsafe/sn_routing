@@ -217,11 +217,13 @@ impl Comm {
                 .send_to(&recipient.1, msg_bytes)
                 .await
                 .map_err(|err| match err {
-                    qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed)
-                    | qp2p::Error::Connection(qp2p::ConnectionError::TimedOut) => {
+                    qp2p::Error::Connection(qp2p::ConnectionError::LocallyClosed) => {
+                        Error::ConnectionClosed
+                    }
+                    _ => {
+                        trace!("during sending, received error {:?}", err);
                         Error::AddressNotReachable { err }
                     }
-                    _ => Error::ConnectionClosed,
                 });
 
             (result, recipient.1)
