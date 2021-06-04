@@ -15,7 +15,6 @@ use sn_messaging::{Aggregation, DstLocation, Itinerary, SrcLocation};
 use sn_routing::{Event, NodeElderChange};
 
 #[tokio::test]
-#[ignore]
 async fn test_node_drop() -> Result<()> {
     // NOTE: create at least 4 nodes, so when one is dropped the remaining ones still form a
     // supermajority and the `Offline` proposals reach agreement.
