@@ -355,10 +355,6 @@ impl Core {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::ConnectivityComplaint(elder_name) => {
-                self.handle_connectivity_complaint(msg.src.name(), *elder_name)
-                    .await
-            }
             Variant::NodeApproval { .. }
             | Variant::JoinRetry { .. }
             | Variant::ResourceChallenge { .. } => {
