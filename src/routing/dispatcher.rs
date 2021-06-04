@@ -110,12 +110,15 @@ impl Dispatcher {
                 sender,
                 message,
                 dest_info,
-            } => Ok(self
-                .core
-                .write()
-                .await
-                .handle_section_info_msg(sender, message, dest_info)
-                .await),
+            } => {
+                let our_local_ip = self.comm.local_addr().ip();
+                Ok(self
+                    .core
+                    .write()
+                    .await
+                    .handle_section_info_msg(sender, message, dest_info, our_local_ip)
+                    .await)
+            }
             Command::HandleTimeout(token) => self.core.write().await.handle_timeout(token),
             Command::HandleAgreement { proposal, proof } => {
                 self.core

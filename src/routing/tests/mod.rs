@@ -64,13 +64,17 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
+    let new_node_comm = create_comm().await?;
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
-        gen_addr(),
+        new_node_comm.our_connection_info(),
     );
     let new_node_name = new_node.name();
 
-    let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(new_node.keypair.public));
+    let message = SectionInfoMsg::GetSectionQuery {
+        public_key: PublicKey::from(new_node.keypair.public),
+        is_node: true,
+    };
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
@@ -135,9 +139,13 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
         new_node_name = XorName::from(random_pk);
     }
 
-    let new_node_addr = gen_addr();
+    let new_node_comm = create_comm().await?;
+    let new_node_addr = new_node_comm.our_connection_info();
 
-    let message = SectionInfoMsg::GetSectionQuery(random_pk);
+    let message = SectionInfoMsg::GetSectionQuery {
+        public_key: random_pk,
+        is_node: true,
+    };
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
