@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.74.2](https://github.com/maidsafe/sn_routing/compare/v0.74.1...v0.74.2) (2021-06-04)
+
+
+### Bug Fixes
+
+* **comm:** ignore connection loss ([693f61c](https://github.com/maidsafe/sn_routing/commit/693f61c3e92495a3acb2872684dd9a88c4a8bd1a))
+* **comms:** do not take connectivity complaints from adults ([f76b3a2](https://github.com/maidsafe/sn_routing/commit/f76b3a2b12b3791e08d2c5a65d0ae594ddbf8c99))
+
 ### [0.74.1](https://github.com/maidsafe/sn_routing/compare/v0.74.0...v0.74.1) (2021-06-04)
 
 
