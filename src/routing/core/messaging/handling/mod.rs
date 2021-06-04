@@ -21,7 +21,7 @@ use crate::{
     network::NetworkUtils,
     peer::PeerUtils,
     relocation::{RelocatePayloadUtils, RelocateState, SignedRelocateDetailsUtils},
-    routing::command::Command,
+    routing::{comm, command::Command},
     section::{
         SectionAuthorityProviderUtils, SectionKeyShare, SectionPeersUtils, SectionUtils,
         FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
@@ -38,7 +38,11 @@ use sn_messaging::{
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, EndUser, MessageType,
 };
-use std::{collections::BTreeSet, iter, net::SocketAddr};
+use std::{
+    collections::BTreeSet,
+    iter,
+    net::{IpAddr, SocketAddr},
+};
 use xor_name::XorName;
 
 // Message handling
@@ -94,6 +98,7 @@ impl Core {
         sender: SocketAddr,
         message: SectionInfoMsg,
         dest_info: DestInfo, // The DestInfo contains the XorName of the sender and a random PK during the initial SectionQuery,
+        our_local_ip: IpAddr,
     ) -> Vec<Command> {
         // Provide our PK as the dest PK, only redundant as the message itself contains details regarding relocation/registration.
         let dest_info = DestInfo {
@@ -101,38 +106,46 @@ impl Core {
             dest_section_pk: *self.section().chain().last_key(),
         };
         match message {
-            SectionInfoMsg::GetSectionQuery(pk) => {
-                let name = XorName::from(pk);
-                debug!("Received GetSectionQuery({}) from {}", name, sender);
+            SectionInfoMsg::GetSectionQuery {
+                public_key,
+                is_node,
+            } => {
+                let name = XorName::from(public_key);
+                let response =
+                    if is_node && comm::is_reachable(our_local_ip, &sender).await.is_err() {
+                        GetSectionResponse::NodeNotReachable
+                    } else {
+                        debug!("Received GetSectionQuery({}) from {}", name, sender);
 
-                let response = if let (true, Ok(pk_set)) =
-                    (self.section.prefix().matches(&name), self.public_key_set())
-                {
-                    GetSectionResponse::Success(SectionInfo {
-                        prefix: self.section.authority_provider().prefix(),
-                        pk_set,
-                        elders: self
-                            .section
-                            .authority_provider()
-                            .peers()
-                            .map(|peer| (*peer.name(), *peer.addr()))
-                            .collect(),
-                        joins_allowed: self.joins_allowed,
-                    })
-                } else {
-                    // If we are elder, we should know a section that is closer to `name` that us.
-                    // Otherwise redirect to our elders.
-                    let section_auth = self
-                        .network
-                        .closest(&name)
-                        .unwrap_or_else(|| self.section.authority_provider());
-                    let targets = section_auth
-                        .elders()
-                        .iter()
-                        .map(|(name, addr)| (*name, *addr))
-                        .collect();
-                    GetSectionResponse::Redirect(targets)
-                };
+                        if let (true, Ok(pk_set)) =
+                            (self.section.prefix().matches(&name), self.public_key_set())
+                        {
+                            GetSectionResponse::Success(SectionInfo {
+                                prefix: self.section.authority_provider().prefix(),
+                                pk_set,
+                                elders: self
+                                    .section
+                                    .authority_provider()
+                                    .peers()
+                                    .map(|peer| (*peer.name(), *peer.addr()))
+                                    .collect(),
+                                joins_allowed: self.joins_allowed,
+                            })
+                        } else {
+                            // If we are elder, we should know a section that is closer to `name` that us.
+                            // Otherwise redirect to our elders.
+                            let section_auth = self
+                                .network
+                                .closest(&name)
+                                .unwrap_or_else(|| self.section.authority_provider());
+                            let targets = section_auth
+                                .elders()
+                                .iter()
+                                .map(|(name, addr)| (*name, *addr))
+                                .collect();
+                            GetSectionResponse::Redirect(targets)
+                        }
+                    };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);

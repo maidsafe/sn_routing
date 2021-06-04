@@ -13,6 +13,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use hex_fmt::HexFmt;
 use qp2p::{Endpoint, QuicP2p};
 use sn_messaging::MessageType;
+use std::net::IpAddr;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -114,6 +115,10 @@ impl Comm {
         self.endpoint.socket_addr()
     }
 
+    pub(crate) fn local_addr(&self) -> SocketAddr {
+        self.endpoint.local_addr()
+    }
+
     /// Sends a message on an existing connection. If no such connection exists, returns an error.
     pub async fn send_on_existing_connection(
         &self,
@@ -136,30 +141,7 @@ impl Comm {
 
     /// Tests whether the peer is reachable.
     pub async fn is_reachable(&self, peer: &SocketAddr) -> Result<(), Error> {
-        let qp2p_config = qp2p::Config {
-            local_ip: Some(self.endpoint.local_addr().ip()),
-            local_port: Some(0),
-            forward_port: false,
-            ..Default::default()
-        };
-
-        let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)
-            .map_err(|err| Error::InvalidConfig { err })?;
-        let (connectivity_endpoint, _, _, _) = qp2p
-            .new_endpoint()
-            .await
-            .map_err(|err| Error::CannotConnectEndpoint { err })?;
-
-        connectivity_endpoint
-            .is_reachable(peer)
-            .await
-            .map_err(|err| {
-                info!("Peer {} is NOT externally reachable: {}", peer, err);
-                Error::AddressNotReachable { err }
-            })
-            .map(|()| {
-                info!("Peer {} is externally reachable.", peer);
-            })
+        is_reachable(self.endpoint.local_addr().ip(), peer).await
     }
 
     /// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`
@@ -294,6 +276,33 @@ impl Comm {
         self.endpoint.connect_to(recipient).await?;
         self.endpoint.send_message(msg, recipient).await
     }
+}
+
+pub(crate) async fn is_reachable(our_local_ip: IpAddr, peer: &SocketAddr) -> Result<()> {
+    let qp2p_config = qp2p::Config {
+        local_ip: Some(our_local_ip),
+        local_port: Some(0),
+        forward_port: false,
+        ..Default::default()
+    };
+
+    let qp2p = QuicP2p::with_config(Some(qp2p_config), &[], false)
+        .map_err(|err| Error::InvalidConfig { err })?;
+    let (connectivity_endpoint, _, _, _) = qp2p
+        .new_endpoint()
+        .await
+        .map_err(|err| Error::CannotConnectEndpoint { err })?;
+
+    connectivity_endpoint
+        .is_reachable(peer)
+        .await
+        .map_err(|err| {
+            info!("Peer {} is NOT externally reachable: {}", peer, err);
+            Error::AddressNotReachable { err }
+        })
+        .map(|()| {
+            info!("Peer {} is externally reachable.", peer);
+        })
 }
 
 impl Drop for Comm {
@@ -534,7 +543,10 @@ mod tests {
         // Send the first message.
         let key0 = bls::SecretKey::random().public_key();
         let msg0 = MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(key0)),
+            msg: Message::GetSectionQuery {
+                public_key: PublicKey::Bls(key0),
+                is_node: true,
+            },
             dest_info: DestInfo {
                 dest: name,
                 dest_section_pk: key0,
@@ -559,7 +571,10 @@ mod tests {
         // Send the second message.
         let key1 = bls::SecretKey::random().public_key();
         let msg1 = MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(key1)),
+            msg: Message::GetSectionQuery {
+                public_key: PublicKey::Bls(key1),
+                is_node: true,
+            },
             dest_info: DestInfo {
                 dest: name,
                 dest_section_pk: key1,
@@ -622,7 +637,10 @@ mod tests {
     fn new_section_info_message() -> MessageType {
         let random_bls_pk = bls::SecretKey::random().public_key();
         MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(random_bls_pk)),
+            msg: Message::GetSectionQuery {
+                public_key: PublicKey::Bls(random_bls_pk),
+                is_node: true,
+            },
             dest_info: DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: bls::SecretKey::random().public_key(),

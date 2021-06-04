@@ -78,4 +78,6 @@ pub enum Error {
     NoMatchingSection,
     #[error("No matching Elder")]
     NoMatchingElder,
+    #[error("Cannot start node since it is not externally reachable")]
+    NodeNotReachable,
 }

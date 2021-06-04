@@ -213,6 +213,9 @@ impl<'a> State<'a> {
                 GetSectionResponse::SectionInfoUpdate(error) => {
                     error!("Infrastructure error: {:?}", error);
                 }
+                GetSectionResponse::NodeNotReachable => {
+                    return Err(Error::NodeNotReachable);
+                }
             }
         }
     }
@@ -236,7 +239,10 @@ impl<'a> State<'a> {
             None => (PublicKey::from(self.node.keypair.public), self.node.name()),
         };
 
-        let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(self.node.keypair.public));
+        let message = SectionInfoMsg::GetSectionQuery {
+            public_key: PublicKey::from(self.node.keypair.public),
+            is_node: true,
+        };
 
         // Group up with our XorName as we do not know their name yet.
         let recipients = recipients
@@ -291,6 +297,7 @@ impl<'a> State<'a> {
                         continue;
                     }
                     GetSectionResponse::Redirect(_)
+                    | GetSectionResponse::NodeNotReachable
                     | GetSectionResponse::Success { .. }
                     | GetSectionResponse::SectionInfoUpdate(_) => {
                         return Ok((response, sender, dest_info))
@@ -736,8 +743,8 @@ mod tests {
             let bootstrap_addrs: Vec<SocketAddr> =
                 recipients.iter().map(|(_name, addr)| *addr).collect();
             assert_eq!(bootstrap_addrs, [bootstrap_addr]);
-            assert_matches!(message, MessageType::SectionInfo{ msg: SectionInfoMsg::GetSectionQuery(name), .. } => {
-                assert_eq!(XorName::from(name), *peer.name());
+            assert_matches!(message, MessageType::SectionInfo{ msg: SectionInfoMsg::GetSectionQuery { public_key, is_node: true }, .. } => {
+                assert_eq!(XorName::from(public_key), *peer.name());
             });
 
             let infrastructure_info = SectionInfo {
@@ -862,7 +869,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
@@ -906,7 +913,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
@@ -951,7 +958,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
@@ -995,7 +1002,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
@@ -1049,7 +1056,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
@@ -1133,7 +1140,7 @@ mod tests {
             assert_matches!(
                 message,
                 MessageType::SectionInfo {
-                    msg: SectionInfoMsg::GetSectionQuery(_),
+                    msg: SectionInfoMsg::GetSectionQuery { .. },
                     ..
                 }
             );
