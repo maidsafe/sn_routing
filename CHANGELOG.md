@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.74.4](https://github.com/maidsafe/sn_routing/compare/v0.74.3...v0.74.4) (2021-06-06)
+
+
+### Bug Fixes
+
+* proper differentiate local close and peer un-reachable ([655d8a2](https://github.com/maidsafe/sn_routing/commit/655d8a2e55a8ea1747b03705783ba87b3a07d676))
+
 ### [0.74.3](https://github.com/maidsafe/sn_routing/compare/v0.74.2...v0.74.3) (2021-06-06)
 
 
