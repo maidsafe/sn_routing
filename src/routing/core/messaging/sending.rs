@@ -52,7 +52,7 @@ impl Core {
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
 
         Ok(Command::send_message_to_node(
@@ -73,7 +73,7 @@ impl Core {
                 &self.node,
                 DstLocation::DirectAndUnrouted,
                 variant,
-                self.section.authority_provider().section_key,
+                self.section.authority_provider().section_key(),
             )?;
             let dest_info = DestInfo {
                 dest: XorName::random(),
@@ -119,7 +119,7 @@ impl Core {
                 &self.node,
                 DstLocation::DirectAndUnrouted,
                 variant,
-                self.section.authority_provider().section_key,
+                self.section.authority_provider().section_key(),
             )?;
 
             Ok(Command::send_message_to_nodes(
@@ -230,7 +230,7 @@ impl Core {
     ) -> Result<Proposal> {
         let proof_chain = self.create_proof_chain(proof_chain_first_key)?;
         let dst_key = if let Some(name) = dst.name() {
-            *self.section_key_by_name(&name)
+            self.section_key_by_name(&name)
         } else {
             // NOTE: `dst` is `Direct`. We use this when we want the message to accumulate at the
             // destination and also be handled only there. We only do this if the recipient is in
@@ -305,7 +305,7 @@ impl Core {
 
         if !others.is_empty() {
             let count = others.len();
-            let dest_section_pk = *self.section_key_by_name(&others[0].0);
+            let dest_section_pk = self.section_key_by_name(&others[0].0);
             commands.push(Command::send_message_to_nodes(
                 others,
                 count,
@@ -335,7 +335,7 @@ impl Core {
         &self,
         additional_key: Option<&bls::PublicKey>,
     ) -> Result<SecuredLinkedList> {
-        // The last key of the proof chain is the last section key for which we also have the
+        // The last key of the signed chain is the last section key for which we also have the
         // secret key share. Ideally this is our current section key unless we haven't observed the
         // DKG completion yet.
         let last_key = self
@@ -345,7 +345,7 @@ impl Core {
             .public_key();
 
         // Only include `additional_key` if it is older than `last_key` because `last_key` must be
-        // the actual last key of the resulting proof chain because it's the key that will be used
+        // the actual last key of the resulting signed chain because it's the key that will be used
         // to sign the message.
         let additional_key = additional_key
             .filter(|key| self.section.chain().cmp_by_position(key, &last_key) == Ordering::Less);
@@ -366,7 +366,7 @@ impl Core {
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
         Ok(Command::send_message_to_node(
             recipient,

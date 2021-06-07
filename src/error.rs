@@ -8,7 +8,7 @@
 
 use crate::{
     agreement::ProposalError,
-    messages::{CreateError, ExtendProofChainError},
+    messages::{CreateError, ExtendSignedChainError},
 };
 use qp2p::Error as Qp2pError;
 use secured_linked_list::error::Error as SecuredLinkedListError;
@@ -68,8 +68,8 @@ pub enum Error {
     ProposalError(#[from] ProposalError),
     #[error("create error: {0}")]
     CreateError(#[from] CreateError),
-    #[error("extend proof error: {0}")]
-    ExtendProofError(#[from] ExtendProofChainError),
+    #[error("extend signed error: {0}")]
+    ExtendSignedError(#[from] ExtendSignedChainError),
     #[error("invalid payload")]
     InvalidPayload,
     #[error("Routing is set to not allow taking any new node")]

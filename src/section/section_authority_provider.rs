@@ -117,13 +117,12 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
     {
         let elders = elders
             .into_iter()
-            .enumerate()
-            .map(|(index, peer)| (*peer.name(), (pk_set.public_key_share(index), *peer.addr())))
+            .map(|peer| (*peer.name(), *peer.addr()))
             .collect();
 
         Self {
             prefix,
-            section_key: pk_set.public_key(),
+            public_key_set: pk_set,
             elders,
         }
     }
@@ -136,12 +135,11 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
         let elders = elder_candidates
             .elders
             .iter()
-            .enumerate()
-            .map(|(index, (name, addr))| (*name, (pk_set.public_key_share(index), *addr)))
+            .map(|(name, addr)| (*name, *addr))
             .collect();
         SectionAuthorityProvider {
             prefix: elder_candidates.prefix,
-            section_key: pk_set.public_key(),
+            public_key_set: pk_set,
             elders,
         }
     }
@@ -158,7 +156,7 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
         // The `reachable` flag of Peer is defaulted to `false` during the construction.
         // As the SectionAuthorityProvider only holds the list of alive elders, it shall be safe
         // to set the flag as true here during the mapping.
-        Box::new(self.elders.iter().map(|(name, (_, addr))| {
+        Box::new(self.elders.iter().map(|(name, addr)| {
             let mut peer = Peer::new(*name, *addr);
             peer.set_reachable(true);
             peer
@@ -177,7 +175,7 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
 
     /// Returns a socket_addr of an elder.
     fn get_addr(&self, name: &XorName) -> Option<SocketAddr> {
-        self.elders.get(name).map(|(_, addr)| *addr)
+        self.elders.get(name).copied()
     }
 
     /// Returns the set of elder names.
@@ -189,12 +187,12 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
     fn elders(&self) -> BTreeMap<XorName, SocketAddr> {
         self.elders
             .iter()
-            .map(|(name, (_, addr))| (*name, *addr))
+            .map(|(name, addr)| (*name, *addr))
             .collect()
     }
 
     fn addresses(&self) -> Vec<SocketAddr> {
-        self.elders.values().map(|(_, addr)| *addr).collect()
+        self.elders.values().copied().collect()
     }
 
     fn prefix(&self) -> Prefix {
@@ -203,7 +201,7 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
 
     /// Key of the section.
     fn section_key(&self) -> PublicKey {
-        self.section_key
+        self.public_key_set.public_key()
     }
 }
 

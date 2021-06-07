@@ -213,7 +213,7 @@ fn cmp_elder_candidates(
     current_elders: &SectionAuthorityProvider,
 ) -> Ordering {
     // Older nodes are preferred. In case of a tie, prefer current elders. If still a tie, break
-    // it comparing by the proof signatures because it's impossible for a node to predict its
+    // it comparing by the signed signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
     cmp_elder_candidates_by_peer_state(&lhs.value.state, &rhs.value.state)
         .then_with(|| rhs.value.peer.age().cmp(&lhs.value.peer.age()))
@@ -227,7 +227,7 @@ fn cmp_elder_candidates(
                 _ => Ordering::Equal,
             }
         })
-        .then_with(|| lhs.proof.signature.cmp(&rhs.proof.signature))
+        .then_with(|| lhs.signed.signature.cmp(&rhs.signed.signature))
 }
 
 // Compare candidates for the next elders according to their peer state. The one comparing `Less`

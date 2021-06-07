@@ -90,14 +90,14 @@ impl Core {
     }
 
     /// Returns the latest known public key of the section with `prefix`.
-    pub fn section_key(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
+    pub fn section_key(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
         if prefix == self.section.prefix() || prefix.is_extension_of(self.section.prefix()) {
-            Some(self.section.chain().last_key())
+            Some(*self.section.chain().last_key())
         } else {
             self.network.key_by_prefix(prefix).or_else(|| {
                 if self.is_elder() {
                     // We are elder - the first key is the genesis key
-                    Some(self.section.chain().root_key())
+                    Some(*self.section.chain().root_key())
                 } else {
                     // We are not elder - the chain might be truncated so the first key is not
                     // necessarily the genesis key.
@@ -143,7 +143,7 @@ impl Core {
         )?;
 
         let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
-        let dest_pk = *self.section_key_by_name(&target_name);
+        let dest_pk = self.section_key_by_name(&target_name);
 
         let mut targets = vec![];
 
@@ -262,7 +262,7 @@ impl Core {
                 &self.node,
                 itinerary.dst,
                 variant,
-                self.section.authority_provider().section_key,
+                self.section.authority_provider().section_key(),
             )?
         };
         let mut commands = vec![];
@@ -277,7 +277,7 @@ impl Core {
                 message: msg.clone(),
                 dest_info: DestInfo {
                     dest: dst_name,
-                    dest_section_pk: *dest_section_pk,
+                    dest_section_pk,
                 },
             });
         }

@@ -117,11 +117,11 @@ impl Dispatcher {
                 .handle_section_info_msg(sender, message, dest_info)
                 .await),
             Command::HandleTimeout(token) => self.core.write().await.handle_timeout(token),
-            Command::HandleAgreement { proposal, proof } => {
+            Command::HandleAgreement { proposal, signed } => {
                 self.core
                     .write()
                     .await
-                    .handle_agreement(proposal, proof)
+                    .handle_agreement(proposal, signed)
                     .await
             }
             Command::HandleConnectionLost(addr) => {
@@ -136,11 +136,11 @@ impl Dispatcher {
                 .write()
                 .await
                 .handle_dkg_outcome(section_auth, outcome),
-            Command::HandleDkgFailure(proofs) => self
+            Command::HandleDkgFailure(signeds) => self
                 .core
                 .write()
                 .await
-                .handle_dkg_failure(proofs)
+                .handle_dkg_failure(signeds)
                 .map(|command| vec![command]),
             Command::SendMessage {
                 recipients,

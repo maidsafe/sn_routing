@@ -9,7 +9,7 @@
 use super::SignableView;
 use sn_messaging::node::PlainMessage;
 
-/// Section-source message without signature and proof.
+/// Section-source message without signature and signed.
 pub trait PlainMessageUtils {
     fn as_signable(&self) -> SignableView;
 }

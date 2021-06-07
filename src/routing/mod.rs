@@ -248,7 +248,7 @@ impl Routing {
         self.dispatcher.comm.our_connection_info()
     }
 
-    /// Returns the Section Proof Chain
+    /// Returns the Section Signed Chain
     pub async fn section_chain(&self) -> SecuredLinkedList {
         self.dispatcher.core.read().await.section_chain().clone()
     }
@@ -336,12 +336,7 @@ impl Routing {
 
     /// Returns the last known public key of the section with `prefix`.
     pub async fn section_key(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
-        self.dispatcher
-            .core
-            .read()
-            .await
-            .section_key(prefix)
-            .copied()
+        self.dispatcher.core.read().await.section_key(prefix)
     }
 
     /// Returns the info about the section matching the name.
@@ -354,7 +349,7 @@ impl Routing {
     /// Messages sent here, either section to section or node to node are signed
     /// and validated upon receipt by routing itself.
     ///
-    /// `additional_proof_chain_key` is a key to be included in the proof chain attached to the
+    /// `additional_proof_chain_key` is a key to be included in the signed chain attached to the
     /// message. This is useful when the message contains some data that is signed with a different
     /// key than the whole message is so that the recipient can verify such key.
     pub async fn send_message(
@@ -427,7 +422,7 @@ impl Routing {
         self.dispatcher.core.read().await.public_key_set()
     }
 
-    /// Returns our section proof chain.
+    /// Returns our section signed chain.
     pub async fn our_history(&self) -> SecuredLinkedList {
         self.dispatcher.core.read().await.section().chain().clone()
     }

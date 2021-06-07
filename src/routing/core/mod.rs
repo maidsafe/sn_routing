@@ -24,10 +24,10 @@ use crate::{
     relocation::RelocateState,
     section::{SectionAuthorityProviderUtils, SectionKeyShare, SectionKeysProvider, SectionUtils},
 };
-use bls_signature_aggregator::SignatureAggregator;
 use itertools::Itertools;
 use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
+use sn_messaging::node::SignatureAggregator;
 use sn_messaging::{
     node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider, Variant},
     DestInfo, DstLocation, MessageId,
@@ -184,7 +184,7 @@ impl Core {
                         &self.node,
                         DstLocation::DirectAndUnrouted,
                         variant.clone(),
-                        section_auth.value.section_key,
+                        section_auth.value.section_key(),
                     )?;
                     let targets: Vec<_> = sap
                         .elders()
@@ -194,7 +194,7 @@ impl Core {
                     let len = targets.len();
                     let dest_info = DestInfo {
                         dest: XorName::random(),
-                        dest_section_pk: sap.section_key,
+                        dest_section_pk: sap.section_key(),
                     };
                     trace!("Sending updated SectionInfo to all known sections");
                     commands.push(Command::send_message_to_nodes(targets, len, msg, dest_info));
@@ -271,9 +271,9 @@ impl Core {
         Ok(commands)
     }
 
-    pub(crate) fn section_key_by_name(&self, name: &XorName) -> &bls::PublicKey {
+    pub(crate) fn section_key_by_name(&self, name: &XorName) -> bls::PublicKey {
         if self.section.prefix().matches(name) {
-            self.section.chain().last_key()
+            *self.section.chain().last_key()
         } else if let Ok(key) = self.network.key_by_name(name) {
             key
         } else if self.section.prefix().sibling().matches(name) {
@@ -282,9 +282,9 @@ impl Core {
             // In case this assumption is not correct (because we already progressed more than one
             // key since the split) then this key would be unknown to them and they would send
             // us back their whole section chain. However, this situation should be rare.
-            self.section.chain().prev_key()
+            *self.section.chain().prev_key()
         } else {
-            self.section.chain().root_key()
+            *self.section.chain().root_key()
         }
     }
 

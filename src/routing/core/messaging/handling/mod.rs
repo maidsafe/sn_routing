@@ -14,7 +14,7 @@ mod resource_proof;
 
 use super::super::Core;
 use crate::{
-    agreement::{DkgCommands, ProofShare, ProposalError},
+    agreement::{DkgCommands, ProposalError, SignedShare},
     error::{Error, Result},
     event::Event,
     messages::{MessageStatus, RoutingMsgUtils, SrcAuthorityUtils, VerifyStatus},
@@ -27,12 +27,12 @@ use crate::{
         FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
     },
 };
-use bls_signature_aggregator::Error as AggregatorError;
 use bytes::Bytes;
+use sn_messaging::node::Error as AggregatorError;
 use sn_messaging::{
     client::ClientMsg,
     node::{
-        DkgFailureProofSet, JoinRequest, Network, Peer, Proposal, RoutingMsg, Section,
+        DkgFailureSignedSet, JoinRequest, Network, Peer, Proposal, RoutingMsg, Section,
         SectionAuthorityProvider, SignedRelocateDetails, SrcAuthority, Variant,
     },
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
@@ -178,11 +178,11 @@ impl Core {
     pub(crate) fn handle_proposal(
         &mut self,
         proposal: Proposal,
-        proof_share: ProofShare,
+        signed_share: SignedShare,
     ) -> Result<Vec<Command>> {
-        match self.proposal_aggregator.add(proposal, proof_share) {
-            Ok((proposal, proof)) => Ok(vec![Command::HandleAgreement { proposal, proof }]),
-            Err(ProposalError::Aggregation(bls_signature_aggregator::Error::NotEnoughShares)) => {
+        match self.proposal_aggregator.add(proposal, signed_share) {
+            Ok((proposal, signed)) => Ok(vec![Command::HandleAgreement { proposal, signed }]),
+            Err(ProposalError::Aggregation(sn_messaging::node::Error::NotEnoughShares)) => {
                 Ok(vec![])
             }
             Err(error) => {
@@ -212,20 +212,20 @@ impl Core {
         result
     }
 
-    pub(crate) fn handle_dkg_failure(&mut self, proofs: DkgFailureProofSet) -> Result<Command> {
-        let variant = Variant::DkgFailureAgreement(proofs);
+    pub(crate) fn handle_dkg_failure(&mut self, signeds: DkgFailureSignedSet) -> Result<Command> {
+        let variant = Variant::DkgFailureAgreement(signeds);
         let message = RoutingMsg::single_src(
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
         Ok(self.send_message_to_our_elders(message))
     }
 
     pub(crate) fn aggregate_message(&mut self, msg: RoutingMsg) -> Result<Option<RoutingMsg>> {
-        let proof_share = if let SrcAuthority::BlsShare { proof_share, .. } = msg.src() {
-            proof_share
+        let signed_share = if let SrcAuthority::BlsShare { signed_share, .. } = msg.src() {
+            signed_share
         } else {
             // Not an aggregating message, return unchanged.
             return Ok(Some(msg));
@@ -235,11 +235,11 @@ impl Core {
             bincode::serialize(&msg.signable_view()).map_err(|_| Error::InvalidMessage)?;
         match self
             .message_aggregator
-            .add(&signed_bytes, proof_share.clone())
+            .add(&signed_bytes, signed_share.clone())
         {
-            Ok(proof) => {
+            Ok(signed) => {
                 trace!("Successfully accumulated signatures for message: {:?}", msg);
-                Ok(Some(msg.into_dst_accumulated(proof)?))
+                Ok(Some(msg.into_dst_accumulated(signed)?))
             }
             Err(AggregatorError::NotEnoughShares) => Ok(None),
             Err(err) => {
@@ -335,21 +335,21 @@ impl Core {
             }
             Variant::DkgFailureObservation {
                 dkg_key,
-                proof,
+                signed,
                 non_participants,
-            } => self.handle_dkg_failure_observation(*dkg_key, non_participants, *proof),
-            Variant::DkgFailureAgreement(proofs) => {
-                self.handle_dkg_failure_agreement(&msg.src.name(), proofs)
+            } => self.handle_dkg_failure_observation(*dkg_key, non_participants, *signed),
+            Variant::DkgFailureAgreement(signeds) => {
+                self.handle_dkg_failure_agreement(&msg.src.name(), signeds)
             }
             Variant::Propose {
                 content,
-                proof_share,
+                signed_share,
             } => {
                 let mut commands = vec![];
-                let result = self.handle_proposal(content.clone(), proof_share.clone());
+                let result = self.handle_proposal(content.clone(), signed_share.clone());
 
                 if let Some(addr) = sender {
-                    commands.extend(self.check_lagging((src_name, addr), proof_share)?);
+                    commands.extend(self.check_lagging((src_name, addr), signed_share)?);
                 }
 
                 commands.extend(result?);
@@ -408,7 +408,7 @@ impl Core {
             self.node(),
             dst_location,
             variant,
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
         let key = self.section_key_by_name(&src_name);
         Ok(Command::send_message_to_node(
@@ -416,20 +416,22 @@ impl Core {
             msg,
             DestInfo {
                 dest: src_name,
-                dest_section_pk: *key,
+                dest_section_pk: key,
             },
         ))
     }
 
     pub(crate) fn verify_message(&self, msg: &RoutingMsg) -> Result<bool> {
-        let known_keys = self
+        let known_keys: Vec<bls::PublicKey> = self
             .section
             .chain()
             .keys()
+            .copied()
             .chain(self.network.keys().map(|(_, key)| key))
-            .chain(iter::once(self.section.genesis_key()));
+            .chain(iter::once(*self.section.genesis_key()))
+            .collect();
 
-        match msg.verify(known_keys) {
+        match msg.verify(known_keys.iter()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::Unknown) => Ok(false),
             Err(error) => {
@@ -476,7 +478,7 @@ impl Core {
             content,
             src: msg.src.src_location(),
             dst: *msg.dst(),
-            proof: msg.proof(),
+            signed: msg.signed(),
             section_pk: msg.section_pk(),
         })
         .await;
@@ -614,7 +616,7 @@ impl Core {
                 );
                 return Ok(vec![]);
             } else {
-                // Start as Adult as long as passed resource proofing.
+                // Start as Adult as long as passed resource signeding.
                 (MIN_ADULT_AGE, None, None)
             };
 
@@ -654,12 +656,12 @@ impl Core {
             return Ok(vec![]);
         }
 
-        // Require resource proof only if joining as a new node.
+        // Require resource signed only if joining as a new node.
         if previous_name.is_none() {
             if let Some(response) = join_request.resource_proof_response {
                 if !self.validate_resource_proof_response(peer.name(), response) {
                     debug!(
-                        "Ignoring JoinRequest from {} - invalid resource proof response",
+                        "Ignoring JoinRequest from {} - invalid resource signed response",
                         peer
                     );
                     return Ok(vec![]);
