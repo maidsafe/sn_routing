@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use anyhow::{format_err, Context, Error, Result};
-use bls_signature_aggregator::{ProofShare, SignatureAggregator};
 use futures::{
     future,
     stream::{self, StreamExt},
@@ -19,6 +18,7 @@ use rand::{
     Rng,
 };
 use serde::{Deserialize, Serialize};
+use sn_messaging::node::{SignatureAggregator, SignedShare};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
     DstLocation, SrcLocation,
@@ -369,7 +369,7 @@ impl Network {
                         }
                     };
 
-                    self.probe_tracker.receive(&dst, message.proof_share).await;
+                    self.probe_tracker.receive(&dst, message.signed_share).await;
                 }
                 _ => {
                     // Currently ignore the other event variants. This might change in the future,
@@ -466,7 +466,7 @@ impl Network {
             .with_context(|| format!("failed to retrieve key share index by {}", src))?;
 
         let message = ProbeMessage {
-            proof_share: ProofShare {
+            signed_share: SignedShare {
                 public_key_set,
                 index,
                 signature_share,
@@ -758,7 +758,7 @@ struct Stats {
 
 #[derive(Serialize, Deserialize)]
 struct ProbeMessage {
-    proof_share: ProofShare,
+    signed_share: SignedShare,
 }
 
 #[derive(Clone)]
@@ -791,7 +791,7 @@ impl ProbeTracker {
         }
     }
 
-    async fn receive(&mut self, dst: &XorName, proof_share: ProofShare) {
+    async fn receive(&mut self, dst: &XorName, signed_share: SignedShare) {
         let result = &self
             .sections
             .iter()
@@ -805,7 +805,7 @@ impl ProbeTracker {
             ProbeState::Success => return,
         };
 
-        if aggregator.lock().await.add(dst, proof_share).is_ok() {
+        if aggregator.lock().await.add(dst, signed_share).is_ok() {
             cache.set(*dst, ProbeState::Success, None).await;
         }
     }

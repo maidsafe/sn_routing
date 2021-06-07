@@ -92,9 +92,9 @@ impl RelocateDetailsUtils for RelocateDetails {
         destination: XorName,
         age: u8,
     ) -> RelocateDetails {
-        let destination_key = *network
+        let destination_key = network
             .key_by_name(&destination)
-            .unwrap_or_else(|_| section.chain().root_key());
+            .unwrap_or_else(|_| *section.chain().root_key());
 
         RelocateDetails {
             pub_id: *peer.name(),

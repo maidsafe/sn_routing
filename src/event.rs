@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
+use sn_messaging::Signed;
 use sn_messaging::{client::ClientMsg, DstLocation, EndUser, SrcLocation};
 use std::{
     collections::BTreeSet,
@@ -64,8 +64,8 @@ pub enum Event {
         src: SrcLocation,
         /// The destination location that receives the message.
         dst: DstLocation,
-        /// The proof if the message was set to be aggregated at source.
-        proof: Option<Proof>,
+        /// The signed if the message was set to be aggregated at source.
+        signed: Option<Signed>,
         /// The Sender's Section PK.
         section_pk: bls::PublicKey,
     },

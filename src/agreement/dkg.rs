@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DkgFailureProofSetUtils, DkgFailureProofUtils};
+use super::{DkgFailureSignedSetUtils, DkgFailureSignedUtils};
 use crate::{
     crypto::{self, Keypair},
     error::Result,
@@ -20,7 +20,7 @@ use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use itertools::Itertools;
 use sn_messaging::{
     node::{
-        DkgFailureProof, DkgFailureProofSet, DkgKey, ElderCandidates, RoutingMsg,
+        DkgFailureSigned, DkgFailureSignedSet, DkgKey, ElderCandidates, RoutingMsg,
         SectionAuthorityProvider, Variant,
     },
     DestInfo, DstLocation,
@@ -126,7 +126,7 @@ impl DkgVoter {
                     elder_candidates,
                     participant_index,
                     timer_token: 0,
-                    failures: DkgFailureProofSet::default(),
+                    failures: DkgFailureSignedSet::default(),
                     complete: false,
                 };
 
@@ -189,11 +189,11 @@ impl DkgVoter {
         &mut self,
         dkg_key: &DkgKey,
         non_participants: &BTreeSet<XorName>,
-        proof: DkgFailureProof,
+        signed: DkgFailureSigned,
     ) -> Option<DkgCommand> {
         self.sessions
             .get_mut(dkg_key)?
-            .process_failure(dkg_key, non_participants, proof)
+            .process_failure(dkg_key, non_participants, signed)
     }
 }
 
@@ -203,7 +203,7 @@ struct Session {
     participant_index: usize,
     key_gen: KeyGen,
     timer_token: u64,
-    failures: DkgFailureProofSet,
+    failures: DkgFailureSignedSet,
     // Flag to track whether this session has completed (either with success or failure). We don't
     // remove complete sessions because the other participants might still need us to respond to
     // their messages.
@@ -381,9 +381,9 @@ impl Session {
         non_participants: BTreeSet<XorName>,
         keypair: &Keypair,
     ) -> Vec<DkgCommand> {
-        let proof = DkgFailureProof::new(keypair, &non_participants, dkg_key);
+        let signed = DkgFailureSigned::new(keypair, &non_participants, dkg_key);
 
-        if !self.failures.insert(proof, &non_participants) {
+        if !self.failures.insert(signed, &non_participants) {
             return vec![];
         }
 
@@ -392,7 +392,7 @@ impl Session {
             .chain(iter::once(DkgCommand::SendFailureObservation {
                 recipients: self.recipients(),
                 dkg_key: *dkg_key,
-                proof,
+                signed,
                 non_participants,
             }))
             .collect()
@@ -402,21 +402,21 @@ impl Session {
         &mut self,
         dkg_key: &DkgKey,
         non_participants: &BTreeSet<XorName>,
-        proof: DkgFailureProof,
+        signed: DkgFailureSigned,
     ) -> Option<DkgCommand> {
         if !self
             .elder_candidates
             .elders
-            .contains_key(&crypto::name(&proof.public_key))
+            .contains_key(&crypto::name(&signed.public_key))
         {
             return None;
         }
 
-        if !proof.verify(dkg_key, non_participants) {
+        if !signed.verify(dkg_key, non_participants) {
             return None;
         }
 
-        if !self.failures.insert(proof, non_participants) {
+        if !self.failures.insert(signed, non_participants) {
             return None;
         }
 
@@ -500,10 +500,10 @@ pub(crate) enum DkgCommand {
     SendFailureObservation {
         recipients: Vec<(XorName, SocketAddr)>,
         dkg_key: DkgKey,
-        proof: DkgFailureProof,
+        signed: DkgFailureSigned,
         non_participants: BTreeSet<XorName>,
     },
-    HandleFailureAgreement(DkgFailureProofSet),
+    HandleFailureAgreement(DkgFailureSignedSet),
 }
 
 impl DkgCommand {
@@ -541,12 +541,12 @@ impl DkgCommand {
             Self::SendFailureObservation {
                 recipients,
                 dkg_key,
-                proof,
+                signed,
                 non_participants,
             } => {
                 let variant = Variant::DkgFailureObservation {
                     dkg_key,
-                    proof,
+                    signed,
                     non_participants,
                 };
                 let message =
@@ -562,7 +562,7 @@ impl DkgCommand {
                     },
                 ))
             }
-            Self::HandleFailureAgreement(proofs) => Ok(Command::HandleDkgFailure(proofs)),
+            Self::HandleFailureAgreement(signeds) => Ok(Command::HandleDkgFailure(signeds)),
         }
     }
 }

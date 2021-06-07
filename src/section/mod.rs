@@ -29,12 +29,12 @@ use crate::{
     peer::PeerUtils,
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
 };
-use bls_signature_aggregator::Proof;
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::Serialize;
 use sn_messaging::node::{
     ElderCandidates, MemberInfo, Peer, Proven, Section, SectionAuthorityProvider, SectionPeers,
 };
+use sn_messaging::Signed;
 use std::{collections::BTreeSet, convert::TryInto, iter, marker::Sized, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
@@ -64,7 +64,7 @@ pub trait SectionUtils {
     fn update_elders(
         &mut self,
         new_section_auth: Proven<SectionAuthorityProvider>,
-        new_key_proof: Proof,
+        new_key_signed: Signed,
     ) -> bool;
 
     /// Update the member. Returns whether it actually changed anything.
@@ -125,7 +125,7 @@ impl SectionUtils for Section {
         chain: SecuredLinkedList,
         section_auth: Proven<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
-        if section_auth.proof.public_key != *chain.last_key() {
+        if section_auth.signed.public_key != *chain.last_key() {
             error!("can't create section: section_auth signed with incorrect key");
             // TODO: consider more specific error here.
             return Err(Error::InvalidMessage);
@@ -149,17 +149,17 @@ impl SectionUtils for Section {
             create_first_section_authority_provider(&public_key_set, &secret_key_share, peer)?;
 
         let mut section = Section::new(
-            section_auth.proof.public_key,
-            SecuredLinkedList::new(section_auth.proof.public_key),
+            section_auth.signed.public_key,
+            SecuredLinkedList::new(section_auth.signed.public_key),
             section_auth,
         )?;
 
         for peer in section.section_auth.value.peers() {
             let member_info = MemberInfo::joined(peer);
-            let proof = create_first_proof(&public_key_set, &secret_key_share, &member_info)?;
+            let signed = create_first_signed(&public_key_set, &secret_key_share, &member_info)?;
             let _ = section.members.update(Proven {
                 value: member_info,
-                proof,
+                signed,
             });
         }
 
@@ -183,7 +183,7 @@ impl SectionUtils for Section {
             error!("can't merge sections: other section_auth failed self-verification");
             return Err(Error::InvalidMessage);
         }
-        if &other.section_auth.proof.public_key != other.chain.last_key() {
+        if &other.section_auth.signed.public_key != other.chain.last_key() {
             // TODO: use more specific error variant.
             error!("can't merge sections: other section_auth signed with incorrect key");
             return Err(Error::InvalidMessage);
@@ -191,7 +191,7 @@ impl SectionUtils for Section {
 
         self.chain.merge(other.chain.clone())?;
 
-        if &other.section_auth.proof.public_key == self.chain.last_key() {
+        if &other.section_auth.signed.public_key == self.chain.last_key() {
             self.section_auth = other.section_auth;
         }
 
@@ -209,7 +209,7 @@ impl SectionUtils for Section {
     fn update_elders(
         &mut self,
         new_section_auth: Proven<SectionAuthorityProvider>,
-        new_key_proof: Proof,
+        new_key_signed: Signed,
     ) -> bool {
         if new_section_auth.value.prefix() != *self.prefix()
             && !new_section_auth
@@ -225,18 +225,18 @@ impl SectionUtils for Section {
         }
 
         if let Err(error) = self.chain.insert(
-            &new_key_proof.public_key,
-            new_section_auth.proof.public_key,
-            new_key_proof.signature,
+            &new_key_signed.public_key,
+            new_section_auth.signed.public_key,
+            new_key_signed.signature,
         ) {
             error!(
                 "failed to insert key {:?} (signed with {:?}) into the section chain: {}",
-                new_section_auth.proof.public_key, new_key_proof.public_key, error,
+                new_section_auth.signed.public_key, new_key_signed.public_key, error,
             );
             return false;
         }
 
-        if &new_section_auth.proof.public_key == self.chain.last_key() {
+        if &new_section_auth.signed.public_key == self.chain.last_key() {
             self.section_auth = new_section_auth;
         }
 
@@ -434,22 +434,22 @@ fn create_first_section_authority_provider(
     peer.set_reachable(true);
     let section_auth =
         SectionAuthorityProvider::new(iter::once(peer), Prefix::default(), pk_set.clone());
-    let proof = create_first_proof(pk_set, sk_share, &section_auth)?;
-    Ok(Proven::new(section_auth, proof))
+    let signed = create_first_signed(pk_set, sk_share, &section_auth)?;
+    Ok(Proven::new(section_auth, signed))
 }
 
-fn create_first_proof<T: Serialize>(
+fn create_first_signed<T: Serialize>(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     payload: &T,
-) -> Result<Proof> {
+) -> Result<Signed> {
     let bytes = bincode::serialize(payload).map_err(|_| Error::InvalidPayload)?;
     let signature_share = sk_share.sign(&bytes);
     let signature = pk_set
         .combine_signatures(iter::once((0, &signature_share)))
         .map_err(|_| Error::InvalidSignatureShare)?;
 
-    Ok(Proof {
+    Ok(Signed {
         public_key: pk_set.public_key(),
         signature,
     })

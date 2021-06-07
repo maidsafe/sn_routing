@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{verify_proof, Proof};
+use super::{verify_signed, Signed};
 use secured_linked_list::SecuredLinkedList;
 use serde::Serialize;
 use sn_messaging::node::Proven;
 
 pub trait ProvenUtils<T: Serialize> {
-    fn new(value: T, proof: Proof) -> Self;
+    fn new(value: T, signed: Signed) -> Self;
 
     fn verify(&self, section_chain: &SecuredLinkedList) -> bool;
 
@@ -20,15 +20,15 @@ pub trait ProvenUtils<T: Serialize> {
 }
 
 impl<T: Serialize> ProvenUtils<T> for Proven<T> {
-    fn new(value: T, proof: Proof) -> Self {
-        Self { value, proof }
+    fn new(value: T, signed: Signed) -> Self {
+        Self { value, signed }
     }
 
     fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
-        section_chain.has_key(&self.proof.public_key) && self.self_verify()
+        section_chain.has_key(&self.signed.public_key) && self.self_verify()
     }
 
     fn self_verify(&self) -> bool {
-        verify_proof(&self.proof, &self.value)
+        verify_signed(&self.signed, &self.value)
     }
 }

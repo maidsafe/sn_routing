@@ -17,13 +17,13 @@ use crate::{
     node::Node,
     section::{SectionKeyShare, SectionUtils},
 };
-use bls_signature_aggregator::{Proof, ProofShare};
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::Serialize;
 use sn_messaging::{
     node::{PlainMessage, RoutingMsg, SrcAuthority, Variant},
     Aggregation, DstLocation, MessageId,
 };
+use sn_messaging::{Signed, SignedShare};
 use std::fmt::Debug;
 use thiserror::Error;
 use xor_name::XorName;
@@ -51,8 +51,8 @@ pub trait RoutingMsgUtils {
     ) -> Result<RoutingMsg, Error>;
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
-    /// Returns errors if src is not `BlsShare` or if the proof is invalid.
-    fn into_dst_accumulated(self, proof: Proof) -> Result<RoutingMsg>;
+    /// Returns errors if src is not `BlsShare` or if the signed is invalid.
+    fn into_dst_accumulated(self, signed: Signed) -> Result<RoutingMsg>;
 
     fn signable_view(&self) -> SignableView;
 
@@ -65,10 +65,10 @@ pub trait RoutingMsgUtils {
     ) -> Result<RoutingMsg>;
 
     /// Creates a signed message from a section.
-    /// Note: `proof` isn't verified and is assumed valid.
+    /// Note: `signed` isn't verified and is assumed valid.
     fn section_src(
         plain: PlainMessage,
-        proof: Proof,
+        signed: Signed,
         section_chain: SecuredLinkedList,
     ) -> Result<RoutingMsg>;
 
@@ -79,7 +79,7 @@ pub trait RoutingMsgUtils {
     ) -> Result<VerifyStatus>;
 
     /// Getter
-    fn proof(&self) -> Option<Proof>;
+    fn signed(&self) -> Option<Signed>;
 
     /// Getter
     fn dst(&self) -> &DstLocation;
@@ -121,22 +121,22 @@ impl RoutingMsgUtils for RoutingMsg {
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
-            SrcAuthority::BlsShare { proof_share, .. } => {
-                if !proof_share.verify(&signed_bytes) {
+            SrcAuthority::BlsShare { signed_share, .. } => {
+                if !signed_share.verify(&signed_bytes) {
                     error!("Failed signature: {:?}", msg);
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
 
-                if proof_share.public_key_set.public_key() != msg.section_pk() {
+                if signed_share.public_key_set.public_key() != msg.section_pk() {
                     error!(
-                        "Proof share public key doesn't match proof chain last key: {:?}",
+                        "Signed share public key doesn't match signed chain last key: {:?}",
                         msg
                     );
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
             }
-            SrcAuthority::Section { proof, .. } => {
-                if !msg.section_pk.verify(&proof.signature, &signed_bytes) {
+            SrcAuthority::Section { signed, .. } => {
+                if !msg.section_pk.verify(&signed.signature, &signed_bytes) {
                     error!(
                         "Failed signature: {:?} (Section PK: {:?})",
                         msg, msg.section_pk
@@ -159,10 +159,10 @@ impl RoutingMsgUtils for RoutingMsg {
         // Create message id from src authority signature
         let id = match &src {
             SrcAuthority::Node { signature, .. } => MessageId::from_content(signature),
-            SrcAuthority::BlsShare { proof_share, .. } => {
-                MessageId::from_content(&proof_share.signature_share.0)
+            SrcAuthority::BlsShare { signed_share, .. } => {
+                MessageId::from_content(&signed_share.signature_share.0)
             }
-            SrcAuthority::Section { proof, .. } => MessageId::from_content(&proof.signature),
+            SrcAuthority::Section { signed, .. } => MessageId::from_content(&signed.signature),
         }
         .unwrap_or_default();
 
@@ -193,7 +193,7 @@ impl RoutingMsgUtils for RoutingMsg {
         .map_err(|_| Error::InvalidMessage)?;
 
         let signature_share = key_share.secret_key_share.sign(&serialized);
-        let proof_share = ProofShare {
+        let signed_share = SignedShare {
             public_key_set: key_share.public_key_set.clone(),
             index: key_share.index,
             signature_share,
@@ -201,7 +201,7 @@ impl RoutingMsgUtils for RoutingMsg {
 
         let src = SrcAuthority::BlsShare {
             src_name,
-            proof_share,
+            signed_share,
             section_chain: section_chain.clone(),
         };
 
@@ -209,38 +209,38 @@ impl RoutingMsgUtils for RoutingMsg {
     }
 
     /// Converts the message src authority from `BlsShare` to `Section` on successful accumulation.
-    /// Returns errors if src is not `BlsShare` or if the proof is invalid.
-    fn into_dst_accumulated(mut self, proof: Proof) -> Result<Self> {
-        let (proof_share, src_name, section_chain) = if let SrcAuthority::BlsShare {
-            proof_share,
+    /// Returns errors if src is not `BlsShare` or if the signed is invalid.
+    fn into_dst_accumulated(mut self, signed: Signed) -> Result<Self> {
+        let (signed_share, src_name, section_chain) = if let SrcAuthority::BlsShare {
+            signed_share,
             src_name,
             section_chain,
         } = &self.src
         {
-            (proof_share.clone(), *src_name, section_chain)
+            (signed_share.clone(), *src_name, section_chain)
         } else {
             error!("not a message for dst accumulation");
             return Err(Error::InvalidMessage);
         };
 
-        if proof_share.public_key_set.public_key() != proof.public_key {
-            error!("proof public key doesn't match proof share public key");
+        if signed_share.public_key_set.public_key() != signed.public_key {
+            error!("signed public key doesn't match signed share public key");
             return Err(Error::InvalidMessage);
         }
 
-        if proof.public_key != self.section_pk {
-            error!("proof public key doesn't match the attached section PK");
+        if signed.public_key != self.section_pk {
+            error!("signed public key doesn't match the attached section PK");
             return Err(Error::InvalidMessage);
         }
 
         let bytes = bincode::serialize(&self.signable_view()).map_err(|_| Error::InvalidMessage)?;
 
-        if !proof.verify(&bytes) {
+        if !signed.verify(&bytes) {
             return Err(Error::FailedSignature);
         }
 
         self.src = SrcAuthority::Section {
-            proof,
+            signed,
             src_name,
             section_chain: section_chain.clone(),
         };
@@ -278,16 +278,16 @@ impl RoutingMsgUtils for RoutingMsg {
     }
 
     /// Creates a signed message from a section.
-    /// Note: `proof` isn't verified and is assumed valid.
+    /// Note: `signed` isn't verified and is assumed valid.
     fn section_src(
         plain: PlainMessage,
-        proof: Proof,
+        signed: Signed,
         section_chain: SecuredLinkedList,
     ) -> Result<Self> {
         Self::new_signed(
             SrcAuthority::Section {
                 src_name: plain.src,
-                proof,
+                signed,
                 section_chain: section_chain.clone(),
             },
             plain.dst,
@@ -321,16 +321,16 @@ impl RoutingMsgUtils for RoutingMsg {
                 self.verify_variant(trusted_keys)
             }
             SrcAuthority::BlsShare {
-                proof_share,
+                signed_share,
                 section_chain,
                 ..
             } => {
-                // Proof chain is required for accumulation at destination.
-                if proof_share.public_key_set.public_key() != self.section_pk {
+                // Signed chain is required for accumulation at destination.
+                if signed_share.public_key_set.public_key() != self.section_pk {
                     return Err(Error::InvalidMessage);
                 }
 
-                if !proof_share.verify(&bytes) {
+                if !signed_share.verify(&bytes) {
                     return Err(Error::FailedSignature);
                 }
 
@@ -341,12 +341,12 @@ impl RoutingMsgUtils for RoutingMsg {
                 }
             }
             SrcAuthority::Section {
-                proof,
+                signed,
                 section_chain,
                 ..
             } => {
-                // Proof chain is required for section-src messages.
-                if !self.section_pk.verify(&proof.signature, &bytes) {
+                // Signed chain is required for section-src messages.
+                if !self.section_pk.verify(&signed.signature, &bytes) {
                     return Err(Error::FailedSignature);
                 }
 
@@ -360,9 +360,9 @@ impl RoutingMsgUtils for RoutingMsg {
     }
 
     /// Getter
-    fn proof(&self) -> Option<Proof> {
-        if let SrcAuthority::Section { proof, .. } = &self.src {
-            Some(proof.clone())
+    fn signed(&self) -> Option<Signed> {
+        if let SrcAuthority::Section { signed, .. } = &self.src {
+            Some(signed.clone())
         } else {
             None
         }
@@ -433,7 +433,7 @@ impl RoutingMsgUtils for RoutingMsg {
 pub enum VerifyStatus {
     // The message has been fully verified.
     Full,
-    // The message trust and integrity cannot be verified because it's proof is not trusted by us,
+    // The message trust and integrity cannot be verified because it's signed is not trusted by us,
     // even though it is valid. The message should be relayed to other nodes who might be able to
     // verify it.
     Unknown,
@@ -460,10 +460,10 @@ pub enum CreateError {
 
 /// Error returned from `RoutingMsg::extend_proof_chain`.
 #[derive(Debug, Error)]
-pub enum ExtendProofChainError {
-    #[error("message has no proof chain")]
-    NoProofChain,
-    #[error("failed to extend proof chain: {}", .0)]
+pub enum ExtendSignedChainError {
+    #[error("message has no signed chain")]
+    NoSignedChain,
+    #[error("failed to extend signed chain: {}", .0)]
     Extend(#[from] SecuredLinkedListError),
     #[error("failed to re-create message: {}", .0)]
     Create(#[from] CreateError),
