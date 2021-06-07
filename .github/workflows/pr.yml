@@ -160,6 +160,9 @@ jobs:
       - shell: bash
         run: ./scripts/tests
 
+      - name: Stress tests
+        run: cargo run --release --example stress -- -l "-" 10 5 0 20 15 0 30 20 0
+
       # Print CI machine disk space stats if the tests fail
       - name: Print CI Machine df Stats on Failure
         if: failure()
