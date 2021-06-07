@@ -15,16 +15,16 @@ pub mod test_utils;
 
 pub(crate) use self::{
     dkg::{DkgCommands, DkgVoter},
-    dkg_msgs_utils::{DkgFailureProofSetUtils, DkgFailureProofUtils, DkgKeyUtils},
+    dkg_msgs_utils::{DkgFailureSignedSetUtils, DkgFailureSignedUtils, DkgKeyUtils},
     proposal::{ProposalAggregator, ProposalError, ProposalUtils},
 };
-pub(crate) use bls_signature_aggregator::{Proof, ProofShare, SignatureAggregator};
 pub use proven::ProvenUtils;
 use serde::Serialize;
+pub(crate) use sn_messaging::node::{SignatureAggregator, Signed, SignedShare};
 
-// Verify the integrity of `message` against `proof`.
-pub(crate) fn verify_proof<T: Serialize>(proof: &Proof, message: &T) -> bool {
+// Verify the integrity of `message` against `signed`.
+pub(crate) fn verify_signed<T: Serialize>(signed: &Signed, message: &T) -> bool {
     bincode::serialize(message)
-        .map(|bytes| proof.verify(&bytes))
+        .map(|bytes| signed.verify(&bytes))
         .unwrap_or(false)
 }

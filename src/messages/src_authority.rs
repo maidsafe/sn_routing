@@ -21,7 +21,7 @@ use xor_name::XorName;
 /// Source authority of a message.
 /// Src of message and authority to send it. Authority is validated by the signature.
 /// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates
-/// agains the pub key and we know th epub key then we are good. If the proof is not recognised we
+/// agains the pub key and we know th epub key then we are good. If the signed is not recognised we
 /// ask for a longer chain that can be recognised). Therefore we don't need to sign this field.
 pub trait SrcAuthorityUtils {
     fn src_location(&self) -> SrcLocation;

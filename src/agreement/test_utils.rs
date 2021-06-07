@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, ProvenUtils};
+use super::{ProvenUtils, Signed};
 use crate::{Error, Result};
 use serde::Serialize;
 use sn_messaging::node::Proven;
 
-// Create proof for the given payload using the given secret key.
-pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Proof> {
+// Create signed for the given payload using the given secret key.
+pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<Signed> {
     let bytes = bincode::serialize(payload).map_err(|_| Error::InvalidPayload)?;
-    Ok(Proof {
+    Ok(Signed {
         public_key: secret_key.public_key(),
         signature: secret_key.sign(&bytes),
     })
@@ -22,6 +22,6 @@ pub fn prove<T: Serialize>(secret_key: &bls::SecretKey, payload: &T) -> Result<P
 
 // Wrap the given payload in `Proven`
 pub fn proven<T: Serialize>(secret_key: &bls::SecretKey, payload: T) -> Result<Proven<T>> {
-    let proof = prove(secret_key, &payload)?;
-    Ok(Proven::new(payload, proof))
+    let signed = prove(secret_key, &payload)?;
+    Ok(Proven::new(payload, signed))
 }

@@ -11,7 +11,7 @@ mod sending;
 
 use super::Core;
 use crate::{
-    agreement::{ProofShare, ProposalUtils},
+    agreement::{ProposalUtils, SignedShare},
     error::Result,
     messages::RoutingMsgUtils,
     routing::command::Command,
@@ -57,7 +57,7 @@ impl Core {
             recipients,
         );
 
-        let proof_share = proposal.prove(
+        let signed_share = proposal.prove(
             key_share.public_key_set.clone(),
             key_share.index,
             &key_share.secret_key_share,
@@ -66,13 +66,13 @@ impl Core {
         // Broadcast the proposal to the rest of the section elders.
         let variant = Variant::Propose {
             content: proposal,
-            proof_share,
+            signed_share,
         };
         let message = RoutingMsg::single_src(
             &self.node,
             DstLocation::DirectAndUnrouted,
             variant,
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
 
         Ok(self.send_or_handle(message, recipients))
@@ -84,9 +84,9 @@ impl Core {
     pub(crate) fn check_lagging(
         &self,
         peer: (XorName, SocketAddr),
-        proof_share: &ProofShare,
+        signed_share: &SignedShare,
     ) -> Result<Option<Command>> {
-        let public_key = proof_share.public_key_set.public_key();
+        let public_key = signed_share.public_key_set.public_key();
 
         if self.section.chain().has_key(&public_key)
             && public_key != *self.section.chain().last_key()
@@ -100,7 +100,7 @@ impl Core {
                     section: self.section.clone(),
                     network: self.network.clone(),
                 },
-                proof_share.public_key_set.public_key(),
+                signed_share.public_key_set.public_key(),
             )?))
         } else {
             Ok(None)

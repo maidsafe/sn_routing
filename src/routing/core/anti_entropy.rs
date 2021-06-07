@@ -10,7 +10,7 @@ use crate::{
     error::Result,
     messages::{RoutingMsgUtils, SrcAuthorityUtils},
     node::Node,
-    section::SectionUtils,
+    section::{SectionAuthorityProviderUtils, SectionUtils},
 };
 use sn_messaging::{
     node::{RoutingMsg, Section, Variant},
@@ -52,8 +52,12 @@ pub(crate) fn process(
             src_info: (section_auth.clone(), chain),
             msg: Some(Box::new(msg.clone())),
         };
-        let msg =
-            RoutingMsg::single_src(node, dst, variant, section.authority_provider().section_key)?;
+        let msg = RoutingMsg::single_src(
+            node,
+            dst,
+            variant,
+            section.authority_provider().section_key(),
+        )?;
         actions.send.push(msg);
         return Ok((actions, false));
     }
@@ -88,7 +92,7 @@ mod tests {
 
         let msg = env.create_message(
             &env.their_prefix,
-            env.section.authority_provider().section_key,
+            env.section.authority_provider().section_key(),
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -110,7 +114,7 @@ mod tests {
 
         let msg = env.create_message(
             env.section.prefix(),
-            env.section.authority_provider().section_key,
+            env.section.authority_provider().section_key(),
         )?;
         let dest_info = DestInfo {
             dest: env.node.name(),
@@ -130,7 +134,7 @@ mod tests {
 
         let msg = env.create_message(
             &env.their_prefix,
-            env.section.authority_provider().section_key,
+            env.section.authority_provider().section_key(),
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),
@@ -155,7 +159,7 @@ mod tests {
 
         let msg = env.create_message(
             env.section.prefix(),
-            env.section.authority_provider().section_key,
+            env.section.authority_provider().section_key(),
         )?;
         let dest_info = DestInfo {
             dest: XorName::random(),

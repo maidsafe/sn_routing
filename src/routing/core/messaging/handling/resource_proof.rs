@@ -21,7 +21,7 @@ use ed25519_dalek::Verifier;
 use sn_messaging::node::{Peer, ResourceProofResponse, Variant};
 use xor_name::XorName;
 
-// Resource proof
+// Resource signed
 impl Core {
     pub(crate) fn validate_resource_proof_response(
         &self,

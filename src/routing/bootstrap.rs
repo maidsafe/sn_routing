@@ -345,7 +345,7 @@ impl<'a> State<'a> {
 
     // Send `JoinRequest` and wait for the response. If the response is `Rejoin`, repeat with the
     // new info. If it is `Approval`, returns the initial `Section` value to use by this node,
-    // completing the bootstrap. If it is a `Challenge`, carry out resource proof calculation.
+    // completing the bootstrap. If it is a `Challenge`, carry out resource signed calculation.
     async fn join(
         mut self,
         mut section_key: bls::PublicKey,
@@ -806,7 +806,7 @@ mod tests {
                     member_info,
                     section_chain: proof_chain,
                 },
-                section_auth.value.section_key,
+                section_auth.value.section_key(),
             )?;
 
             recv_tx.try_send((

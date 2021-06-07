@@ -12,7 +12,7 @@ use crate::{
     section::{SectionAuthorityProviderUtils, SectionUtils},
     Result,
 };
-use bls_signature_aggregator::ProofShare;
+use sn_messaging::SignedShare;
 use sn_messaging::{
     node::{Proposal, RelocatePromise, RoutingMsg, Variant},
     DstLocation,
@@ -67,11 +67,11 @@ impl Core {
             }
             Variant::Propose {
                 content,
-                proof_share,
+                signed_share,
                 ..
             } => {
                 if let Some(status) =
-                    self.decide_propose_status(&msg.src.name(), content, proof_share)
+                    self.decide_propose_status(&msg.src.name(), content, signed_share)
                 {
                     return Ok(status);
                 }
@@ -102,7 +102,7 @@ impl Core {
         &self,
         sender: &XorName,
         proposal: &Proposal,
-        proof_share: &ProofShare,
+        signed_share: &SignedShare,
     ) -> Option<MessageStatus> {
         match proposal {
             Proposal::SectionInfo(section_auth)
@@ -123,7 +123,7 @@ impl Core {
                 if self
                     .section
                     .chain()
-                    .has_key(&proof_share.public_key_set.public_key())
+                    .has_key(&signed_share.public_key_set.public_key())
                 {
                     None
                 } else {

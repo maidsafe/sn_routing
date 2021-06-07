@@ -20,8 +20,8 @@ use crate::{
     },
     Error, Event, MIN_AGE,
 };
-use bls_signature_aggregator::Proof;
 use secured_linked_list::SecuredLinkedList;
+use sn_messaging::Signed;
 use sn_messaging::{
     node::{
         MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg,
@@ -38,7 +38,7 @@ impl Core {
     pub(crate) async fn handle_agreement(
         &mut self,
         proposal: Proposal,
-        proof: Proof,
+        signed: Signed,
     ) -> Result<Vec<Command>> {
         debug!("handle agreement on {:?}", proposal);
 
@@ -48,17 +48,17 @@ impl Core {
                 previous_name,
                 ..
             } => {
-                self.handle_online_agreement(member_info, previous_name, proof)
+                self.handle_online_agreement(member_info, previous_name, signed)
                     .await
             }
             Proposal::Offline(member_info) => {
-                self.handle_offline_agreement(member_info, proof).await
+                self.handle_offline_agreement(member_info, signed).await
             }
             Proposal::SectionInfo(section_auth) => {
-                self.handle_section_info_agreement(section_auth, proof)
+                self.handle_section_info_agreement(section_auth, signed)
             }
             Proposal::OurElders(section_auth) => {
-                self.handle_our_elders_agreement(section_auth, proof).await
+                self.handle_our_elders_agreement(section_auth, signed).await
             }
             Proposal::AccumulateAtSrc { message, .. } => {
                 let dest_name = if let Some(name) = message.dst.name() {
@@ -74,7 +74,7 @@ impl Core {
                 Ok(vec![self.handle_accumulate_at_src_agreement(
                     *message,
                     self.section.chain().clone(),
-                    proof,
+                    signed,
                     DestInfo {
                         dest: dest_name,
                         dest_section_pk,
@@ -92,7 +92,7 @@ impl Core {
         &mut self,
         new_info: MemberInfo,
         previous_name: Option<XorName>,
-        proof: Proof,
+        signed: Signed,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
@@ -123,7 +123,7 @@ impl Core {
 
         let new_info = Proven {
             value: new_info,
-            proof,
+            signed,
         };
 
         if !self.section.update_member(new_info.clone()) {
@@ -141,7 +141,7 @@ impl Core {
         .await;
 
         commands
-            .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.proof.signature)?);
+            .extend(self.relocate_peers(new_info.value.peer.name(), &new_info.signed.signature)?);
 
         let result = self.promote_and_demote_elders()?;
         if result.is_empty() {
@@ -159,17 +159,17 @@ impl Core {
     async fn handle_offline_agreement(
         &mut self,
         member_info: MemberInfo,
-        proof: Proof,
+        signed: Signed,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
         let peer = member_info.peer;
         let age = peer.age();
-        let signature = proof.signature.clone();
+        let signature = signed.signature.clone();
 
         if !self.section.update_member(Proven {
             value: member_info,
-            proof,
+            signed,
         }) {
             info!("ignore Offline: {:?}", peer);
             return Ok(commands);
@@ -198,13 +198,13 @@ impl Core {
     fn handle_section_info_agreement(
         &mut self,
         section_auth: SectionAuthorityProvider,
-        proof: Proof,
+        signed: Signed,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
         let equal_or_extension = section_auth.prefix() == *self.section.prefix()
             || section_auth.prefix().is_extension_of(self.section.prefix());
-        let section_auth = Proven::new(section_auth, proof.clone());
+        let section_auth = Proven::new(section_auth, signed.clone());
 
         if equal_or_extension {
             // Our section of sub-section
@@ -231,7 +231,7 @@ impl Core {
                         section: self.section.clone(),
                         network: self.network.clone(),
                     },
-                    self.section.authority_provider().section_key,
+                    self.section.authority_provider().section_key(),
                 )?;
                 let len = sync_recipients.len();
                 commands.push(Command::send_message_to_nodes(
@@ -240,7 +240,7 @@ impl Core {
                     sync_message,
                     DestInfo {
                         dest: XorName::random(),
-                        dest_section_pk: proof.public_key,
+                        dest_section_pk: signed.public_key,
                     },
                 ));
             }
@@ -265,24 +265,24 @@ impl Core {
     async fn handle_our_elders_agreement(
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
-        key_proof: Proof,
+        key_signed: Signed,
     ) -> Result<Vec<Command>> {
         let updates = self
             .split_barrier
-            .process(self.section.prefix(), section_auth, key_proof);
+            .process(self.section.prefix(), section_auth, key_signed);
         if updates.is_empty() {
             return Ok(vec![]);
         }
 
         let snapshot = self.state_snapshot();
 
-        for (section_auth, key_proof) in updates {
+        for (section_auth, key_signed) in updates {
             if section_auth.value.prefix.matches(&self.node.name()) {
-                let _ = self.section.update_elders(section_auth, key_proof);
+                let _ = self.section.update_elders(section_auth, key_signed);
             } else {
                 let _ = self.network.update_section(
                     section_auth,
-                    Some(key_proof),
+                    Some(key_signed),
                     self.section.chain(),
                 );
             }
@@ -295,10 +295,10 @@ impl Core {
         &self,
         message: PlainMessage,
         section_chain: SecuredLinkedList,
-        proof: Proof,
+        signed: Signed,
         dest_info: DestInfo,
     ) -> Result<Command> {
-        let message = RoutingMsg::section_src(message, proof, section_chain)?;
+        let message = RoutingMsg::section_src(message, signed, section_chain)?;
 
         Ok(Command::HandleMessage {
             message,

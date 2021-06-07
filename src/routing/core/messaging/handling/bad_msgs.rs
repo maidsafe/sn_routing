@@ -11,7 +11,7 @@ use crate::{
     messages::{RoutingMsgUtils, SrcAuthorityUtils},
     peer::PeerUtils,
     routing::command::Command,
-    section::SectionUtils,
+    section::{SectionAuthorityProviderUtils, SectionUtils},
     Error, Result,
 };
 use sn_messaging::{
@@ -22,7 +22,7 @@ use std::net::SocketAddr;
 
 // Bad msgs
 impl Core {
-    // Handle message whose trust we can't establish because its proof
+    // Handle message whose trust we can't establish because its signed
     // contains only keys we don't know.
     pub(crate) fn handle_untrusted_message(
         &self,
@@ -31,7 +31,7 @@ impl Core {
         received_dest_info: DestInfo,
     ) -> Result<Command> {
         let src_name = msg.src.name();
-        let bounce_dst_key = *self.section_key_by_name(&src_name);
+        let bounce_dst_key = self.section_key_by_name(&src_name);
         let dest_info = DestInfo {
             dest: src_name,
             dest_section_pk: bounce_dst_key,
@@ -43,7 +43,7 @@ impl Core {
                 msg: Box::new(msg),
                 dest_info: received_dest_info,
             },
-            self.section.authority_provider().section_key,
+            self.section.authority_provider().section_key(),
         )?;
 
         let cmd = if let Some(sender) = sender {
@@ -66,7 +66,7 @@ impl Core {
 
         let resend_msg = match bounced_msg.variant {
             Variant::Sync { section, network } => {
-                // `Sync` messages are handled specially, because they don't carry a proof chain.
+                // `Sync` messages are handled specially, because they don't carry a signed chain.
                 // Instead we use the section chain that's part of the included `Section` struct.
                 // Problem is we can't extend that chain as it would invalidate the signature. We
                 // must construct a new message instead.
@@ -81,11 +81,12 @@ impl Core {
                     &self.node,
                     DstLocation::DirectAndUnrouted,
                     Variant::Sync { section, network },
-                    self.section.authority_provider().section_key,
+                    self.section.authority_provider().section_key(),
                 )?
             }
             _ => {
-                bounced_msg.updated_with_latest_key(self.section.authority_provider().section_key);
+                bounced_msg
+                    .updated_with_latest_key(self.section.authority_provider().section_key());
                 bounced_msg
             }
         };
@@ -94,7 +95,7 @@ impl Core {
             dest: *sender.name(),
             dest_section_pk: dst_key,
         };
-        trace!("resending with extended proof");
+        trace!("resending with extended signed");
         Ok(Command::send_message_to_node(
             (*sender.name(), *sender.addr()),
             resend_msg,

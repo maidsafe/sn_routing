@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Proof, ProofShare, SignatureAggregator};
+use super::{SignatureAggregator, Signed, SignedShare};
 use crate::{error::Result, messages::PlainMessageUtils};
 use serde::{Serialize, Serializer};
 use sn_messaging::node::Proposal;
@@ -18,20 +18,20 @@ pub trait ProposalUtils {
         public_key_set: bls::PublicKeySet,
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
-    ) -> Result<ProofShare>;
+    ) -> Result<SignedShare>;
 
     fn as_signable(&self) -> SignableView;
 }
 
 impl ProposalUtils for Proposal {
-    /// Create ProofShare for this proposal.
+    /// Create SignedShare for this proposal.
     fn prove(
         &self,
         public_key_set: bls::PublicKeySet,
         index: usize,
         secret_key_share: &bls::SecretKeyShare,
-    ) -> Result<ProofShare> {
-        Ok(ProofShare::new(
+    ) -> Result<SignedShare> {
+        Ok(SignedShare::new(
             public_key_set,
             index,
             secret_key_share,
@@ -53,7 +53,7 @@ impl<'a> Serialize for SignableView<'a> {
             Proposal::Online { member_info, .. } => member_info.serialize(serializer),
             Proposal::Offline(member_info) => member_info.serialize(serializer),
             Proposal::SectionInfo(info) => info.serialize(serializer),
-            Proposal::OurElders(info) => info.proof.public_key.serialize(serializer),
+            Proposal::OurElders(info) => info.signed.public_key.serialize(serializer),
             // Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
             // Proposal::TheirKnowledge { prefix, key } => (prefix, key).serialize(serializer),
             Proposal::AccumulateAtSrc { message, .. } => {
@@ -72,19 +72,19 @@ impl ProposalAggregator {
     pub fn add(
         &mut self,
         proposal: Proposal,
-        proof_share: ProofShare,
-    ) -> Result<(Proposal, Proof), ProposalError> {
+        signed_share: SignedShare,
+    ) -> Result<(Proposal, Signed), ProposalError> {
         let bytes =
             bincode::serialize(&SignableView(&proposal)).map_err(|_| ProposalError::Invalid)?;
-        let proof = self.0.add(&bytes, proof_share)?;
-        Ok((proposal, proof))
+        let signed = self.0.add(&bytes, signed_share)?;
+        Ok((proposal, signed))
     }
 }
 
 #[derive(Debug, Error)]
 pub enum ProposalError {
     #[error("failed to aggregate signature shares: {0}")]
-    Aggregation(#[from] bls_signature_aggregator::Error),
+    Aggregation(#[from] sn_messaging::node::Error),
     #[error("invalid proposal")]
     Invalid,
 }

@@ -12,7 +12,7 @@ mod stats;
 
 use self::stats::NetworkStats;
 use crate::{
-    agreement::{verify_proof, Proof, ProvenUtils},
+    agreement::{verify_signed, ProvenUtils, Signed},
     peer::PeerUtils,
     section::SectionAuthorityProviderUtils,
     Error, Result,
@@ -51,27 +51,27 @@ pub trait NetworkUtils {
     ///
     /// If this is for our sibling section, then `section_auth` is signed by them and so the signing
     /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
-    /// additional `key_proof` which signs it using a key that is present in `section_chain`.
+    /// additional `key_signed` which signs it using a key that is present in `section_chain`.
     ///
     /// If this is for a non-sibling section, then currently we require the info to be signed by our
-    /// section (so we need to accumulate the signature for it first) and so `key_proof` is not
+    /// section (so we need to accumulate the signature for it first) and so `key_signed` is not
     /// needed in that case.
     fn update_section(
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
-        key_proof: Option<Proof>,
+        key_signed: Option<Signed>,
         section_chain: &SecuredLinkedList,
     ) -> bool;
 
     /// Returns the known section keys.
-    fn keys(&self) -> Box<dyn Iterator<Item = (&Prefix, &bls::PublicKey)> + '_>;
+    fn keys(&self) -> Box<dyn Iterator<Item = (Prefix, bls::PublicKey)> + '_>;
 
     /// Returns the latest known key for the prefix that matches `name`.
-    fn key_by_name(&self, name: &XorName) -> Result<&bls::PublicKey>;
+    fn key_by_name(&self, name: &XorName) -> Result<bls::PublicKey>;
 
     /// Returns the latest known key for a section with `prefix`.
     /// If this returns `None` that means the latest known key is the genesis key.
-    fn key_by_prefix(&self, prefix: &Prefix) -> Option<&bls::PublicKey>;
+    fn key_by_prefix(&self, prefix: &Prefix) -> Option<bls::PublicKey>;
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
     /// excluding self section.
@@ -145,20 +145,20 @@ impl NetworkUtils for Network {
     ///
     /// If this is for our sibling section, then `section_auth` is signed by them and so the signing
     /// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an
-    /// additional `key_proof` which signs it using a key that is present in `section_chain`.
+    /// additional `key_signed` which signs it using a key that is present in `section_chain`.
     ///
     /// If this is for a non-sibling section, then currently we require the info to be signed by our
-    /// section (so we need to accumulate the signature for it first) and so `key_proof` is not
+    /// section (so we need to accumulate the signature for it first) and so `key_signed` is not
     /// needed in that case.
     fn update_section(
         &mut self,
         section_auth: Proven<SectionAuthorityProvider>,
-        key_proof: Option<Proof>,
+        key_signed: Option<Signed>,
         section_chain: &SecuredLinkedList,
     ) -> bool {
         let info = OtherSection {
             section_auth: section_auth.clone(),
-            key_proof,
+            key_signed,
         };
 
         if !info.verify(section_chain) {
@@ -175,29 +175,29 @@ impl NetworkUtils for Network {
     }
 
     /// Returns the known section keys.
-    fn keys(&self) -> Box<dyn Iterator<Item = (&Prefix, &bls::PublicKey)> + '_> {
+    fn keys(&self) -> Box<dyn Iterator<Item = (Prefix, bls::PublicKey)> + '_> {
         Box::new(self.sections.iter().map(|entry| {
             (
-                &entry.section_auth.value.prefix,
-                &entry.section_auth.value.section_key,
+                entry.section_auth.value.prefix,
+                entry.section_auth.value.section_key(),
             )
         }))
     }
 
     /// Returns the latest known key for the prefix that matches `name`.
-    fn key_by_name(&self, name: &XorName) -> Result<&bls::PublicKey> {
+    fn key_by_name(&self, name: &XorName) -> Result<bls::PublicKey> {
         self.sections
             .get_matching(name)
             .ok_or(Error::NoMatchingSection)
-            .map(|entry| &entry.section_auth.value.section_key)
+            .map(|entry| entry.section_auth.value.section_key())
     }
 
     /// Returns the latest known key for a section with `prefix`.
     /// If this returns `None` that means the latest known key is the genesis key.
-    fn key_by_prefix(&self, prefix: &Prefix) -> Option<&bls::PublicKey> {
+    fn key_by_prefix(&self, prefix: &Prefix) -> Option<bls::PublicKey> {
         self.sections
             .get_equal_or_ancestor(prefix)
-            .map(|entry| &entry.section_auth.value.section_key)
+            .map(|entry| entry.section_auth.value.section_key())
     }
 
     /// Returns the section_auth and the latest known key for the prefix that matches `name`,
@@ -252,9 +252,9 @@ pub trait OtherSectionUtils {
 
 impl OtherSectionUtils for OtherSection {
     fn verify(&self, section_chain: &SecuredLinkedList) -> bool {
-        if let Some(key_proof) = &self.key_proof {
-            section_chain.has_key(&key_proof.public_key)
-                && verify_proof(key_proof, &self.section_auth.proof.public_key)
+        if let Some(key_signed) = &self.key_signed {
+            section_chain.has_key(&key_signed.public_key)
+                && verify_signed(key_signed, &self.section_auth.signed.public_key)
                 && self.section_auth.self_verify()
         } else {
             self.section_auth.verify(section_chain)

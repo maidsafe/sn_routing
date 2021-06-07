@@ -7,12 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{routing::Peer, section::SectionKeyShare, XorName};
-use bls_signature_aggregator::Proof;
 use bytes::Bytes;
 use hex_fmt::HexFmt;
+use sn_messaging::Signed;
 use sn_messaging::{
     node::{
-        DkgFailureProofSet, Proposal, RoutingMsg, SectionAuthorityProvider, SignedRelocateDetails,
+        DkgFailureSignedSet, Proposal, RoutingMsg, SectionAuthorityProvider, SignedRelocateDetails,
     },
     section_info::Message as SectionInfoMsg,
     DestInfo, Itinerary, MessageType,
@@ -49,7 +49,7 @@ pub(crate) enum Command {
     /// Handle peer that's been detected as lost.
     HandlePeerLost(SocketAddr),
     /// Handle agreement on a proposal.
-    HandleAgreement { proposal: Proposal, proof: Proof },
+    HandleAgreement { proposal: Proposal, signed: Signed },
     /// Handle the outcome of a DKG session where we are one of the participants (that is, one of
     /// the proposed new elders).
     HandleDkgOutcome {
@@ -57,7 +57,7 @@ pub(crate) enum Command {
         outcome: SectionKeyShare,
     },
     /// Handle a DKG failure that was observed by a majority of the DKG participants.
-    HandleDkgFailure(DkgFailureProofSet),
+    HandleDkgFailure(DkgFailureSignedSet),
     /// Send a message to `delivery_group_size` peers out of the given `recipients`.
     SendMessage {
         recipients: Vec<(XorName, SocketAddr)>,
@@ -149,10 +149,10 @@ impl Debug for Command {
                 f.debug_tuple("HandleConnectionLost").field(addr).finish()
             }
             Self::HandlePeerLost(addr) => f.debug_tuple("HandlePeerLost").field(addr).finish(),
-            Self::HandleAgreement { proposal, proof } => f
+            Self::HandleAgreement { proposal, signed } => f
                 .debug_struct("HandleAgreement")
                 .field("proposal", proposal)
-                .field("proof.public_key", &proof.public_key)
+                .field("signed.public_key", &signed.public_key)
                 .finish(),
             Self::HandleDkgOutcome {
                 section_auth,
@@ -162,8 +162,8 @@ impl Debug for Command {
                 .field("section_auth", section_auth)
                 .field("outcome", &outcome.public_key_set.public_key())
                 .finish(),
-            Self::HandleDkgFailure(proofs) => {
-                f.debug_tuple("HandleDkgFailure").field(proofs).finish()
+            Self::HandleDkgFailure(signeds) => {
+                f.debug_tuple("HandleDkgFailure").field(signeds).finish()
             }
             Self::SendMessage {
                 recipients,
