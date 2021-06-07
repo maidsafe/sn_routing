@@ -551,7 +551,7 @@ mod tests {
             if let Some((src, msg)) = time::timeout(TIMEOUT, incoming_msgs.next()).await? {
                 assert_eq!(WireMsg::deserialize(msg)?, msg0);
                 msg0_received = true;
-                recv_endpoint.disconnect_from(&src)?;
+                recv_endpoint.disconnect_from(&src).await?;
             }
             assert!(msg0_received);
         }
