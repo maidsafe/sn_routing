@@ -679,6 +679,24 @@
 <span id="678">678</span>
 <span id="679">679</span>
 <span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -695,6 +713,7 @@
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">Endpoint</span>, <span class="ident">QuicP2p</span>};
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">MessageType</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">net</span>::<span class="ident">IpAddr</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">net</span>::<span class="ident">SocketAddr</span>,
@@ -796,6 +815,10 @@
         <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">socket_addr</span>()
     }
 
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">local_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SocketAddr</span> {
+        <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">local_addr</span>()
+    }
+
     <span class="doccomment">/// Sends a message on an existing connection. If no such connection exists, returns an error.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_on_existing_connection</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -818,30 +841,7 @@
 
     <span class="doccomment">/// Tests whether the peer is reachable.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">is_reachable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">qp2p_config</span> <span class="op">=</span> <span class="ident">qp2p</span>::<span class="ident">Config</span> {
-            <span class="ident">local_ip</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">local_addr</span>().<span class="ident">ip</span>()),
-            <span class="ident">local_port</span>: <span class="prelude-val">Some</span>(<span class="number">0</span>),
-            <span class="ident">forward_port</span>: <span class="bool-val">false</span>,
-            ..<span class="ident">Default</span>::<span class="ident">default</span>()
-        };
-
-        <span class="kw">let</span> <span class="ident">qp2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">qp2p_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
-        <span class="kw">let</span> (<span class="ident">connectivity_endpoint</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">qp2p</span>
-            .<span class="ident">new_endpoint</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
-
-        <span class="ident">connectivity_endpoint</span>
-            .<span class="ident">is_reachable</span>(<span class="ident">peer</span>)
-            .<span class="kw">await</span>
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
-                <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is NOT externally reachable: {}&quot;</span>, <span class="ident">peer</span>, <span class="ident">err</span>);
-                <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span> { <span class="ident">err</span> }
-            })
-            .<span class="ident">map</span>(<span class="op">|</span>()<span class="op">|</span> {
-                <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is externally reachable.&quot;</span>, <span class="ident">peer</span>);
-            })
+        <span class="ident">is_reachable</span>(<span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">local_addr</span>().<span class="ident">ip</span>(), <span class="ident">peer</span>).<span class="kw">await</span>
     }
 
     <span class="doccomment">/// Sends a message to multiple recipients. Attempts to send to `delivery_group_size`</span>
@@ -976,6 +976,33 @@
         <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">connect_to</span>(<span class="ident">recipient</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">endpoint</span>.<span class="ident">send_message</span>(<span class="ident">msg</span>, <span class="ident">recipient</span>).<span class="kw">await</span>
     }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">is_reachable</span>(<span class="ident">our_local_ip</span>: <span class="ident">IpAddr</span>, <span class="ident">peer</span>: <span class="kw-2">&amp;</span><span class="ident">SocketAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">let</span> <span class="ident">qp2p_config</span> <span class="op">=</span> <span class="ident">qp2p</span>::<span class="ident">Config</span> {
+        <span class="ident">local_ip</span>: <span class="prelude-val">Some</span>(<span class="ident">our_local_ip</span>),
+        <span class="ident">local_port</span>: <span class="prelude-val">Some</span>(<span class="number">0</span>),
+        <span class="ident">forward_port</span>: <span class="bool-val">false</span>,
+        ..<span class="ident">Default</span>::<span class="ident">default</span>()
+    };
+
+    <span class="kw">let</span> <span class="ident">qp2p</span> <span class="op">=</span> <span class="ident">QuicP2p</span>::<span class="ident">with_config</span>(<span class="prelude-val">Some</span>(<span class="ident">qp2p_config</span>), <span class="kw-2">&amp;</span>[], <span class="bool-val">false</span>)
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidConfig</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
+    <span class="kw">let</span> (<span class="ident">connectivity_endpoint</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">qp2p</span>
+        .<span class="ident">new_endpoint</span>()
+        .<span class="kw">await</span>
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">CannotConnectEndpoint</span> { <span class="ident">err</span> })<span class="question-mark">?</span>;
+
+    <span class="ident">connectivity_endpoint</span>
+        .<span class="ident">is_reachable</span>(<span class="ident">peer</span>)
+        .<span class="kw">await</span>
+        .<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
+            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is NOT externally reachable: {}&quot;</span>, <span class="ident">peer</span>, <span class="ident">err</span>);
+            <span class="ident">Error</span>::<span class="ident">AddressNotReachable</span> { <span class="ident">err</span> }
+        })
+        .<span class="ident">map</span>(<span class="op">|</span>()<span class="op">|</span> {
+            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Peer {} is externally reachable.&quot;</span>, <span class="ident">peer</span>);
+        })
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">Comm</span> {
@@ -1216,7 +1243,10 @@
         <span class="comment">// Send the first message.</span>
         <span class="kw">let</span> <span class="ident">key0</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>();
         <span class="kw">let</span> <span class="ident">msg0</span> <span class="op">=</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">key0</span>)),
+            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span> {
+                <span class="ident">public_key</span>: <span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">key0</span>),
+                <span class="ident">is_node</span>: <span class="bool-val">true</span>,
+            },
             <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                 <span class="ident">dest</span>: <span class="ident">name</span>,
                 <span class="ident">dest_section_pk</span>: <span class="ident">key0</span>,
@@ -1241,7 +1271,10 @@
         <span class="comment">// Send the second message.</span>
         <span class="kw">let</span> <span class="ident">key1</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>();
         <span class="kw">let</span> <span class="ident">msg1</span> <span class="op">=</span> <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">key1</span>)),
+            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span> {
+                <span class="ident">public_key</span>: <span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">key1</span>),
+                <span class="ident">is_node</span>: <span class="bool-val">true</span>,
+            },
             <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                 <span class="ident">dest</span>: <span class="ident">name</span>,
                 <span class="ident">dest_section_pk</span>: <span class="ident">key1</span>,
@@ -1304,7 +1337,10 @@
     <span class="kw">fn</span> <span class="ident">new_section_info_message</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MessageType</span> {
         <span class="kw">let</span> <span class="ident">random_bls_pk</span> <span class="op">=</span> <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>();
         <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">random_bls_pk</span>)),
+            <span class="ident">msg</span>: <span class="ident">Message</span>::<span class="ident">GetSectionQuery</span> {
+                <span class="ident">public_key</span>: <span class="ident">PublicKey</span>::<span class="ident">Bls</span>(<span class="ident">random_bls_pk</span>),
+                <span class="ident">is_node</span>: <span class="bool-val">true</span>,
+            },
             <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
                 <span class="ident">dest</span>: <span class="ident">XorName</span>::<span class="ident">random</span>(),
                 <span class="ident">dest_section_pk</span>: <span class="ident">bls</span>::<span class="ident">SecretKey</span>::<span class="ident">random</span>().<span class="ident">public_key</span>(),

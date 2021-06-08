@@ -1305,6 +1305,13 @@
 <span id="1304">1304</span>
 <span id="1305">1305</span>
 <span id="1306">1306</span>
+<span id="1307">1307</span>
+<span id="1308">1308</span>
+<span id="1309">1309</span>
+<span id="1310">1310</span>
+<span id="1311">1311</span>
+<span id="1312">1312</span>
+<span id="1313">1313</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1521,6 +1528,9 @@
                 <span class="ident">GetSectionResponse</span>::<span class="ident">SectionInfoUpdate</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Infrastructure error: {:?}&quot;</span>, <span class="ident">error</span>);
                 }
+                <span class="ident">GetSectionResponse</span>::<span class="ident">NodeNotReachable</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">NodeNotReachable</span>);
+                }
             }
         }
     }
@@ -1544,7 +1554,10 @@
             <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">public</span>), <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()),
         };
 
-        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">public</span>));
+        <span class="kw">let</span> <span class="ident">message</span> <span class="op">=</span> <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> {
+            <span class="ident">public_key</span>: <span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>.<span class="ident">public</span>),
+            <span class="ident">is_node</span>: <span class="bool-val">true</span>,
+        };
 
         <span class="comment">// Group up with our XorName as we do not know their name yet.</span>
         <span class="kw">let</span> <span class="ident">recipients</span> <span class="op">=</span> <span class="ident">recipients</span>
@@ -1599,6 +1612,7 @@
                         <span class="kw">continue</span>;
                     }
                     <span class="ident">GetSectionResponse</span>::<span class="ident">Redirect</span>(<span class="kw">_</span>)
+                    <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">NodeNotReachable</span>
                     <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">Success</span> { .. }
                     <span class="op">|</span> <span class="ident">GetSectionResponse</span>::<span class="ident">SectionInfoUpdate</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">response</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>))
@@ -2044,8 +2058,8 @@
             <span class="kw">let</span> <span class="ident">bootstrap_addrs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SocketAddr</span><span class="op">&gt;</span> <span class="op">=</span>
                 <span class="ident">recipients</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">_name</span>, <span class="ident">addr</span>)<span class="op">|</span> <span class="kw-2">*</span><span class="ident">addr</span>).<span class="ident">collect</span>();
             <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">bootstrap_addrs</span>, [<span class="ident">bootstrap_addr</span>]);
-            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>{ <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="ident">name</span>), .. } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">name</span>), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>());
+            <span class="macro">assert_matches</span><span class="macro">!</span>(<span class="ident">message</span>, <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span>{ <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { <span class="ident">public_key</span>, <span class="ident">is_node</span>: <span class="bool-val">true</span> }, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">public_key</span>), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>());
             });
 
             <span class="kw">let</span> <span class="ident">infrastructure_info</span> <span class="op">=</span> <span class="ident">SectionInfo</span> {
@@ -2170,7 +2184,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );
@@ -2214,7 +2228,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );
@@ -2259,7 +2273,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );
@@ -2303,7 +2317,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );
@@ -2357,7 +2371,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );
@@ -2441,7 +2455,7 @@
             <span class="macro">assert_matches</span><span class="macro">!</span>(
                 <span class="ident">message</span>,
                 <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span>(<span class="kw">_</span>),
+                    <span class="ident">msg</span>: <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionQuery</span> { .. },
                     ..
                 }
             );

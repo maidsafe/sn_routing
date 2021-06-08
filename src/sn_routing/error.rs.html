@@ -80,6 +80,8 @@
 <span id="79">79</span>
 <span id="80">80</span>
 <span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2018 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -161,6 +163,8 @@
     <span class="ident">NoMatchingSection</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;No matching Elder&quot;</span>)]</span>
     <span class="ident">NoMatchingElder</span>,
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot start node since it is not externally reachable&quot;</span>)]</span>
+    <span class="ident">NodeNotReachable</span>,
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="sn_routing" data-search-js="../../search-index.js"></div>
