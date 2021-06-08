@@ -144,7 +144,7 @@ mod tests {
         let (mut actions, _) = process(&env.node, &env.section, &msg, dest_info)?;
 
         assert_matches!(&actions.send.pop(), Some(message) => {
-            assert_matches!(message.variant(), Variant::SectionKnowledge { src_info, .. } => {
+            assert_matches!(message.variant, Variant::SectionKnowledge { ref src_info, .. } => {
                 assert_eq!(src_info.0.value, *env.section.authority_provider());
                 assert_eq!(src_info.1, *env.section.chain());
             });

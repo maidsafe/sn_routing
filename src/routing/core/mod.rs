@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod anti_entropy;
+mod api;
 mod connectivity;
 mod delivery_group;
 mod messaging;
-mod public_api;
 
 use super::{command::Command, enduser_registry::EndUserRegistry, split_barrier::SplitBarrier};
 use crate::{

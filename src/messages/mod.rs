@@ -19,11 +19,11 @@ use crate::{
 };
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::Serialize;
+use sn_messaging::node::{Signed, SignedShare};
 use sn_messaging::{
-    node::{PlainMessage, RoutingMsg, SrcAuthority, Variant},
+    node::{JoinResponse, PlainMessage, RoutingMsg, SrcAuthority, Variant},
     Aggregation, DstLocation, MessageId,
 };
-use sn_messaging::{Signed, SignedShare};
 use std::fmt::Debug;
 use thiserror::Error;
 use xor_name::XorName;
@@ -81,17 +81,6 @@ pub trait RoutingMsgUtils {
     /// Getter
     fn signed(&self) -> Option<Signed>;
 
-    /// Getter
-    fn dst(&self) -> &DstLocation;
-
-    fn id(&self) -> &MessageId;
-
-    /// Getter
-    fn variant(&self) -> &Variant;
-
-    /// Getter
-    fn src(&self) -> &SrcAuthority;
-
     fn verify_variant<'a, I: IntoIterator<Item = &'a bls::PublicKey>>(
         &self,
         trusted_keys: I,
@@ -127,7 +116,7 @@ impl RoutingMsgUtils for RoutingMsg {
                     return Err(Error::CreateError(CreateError::FailedSignature));
                 }
 
-                if signed_share.public_key_set.public_key() != msg.section_pk() {
+                if signed_share.public_key_set.public_key() != msg.section_pk {
                     error!(
                         "Signed share public key doesn't match signed chain last key: {:?}",
                         msg
@@ -368,49 +357,34 @@ impl RoutingMsgUtils for RoutingMsg {
         }
     }
 
-    /// Getter
-    fn dst(&self) -> &DstLocation {
-        &self.dst
-    }
-
-    /// Get the MessageId
-    fn id(&self) -> &MessageId {
-        &self.id
-    }
-
-    /// Getter
-    fn variant(&self) -> &Variant {
-        &self.variant
-    }
-
-    /// Getter
-    fn src(&self) -> &SrcAuthority {
-        &self.src
-    }
-
     fn verify_variant<'a, I>(&self, trusted_keys: I) -> Result<VerifyStatus>
     where
         I: IntoIterator<Item = &'a bls::PublicKey>,
     {
         let proof_chain = match &self.variant {
-            Variant::NodeApproval {
-                section_auth,
-                member_info,
-                section_chain,
-                ..
-            } => {
-                if !section_auth.verify(section_chain) {
-                    return Err(Error::InvalidMessage);
-                }
+            Variant::JoinResponse(resp) => {
+                if let JoinResponse::Approval {
+                    ref section_auth,
+                    ref member_info,
+                    ref section_chain,
+                    ..
+                } = **resp
+                {
+                    if !section_auth.verify(section_chain) {
+                        return Err(Error::InvalidMessage);
+                    }
 
-                if !member_info.verify(section_chain) {
-                    return Err(Error::InvalidMessage);
-                }
+                    if !member_info.verify(section_chain) {
+                        return Err(Error::InvalidMessage);
+                    }
 
-                section_chain
+                    section_chain
+                } else {
+                    return Ok(VerifyStatus::Full);
+                }
             }
             Variant::SectionKnowledge {
-                src_info: (_, chain),
+                src_info: (_, ref chain),
                 ..
             } => chain,
             Variant::Sync { section, .. } => section.chain(),

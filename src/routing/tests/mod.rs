@@ -33,13 +33,12 @@ use bytes::Bytes;
 use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
 use sn_data_types::{Keypair, PublicKey};
-use sn_messaging::Signed;
 use sn_messaging::{
     location::{Aggregation, Itinerary},
     node::{
-        JoinRequest, MemberInfo, Network, Peer, PeerState, PlainMessage, Proposal, Proven,
-        RelocateDetails, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
-        SectionAuthorityProvider, SignedRelocateDetails, Variant,
+        JoinRequest, JoinResponse, MemberInfo, Network, Peer, PeerState, PlainMessage, Proposal,
+        Proven, RelocateDetails, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
+        SectionAuthorityProvider, Signed, SignedRelocateDetails, Variant,
     },
     section_info::{GetSectionResponse, Message as SectionInfoMsg},
     DestInfo, DstLocation, MessageType, SrcLocation,
@@ -71,10 +70,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
     );
     let new_node_name = new_node.name();
 
-    let message = SectionInfoMsg::GetSectionQuery {
-        public_key: PublicKey::from(new_node.keypair.public),
-        is_node: true,
-    };
+    let message = SectionInfoMsg::GetSectionQuery(PublicKey::from(new_node.keypair.public));
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
@@ -142,10 +138,7 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     let new_node_comm = create_comm().await?;
     let new_node_addr = new_node_comm.our_connection_info();
 
-    let message = SectionInfoMsg::GetSectionQuery {
-        public_key: random_pk,
-        is_node: true,
-    };
+    let message = SectionInfoMsg::GetSectionQuery(random_pk);
 
     let mut commands = dispatcher
         .handle_command(Command::HandleSectionInfoMsg {
@@ -217,14 +210,20 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
         .await?
         .into_iter();
 
-    let response_message = assert_matches!(
+    let response_message_variant = assert_matches!(
         commands.next(),
-        Some(Command::SendMessage { message: MessageType::Routing { msg, .. }, .. }) => msg
+        Some(Command::SendMessage {
+            message: MessageType::Routing {
+                msg: RoutingMsg { variant: Variant::JoinResponse(variant), .. },
+                ..
+            },
+            ..
+        }) => variant
     );
 
     assert_matches!(
-        response_message.variant(),
-        Variant::ResourceChallenge { .. }
+        *response_message_variant,
+        JoinResponse::ResourceChallenge { .. }
     );
 
     Ok(())
@@ -282,17 +281,17 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
 
     let mut test_connectivity = false;
     for command in commands {
-        if let Command::TestConnectivity {
+        if let Command::ProposeOnline {
             peer,
             previous_name,
-            their_knowledge,
+            destination_key,
         } = command
         {
             assert_eq!(*peer.name(), new_node.name());
             assert_eq!(*peer.addr(), new_node.addr);
             assert_eq!(peer.age(), FIRST_SECTION_MIN_AGE);
             assert_eq!(previous_name, None);
-            assert_eq!(their_knowledge, None);
+            assert_eq!(destination_key, None);
 
             test_connectivity = true;
         }
@@ -387,15 +386,15 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let mut test_connectivity = false;
 
     for command in commands {
-        if let Command::TestConnectivity {
+        if let Command::ProposeOnline {
             peer,
             previous_name,
-            their_knowledge,
+            destination_key,
         } = command
         {
             assert_eq!(peer, relocated_node.peer());
             assert_eq!(previous_name, Some(relocated_node_old_name));
-            assert_eq!(their_knowledge, Some(section_key));
+            assert_eq!(destination_key, Some(section_key));
 
             test_connectivity = true;
         }
@@ -425,7 +424,7 @@ async fn aggregate_proposals() -> Result<()> {
     let proposal = Proposal::Online {
         member_info,
         previous_name: None,
-        their_knowledge: None,
+        destination_key: None,
     };
 
     for index in 0..THRESHOLD {
@@ -566,7 +565,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
     let proposal = Proposal::Online {
         member_info,
         previous_name: Some(XorName::random()),
-        their_knowledge: Some(sk_set.secret_key().public_key()),
+        destination_key: Some(sk_set.secret_key().public_key()),
     };
     let signed = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
@@ -588,7 +587,7 @@ async fn handle_agreement_on_online_of_elder_candidate() -> Result<()> {
             _ => continue,
         };
 
-        let actual_elder_candidates = match message.variant() {
+        let actual_elder_candidates = match message.variant {
             Variant::DkgStart {
                 elder_candidates, ..
             } => elder_candidates,
@@ -622,7 +621,7 @@ async fn handle_online_command(
     let proposal = Proposal::Online {
         member_info,
         previous_name: None,
-        their_knowledge: None,
+        destination_key: None,
     };
     let signed = prove(sk_set.secret_key(), &proposal.as_signable())?;
 
@@ -645,14 +644,17 @@ async fn handle_online_command(
             _ => continue,
         };
 
-        match message.variant() {
-            Variant::NodeApproval {
-                section_auth: proven_section_auth,
-                ..
-            } => {
-                assert_eq!(proven_section_auth.value, *section_auth);
-                assert_eq!(recipients, [(*peer.name(), *peer.addr())]);
-                status.node_approval_sent = true;
+        match message.variant {
+            Variant::JoinResponse(response) => {
+                if let JoinResponse::Approval {
+                    section_auth: proven_section_auth,
+                    ..
+                } = *response
+                {
+                    assert_eq!(proven_section_auth.value, *section_auth);
+                    assert_eq!(recipients, [(*peer.name(), *peer.addr())]);
+                    status.node_approval_sent = true;
+                }
             }
             Variant::Relocate(details) => {
                 if details.pub_id != *peer.name() {
@@ -828,7 +830,7 @@ async fn handle_agreement_on_offline_of_elder() -> Result<()> {
             _ => continue,
         };
 
-        let actual_elder_candidates = match message.variant() {
+        let actual_elder_candidates = match message.variant {
             Variant::DkgStart {
                 elder_candidates, ..
             } => elder_candidates,
@@ -967,7 +969,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
             continue;
         };
 
-        if let Variant::BouncedUntrustedMessage { msg, dest_info } = message.variant() {
+        if let Variant::BouncedUntrustedMessage { msg, dest_info } = message.variant {
             assert_eq!(
                 recipients
                     .into_iter()
@@ -975,7 +977,7 @@ async fn handle_untrusted_message(source: UntrustedMessageSource) -> Result<()> 
                     .collect::<Vec<_>>(),
                 expected_recipients
             );
-            assert_eq!(**msg, original_message);
+            assert_eq!(*msg, original_message);
             assert_eq!(dest_info.dest_section_pk, pk0);
 
             bounce_sent = true;
@@ -1079,11 +1081,11 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
             _ => continue,
         };
 
-        match message.variant() {
+        match message.variant {
             Variant::UserMessage(content) => {
                 assert_eq!(recipients, [(other_node.name(), other_node.addr)]);
                 assert_eq!(*content, original_message_content);
-                assert_eq!(message.section_pk(), pk0);
+                assert_eq!(message.section_pk, pk0);
 
                 message_sent = true;
             }
@@ -1245,9 +1247,9 @@ async fn handle_untrusted_sync() -> Result<()> {
             _ => continue,
         };
 
-        match message.variant() {
+        match message.variant {
             Variant::BouncedUntrustedMessage { msg, .. } => {
-                assert_eq!(**msg, orig_message);
+                assert_eq!(*msg, orig_message);
                 assert_eq!(recipients, [(sender.name(), sender.addr)]);
                 bounce_sent = true;
             }
@@ -1343,7 +1345,7 @@ async fn handle_bounced_untrusted_sync() -> Result<()> {
             _ => continue,
         };
 
-        match message.variant() {
+        match message.variant {
             Variant::Sync { section, .. } => {
                 assert_eq!(recipients, [(sender.name(), sender.addr)]);
                 assert!(section.chain().has_key(&pk0));
@@ -1424,7 +1426,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
         }
         match relocated_peer_role {
             RelocatedPeerRole::NonElder => {
-                let details = match message.variant() {
+                let details = match message.variant {
                     Variant::Relocate(details) => details,
                     _ => continue,
                 };
@@ -1433,7 +1435,7 @@ async fn relocation(relocated_peer_role: RelocatedPeerRole) -> Result<()> {
                 assert_eq!(details.age, relocated_peer.age() + 1);
             }
             RelocatedPeerRole::Elder => {
-                let promise = match message.variant() {
+                let promise = match message.variant {
                     Variant::RelocatePromise(promise) => promise,
                     _ => continue,
                 };
@@ -1493,12 +1495,12 @@ async fn message_to_self(dst: MessageDst) -> Result<()> {
 
     assert_matches!(&commands[..], [Command::HandleMessage { sender, message, dest_info }] => {
         assert_eq!(sender.as_ref(), Some(peer.addr()));
-        assert_eq!(message.src().src_location(), src);
-        assert_eq!(message.dst(), &dst);
+        assert_eq!(message.src.src_location(), src);
+        assert_eq!(&message.dst, &dst);
         assert_eq!(dest_info.dest, dst_name);
         assert_matches!(
-            message.variant(),
-            Variant::UserMessage(actual_content) if actual_content == &content
+            &message.variant,
+            Variant::UserMessage(actual_content) if Bytes::from(actual_content.clone()) == content
         );
     });
 
@@ -1578,8 +1580,8 @@ async fn handle_elders_update() -> Result<()> {
             _ => continue,
         };
 
-        let section = match message.variant() {
-            Variant::Sync { section, .. } => section,
+        let section = match message.variant {
+            Variant::Sync { ref section, .. } => section,
             _ => continue,
         };
 
@@ -1703,7 +1705,7 @@ async fn handle_demote_during_split() -> Result<()> {
             _ => continue,
         };
 
-        if matches!(message.variant(), Variant::Sync { .. }) {
+        if matches!(message.variant, Variant::Sync { .. }) {
             sync_recipients.extend(recipients);
         }
     }
@@ -1820,7 +1822,7 @@ fn create_relocation_trigger(sk: &bls::SecretKey, age: u8) -> Result<(Proposal, 
         let proposal = Proposal::Online {
             member_info: MemberInfo::joined(create_peer(MIN_ADULT_AGE)),
             previous_name: Some(rand::random()),
-            their_knowledge: None,
+            destination_key: None,
         };
 
         let signature = sk.sign(&bincode::serialize(&proposal.as_signable())?);

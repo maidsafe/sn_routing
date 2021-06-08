@@ -21,7 +21,7 @@ use crate::{
     network::NetworkUtils,
     peer::PeerUtils,
     relocation::{RelocatePayloadUtils, RelocateState, SignedRelocateDetailsUtils},
-    routing::{comm, command::Command},
+    routing::command::Command,
     section::{
         SectionAuthorityProviderUtils, SectionKeyShare, SectionPeersUtils, SectionUtils,
         FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
@@ -32,17 +32,14 @@ use sn_messaging::node::Error as AggregatorError;
 use sn_messaging::{
     client::ClientMsg,
     node::{
-        DkgFailureSignedSet, JoinRequest, Network, Peer, Proposal, RoutingMsg, Section,
-        SectionAuthorityProvider, SignedRelocateDetails, SrcAuthority, Variant,
+        DkgFailureSignedSet, JoinRejectionReason, JoinRequest, JoinResponse, Network, Peer,
+        Proposal, RoutingMsg, Section, SectionAuthorityProvider, SignedRelocateDetails,
+        SrcAuthority, Variant,
     },
     section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
     DestInfo, DstLocation, EndUser, MessageType,
 };
-use std::{
-    collections::BTreeSet,
-    iter,
-    net::{IpAddr, SocketAddr},
-};
+use std::{collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::XorName;
 
 // Message handling
@@ -56,7 +53,7 @@ impl Core {
         let mut commands = vec![];
 
         // Check if the message is for us.
-        let in_dst_location = msg.dst().contains(&self.node.name(), self.section.prefix());
+        let in_dst_location = msg.dst.contains(&self.node.name(), self.section.prefix());
         // TODO: Broadcast message to our section when src is a Node as nodes might not know
         // all the elders in our section and the msg needs to be propagated.
         if !in_dst_location {
@@ -98,54 +95,48 @@ impl Core {
         sender: SocketAddr,
         message: SectionInfoMsg,
         dest_info: DestInfo, // The DestInfo contains the XorName of the sender and a random PK during the initial SectionQuery,
-        our_local_ip: IpAddr,
     ) -> Vec<Command> {
-        // Provide our PK as the dest PK, only redundant as the message itself contains details regarding relocation/registration.
+        // Provide our PK as the dest PK, only redundant as the message
+        // itself contains details regarding relocation/registration.
         let dest_info = DestInfo {
             dest: dest_info.dest,
             dest_section_pk: *self.section().chain().last_key(),
         };
-        match message {
-            SectionInfoMsg::GetSectionQuery {
-                public_key,
-                is_node,
-            } => {
-                let name = XorName::from(public_key);
-                let response =
-                    if is_node && comm::is_reachable(our_local_ip, &sender).await.is_err() {
-                        GetSectionResponse::NodeNotReachable
-                    } else {
-                        debug!("Received GetSectionQuery({}) from {}", name, sender);
 
-                        if let (true, Ok(pk_set)) =
-                            (self.section.prefix().matches(&name), self.public_key_set())
-                        {
-                            GetSectionResponse::Success(SectionInfo {
-                                prefix: self.section.authority_provider().prefix(),
-                                pk_set,
-                                elders: self
-                                    .section
-                                    .authority_provider()
-                                    .peers()
-                                    .map(|peer| (*peer.name(), *peer.addr()))
-                                    .collect(),
-                                joins_allowed: self.joins_allowed,
-                            })
-                        } else {
-                            // If we are elder, we should know a section that is closer to `name` that us.
-                            // Otherwise redirect to our elders.
-                            let section_auth = self
-                                .network
-                                .closest(&name)
-                                .unwrap_or_else(|| self.section.authority_provider());
-                            let targets = section_auth
-                                .elders()
-                                .iter()
-                                .map(|(name, addr)| (*name, *addr))
-                                .collect();
-                            GetSectionResponse::Redirect(targets)
-                        }
-                    };
+        match message {
+            SectionInfoMsg::GetSectionQuery(public_key) => {
+                let name = XorName::from(public_key);
+
+                debug!("Received GetSectionQuery({}) from {}", name, sender);
+
+                let response = if let (true, Ok(pk_set)) =
+                    (self.section.prefix().matches(&name), self.public_key_set())
+                {
+                    GetSectionResponse::Success(SectionInfo {
+                        prefix: self.section.authority_provider().prefix(),
+                        pk_set,
+                        elders: self
+                            .section
+                            .authority_provider()
+                            .peers()
+                            .map(|peer| (*peer.name(), *peer.addr()))
+                            .collect(),
+                        joins_allowed: self.joins_allowed,
+                    })
+                } else {
+                    // If we are elder, we should know a section that is closer to `name` that us.
+                    // Otherwise redirect to our elders.
+                    let section_auth = self
+                        .network
+                        .closest(&name)
+                        .unwrap_or_else(|| self.section.authority_provider());
+                    let targets = section_auth
+                        .elders()
+                        .iter()
+                        .map(|(name, addr)| (*name, *addr))
+                        .collect();
+                    GetSectionResponse::Redirect(targets)
+                };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);
                 debug!("Sending {:?} to {}", response, sender);
@@ -237,7 +228,7 @@ impl Core {
     }
 
     pub(crate) fn aggregate_message(&mut self, msg: RoutingMsg) -> Result<Option<RoutingMsg>> {
-        let signed_share = if let SrcAuthority::BlsShare { signed_share, .. } = msg.src() {
+        let signed_share = if let SrcAuthority::BlsShare { signed_share, .. } = &msg.src {
             signed_share
         } else {
             // Not an aggregating message, return unchanged.
@@ -368,9 +359,7 @@ impl Core {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::NodeApproval { .. }
-            | Variant::JoinRetry { .. }
-            | Variant::ResourceChallenge { .. } => {
+            Variant::JoinResponse(_) => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
                         trace!("Forwarding {:?} to the bootstrap task", msg);
@@ -463,17 +452,17 @@ impl Core {
         if let DstLocation::EndUser(EndUser {
             xorname: xor_name,
             socket_id,
-        }) = msg.dst()
+        }) = msg.dst
         {
-            if let Some(socket_addr) = self.get_socket_addr(*socket_id).copied() {
+            if let Some(socket_addr) = self.get_socket_addr(socket_id).copied() {
                 trace!("sending user message {:?} to client {:?}", msg, socket_addr);
                 return Ok(vec![Command::SendMessage {
-                    recipients: vec![(*xor_name, socket_addr)],
+                    recipients: vec![(xor_name, socket_addr)],
                     delivery_group_size: 1,
                     message: MessageType::Client {
                         msg: ClientMsg::from(content)?,
                         dest_info: DestInfo {
-                            dest: *xor_name,
+                            dest: xor_name,
                             dest_section_pk: *self.section.chain().last_key(),
                         },
                     },
@@ -490,9 +479,9 @@ impl Core {
         self.send_event(Event::MessageReceived {
             content,
             src: msg.src.src_location(),
-            dst: *msg.dst(),
+            dst: msg.dst,
             signed: msg.signed(),
-            section_pk: msg.section_pk(),
+            section_pk: msg.section_pk,
         })
         .await;
 
@@ -555,20 +544,18 @@ impl Core {
     ) -> Result<Vec<Command>> {
         debug!("Received {:?} from {}", join_request, peer);
 
-        if !self.section.prefix().matches(peer.name()) {
+        if !self.section.prefix().matches(peer.name())
+            || join_request.section_key != *self.section.chain().last_key()
+        {
             debug!(
-                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
+                "JoinRequest from {} - name doesn't match our prefix {:?}.",
                 peer,
                 self.section.prefix()
             );
-            return Ok(vec![]);
-        }
 
-        if join_request.section_key != *self.section.chain().last_key() {
-            let variant = Variant::JoinRetry {
-                section_auth: self.section.authority_provider().clone(),
-                section_key: *self.section.chain().last_key(),
-            };
+            let variant = Variant::JoinResponse(Box::new(JoinResponse::Retry(
+                self.section.authority_provider().clone(),
+            )));
             trace!("Sending {:?} to {}", variant, peer);
             return Ok(vec![self.send_direct_message(
                 (*peer.name(), *peer.addr()),
@@ -586,7 +573,7 @@ impl Core {
         }
 
         // This joining node is being relocated to us.
-        let (mut age, previous_name, their_knowledge) =
+        let (mut age, previous_name, destination_key) =
             if let Some(ref payload) = join_request.relocate_payload {
                 if !payload.verify_identity(peer.name()) {
                     debug!(
@@ -624,10 +611,18 @@ impl Core {
                 )
             } else if !self.joins_allowed {
                 debug!(
-                    "Ignoring JoinRequest from {} - new node not acceptable.",
+                    "Rejecting JoinRequest from {} - joins currently not allowed.",
                     peer,
                 );
-                return Ok(vec![]);
+                let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
+                    JoinRejectionReason::JoinsDisallowed,
+                )));
+                trace!("Sending {:?} to {}", variant, peer);
+                return Ok(vec![self.send_direct_message(
+                    (*peer.name(), *peer.addr()),
+                    variant,
+                    *self.section.chain().last_key(),
+                )?]);
             } else {
                 // Start as Adult as long as passed resource signeding.
                 (MIN_ADULT_AGE, None, None)
@@ -684,10 +679,10 @@ impl Core {
             }
         }
 
-        Ok(vec![Command::TestConnectivity {
+        Ok(vec![Command::ProposeOnline {
             peer,
             previous_name,
-            their_knowledge,
+            destination_key,
         }])
     }
 
@@ -702,24 +697,4 @@ impl Core {
 
         Ok(commands)
     }
-
-    /* FIXME: bring back unresponsiveness detection
-    // Detect non-responsive peers and vote them out.
-    pub(crate) fn vote_for_remove_unresponsive_peers(&mut self, core: &mut Core) -> Result<()> {
-        let unresponsive_nodes: Vec<_> = self
-            .consensus_engine
-            .detect_unresponsive(self.shared_state.our_info())
-            .into_iter()
-            .filter_map(|id| self.shared_state.our_members.get(id.name()))
-            .map(|info| info.clone().leave())
-            .collect();
-
-        for info in unresponsive_nodes {
-            info!("Voting for unresponsive node {}", info.peer);
-            self.cast_unordered_vote(core, Vote::Offline(info))?;
-        }
-
-        Ok(())
-    }
-    */
 }

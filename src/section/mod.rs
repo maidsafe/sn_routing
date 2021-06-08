@@ -33,8 +33,8 @@ use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedL
 use serde::Serialize;
 use sn_messaging::node::{
     ElderCandidates, MemberInfo, Peer, Proven, Section, SectionAuthorityProvider, SectionPeers,
+    Signed,
 };
-use sn_messaging::Signed;
 use std::{collections::BTreeSet, convert::TryInto, iter, marker::Sized, net::SocketAddr};
 use xor_name::{Prefix, XorName};
 
