@@ -9,7 +9,7 @@
 use std::mem;
 
 use crate::agreement::Signed;
-use sn_messaging::node::{Proven, SectionAuthorityProvider};
+use sn_messaging::{node::Proven, SectionAuthorityProvider};
 use xor_name::Prefix;
 
 type Entry = (Proven<SectionAuthorityProvider>, Signed);

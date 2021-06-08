@@ -10,12 +10,9 @@ use crate::{routing::Peer, section::SectionKeyShare, XorName};
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::{
-        DkgFailureSignedSet, Proposal, RoutingMsg, SectionAuthorityProvider, Signed,
-        SignedRelocateDetails,
-    },
-    section_info::Message as SectionInfoMsg,
-    DestInfo, Itinerary, MessageType,
+    node::{DkgFailureSignedSet, Proposal, RoutingMsg, Signed, SignedRelocateDetails},
+    section_info::SectionInfoMsg,
+    DestInfo, Itinerary, MessageType, SectionAuthorityProvider,
 };
 use std::{
     fmt::{self, Debug, Formatter},

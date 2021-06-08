@@ -19,11 +19,8 @@ use crate::{
 use bls_dkg::key_gen::{message::Message as DkgMessage, KeyGen};
 use itertools::Itertools;
 use sn_messaging::{
-    node::{
-        DkgFailureSigned, DkgFailureSignedSet, DkgKey, ElderCandidates, RoutingMsg,
-        SectionAuthorityProvider, Variant,
-    },
-    DestInfo, DstLocation,
+    node::{DkgFailureSigned, DkgFailureSignedSet, DkgKey, ElderCandidates, RoutingMsg, Variant},
+    DestInfo, DstLocation, SectionAuthorityProvider,
 };
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},

@@ -19,8 +19,9 @@ use crate::{
 };
 
 use secured_linked_list::SecuredLinkedList;
-use sn_messaging::node::{
-    Network, OtherSection, Peer, PrefixMap, Proven, SectionAuthorityProvider,
+use sn_messaging::{
+    node::{Network, OtherSection, Peer, PrefixMap, Proven},
+    SectionAuthorityProvider,
 };
 use std::iter;
 use xor_name::{Prefix, XorName};

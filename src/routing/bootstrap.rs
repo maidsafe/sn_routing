@@ -594,7 +594,7 @@ mod tests {
         pin_mut,
     };
     use secured_linked_list::SecuredLinkedList;
-    use sn_messaging::node::{MemberInfo, SectionAuthorityProvider};
+    use sn_messaging::{node::MemberInfo, SectionAuthorityProvider};
     use std::collections::BTreeMap;
     use tokio::task;
 

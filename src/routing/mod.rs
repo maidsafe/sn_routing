@@ -42,8 +42,8 @@ use itertools::Itertools;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     client::ClientMsg,
-    node::{Peer, RoutingMsg, SectionAuthorityProvider},
-    DestInfo, DstLocation, EndUser, Itinerary, MessageType, WireMsg,
+    node::{Peer, RoutingMsg},
+    DestInfo, DstLocation, EndUser, Itinerary, MessageType, SectionAuthorityProvider, WireMsg,
 };
 use std::{
     collections::BTreeSet,

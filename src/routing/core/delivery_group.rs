@@ -176,7 +176,7 @@ mod tests {
     use anyhow::{Context, Result};
     use rand::seq::IteratorRandom;
     use secured_linked_list::SecuredLinkedList;
-    use sn_messaging::node::{MemberInfo, SectionAuthorityProvider};
+    use sn_messaging::{node::MemberInfo, SectionAuthorityProvider};
     use xor_name::Prefix;
 
     #[test]

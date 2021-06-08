@@ -280,7 +280,7 @@ mod tests {
     use proptest::prelude::*;
     use rand::{rngs::SmallRng, Rng, SeedableRng};
     use secured_linked_list::SecuredLinkedList;
-    use sn_messaging::node::SectionAuthorityProvider;
+    use sn_messaging::SectionAuthorityProvider;
     use xor_name::Prefix;
 
     #[test]

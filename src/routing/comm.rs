@@ -352,7 +352,7 @@ mod tests {
     use futures::future;
     use qp2p::Config;
     use sn_data_types::PublicKey;
-    use sn_messaging::{section_info::Message, DestInfo, WireMsg};
+    use sn_messaging::{section_info::SectionInfoMsg, DestInfo, WireMsg};
     use std::{net::Ipv4Addr, slice, time::Duration};
     use tokio::{net::UdpSocket, sync::mpsc, time};
 
@@ -534,7 +534,7 @@ mod tests {
         // Send the first message.
         let key0 = bls::SecretKey::random().public_key();
         let msg0 = MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(key0)),
+            msg: SectionInfoMsg::GetSectionQuery(PublicKey::Bls(key0)),
             dest_info: DestInfo {
                 dest: name,
                 dest_section_pk: key0,
@@ -559,7 +559,7 @@ mod tests {
         // Send the second message.
         let key1 = bls::SecretKey::random().public_key();
         let msg1 = MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(key1)),
+            msg: SectionInfoMsg::GetSectionQuery(PublicKey::Bls(key1)),
             dest_info: DestInfo {
                 dest: name,
                 dest_section_pk: key1,
@@ -622,7 +622,7 @@ mod tests {
     fn new_section_info_message() -> MessageType {
         let random_bls_pk = bls::SecretKey::random().public_key();
         MessageType::SectionInfo {
-            msg: Message::GetSectionQuery(PublicKey::Bls(random_bls_pk)),
+            msg: SectionInfoMsg::GetSectionQuery(PublicKey::Bls(random_bls_pk)),
             dest_info: DestInfo {
                 dest: XorName::random(),
                 dest_section_pk: bls::SecretKey::random().public_key(),
