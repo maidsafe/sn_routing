@@ -33,11 +33,10 @@ use sn_messaging::{
     client::ClientMsg,
     node::{
         DkgFailureSignedSet, JoinRejectionReason, JoinRequest, JoinResponse, Network, Peer,
-        Proposal, RoutingMsg, Section, SectionAuthorityProvider, SignedRelocateDetails,
-        SrcAuthority, Variant,
+        Proposal, RoutingMsg, Section, SignedRelocateDetails, SrcAuthority, Variant,
     },
-    section_info::{GetSectionResponse, Message as SectionInfoMsg, SectionInfo},
-    DestInfo, DstLocation, EndUser, MessageType,
+    section_info::{GetSectionResponse, SectionInfoMsg},
+    DestInfo, DstLocation, EndUser, MessageType, SectionAuthorityProvider,
 };
 use std::{collections::BTreeSet, iter, net::SocketAddr};
 use xor_name::XorName;
@@ -112,16 +111,15 @@ impl Core {
                 let response = if let (true, Ok(pk_set)) =
                     (self.section.prefix().matches(&name), self.public_key_set())
                 {
-                    GetSectionResponse::Success(SectionInfo {
+                    GetSectionResponse::Success(SectionAuthorityProvider {
                         prefix: self.section.authority_provider().prefix(),
-                        pk_set,
+                        public_key_set: pk_set,
                         elders: self
                             .section
                             .authority_provider()
                             .peers()
                             .map(|peer| (*peer.name(), *peer.addr()))
                             .collect(),
-                        joins_allowed: self.joins_allowed,
                     })
                 } else {
                     // If we are elder, we should know a section that is closer to `name` that us.
@@ -130,12 +128,7 @@ impl Core {
                         .network
                         .closest(&name)
                         .unwrap_or_else(|| self.section.authority_provider());
-                    let targets = section_auth
-                        .elders()
-                        .iter()
-                        .map(|(name, addr)| (*name, *addr))
-                        .collect();
-                    GetSectionResponse::Redirect(targets)
+                    GetSectionResponse::Redirect(section_auth.clone())
                 };
 
                 let response = SectionInfoMsg::GetSectionResponse(response);

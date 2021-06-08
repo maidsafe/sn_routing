@@ -38,10 +38,10 @@ use sn_messaging::{
     node::{
         JoinRequest, JoinResponse, MemberInfo, Network, Peer, PeerState, PlainMessage, Proposal,
         Proven, RelocateDetails, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
-        SectionAuthorityProvider, Signed, SignedRelocateDetails, Variant,
+        Signed, SignedRelocateDetails, Variant,
     },
-    section_info::{GetSectionResponse, Message as SectionInfoMsg},
-    DestInfo, DstLocation, MessageType, SrcLocation,
+    section_info::{GetSectionResponse, SectionInfoMsg},
+    DestInfo, DstLocation, MessageType, SectionAuthorityProvider, SrcLocation,
 };
 use std::{
     collections::{BTreeSet, HashSet},
@@ -108,11 +108,6 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
 
     let sk_set = SecretKeySet::random();
     let (section_auth, _, _) = gen_section_authority_provider(good_prefix, ELDER_SIZE);
-    let elders_addrs: Vec<_> = section_auth
-        .elders()
-        .iter()
-        .map(|(name, addr)| (*name, *addr))
-        .collect();
     let (section, _) = create_section(&sk_set, &section_auth)?;
 
     let node = create_node(MIN_ADULT_AGE);
@@ -163,8 +158,8 @@ async fn receive_mismatching_get_section_request_as_adult() -> Result<()> {
     assert_eq!(recipients, [(new_node_name, new_node_addr)]);
     assert_matches!(
         message,
-        SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(addrs)) => {
-            assert_eq!(addrs, elders_addrs)
+        SectionInfoMsg::GetSectionResponse(GetSectionResponse::Redirect(received_section_auth)) => {
+            assert_eq!(received_section_auth, section_auth)
         }
     );
 

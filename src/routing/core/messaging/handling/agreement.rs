@@ -22,11 +22,8 @@ use crate::{
 };
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{
-        MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg,
-        SectionAuthorityProvider, Signed, Variant,
-    },
-    DestInfo, DstLocation,
+    node::{MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg, Signed, Variant},
+    DestInfo, DstLocation, SectionAuthorityProvider,
 };
 use xor_name::XorName;
 

@@ -29,8 +29,8 @@ use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::node::SignatureAggregator;
 use sn_messaging::{
-    node::{Network, Proposal, Proven, RoutingMsg, Section, SectionAuthorityProvider, Variant},
-    DestInfo, DstLocation, MessageId,
+    node::{Network, Proposal, Proven, RoutingMsg, Section, Variant},
+    DestInfo, DstLocation, MessageId, SectionAuthorityProvider,
 };
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;

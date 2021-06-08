@@ -22,10 +22,10 @@ use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     node::{
         JoinRejectionReason, JoinResponse, MemberInfo, Network, Peer, Proposal, RoutingMsg,
-        Section, SectionAuthorityProvider, Variant,
+        Section, Variant,
     },
-    section_info::{Error as TargetSectionError, SectionInfo},
-    DestInfo, EndUser, Itinerary, SrcLocation,
+    section_info::Error as TargetSectionError,
+    DestInfo, EndUser, Itinerary, SectionAuthorityProvider, SrcLocation,
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
@@ -201,12 +201,13 @@ impl Core {
         }
         if bls_pk != self.section.chain().last_key() {
             return if let Ok(public_key_set) = self.public_key_set() {
-                Err(TargetSectionError::TargetSectionInfoOutdated(SectionInfo {
-                    prefix: *self.section.prefix(),
-                    pk_set: public_key_set,
-                    elders: self.section.proven_authority_provider().value.elders(),
-                    joins_allowed: self.joins_allowed,
-                }))
+                Err(TargetSectionError::TargetSectionInfoOutdated(
+                    SectionAuthorityProvider {
+                        prefix: *self.section.prefix(),
+                        public_key_set,
+                        elders: self.section.proven_authority_provider().value.elders(),
+                    },
+                ))
             } else {
                 Err(TargetSectionError::DkgInProgress)
             };

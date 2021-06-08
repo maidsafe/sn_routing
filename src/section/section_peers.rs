@@ -9,8 +9,9 @@
 use super::SectionAuthorityProviderUtils;
 use crate::{peer::PeerUtils, section::MemberInfoUtils};
 use itertools::Itertools;
-use sn_messaging::node::{
-    MemberInfo, Peer, PeerState, Proven, SectionAuthorityProvider, SectionPeers,
+use sn_messaging::{
+    node::{MemberInfo, Peer, PeerState, Proven, SectionPeers},
+    SectionAuthorityProvider,
 };
 use std::{
     cmp::Ordering,

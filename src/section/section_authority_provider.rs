@@ -9,7 +9,10 @@
 use crate::{peer::PeerUtils, Prefix, XorName};
 use bls::PublicKey;
 use sn_data_types::ReplicaPublicKeySet;
-use sn_messaging::node::{ElderCandidates, Peer, SectionAuthorityProvider};
+use sn_messaging::{
+    node::{ElderCandidates, Peer},
+    SectionAuthorityProvider,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::SocketAddr,
