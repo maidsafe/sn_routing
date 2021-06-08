@@ -20,7 +20,7 @@ use xor_name::{XorName, XOR_NAME_LEN};
 /// Information and state of our node
 #[derive(Clone)]
 pub struct Node {
-    // Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in
+    // Keep the secret key in Arc to allow Clone while also preventing multiple copies to exist in
     // memory which might be insecure.
     // TODO: find a way to not require `Clone`.
     pub keypair: Arc<Keypair>,

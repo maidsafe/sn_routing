@@ -9,10 +9,10 @@
 use crate::{routing::Peer, section::SectionKeyShare, XorName};
 use bytes::Bytes;
 use hex_fmt::HexFmt;
-use sn_messaging::Signed;
 use sn_messaging::{
     node::{
-        DkgFailureSignedSet, Proposal, RoutingMsg, SectionAuthorityProvider, SignedRelocateDetails,
+        DkgFailureSignedSet, Proposal, RoutingMsg, SectionAuthorityProvider, Signed,
+        SignedRelocateDetails,
     },
     section_info::Message as SectionInfoMsg,
     DestInfo, Itinerary, MessageType,
@@ -85,12 +85,12 @@ pub(crate) enum Command {
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),
     /// Test peer's connectivity
-    TestConnectivity {
+    ProposeOnline {
         peer: Peer,
         // Previous name if relocated.
         previous_name: Option<XorName>,
         // The key of the destination section that the joining node knows, if any.
-        their_knowledge: Option<bls::PublicKey>,
+        destination_key: Option<bls::PublicKey>,
     },
     /// Proposes a peer as offline
     ProposeOffline(XorName),
@@ -203,12 +203,12 @@ impl Debug for Command {
                 .debug_tuple("SetJoinsAllowed")
                 .field(joins_allowed)
                 .finish(),
-            Self::TestConnectivity {
+            Self::ProposeOnline {
                 peer,
                 previous_name,
                 ..
             } => f
-                .debug_struct("TestConnectivity")
+                .debug_struct("ProposeOnline")
                 .field("peer", peer)
                 .field("previous_name", previous_name)
                 .finish(),

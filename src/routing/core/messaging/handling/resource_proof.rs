@@ -18,7 +18,7 @@ use crate::{
     Error, Result,
 };
 use ed25519_dalek::Verifier;
-use sn_messaging::node::{Peer, ResourceProofResponse, Variant};
+use sn_messaging::node::{JoinResponse, Peer, ResourceProofResponse, Variant};
 use xor_name::XorName;
 
 // Resource signed
@@ -52,12 +52,12 @@ impl Core {
         let nonce: [u8; 32] = rand::random();
         let serialized =
             bincode::serialize(&(peer.name(), &nonce)).map_err(|_| Error::InvalidMessage)?;
-        let response = Variant::ResourceChallenge {
+        let response = Variant::JoinResponse(Box::new(JoinResponse::ResourceChallenge {
             data_size: RESOURCE_PROOF_DATA_SIZE,
             difficulty: RESOURCE_PROOF_DIFFICULTY,
             nonce,
             nonce_signature: crypto::sign(&serialized, &self.node.keypair),
-        };
+        }));
 
         self.send_direct_message(
             (*peer.name(), *peer.addr()),

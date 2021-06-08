@@ -78,6 +78,6 @@ pub enum Error {
     NoMatchingSection,
     #[error("No matching Elder")]
     NoMatchingElder,
-    #[error("Cannot start node since it is not externally reachable")]
-    NodeNotReachable,
+    #[error("Node cannot join the network since it is not externally reachable: {0}")]
+    NodeNotReachable(SocketAddr),
 }

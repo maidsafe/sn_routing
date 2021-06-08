@@ -10,8 +10,7 @@ use bytes::Bytes;
 use ed25519_dalek::Keypair;
 use hex_fmt::HexFmt;
 pub use qp2p::{RecvStream, SendStream};
-use sn_messaging::Signed;
-use sn_messaging::{client::ClientMsg, DstLocation, EndUser, SrcLocation};
+use sn_messaging::{client::ClientMsg, node::Signed, DstLocation, EndUser, SrcLocation};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},

@@ -20,8 +20,8 @@ use crate::{
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     node::{
-        DkgKey, ElderCandidates, MemberInfo, Network, Peer, PlainMessage, Proposal, Proven,
-        RelocateDetails, RelocatePromise, RoutingMsg, Section, Variant,
+        DkgKey, ElderCandidates, JoinResponse, MemberInfo, Network, Peer, PlainMessage, Proposal,
+        Proven, RelocateDetails, RelocatePromise, RoutingMsg, Section, Variant,
     },
     DestInfo, DstLocation,
 };
@@ -41,12 +41,12 @@ impl Core {
         let addr = *member_info.value.peer.addr();
         let name = *member_info.value.peer.name();
 
-        let variant = Variant::NodeApproval {
+        let variant = Variant::JoinResponse(Box::new(JoinResponse::Approval {
             genesis_key: *self.section.genesis_key(),
             section_auth: self.section.proven_authority_provider().clone(),
             member_info,
             section_chain: self.section.chain().clone(),
-        };
+        }));
 
         let message = RoutingMsg::single_src(
             &self.node,

@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::cache::Cache;
-use crate::messages::RoutingMsgUtils;
 use sn_messaging::{node::RoutingMsg, DstLocation, MessageId};
 use std::time::Duration;
 use xor_name::XorName;
@@ -59,17 +58,17 @@ impl MessageFilter {
     //
     pub async fn filter_outgoing(&self, msg: &RoutingMsg, pub_id: &XorName) -> FilteringResult {
         // Not filtering direct messages.
-        if let DstLocation::DirectAndUnrouted = msg.dst() {
+        if let DstLocation::DirectAndUnrouted = msg.dst {
             return FilteringResult::NewMessage;
         }
 
         if self
             .outgoing
-            .set((msg.id(), *pub_id), (), None)
+            .set((msg.id, *pub_id), (), None)
             .await
             .is_some()
         {
-            trace!("Outgoing message filtered: {:?}", msg.id());
+            trace!("Outgoing message filtered: {:?}", msg.id);
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage

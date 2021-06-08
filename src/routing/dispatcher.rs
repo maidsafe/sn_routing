@@ -110,15 +110,12 @@ impl Dispatcher {
                 sender,
                 message,
                 dest_info,
-            } => {
-                let our_local_ip = self.comm.local_addr().ip();
-                Ok(self
-                    .core
-                    .write()
-                    .await
-                    .handle_section_info_msg(sender, message, dest_info, our_local_ip)
-                    .await)
-            }
+            } => Ok(self
+                .core
+                .write()
+                .await
+                .handle_section_info_msg(sender, message, dest_info)
+                .await),
             Command::HandleTimeout(token) => self.core.write().await.handle_timeout(token),
             Command::HandleAgreement { proposal, signed } => {
                 self.core
@@ -180,16 +177,16 @@ impl Dispatcher {
             Command::SetJoinsAllowed(joins_allowed) => {
                 self.core.read().await.set_joins_allowed(joins_allowed)
             }
-            Command::TestConnectivity {
+            Command::ProposeOnline {
                 mut peer,
                 previous_name,
-                their_knowledge,
+                destination_key,
             } => {
                 peer.set_reachable(self.comm.is_reachable(peer.addr()).await.is_ok());
                 self.core
                     .read()
                     .await
-                    .make_online_proposal(peer, previous_name, their_knowledge)
+                    .make_online_proposal(peer, previous_name, destination_key)
                     .await
             }
             Command::ProposeOffline(name) => self.core.read().await.propose_offline(name),

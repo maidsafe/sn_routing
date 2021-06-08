@@ -8,13 +8,12 @@
 
 use super::Core;
 use crate::{
-    messages::{MessageStatus, RoutingMsgUtils, SrcAuthorityUtils},
+    messages::{MessageStatus, SrcAuthorityUtils},
     section::{SectionAuthorityProviderUtils, SectionUtils},
     Result,
 };
-use sn_messaging::SignedShare;
 use sn_messaging::{
-    node::{Proposal, RelocatePromise, RoutingMsg, Variant},
+    node::{JoinResponse, Proposal, RelocatePromise, RoutingMsg, SignedShare, Variant},
     DstLocation,
 };
 use xor_name::XorName;
@@ -22,7 +21,7 @@ use xor_name::XorName;
 // Decisions
 impl Core {
     pub(crate) fn decide_message_status(&self, msg: &RoutingMsg) -> Result<MessageStatus> {
-        match msg.variant() {
+        match &msg.variant {
             Variant::SectionKnowledge { .. } => {
                 if !self.is_elder() {
                     return Ok(MessageStatus::Useless);
@@ -31,7 +30,7 @@ impl Core {
             Variant::UserMessage(_) => {
                 // If elder, always handle UserMessage, otherwise
                 // handle it only if addressed directly to us as a node.
-                if !self.is_elder() && *msg.dst() != DstLocation::Node(self.node.name()) {
+                if !self.is_elder() && msg.dst != DstLocation::Node(self.node.name()) {
                     return Ok(MessageStatus::Useless);
                 }
             }
@@ -55,10 +54,16 @@ impl Core {
                     return Ok(MessageStatus::Useless);
                 }
             }
-            Variant::NodeApproval { .. } | Variant::JoinRetry { .. } => {
-                // Skip validation of these. We will validate them inside the bootstrap task.
-                return Ok(MessageStatus::Useful);
-            }
+            Variant::JoinResponse(resp) => match **resp {
+                JoinResponse::Approval { .. }
+                | JoinResponse::Retry(_)
+                | JoinResponse::Redirect(_)
+                | JoinResponse::Rejected(_) => {
+                    // Skip validation of these. We will validate them inside the bootstrap task.
+                    return Ok(MessageStatus::Useful);
+                }
+                JoinResponse::ResourceChallenge { .. } => {}
+            },
             Variant::Sync { section, .. } => {
                 // Ignore `Sync` not for our section.
                 if !section.prefix().matches(&self.node.name()) {
@@ -86,8 +91,7 @@ impl Core {
             | Variant::DkgMessage { .. }
             | Variant::DkgFailureObservation { .. }
             | Variant::DkgFailureAgreement { .. }
-            | Variant::SectionKnowledgeQuery { .. }
-            | Variant::ResourceChallenge { .. } => {}
+            | Variant::SectionKnowledgeQuery { .. } => {}
         }
 
         if self.verify_message(msg)? {

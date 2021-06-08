@@ -21,7 +21,8 @@ use bytes::Bytes;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     node::{
-        MemberInfo, Network, Peer, Proposal, RoutingMsg, Section, SectionAuthorityProvider, Variant,
+        JoinRejectionReason, JoinResponse, MemberInfo, Network, Peer, Proposal, RoutingMsg,
+        Section, SectionAuthorityProvider, Variant,
     },
     section_info::{Error as TargetSectionError, SectionInfo},
     DestInfo, EndUser, Itinerary, SrcLocation,
@@ -136,13 +137,13 @@ impl Core {
     // Send message over the network.
     pub async fn relay_message(&self, msg: &RoutingMsg) -> Result<Option<Command>> {
         let (presumed_targets, dg_size) = delivery_group::delivery_targets(
-            msg.dst(),
+            &msg.dst,
             &self.node.name(),
             &self.section,
             &self.network,
         )?;
 
-        let target_name = msg.dst().name().ok_or(Error::CannotRoute)?;
+        let target_name = msg.dst.name().ok_or(Error::CannotRoute)?;
         let dest_pk = self.section_key_by_name(&target_name);
 
         let mut targets = vec![];
@@ -167,7 +168,7 @@ impl Core {
             msg,
             dg_size,
             targets,
-            msg.section_pk(),
+            msg.section_pk,
         );
 
         let command = Command::send_message_to_nodes(
@@ -300,12 +301,25 @@ impl Core {
         &self,
         peer: Peer,
         previous_name: Option<XorName>,
-        their_knowledge: Option<bls::PublicKey>,
+        destination_key: Option<bls::PublicKey>,
     ) -> Result<Vec<Command>> {
-        self.propose(Proposal::Online {
-            member_info: MemberInfo::joined(peer),
-            previous_name,
-            their_knowledge,
-        })
+        if peer.is_reachable() {
+            self.propose(Proposal::Online {
+                member_info: MemberInfo::joined(peer),
+                previous_name,
+                destination_key,
+            })
+        } else {
+            let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
+                JoinRejectionReason::NodeNotReachable(*peer.addr()),
+            )));
+
+            trace!("Sending {:?} to {}", variant, peer);
+            Ok(vec![self.send_direct_message(
+                (*peer.name(), *peer.addr()),
+                variant,
+                *self.section.chain().last_key(),
+            )?])
+        }
     }
 }

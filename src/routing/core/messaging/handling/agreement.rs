@@ -21,11 +21,10 @@ use crate::{
     Error, Event, MIN_AGE,
 };
 use secured_linked_list::SecuredLinkedList;
-use sn_messaging::Signed;
 use sn_messaging::{
     node::{
         MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg,
-        SectionAuthorityProvider, Variant,
+        SectionAuthorityProvider, Signed, Variant,
     },
     DestInfo, DstLocation,
 };

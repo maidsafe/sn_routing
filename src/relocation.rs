@@ -11,7 +11,6 @@
 use crate::{
     crypto::{self, Keypair, Verifier},
     error::Error,
-    messages::RoutingMsgUtils,
     network::NetworkUtils,
     peer::PeerUtils,
     section::{SectionPeersUtils, SectionUtils},
@@ -120,7 +119,7 @@ pub trait SignedRelocateDetailsUtils {
 
 impl SignedRelocateDetailsUtils for SignedRelocateDetails {
     fn new(signed_msg: RoutingMsg) -> Result<Self, Error> {
-        if let Variant::Relocate(_) = signed_msg.variant() {
+        if let Variant::Relocate(_) = signed_msg.variant {
             Ok(Self { signed_msg })
         } else {
             Err(Error::InvalidMessage)
@@ -128,8 +127,8 @@ impl SignedRelocateDetailsUtils for SignedRelocateDetails {
     }
 
     fn relocate_details(&self) -> Result<&RelocateDetails, Error> {
-        if let Variant::Relocate(details) = &self.signed_msg.variant() {
-            Ok(&details)
+        if let Variant::Relocate(details) = &self.signed_msg.variant {
+            Ok(details)
         } else {
             error!("SignedRelocateDetails does not contain Variant::Relocate");
             Err(Error::InvalidMessage)
