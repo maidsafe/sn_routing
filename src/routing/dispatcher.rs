@@ -11,7 +11,11 @@ use crate::{
     error::Result, event::Event, peer::PeerUtils, routing::comm::SendStatus, section::SectionUtils,
     Error, XorName,
 };
-use sn_messaging::{node::SignedRelocateDetails, MessageType};
+use sn_data_types::PublicKey;
+use sn_messaging::{
+    node::{JoinRejectionReason, JoinResponse, SignedRelocateDetails, SrcAuthority, Variant},
+    MessageType,
+};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch, RwLock},
@@ -100,6 +104,28 @@ impl Dispatcher {
                 message,
                 dest_info,
             } => {
+                if let (Variant::JoinRequest(join_request), Some(sender)) =
+                    (&message.variant, &sender)
+                {
+                    // Do this check only for the initial join request
+                    if join_request.relocate_payload.is_none()
+                        && join_request.resource_proof_response.is_none()
+                        && self.comm.is_reachable(sender).await.is_err()
+                    {
+                        let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
+                            JoinRejectionReason::NodeNotReachable(*sender),
+                        )));
+                        let section_key = *self.core.read().await.section().chain.last_key();
+                        if let SrcAuthority::Node { public_key, .. } = message.src {
+                            trace!("Sending {:?} to {}", variant, sender);
+                            return Ok(vec![self.core.read().await.send_direct_message(
+                                (XorName::from(PublicKey::from(public_key)), *sender),
+                                variant,
+                                section_key,
+                            )?]);
+                        }
+                    }
+                }
                 self.core
                     .write()
                     .await
@@ -182,7 +208,8 @@ impl Dispatcher {
                 previous_name,
                 destination_key,
             } => {
-                peer.set_reachable(self.comm.is_reachable(peer.addr()).await.is_ok());
+                // The reachability check was completed during the initial bootstrap phase
+                peer.set_reachable(true);
                 self.core
                     .read()
                     .await

@@ -177,9 +177,10 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
     let state = Core::first_node(node, mpsc::channel(TEST_EVENT_CHANNEL_SIZE).0)?;
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
+    let new_node_comm = create_comm().await?;
     let new_node = Node::new(
         crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
-        gen_addr(),
+        new_node_comm.our_connection_info(),
     );
     let section_key = *dispatcher.core.read().await.section().chain().last_key();
 

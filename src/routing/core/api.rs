@@ -20,10 +20,7 @@ use crate::{
 use bytes::Bytes;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{
-        JoinRejectionReason, JoinResponse, MemberInfo, Network, Peer, Proposal, RoutingMsg,
-        Section, Variant,
-    },
+    node::{MemberInfo, Network, Peer, Proposal, RoutingMsg, Section, Variant},
     section_info::Error as TargetSectionError,
     DestInfo, EndUser, Itinerary, SectionAuthorityProvider, SrcLocation,
 };
@@ -304,23 +301,10 @@ impl Core {
         previous_name: Option<XorName>,
         destination_key: Option<bls::PublicKey>,
     ) -> Result<Vec<Command>> {
-        if peer.is_reachable() {
-            self.propose(Proposal::Online {
-                member_info: MemberInfo::joined(peer),
-                previous_name,
-                destination_key,
-            })
-        } else {
-            let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
-                JoinRejectionReason::NodeNotReachable(*peer.addr()),
-            )));
-
-            trace!("Sending {:?} to {}", variant, peer);
-            Ok(vec![self.send_direct_message(
-                (*peer.name(), *peer.addr()),
-                variant,
-                *self.section.chain().last_key(),
-            )?])
-        }
+        self.propose(Proposal::Online {
+            member_info: MemberInfo::joined(peer),
+            previous_name,
+            destination_key,
+        })
     }
 }
