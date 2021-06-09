@@ -134,7 +134,9 @@ impl Core {
             return Ok(vec![]);
         }
 
-        self.propose_offline(name)
+        let mut commands = self.propose_offline(name)?;
+        commands.push(Command::StartConnectivityTest(name));
+        Ok(commands)
     }
 
     pub fn propose_offline(&self, name: XorName) -> Result<Vec<Command>> {

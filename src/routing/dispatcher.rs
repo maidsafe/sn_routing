@@ -8,13 +8,16 @@
 
 use super::{bootstrap, Comm, Command, Core};
 use crate::{
-    error::Result, event::Event, peer::PeerUtils, routing::comm::SendStatus, section::SectionUtils,
-    Error, XorName,
+    error::Result, event::Event, messages::RoutingMsgUtils, peer::PeerUtils,
+    routing::comm::SendStatus, section::SectionUtils, Error, XorName,
 };
+use itertools::Itertools;
 use sn_data_types::PublicKey;
 use sn_messaging::{
-    node::{JoinRejectionReason, JoinResponse, SignedRelocateDetails, SrcAuthority, Variant},
-    MessageType,
+    node::{
+        JoinRejectionReason, JoinResponse, RoutingMsg, SignedRelocateDetails, SrcAuthority, Variant,
+    },
+    DstLocation, MessageType,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -217,6 +220,48 @@ impl Dispatcher {
                     .await
             }
             Command::ProposeOffline(name) => self.core.read().await.propose_offline(name),
+            Command::StartConnectivityTest(name) => {
+                let msg = {
+                    let core = self.core.read().await;
+                    let node = core.node();
+                    let section_key = *core.section().chain.last_key();
+                    RoutingMsg::single_src(
+                        node,
+                        DstLocation::Section(core.node().name()),
+                        Variant::StartConnectivityTest(name),
+                        section_key,
+                    )?
+                };
+                let our_name = self.core.read().await.node().name();
+                let peers = self
+                    .core
+                    .read()
+                    .await
+                    .section()
+                    .active_members()
+                    .filter(|peer| peer.name() != &name && peer.name() != &our_name)
+                    .cloned()
+                    .collect_vec();
+                Ok(self.core.read().await.send_or_handle(msg, &peers))
+            }
+            Command::TestConnectivity(name) => {
+                let mut commands = vec![];
+                if let Some(peer) = self
+                    .core
+                    .read()
+                    .await
+                    .section()
+                    .members
+                    .members
+                    .get(&name)
+                    .map(|member_info| member_info.value.peer)
+                {
+                    if self.comm.is_reachable(peer.addr()).await.is_err() {
+                        commands.push(Command::ProposeOffline(*peer.name()));
+                    }
+                }
+                Ok(commands)
+            }
         }
     }
 
