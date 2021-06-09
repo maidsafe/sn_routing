@@ -315,6 +315,33 @@
 <span id="314">314</span>
 <span id="315">315</span>
 <span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -329,7 +356,11 @@
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>, <span class="ident">event</span>::<span class="ident">Event</span>, <span class="ident">peer</span>::<span class="ident">PeerUtils</span>, <span class="ident">routing</span>::<span class="ident">comm</span>::<span class="ident">SendStatus</span>, <span class="ident">section</span>::<span class="ident">SectionUtils</span>,
     <span class="ident">Error</span>, <span class="ident">XorName</span>,
 };
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">node</span>::<span class="ident">SignedRelocateDetails</span>, <span class="ident">MessageType</span>};
+<span class="kw">use</span> <span class="ident">sn_data_types</span>::<span class="ident">PublicKey</span>;
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{<span class="ident">JoinRejectionReason</span>, <span class="ident">JoinResponse</span>, <span class="ident">SignedRelocateDetails</span>, <span class="ident">SrcAuthority</span>, <span class="ident">Variant</span>},
+    <span class="ident">MessageType</span>,
+};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">net</span>::<span class="ident">SocketAddr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">time</span>::<span class="ident">Duration</span>};
 <span class="kw">use</span> <span class="ident">tokio</span>::{
     <span class="ident">sync</span>::{<span class="ident">mpsc</span>, <span class="ident">watch</span>, <span class="ident">RwLock</span>},
@@ -418,6 +449,28 @@
                 <span class="ident">message</span>,
                 <span class="ident">dest_info</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="kw">let</span> (<span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">join_request</span>), <span class="prelude-val">Some</span>(<span class="ident">sender</span>)) <span class="op">=</span>
+                    (<span class="kw-2">&amp;</span><span class="ident">message</span>.<span class="ident">variant</span>, <span class="kw-2">&amp;</span><span class="ident">sender</span>)
+                {
+                    <span class="comment">// Do this check only for the initial join request</span>
+                    <span class="kw">if</span> <span class="ident">join_request</span>.<span class="ident">relocate_payload</span>.<span class="ident">is_none</span>()
+                        <span class="op">&amp;&amp;</span> <span class="ident">join_request</span>.<span class="ident">resource_proof_response</span>.<span class="ident">is_none</span>()
+                        <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">is_reachable</span>(<span class="ident">sender</span>).<span class="kw">await</span>.<span class="ident">is_err</span>()
+                    {
+                        <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">JoinResponse</span>::<span class="ident">Rejected</span>(
+                            <span class="ident">JoinRejectionReason</span>::<span class="ident">NodeNotReachable</span>(<span class="kw-2">*</span><span class="ident">sender</span>),
+                        )));
+                        <span class="kw">let</span> <span class="ident">section_key</span> <span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>.<span class="ident">last_key</span>();
+                        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">SrcAuthority</span>::<span class="ident">Node</span> { <span class="ident">public_key</span>, .. } <span class="op">=</span> <span class="ident">message</span>.<span class="ident">src</span> {
+                            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">sender</span>);
+                            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">send_direct_message</span>(
+                                (<span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="ident">public_key</span>)), <span class="kw-2">*</span><span class="ident">sender</span>),
+                                <span class="ident">variant</span>,
+                                <span class="ident">section_key</span>,
+                            )<span class="question-mark">?</span>]);
+                        }
+                    }
+                }
                 <span class="self">self</span>.<span class="ident">core</span>
                     .<span class="ident">write</span>()
                     .<span class="kw">await</span>
@@ -500,7 +553,8 @@
                 <span class="ident">previous_name</span>,
                 <span class="ident">destination_key</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">peer</span>.<span class="ident">set_reachable</span>(<span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">is_reachable</span>(<span class="ident">peer</span>.<span class="ident">addr</span>()).<span class="kw">await</span>.<span class="ident">is_ok</span>());
+                <span class="comment">// The reachability check was completed during the initial bootstrap phase</span>
+                <span class="ident">peer</span>.<span class="ident">set_reachable</span>(<span class="bool-val">true</span>);
                 <span class="self">self</span>.<span class="ident">core</span>
                     .<span class="ident">read</span>()
                     .<span class="kw">await</span>
