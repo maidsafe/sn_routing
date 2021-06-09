@@ -93,7 +93,7 @@
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">agreement</span>::<span class="ident">ProposalError</span>,
-    <span class="ident">messages</span>::{<span class="ident">CreateError</span>, <span class="ident">ExtendProofChainError</span>},
+    <span class="ident">messages</span>::{<span class="ident">CreateError</span>, <span class="ident">ExtendSignedChainError</span>},
 };
 <span class="kw">use</span> <span class="ident">qp2p</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">Qp2pError</span>;
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">error</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">SecuredLinkedListError</span>;
@@ -153,8 +153,8 @@
     <span class="ident">ProposalError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ProposalError</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;create error: {0}&quot;</span>)]</span>
     <span class="ident">CreateError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">CreateError</span>),
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;extend proof error: {0}&quot;</span>)]</span>
-    <span class="ident">ExtendProofError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ExtendProofChainError</span>),
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;extend signed error: {0}&quot;</span>)]</span>
+    <span class="ident">ExtendSignedError</span>(<span class="attribute">#[<span class="ident">from</span>]</span> <span class="ident">ExtendSignedChainError</span>),
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;invalid payload&quot;</span>)]</span>
     <span class="ident">InvalidPayload</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Routing is set to not allow taking any new node&quot;</span>)]</span>
@@ -163,8 +163,8 @@
     <span class="ident">NoMatchingSection</span>,
     <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;No matching Elder&quot;</span>)]</span>
     <span class="ident">NoMatchingElder</span>,
-    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Cannot start node since it is not externally reachable&quot;</span>)]</span>
-    <span class="ident">NodeNotReachable</span>,
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Node cannot join the network since it is not externally reachable: {0}&quot;</span>)]</span>
+    <span class="ident">NodeNotReachable</span>(<span class="ident">SocketAddr</span>),
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="sn_routing" data-search-js="../../search-index.js"></div>

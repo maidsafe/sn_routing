@@ -315,9 +315,6 @@
 <span id="314">314</span>
 <span id="315">315</span>
 <span id="316">316</span>
-<span id="317">317</span>
-<span id="318">318</span>
-<span id="319">319</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -431,21 +428,18 @@
                 <span class="ident">sender</span>,
                 <span class="ident">message</span>,
                 <span class="ident">dest_info</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="ident">our_local_ip</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">local_addr</span>().<span class="ident">ip</span>();
-                <span class="prelude-val">Ok</span>(<span class="self">self</span>
-                    .<span class="ident">core</span>
-                    .<span class="ident">write</span>()
-                    .<span class="kw">await</span>
-                    .<span class="ident">handle_section_info_msg</span>(<span class="ident">sender</span>, <span class="ident">message</span>, <span class="ident">dest_info</span>, <span class="ident">our_local_ip</span>)
-                    .<span class="kw">await</span>)
-            }
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="self">self</span>
+                .<span class="ident">core</span>
+                .<span class="ident">write</span>()
+                .<span class="kw">await</span>
+                .<span class="ident">handle_section_info_msg</span>(<span class="ident">sender</span>, <span class="ident">message</span>, <span class="ident">dest_info</span>)
+                .<span class="kw">await</span>),
             <span class="ident">Command</span>::<span class="ident">HandleTimeout</span>(<span class="ident">token</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">write</span>().<span class="kw">await</span>.<span class="ident">handle_timeout</span>(<span class="ident">token</span>),
-            <span class="ident">Command</span>::<span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>, <span class="ident">proof</span> } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Command</span>::<span class="ident">HandleAgreement</span> { <span class="ident">proposal</span>, <span class="ident">signed</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">core</span>
                     .<span class="ident">write</span>()
                     .<span class="kw">await</span>
-                    .<span class="ident">handle_agreement</span>(<span class="ident">proposal</span>, <span class="ident">proof</span>)
+                    .<span class="ident">handle_agreement</span>(<span class="ident">proposal</span>, <span class="ident">signed</span>)
                     .<span class="kw">await</span>
             }
             <span class="ident">Command</span>::<span class="ident">HandleConnectionLost</span>(<span class="ident">addr</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -460,11 +454,11 @@
                 .<span class="ident">write</span>()
                 .<span class="kw">await</span>
                 .<span class="ident">handle_dkg_outcome</span>(<span class="ident">section_auth</span>, <span class="ident">outcome</span>),
-            <span class="ident">Command</span>::<span class="ident">HandleDkgFailure</span>(<span class="ident">proofs</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
+            <span class="ident">Command</span>::<span class="ident">HandleDkgFailure</span>(<span class="ident">signeds</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
                 .<span class="ident">core</span>
                 .<span class="ident">write</span>()
                 .<span class="kw">await</span>
-                .<span class="ident">handle_dkg_failure</span>(<span class="ident">proofs</span>)
+                .<span class="ident">handle_dkg_failure</span>(<span class="ident">signeds</span>)
                 .<span class="ident">map</span>(<span class="op">|</span><span class="ident">command</span><span class="op">|</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">command</span>]),
             <span class="ident">Command</span>::<span class="ident">SendMessage</span> {
                 <span class="ident">recipients</span>,
@@ -501,16 +495,16 @@
             <span class="ident">Command</span>::<span class="ident">SetJoinsAllowed</span>(<span class="ident">joins_allowed</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">set_joins_allowed</span>(<span class="ident">joins_allowed</span>)
             }
-            <span class="ident">Command</span>::<span class="ident">TestConnectivity</span> {
+            <span class="ident">Command</span>::<span class="ident">ProposeOnline</span> {
                 <span class="kw-2">mut</span> <span class="ident">peer</span>,
                 <span class="ident">previous_name</span>,
-                <span class="ident">their_knowledge</span>,
+                <span class="ident">destination_key</span>,
             } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">peer</span>.<span class="ident">set_reachable</span>(<span class="self">self</span>.<span class="ident">comm</span>.<span class="ident">is_reachable</span>(<span class="ident">peer</span>.<span class="ident">addr</span>()).<span class="kw">await</span>.<span class="ident">is_ok</span>());
                 <span class="self">self</span>.<span class="ident">core</span>
                     .<span class="ident">read</span>()
                     .<span class="kw">await</span>
-                    .<span class="ident">make_online_proposal</span>(<span class="ident">peer</span>, <span class="ident">previous_name</span>, <span class="ident">their_knowledge</span>)
+                    .<span class="ident">make_online_proposal</span>(<span class="ident">peer</span>, <span class="ident">previous_name</span>, <span class="ident">destination_key</span>)
                     .<span class="kw">await</span>
             }
             <span class="ident">Command</span>::<span class="ident">ProposeOffline</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">propose_offline</span>(<span class="ident">name</span>),

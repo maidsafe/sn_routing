@@ -214,7 +214,6 @@
 <span id="213">213</span>
 <span id="214">214</span>
 <span id="215">215</span>
-<span id="216">216</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -224,12 +223,11 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="ident">bls_signature_aggregator</span>::<span class="ident">Proof</span>;
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">ed25519_dalek</span>::<span class="ident">Keypair</span>;
 <span class="kw">use</span> <span class="ident">hex_fmt</span>::<span class="ident">HexFmt</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">qp2p</span>::{<span class="ident">RecvStream</span>, <span class="ident">SendStream</span>};
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">client</span>::<span class="ident">ClientMsg</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">SrcLocation</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{<span class="ident">client</span>::<span class="ident">ClientMsg</span>, <span class="ident">node</span>::<span class="ident">Signed</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">SrcLocation</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -282,8 +280,8 @@
         <span class="ident">src</span>: <span class="ident">SrcLocation</span>,
         <span class="doccomment">/// The destination location that receives the message.</span>
         <span class="ident">dst</span>: <span class="ident">DstLocation</span>,
-        <span class="doccomment">/// The proof if the message was set to be aggregated at source.</span>
-        <span class="ident">proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
+        <span class="doccomment">/// The signed if the message was set to be aggregated at source.</span>
+        <span class="ident">signed</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span>,
         <span class="doccomment">/// The Sender&#39;s Section PK.</span>
         <span class="ident">section_pk</span>: <span class="ident">bls</span>::<span class="ident">PublicKey</span>,
     },

@@ -90,7 +90,7 @@
 <span class="doccomment">/// Source authority of a message.</span>
 <span class="doccomment">/// Src of message and authority to send it. Authority is validated by the signature.</span>
 <span class="doccomment">/// Messages do not need to sign this field as it is all verifiable (i.e. if the sig validates</span>
-<span class="doccomment">/// agains the pub key and we know th epub key then we are good. If the proof is not recognised we</span>
+<span class="doccomment">/// agains the pub key and we know th epub key then we are good. If the signed is not recognised we</span>
 <span class="doccomment">/// ask for a longer chain that can be recognised). Therefore we don&#39;t need to sign this field.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">SrcAuthorityUtils</span> {
     <span class="kw">fn</span> <span class="ident">src_location</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SrcLocation</span>;

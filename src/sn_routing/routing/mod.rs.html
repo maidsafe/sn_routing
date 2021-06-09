@@ -578,11 +578,6 @@
 <span id="577">577</span>
 <span id="578">578</span>
 <span id="579">579</span>
-<span id="580">580</span>
-<span id="581">581</span>
-<span id="582">582</span>
-<span id="583">583</span>
-<span id="584">584</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -628,8 +623,8 @@
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">client</span>::<span class="ident">ClientMsg</span>,
-    <span class="ident">node</span>::{<span class="ident">Peer</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SectionAuthorityProvider</span>},
-    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">WireMsg</span>,
+    <span class="ident">node</span>::{<span class="ident">Peer</span>, <span class="ident">RoutingMsg</span>},
+    <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">MessageType</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">WireMsg</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">collections</span>::<span class="ident">BTreeSet</span>,
@@ -834,7 +829,7 @@
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">comm</span>.<span class="ident">our_connection_info</span>()
     }
 
-    <span class="doccomment">/// Returns the Section Proof Chain</span>
+    <span class="doccomment">/// Returns the Section Signed Chain</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_chain</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SecuredLinkedList</span> {
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">section_chain</span>().<span class="ident">clone</span>()
     }
@@ -922,12 +917,7 @@
 
     <span class="doccomment">/// Returns the last known public key of the section with `prefix`.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">section_key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">dispatcher</span>
-            .<span class="ident">core</span>
-            .<span class="ident">read</span>()
-            .<span class="kw">await</span>
-            .<span class="ident">section_key</span>(<span class="ident">prefix</span>)
-            .<span class="ident">copied</span>()
+        <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">section_key</span>(<span class="ident">prefix</span>)
     }
 
     <span class="doccomment">/// Returns the info about the section matching the name.</span>
@@ -940,7 +930,7 @@
     <span class="doccomment">/// Messages sent here, either section to section or node to node are signed</span>
     <span class="doccomment">/// and validated upon receipt by routing itself.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// `additional_proof_chain_key` is a key to be included in the proof chain attached to the</span>
+    <span class="doccomment">/// `additional_proof_chain_key` is a key to be included in the signed chain attached to the</span>
     <span class="doccomment">/// message. This is useful when the message contains some data that is signed with a different</span>
     <span class="doccomment">/// key than the whole message is so that the recipient can verify such key.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">send_message</span>(
@@ -1013,7 +1003,7 @@
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">public_key_set</span>()
     }
 
-    <span class="doccomment">/// Returns our section proof chain.</span>
+    <span class="doccomment">/// Returns our section signed chain.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">our_history</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SecuredLinkedList</span> {
         <span class="self">self</span>.<span class="ident">dispatcher</span>.<span class="ident">core</span>.<span class="ident">read</span>().<span class="kw">await</span>.<span class="ident">section</span>().<span class="ident">chain</span>().<span class="ident">clone</span>()
     }

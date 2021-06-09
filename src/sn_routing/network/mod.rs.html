@@ -301,6 +301,7 @@
 <span id="300">300</span>
 <span id="301">301</span>
 <span id="302">302</span>
+<span id="303">303</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -316,15 +317,16 @@
 
 <span class="kw">use</span> <span class="self">self</span>::<span class="ident">stats</span>::<span class="ident">NetworkStats</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::{<span class="ident">verify_proof</span>, <span class="ident">Proof</span>, <span class="ident">ProvenUtils</span>},
+    <span class="ident">agreement</span>::{<span class="ident">verify_signed</span>, <span class="ident">ProvenUtils</span>, <span class="ident">Signed</span>},
     <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">section</span>::<span class="ident">SectionAuthorityProviderUtils</span>,
     <span class="ident">Error</span>, <span class="prelude-ty">Result</span>,
 };
 
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{
-    <span class="ident">Network</span>, <span class="ident">OtherSection</span>, <span class="ident">Peer</span>, <span class="ident">PrefixMap</span>, <span class="ident">Proven</span>, <span class="ident">SectionAuthorityProvider</span>,
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::{
+    <span class="ident">node</span>::{<span class="ident">Network</span>, <span class="ident">OtherSection</span>, <span class="ident">Peer</span>, <span class="ident">PrefixMap</span>, <span class="ident">Proven</span>},
+    <span class="ident">SectionAuthorityProvider</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">iter</span>;
 <span class="kw">use</span> <span class="ident">xor_name</span>::{<span class="ident">Prefix</span>, <span class="ident">XorName</span>};
@@ -355,27 +357,27 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// If this is for our sibling section, then `section_auth` is signed by them and so the signing</span>
     <span class="doccomment">/// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an</span>
-    <span class="doccomment">/// additional `key_proof` which signs it using a key that is present in `section_chain`.</span>
+    <span class="doccomment">/// additional `key_signed` which signs it using a key that is present in `section_chain`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// If this is for a non-sibling section, then currently we require the info to be signed by our</span>
-    <span class="doccomment">/// section (so we need to accumulate the signature for it first) and so `key_proof` is not</span>
+    <span class="doccomment">/// section (so we need to accumulate the signature for it first) and so `key_signed` is not</span>
     <span class="doccomment">/// needed in that case.</span>
     <span class="kw">fn</span> <span class="ident">update_section</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
-        <span class="ident">key_proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
+        <span class="ident">key_signed</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span>,
         <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 
     <span class="doccomment">/// Returns the known section keys.</span>
-    <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="kw-2">&amp;</span><span class="ident">Prefix</span>, <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Returns the latest known key for the prefix that matches `name`.</span>
-    <span class="kw">fn</span> <span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Returns the latest known key for a section with `prefix`.</span>
     <span class="doccomment">/// If this returns `None` that means the latest known key is the genesis key.</span>
-    <span class="kw">fn</span> <span class="ident">key_by_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">key_by_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Returns the section_auth and the latest known key for the prefix that matches `name`,</span>
     <span class="doccomment">/// excluding self section.</span>
@@ -449,20 +451,20 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// If this is for our sibling section, then `section_auth` is signed by them and so the signing</span>
     <span class="doccomment">/// key is not in our `section_chain`. To prove the key is valid, it must be accompanied by an</span>
-    <span class="doccomment">/// additional `key_proof` which signs it using a key that is present in `section_chain`.</span>
+    <span class="doccomment">/// additional `key_signed` which signs it using a key that is present in `section_chain`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// If this is for a non-sibling section, then currently we require the info to be signed by our</span>
-    <span class="doccomment">/// section (so we need to accumulate the signature for it first) and so `key_proof` is not</span>
+    <span class="doccomment">/// section (so we need to accumulate the signature for it first) and so `key_signed` is not</span>
     <span class="doccomment">/// needed in that case.</span>
     <span class="kw">fn</span> <span class="ident">update_section</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
-        <span class="ident">key_proof</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Proof</span><span class="op">&gt;</span>,
+        <span class="ident">key_signed</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Signed</span><span class="op">&gt;</span>,
         <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SecuredLinkedList</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">OtherSection</span> {
             <span class="ident">section_auth</span>: <span class="ident">section_auth</span>.<span class="ident">clone</span>(),
-            <span class="ident">key_proof</span>,
+            <span class="ident">key_signed</span>,
         };
 
         <span class="kw">if</span> <span class="op">!</span><span class="ident">info</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>) {
@@ -479,29 +481,29 @@
     }
 
     <span class="doccomment">/// Returns the known section keys.</span>
-    <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="kw-2">&amp;</span><span class="ident">Prefix</span>, <span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Iterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> (<span class="ident">Prefix</span>, <span class="ident">bls</span>::<span class="ident">PublicKey</span>)<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
         <span class="ident">Box</span>::<span class="ident">new</span>(<span class="self">self</span>.<span class="ident">sections</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> {
             (
-                <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>,
-                <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>,
+                <span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>,
+                <span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>(),
             )
         }))
     }
 
     <span class="doccomment">/// Returns the latest known key for the prefix that matches `name`.</span>
-    <span class="kw">fn</span> <span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">key_by_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sections</span>
             .<span class="ident">get_matching</span>(<span class="ident">name</span>)
             .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">NoMatchingSection</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>())
     }
 
     <span class="doccomment">/// Returns the latest known key for a section with `prefix`.</span>
     <span class="doccomment">/// If this returns `None` that means the latest known key is the genesis key.</span>
-    <span class="kw">fn</span> <span class="ident">key_by_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">key_by_prefix</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">prefix</span>: <span class="kw-2">&amp;</span><span class="ident">Prefix</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">sections</span>
             .<span class="ident">get_equal_or_ancestor</span>(<span class="ident">prefix</span>)
-            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="kw-2">&amp;</span><span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>)
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="ident">entry</span>.<span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">section_key</span>())
     }
 
     <span class="doccomment">/// Returns the section_auth and the latest known key for the prefix that matches `name`,</span>
@@ -556,9 +558,9 @@
 
 <span class="kw">impl</span> <span class="ident">OtherSectionUtils</span> <span class="kw">for</span> <span class="ident">OtherSection</span> {
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">section_chain</span>: <span class="kw-2">&amp;</span><span class="ident">SecuredLinkedList</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">key_proof</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key_proof</span> {
-            <span class="ident">section_chain</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">key_proof</span>.<span class="ident">public_key</span>)
-                <span class="op">&amp;&amp;</span> <span class="ident">verify_proof</span>(<span class="ident">key_proof</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">proof</span>.<span class="ident">public_key</span>)
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">key_signed</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key_signed</span> {
+            <span class="ident">section_chain</span>.<span class="ident">has_key</span>(<span class="kw-2">&amp;</span><span class="ident">key_signed</span>.<span class="ident">public_key</span>)
+                <span class="op">&amp;&amp;</span> <span class="ident">verify_signed</span>(<span class="ident">key_signed</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">signed</span>.<span class="ident">public_key</span>)
                 <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">self_verify</span>()
         } <span class="kw">else</span> {
             <span class="self">self</span>.<span class="ident">section_auth</span>.<span class="ident">verify</span>(<span class="ident">section_chain</span>)

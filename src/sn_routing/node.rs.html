@@ -114,7 +114,7 @@
 <span class="doccomment">/// Information and state of our node</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Node</span> {
-    <span class="comment">// Keep the secret key in Box to allow Clone while also preventing multiple copies to exist in</span>
+    <span class="comment">// Keep the secret key in Arc to allow Clone while also preventing multiple copies to exist in</span>
     <span class="comment">// memory which might be insecure.</span>
     <span class="comment">// TODO: find a way to not require `Clone`.</span>
     <span class="kw">pub</span> <span class="ident">keypair</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Keypair</span><span class="op">&gt;</span>,

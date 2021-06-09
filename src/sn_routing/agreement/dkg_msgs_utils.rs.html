@@ -149,7 +149,7 @@
     <span class="ident">section</span>::<span class="ident">ElderCandidatesUtils</span>,
     <span class="ident">supermajority</span>,
 };
-<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">DkgFailureProof</span>, <span class="ident">DkgFailureProofSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ElderCandidates</span>};
+<span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">DkgFailureSigned</span>, <span class="ident">DkgFailureSignedSet</span>, <span class="ident">DkgKey</span>, <span class="ident">ElderCandidates</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">collections</span>::<span class="ident">BTreeSet</span>;
 <span class="kw">use</span> <span class="ident">tiny_keccak</span>::{<span class="ident">Hasher</span>, <span class="ident">Sha3</span>};
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -176,72 +176,72 @@
     }
 }
 
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">DkgFailureProofUtils</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">DkgFailureSignedUtils</span> {
     <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>;
 
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">DkgFailureProofUtils</span> <span class="kw">for</span> <span class="ident">DkgFailureProof</span> {
+<span class="kw">impl</span> <span class="ident">DkgFailureSignedUtils</span> <span class="kw">for</span> <span class="ident">DkgFailureSigned</span> {
     <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">keypair</span>: <span class="kw-2">&amp;</span><span class="ident">Keypair</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="ident">DkgFailureProof</span> {
+        <span class="ident">DkgFailureSigned</span> {
             <span class="ident">public_key</span>: <span class="ident">keypair</span>.<span class="ident">public</span>,
-            <span class="ident">signature</span>: <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>), <span class="ident">keypair</span>),
+            <span class="ident">signature</span>: <span class="ident">crypto</span>::<span class="ident">sign</span>(<span class="kw-2">&amp;</span><span class="ident">failure_signed_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>), <span class="ident">keypair</span>),
         }
     }
 
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>);
+        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_signed_hash</span>(<span class="ident">dkg_key</span>, <span class="ident">non_participants</span>);
         <span class="self">self</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
     }
 }
 
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">DkgFailureProofSetUtils</span> {
-    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">DkgFailureSignedSetUtils</span> {
+    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">signed</span>: <span class="ident">DkgFailureSigned</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 
     <span class="kw">fn</span> <span class="ident">has_agreement</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>, <span class="ident">generation</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">DkgFailureProofSetUtils</span> <span class="kw">for</span> <span class="ident">DkgFailureProofSet</span> {
-    <span class="comment">// Insert a proof into this set. The proof is assumed valid. Returns `true` if the proof was</span>
+<span class="kw">impl</span> <span class="ident">DkgFailureSignedSetUtils</span> <span class="kw">for</span> <span class="ident">DkgFailureSignedSet</span> {
+    <span class="comment">// Insert a signed into this set. The signed is assumed valid. Returns `true` if the signed was</span>
     <span class="comment">// not already present in the set and `false` otherwise.</span>
-    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">proof</span>: <span class="ident">DkgFailureProof</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">insert</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">signed</span>: <span class="ident">DkgFailureSigned</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">non_participants</span>.<span class="ident">is_empty</span>() {
             <span class="self">self</span>.<span class="ident">non_participants</span> <span class="op">=</span> <span class="ident">non_participants</span>.<span class="ident">clone</span>();
         }
         <span class="kw">if</span> <span class="self">self</span>
-            .<span class="ident">proofs</span>
+            .<span class="ident">signeds</span>
             .<span class="ident">iter</span>()
-            .<span class="ident">all</span>(<span class="op">|</span><span class="ident">existing_proof</span><span class="op">|</span> <span class="ident">existing_proof</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">proof</span>.<span class="ident">public_key</span>)
+            .<span class="ident">all</span>(<span class="op">|</span><span class="ident">existing_signed</span><span class="op">|</span> <span class="ident">existing_signed</span>.<span class="ident">public_key</span> <span class="op">!</span><span class="op">=</span> <span class="ident">signed</span>.<span class="ident">public_key</span>)
         {
-            <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">push</span>(<span class="ident">proof</span>);
+            <span class="self">self</span>.<span class="ident">signeds</span>.<span class="ident">push</span>(<span class="ident">signed</span>);
             <span class="bool-val">true</span>
         } <span class="kw">else</span> {
             <span class="bool-val">false</span>
         }
     }
 
-    <span class="comment">// Check whether we have enough proofs to reach agreement on the failure. The contained proofs</span>
+    <span class="comment">// Check whether we have enough signeds to reach agreement on the failure. The contained signeds</span>
     <span class="comment">// are assumed valid.</span>
     <span class="kw">fn</span> <span class="ident">has_agreement</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="ident">has_failure_agreement</span>(<span class="ident">elder_candidates</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="self">self</span>.<span class="ident">proofs</span>.<span class="ident">len</span>())
+        <span class="ident">has_failure_agreement</span>(<span class="ident">elder_candidates</span>.<span class="ident">elders</span>.<span class="ident">len</span>(), <span class="self">self</span>.<span class="ident">signeds</span>.<span class="ident">len</span>())
     }
 
     <span class="kw">fn</span> <span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elder_candidates</span>: <span class="kw-2">&amp;</span><span class="ident">ElderCandidates</span>, <span class="ident">generation</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_proof_hash</span>(
+        <span class="kw">let</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">failure_signed_hash</span>(
             <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>::<span class="ident">new</span>(<span class="ident">elder_candidates</span>, <span class="ident">generation</span>),
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">non_participants</span>,
         );
         <span class="kw">let</span> <span class="ident">votes</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">proofs</span>
+            .<span class="ident">signeds</span>
             .<span class="ident">iter</span>()
-            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">proof</span><span class="op">|</span> {
+            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">signed</span><span class="op">|</span> {
                 <span class="ident">elder_candidates</span>
                     .<span class="ident">elders</span>
-                    .<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">proof</span>.<span class="ident">public_key</span>))
-                    <span class="op">&amp;&amp;</span> <span class="ident">proof</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="ident">proof</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
+                    .<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">public_key</span>))
+                    <span class="op">&amp;&amp;</span> <span class="ident">signed</span>.<span class="ident">public_key</span>.<span class="ident">verify</span>(<span class="kw-2">&amp;</span><span class="ident">hash</span>, <span class="kw-2">&amp;</span><span class="ident">signed</span>.<span class="ident">signature</span>).<span class="ident">is_ok</span>()
             })
             .<span class="ident">count</span>();
 
@@ -249,16 +249,16 @@
     }
 }
 
-<span class="comment">// Check whether we have enough proofs to reach agreement on the failure. We only need</span>
-<span class="comment">// `N - supermajority(N) + 1` proofs, because that already makes a supermajority agreement on a</span>
+<span class="comment">// Check whether we have enough signeds to reach agreement on the failure. We only need</span>
+<span class="comment">// `N - supermajority(N) + 1` signeds, because that already makes a supermajority agreement on a</span>
 <span class="comment">// successful outcome impossible.</span>
 <span class="kw">fn</span> <span class="ident">has_failure_agreement</span>(<span class="ident">num_participants</span>: <span class="ident">usize</span>, <span class="ident">num_votes</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="ident">num_votes</span> <span class="op">&gt;</span> <span class="ident">num_participants</span> <span class="op">-</span> <span class="ident">supermajority</span>(<span class="ident">num_participants</span>)
 }
 
-<span class="comment">// Create a value whose signature serves as the proof that a failure of a DKG session with the given</span>
+<span class="comment">// Create a value whose signature serves as the signed that a failure of a DKG session with the given</span>
 <span class="comment">// `dkg_key` was observed.</span>
-<span class="kw">fn</span> <span class="ident">failure_proof_hash</span>(<span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Digest256</span> {
+<span class="kw">fn</span> <span class="ident">failure_signed_hash</span>(<span class="ident">dkg_key</span>: <span class="kw-2">&amp;</span><span class="ident">DkgKey</span>, <span class="ident">non_participants</span>: <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Digest256</span> {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">Sha3</span>::<span class="ident">v256</span>();
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">Digest256</span>::<span class="ident">default</span>();
     <span class="ident">hasher</span>.<span class="ident">update</span>(<span class="kw-2">&amp;</span><span class="ident">dkg_key</span>.<span class="ident">hash</span>);
