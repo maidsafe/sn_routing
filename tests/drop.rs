@@ -9,7 +9,7 @@
 mod utils;
 
 use self::utils::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use sn_messaging::{Aggregation, DstLocation, Itinerary, SrcLocation};
 use sn_routing::{Event, NodeElderChange};
@@ -50,7 +50,10 @@ async fn test_node_drop() -> Result<()> {
 
     tracing::info!("Dropped {} at {}", dropped_name, dropped_addr);
 
-    for (node, _) in &mut nodes {
+    //  A failed send_message from any node should
+    // trigger voting by all nodes
+    {
+        let (node, _) = nodes.get(0).ok_or_else(|| anyhow!("Missing Node"))?;
         let itinerary = Itinerary {
             src: SrcLocation::Node(node.name().await),
             dst: DstLocation::Node(dropped_name),

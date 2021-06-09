@@ -291,6 +291,7 @@ impl Core {
             Variant::RelocatePromise(promise) => {
                 self.handle_relocate_promise(*promise, msg.clone()).await
             }
+            Variant::StartConnectivityTest(name) => Ok(vec![Command::TestConnectivity(*name)]),
             Variant::JoinRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_join_request(msg.src.peer(sender)?, *join_request.clone())

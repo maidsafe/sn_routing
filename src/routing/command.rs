@@ -91,6 +91,11 @@ pub(crate) enum Command {
     },
     /// Proposes a peer as offline
     ProposeOffline(XorName),
+    /// Send a signal to all Elders to
+    /// test the connectivity to a specific node
+    StartConnectivityTest(XorName),
+    /// Test Connectivity
+    TestConnectivity(XorName),
 }
 
 impl Command {
@@ -210,6 +215,10 @@ impl Debug for Command {
                 .field("previous_name", previous_name)
                 .finish(),
             Self::ProposeOffline(name) => f.debug_tuple("ProposeOffline").field(name).finish(),
+            Self::TestConnectivity(name) => f.debug_tuple("TestConnectivity").field(name).finish(),
+            Self::StartConnectivityTest(name) => {
+                f.debug_tuple("StartConnectivityTest").field(name).finish()
+            }
         }
     }
 }
