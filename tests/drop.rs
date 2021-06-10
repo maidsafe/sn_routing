@@ -53,7 +53,7 @@ async fn test_node_drop() -> Result<()> {
     //  A failed send_message from any node should
     // trigger voting by all nodes
     {
-        let (node, _) = nodes.get(0).ok_or_else(|| anyhow!("Missing Node"))?;
+        let (node, _) = nodes.iter().last().ok_or_else(|| anyhow!("Missing Node"))?;
         let itinerary = Itinerary {
             src: SrcLocation::Node(node.name().await),
             dst: DstLocation::Node(dropped_name),

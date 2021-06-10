@@ -194,9 +194,6 @@ impl Routing {
 
     /// Signals the Elders of our section to test connectivity to a node.
     pub async fn start_connectivity_test(&self, name: XorName) -> Result<()> {
-        if !self.is_elder().await {
-            return Err(Error::InvalidState);
-        }
         let command = Command::StartConnectivityTest(name);
         self.dispatcher.clone().handle_commands(command).await
     }
