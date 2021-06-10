@@ -11,7 +11,7 @@ mod src_authority;
 
 pub use self::{plain_message::PlainMessageUtils, src_authority::SrcAuthorityUtils};
 use crate::{
-    agreement::ProvenUtils,
+    agreement::SectionSignedUtils,
     ed25519::{self, Verifier},
     error::{Error, Result},
     node::Node,
@@ -365,7 +365,7 @@ impl RoutingMsgUtils for RoutingMsg {
             Variant::JoinResponse(resp) => {
                 if let JoinResponse::Approval {
                     ref section_auth,
-                    ref member_info,
+                    ref node_state,
                     ref section_chain,
                     ..
                 } = **resp
@@ -374,7 +374,7 @@ impl RoutingMsgUtils for RoutingMsg {
                         return Err(Error::InvalidMessage);
                     }
 
-                    if !member_info.verify(section_chain) {
+                    if !node_state.verify(section_chain) {
                         return Err(Error::InvalidMessage);
                     }
 

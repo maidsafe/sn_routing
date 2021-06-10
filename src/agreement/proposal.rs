@@ -50,8 +50,8 @@ pub struct SignableView<'a>(pub &'a Proposal);
 impl<'a> Serialize for SignableView<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
-            Proposal::Online { member_info, .. } => member_info.serialize(serializer),
-            Proposal::Offline(member_info) => member_info.serialize(serializer),
+            Proposal::Online { node_state, .. } => node_state.serialize(serializer),
+            Proposal::Offline(node_state) => node_state.serialize(serializer),
             Proposal::SectionInfo(info) => info.serialize(serializer),
             Proposal::OurElders(info) => info.signed.public_key.serialize(serializer),
             // Proposal::TheirKey { prefix, key } => (prefix, key).serialize(serializer),
@@ -108,8 +108,9 @@ mod tests {
         // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
-        let proven_section_auth = agreement::test_utils::proven(&new_sk, section_auth)?;
-        let proposal = Proposal::OurElders(proven_section_auth);
+        let section_signed_section_auth =
+            agreement::test_utils::section_signed(&new_sk, section_auth)?;
+        let proposal = Proposal::OurElders(section_signed_section_auth);
         verify_serialize_for_signing(&proposal, &new_pk)?;
 
         Ok(())

@@ -12,7 +12,7 @@ use crate::{
     error::Result,
     peer::PeerUtils,
     routing::command::Command,
-    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
+    section::{NodeStateUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
     Error,
 };
 use bls_dkg::key_gen::message::Message as DkgMessage;

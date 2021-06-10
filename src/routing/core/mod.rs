@@ -29,7 +29,7 @@ use resource_proof::ResourceProof;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::node::SignatureAggregator;
 use sn_messaging::{
-    node::{Network, Proposal, Proven, RoutingMsg, Section, Variant},
+    node::{Network, Proposal, RoutingMsg, Section, SectionSigned, Variant},
     DestInfo, DstLocation, MessageId, SectionAuthorityProvider,
 };
 use std::collections::BTreeSet;
@@ -128,7 +128,7 @@ impl Core {
 
     pub(crate) fn update_section_knowledge(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         section_chain: SecuredLinkedList,
     ) {
         let prefix = section_auth.value.prefix;
@@ -174,7 +174,7 @@ impl Core {
                 self.print_network_stats();
 
                 // Sending SectionKnowledge to other sections for new SAP.
-                let section_auth = self.section.proven_authority_provider();
+                let section_auth = self.section.section_signed_authority_provider();
                 let variant = Variant::SectionKnowledge {
                     src_info: (section_auth.clone(), self.section.chain().clone()),
                     msg: None,

@@ -394,7 +394,7 @@ impl Core {
             *self.section_chain().root_key()
         };
         let truncated_chain = chain.get_proof_chain_to_current(&given_key)?;
-        let section_auth = self.section.proven_authority_provider();
+        let section_auth = self.section.section_signed_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), truncated_chain),
             msg: Some(msg),

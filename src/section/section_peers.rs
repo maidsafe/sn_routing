@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::SectionAuthorityProviderUtils;
-use crate::{peer::PeerUtils, section::MemberInfoUtils};
+use crate::{peer::PeerUtils, section::NodeStateUtils};
 use itertools::Itertools;
 use sn_messaging::{
-    node::{MemberInfo, Peer, PeerState, Proven, SectionPeers},
+    node::{MembershipState, NodeState, Peer, SectionPeers, SectionSigned},
     SectionAuthorityProvider,
 };
 use std::{
@@ -23,19 +23,19 @@ use xor_name::{Prefix, XorName};
 /// Container for storing information about members of our section.
 pub trait SectionPeersUtils {
     /// Returns an iterator over all current (joined) and past (left) members.
-    fn all(&self) -> Box<dyn Iterator<Item = &MemberInfo> + '_>;
+    fn all(&self) -> Box<dyn Iterator<Item = &NodeState> + '_>;
 
     /// Returns an iterator over the members that have state == `Joined`.
-    fn joined(&self) -> Box<dyn Iterator<Item = &MemberInfo> + '_>;
+    fn joined(&self) -> Box<dyn Iterator<Item = &NodeState> + '_>;
 
     /// Returns joined nodes from our section with age greater than `MIN_AGE`
     fn mature(&self) -> Box<dyn Iterator<Item = &Peer> + '_>;
 
     /// Get info for the member with the given name.
-    fn get(&self, name: &XorName) -> Option<&MemberInfo>;
+    fn get(&self, name: &XorName) -> Option<&NodeState>;
 
-    /// Get proven info for the member with the given name.
-    fn get_proven(&self, name: &XorName) -> Option<&Proven<MemberInfo>>;
+    /// Get section_signed info for the member with the given name.
+    fn get_section_signed(&self, name: &XorName) -> Option<&SectionSigned<NodeState>>;
 
     /// Returns the candidates for elders out of all the nodes in this section.
     fn elder_candidates(
@@ -57,7 +57,7 @@ pub trait SectionPeersUtils {
 
     /// Update a member of our section.
     /// Returns whether anything actually changed.
-    fn update(&mut self, new_info: Proven<MemberInfo>) -> bool;
+    fn update(&mut self, new_info: SectionSigned<NodeState>) -> bool;
 
     /// Remove all members whose name does not match `prefix`.
     fn prune_not_matching(&mut self, prefix: &Prefix);
@@ -65,17 +65,17 @@ pub trait SectionPeersUtils {
 
 impl SectionPeersUtils for SectionPeers {
     /// Returns an iterator over all current (joined) and past (left) members.
-    fn all(&self) -> Box<dyn Iterator<Item = &MemberInfo> + '_> {
+    fn all(&self) -> Box<dyn Iterator<Item = &NodeState> + '_> {
         Box::new(self.members.values().map(|info| &info.value))
     }
 
     /// Returns an iterator over the members that have state == `Joined`.
-    fn joined(&self) -> Box<dyn Iterator<Item = &MemberInfo> + '_> {
+    fn joined(&self) -> Box<dyn Iterator<Item = &NodeState> + '_> {
         Box::new(
             self.members
                 .values()
                 .map(|info| &info.value)
-                .filter(|member| member.state == PeerState::Joined),
+                .filter(|member| member.state == MembershipState::Joined),
         )
     }
 
@@ -89,12 +89,12 @@ impl SectionPeersUtils for SectionPeers {
     }
 
     /// Get info for the member with the given name.
-    fn get(&self, name: &XorName) -> Option<&MemberInfo> {
+    fn get(&self, name: &XorName) -> Option<&NodeState> {
         self.members.get(name).map(|info| &info.value)
     }
 
-    /// Get proven info for the member with the given name.
-    fn get_proven(&self, name: &XorName) -> Option<&Proven<MemberInfo>> {
+    /// Get section_signed info for the member with the given name.
+    fn get_section_signed(&self, name: &XorName) -> Option<&SectionSigned<NodeState>> {
         self.members.get(name)
     }
 
@@ -125,7 +125,7 @@ impl SectionPeersUtils for SectionPeers {
             elder_size,
             current_elders,
             self.members.values().filter(|info| {
-                info.value.state == PeerState::Joined
+                info.value.state == MembershipState::Joined
                     && prefix.matches(info.value.peer.name())
                     && info.value.peer.is_reachable()
             }),
@@ -136,13 +136,13 @@ impl SectionPeersUtils for SectionPeers {
     fn is_joined(&self, name: &XorName) -> bool {
         self.members
             .get(name)
-            .map(|info| info.value.state == PeerState::Joined)
+            .map(|info| info.value.state == MembershipState::Joined)
             .unwrap_or(false)
     }
 
     /// Update a member of our section.
     /// Returns whether anything actually changed.
-    fn update(&mut self, new_info: Proven<MemberInfo>) -> bool {
+    fn update(&mut self, new_info: SectionSigned<NodeState>) -> bool {
         match self.members.entry(*new_info.value.peer.name()) {
             Entry::Vacant(entry) => {
                 let _ = entry.insert(new_info);
@@ -155,11 +155,11 @@ impl SectionPeersUtils for SectionPeers {
                 // - Joined -> Relocated
                 // - Relocated -> Left (should not happen, but needed for consistency)
                 match (entry.get().value.state, new_info.value.state) {
-                    (PeerState::Joined, PeerState::Joined)
+                    (MembershipState::Joined, MembershipState::Joined)
                         if new_info.value.peer.age() > entry.get().value.peer.age() => {}
-                    (PeerState::Joined, PeerState::Left)
-                    | (PeerState::Joined, PeerState::Relocated(_))
-                    | (PeerState::Relocated(_), PeerState::Left) => {}
+                    (MembershipState::Joined, MembershipState::Left)
+                    | (MembershipState::Joined, MembershipState::Relocated(_))
+                    | (MembershipState::Relocated(_), MembershipState::Left) => {}
                     _ => return false,
                 };
 
@@ -178,10 +178,10 @@ impl SectionPeersUtils for SectionPeers {
     }
 }
 
-pub struct IntoIter(btree_map::IntoIter<XorName, Proven<MemberInfo>>);
+pub struct IntoIter(btree_map::IntoIter<XorName, SectionSigned<NodeState>>);
 
 impl Iterator for IntoIter {
-    type Item = Proven<MemberInfo>;
+    type Item = SectionSigned<NodeState>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|(_, info)| info)
@@ -197,7 +197,7 @@ fn elder_candidates<'a, I>(
     members: I,
 ) -> Vec<Peer>
 where
-    I: IntoIterator<Item = &'a Proven<MemberInfo>>,
+    I: IntoIterator<Item = &'a SectionSigned<NodeState>>,
 {
     members
         .into_iter()
@@ -209,14 +209,14 @@ where
 
 // Compare candidates for the next elders. The one comparing `Less` wins.
 fn cmp_elder_candidates(
-    lhs: &Proven<MemberInfo>,
-    rhs: &Proven<MemberInfo>,
+    lhs: &SectionSigned<NodeState>,
+    rhs: &SectionSigned<NodeState>,
     current_elders: &SectionAuthorityProvider,
 ) -> Ordering {
     // Older nodes are preferred. In case of a tie, prefer current elders. If still a tie, break
     // it comparing by the signed signatures because it's impossible for a node to predict its
     // signature and therefore game its chances of promotion.
-    cmp_elder_candidates_by_peer_state(&lhs.value.state, &rhs.value.state)
+    cmp_elder_candidates_by_membership_state(&lhs.value.state, &rhs.value.state)
         .then_with(|| rhs.value.peer.age().cmp(&lhs.value.peer.age()))
         .then_with(|| {
             let lhs_is_elder = is_elder(&lhs.value, current_elders);
@@ -235,8 +235,11 @@ fn cmp_elder_candidates(
 // wins. `Joined` is preferred over `Relocated` which is preferred over `Left`.
 // NOTE: we only consider `Relocated` peers as elder candidates if we don't have enough `Joined`
 // members to reach `ELDER_SIZE`.
-fn cmp_elder_candidates_by_peer_state(lhs: &PeerState, rhs: &PeerState) -> Ordering {
-    use PeerState::*;
+fn cmp_elder_candidates_by_membership_state(
+    lhs: &MembershipState,
+    rhs: &MembershipState,
+) -> Ordering {
+    use MembershipState::*;
 
     match (lhs, rhs) {
         (Joined, Joined) | (Relocated(_), Relocated(_)) => Ordering::Equal,
@@ -248,14 +251,14 @@ fn cmp_elder_candidates_by_peer_state(lhs: &PeerState, rhs: &PeerState) -> Order
 // A peer is considered active if either it is joined or it is a current elder who is being
 // relocated. This is because such elder still fulfils its duties and only when demoted can it
 // leave.
-fn is_active(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bool {
+fn is_active(info: &NodeState, current_elders: &SectionAuthorityProvider) -> bool {
     match info.state {
-        PeerState::Joined => true,
-        PeerState::Relocated(_) if is_elder(info, current_elders) => true,
+        MembershipState::Joined => true,
+        MembershipState::Relocated(_) if is_elder(info, current_elders) => true,
         _ => false,
     }
 }
 
-fn is_elder(info: &MemberInfo, current_elders: &SectionAuthorityProvider) -> bool {
+fn is_elder(info: &NodeState, current_elders: &SectionAuthorityProvider) -> bool {
     current_elders.contains_elder(info.peer.name())
 }
