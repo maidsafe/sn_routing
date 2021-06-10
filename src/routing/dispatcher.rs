@@ -9,7 +9,7 @@
 use super::{bootstrap, Comm, Command, Core};
 use crate::{
     error::Result, event::Event, messages::RoutingMsgUtils, peer::PeerUtils,
-    routing::comm::SendStatus, section::SectionUtils, Error, XorName,
+    routing::comm::SendStatus, section::SectionPeersUtils, section::SectionUtils, Error, XorName,
 };
 use itertools::Itertools;
 use sn_data_types::PublicKey;
@@ -251,10 +251,9 @@ impl Dispatcher {
                     .read()
                     .await
                     .section()
-                    .members
-                    .members
+                    .members()
                     .get(&name)
-                    .map(|member_info| member_info.value.peer)
+                    .map(|member_info| member_info.peer)
                 {
                     if self.comm.is_reachable(peer.addr()).await.is_err() {
                         commands.push(Command::ProposeOffline(*peer.name()));
