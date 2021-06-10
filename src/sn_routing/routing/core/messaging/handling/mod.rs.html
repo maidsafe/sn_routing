@@ -692,6 +692,7 @@
 <span id="691">691</span>
 <span id="692">692</span>
 <span id="693">693</span>
+<span id="694">694</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -986,6 +987,7 @@
             <span class="ident">Variant</span>::<span class="ident">RelocatePromise</span>(<span class="ident">promise</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_relocate_promise</span>(<span class="kw-2">*</span><span class="ident">promise</span>, <span class="ident">msg</span>.<span class="ident">clone</span>()).<span class="kw">await</span>
             }
+            <span class="ident">Variant</span>::<span class="ident">StartConnectivityTest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">TestConnectivity</span>(<span class="kw-2">*</span><span class="ident">name</span>)]),
             <span class="ident">Variant</span>::<span class="ident">JoinRequest</span>(<span class="ident">join_request</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
                 <span class="self">self</span>.<span class="ident">handle_join_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())

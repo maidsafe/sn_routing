@@ -220,6 +220,15 @@
 <span id="219">219</span>
 <span id="220">220</span>
 <span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -314,6 +323,11 @@
     },
     <span class="doccomment">/// Proposes a peer as offline</span>
     <span class="ident">ProposeOffline</span>(<span class="ident">XorName</span>),
+    <span class="doccomment">/// Send a signal to all Elders to</span>
+    <span class="doccomment">/// test the connectivity to a specific node</span>
+    <span class="ident">StartConnectivityTest</span>(<span class="ident">XorName</span>),
+    <span class="doccomment">/// Test Connectivity</span>
+    <span class="ident">TestConnectivity</span>(<span class="ident">XorName</span>),
 }
 
 <span class="kw">impl</span> <span class="ident">Command</span> {
@@ -433,6 +447,10 @@
                 .<span class="ident">field</span>(<span class="string">&quot;previous_name&quot;</span>, <span class="ident">previous_name</span>)
                 .<span class="ident">finish</span>(),
             <span class="self">Self</span>::<span class="ident">ProposeOffline</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;ProposeOffline&quot;</span>).<span class="ident">field</span>(<span class="ident">name</span>).<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">TestConnectivity</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;TestConnectivity&quot;</span>).<span class="ident">field</span>(<span class="ident">name</span>).<span class="ident">finish</span>(),
+            <span class="self">Self</span>::<span class="ident">StartConnectivityTest</span>(<span class="ident">name</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;StartConnectivityTest&quot;</span>).<span class="ident">field</span>(<span class="ident">name</span>).<span class="ident">finish</span>()
+            }
         }
     }
 }
