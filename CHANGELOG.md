@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.76.0](https://github.com/maidsafe/sn_routing/compare/v0.75.1...v0.76.0) (2021-06-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **connectivity:** sn_messaging includes a breaking change
+
+### Features
+
+* **connectivity:** refactor handling of lost connections ([96aecd9](https://github.com/maidsafe/sn_routing/commit/96aecd9eb1d61395d1e1722e832f7a4a36f146ee))
+
 ### [0.75.1](https://github.com/maidsafe/sn_routing/compare/v0.75.0...v0.75.1) (2021-06-09)
 
 ## [0.75.0](https://github.com/maidsafe/sn_routing/compare/v0.74.6...v0.75.0) (2021-06-09)
