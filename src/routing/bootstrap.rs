@@ -461,10 +461,10 @@ impl<'a> State<'a> {
                 JoinResponse::Approval {
                     genesis_key,
                     ref section_auth,
-                    ref member_info,
+                    ref node_state,
                     ..
                 } => {
-                    if member_info.value.peer.name() != &self.node.name() {
+                    if node_state.value.peer.name() != &self.node.name() {
                         trace!("Ignore NodeApproval not for us");
                         continue;
                     }
@@ -584,7 +584,7 @@ mod tests {
         error::Error as RoutingError,
         messages::RoutingMsgUtils,
         section::test_utils::*,
-        section::{MemberInfoUtils, SectionAuthorityProviderUtils},
+        section::{NodeStateUtils, SectionAuthorityProviderUtils},
         ELDER_SIZE, MIN_ADULT_AGE, MIN_AGE,
     };
     use anyhow::{anyhow, Error, Result};
@@ -594,7 +594,7 @@ mod tests {
         pin_mut,
     };
     use secured_linked_list::SecuredLinkedList;
-    use sn_messaging::{node::MemberInfo, SectionAuthorityProvider};
+    use sn_messaging::{node::NodeState, SectionAuthorityProvider};
     use std::collections::BTreeMap;
     use tokio::task;
 
@@ -683,15 +683,15 @@ mod tests {
             });
 
             // Send JoinResponse::Approval
-            let section_auth = proven(sk, section_auth.clone())?;
-            let member_info = proven(sk, MemberInfo::joined(peer))?;
+            let section_auth = section_signed(sk, section_auth.clone())?;
+            let node_state = section_signed(sk, NodeState::joined(peer))?;
             let proof_chain = SecuredLinkedList::new(pk);
             send_response(
                 &recv_tx,
                 Variant::JoinResponse(Box::new(JoinResponse::Approval {
                     genesis_key: pk,
                     section_auth: section_auth.clone(),
-                    member_info,
+                    node_state,
                     section_chain: proof_chain,
                 })),
                 &bootstrap_node,

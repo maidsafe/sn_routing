@@ -47,7 +47,7 @@ pub(crate) fn process(
         let chain = section
             .chain()
             .get_proof_chain_to_current(&dest_info.dest_section_pk)?;
-        let section_auth = section.proven_authority_provider();
+        let section_auth = section.section_signed_authority_provider();
         let variant = Variant::SectionKnowledge {
             src_info: (section_auth.clone(), chain),
             msg: Some(Box::new(msg.clone())),
@@ -75,7 +75,7 @@ pub(crate) struct Actions {
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::proven,
+        agreement::test_utils::section_signed,
         ed25519,
         section::test_utils::{gen_addr, gen_section_authority_provider},
         XorName, ELDER_SIZE, MIN_ADULT_AGE,
@@ -190,7 +190,7 @@ mod tests {
             let (section_auth0, mut nodes, _) = gen_section_authority_provider(prefix0, ELDER_SIZE);
             let node = nodes.remove(0);
 
-            let section_auth0 = proven(&our_sk, section_auth0)?;
+            let section_auth0 = section_signed(&our_sk, section_auth0)?;
             let section = Section::new(*chain.root_key(), chain, section_auth0)
                 .context("failed to create section")?;
 

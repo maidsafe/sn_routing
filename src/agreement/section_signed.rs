@@ -9,9 +9,9 @@
 use super::{verify_signed, Signed};
 use secured_linked_list::SecuredLinkedList;
 use serde::Serialize;
-use sn_messaging::node::Proven;
+use sn_messaging::node::SectionSigned;
 
-pub trait ProvenUtils<T: Serialize> {
+pub trait SectionSignedUtils<T: Serialize> {
     fn new(value: T, signed: Signed) -> Self;
 
     fn verify(&self, section_chain: &SecuredLinkedList) -> bool;
@@ -19,7 +19,7 @@ pub trait ProvenUtils<T: Serialize> {
     fn self_verify(&self) -> bool;
 }
 
-impl<T: Serialize> ProvenUtils<T> for Proven<T> {
+impl<T: Serialize> SectionSignedUtils<T> for SectionSigned<T> {
     fn new(value: T, signed: Signed) -> Self {
         Self { value, signed }
     }

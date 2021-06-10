@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod member_info;
+mod node_state;
 mod section_authority_provider;
 mod section_keys;
 mod section_peers;
@@ -15,8 +15,8 @@ mod section_peers;
 pub(crate) use self::section_authority_provider::test_utils;
 
 pub use self::{
-    member_info::{
-        MemberInfoUtils, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
+    node_state::{
+        NodeStateUtils, FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE, MIN_AGE,
     },
     section_authority_provider::{ElderCandidatesUtils, SectionAuthorityProviderUtils},
     section_keys::{SectionKeyShare, SectionKeysProvider},
@@ -24,7 +24,7 @@ pub use self::{
 };
 
 use crate::{
-    agreement::ProvenUtils,
+    agreement::SectionSignedUtils,
     error::{Error, Result},
     peer::PeerUtils,
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,
@@ -32,7 +32,7 @@ use crate::{
 use secured_linked_list::{error::Error as SecuredLinkedListError, SecuredLinkedList};
 use serde::Serialize;
 use sn_messaging::{
-    node::{ElderCandidates, MemberInfo, Peer, Proven, Section, SectionPeers, Signed},
+    node::{ElderCandidates, NodeState, Peer, Section, SectionPeers, SectionSigned, Signed},
     SectionAuthorityProvider,
 };
 use std::{collections::BTreeSet, convert::TryInto, iter, marker::Sized, net::SocketAddr};
@@ -46,7 +46,7 @@ pub trait SectionUtils {
     fn new(
         genesis_key: bls::PublicKey,
         chain: SecuredLinkedList,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
     ) -> Result<Self, Error>
     where
         Self: Sized;
@@ -63,12 +63,12 @@ pub trait SectionUtils {
     /// Update the `SectionAuthorityProvider` of our section.
     fn update_elders(
         &mut self,
-        new_section_auth: Proven<SectionAuthorityProvider>,
+        new_section_auth: SectionSigned<SectionAuthorityProvider>,
         new_key_signed: Signed,
     ) -> bool;
 
     /// Update the member. Returns whether it actually changed anything.
-    fn update_member(&mut self, member_info: Proven<MemberInfo>) -> bool;
+    fn update_member(&mut self, node_state: SectionSigned<NodeState>) -> bool;
 
     fn chain(&self) -> &SecuredLinkedList;
 
@@ -81,7 +81,7 @@ pub trait SectionUtils {
 
     fn authority_provider(&self) -> &SectionAuthorityProvider;
 
-    fn proven_authority_provider(&self) -> &Proven<SectionAuthorityProvider>;
+    fn section_signed_authority_provider(&self) -> &SectionSigned<SectionAuthorityProvider>;
 
     fn is_elder(&self, name: &XorName) -> bool;
 
@@ -123,7 +123,7 @@ impl SectionUtils for Section {
     fn new(
         genesis_key: bls::PublicKey,
         chain: SecuredLinkedList,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
     ) -> Result<Self, Error> {
         if section_auth.signed.public_key != *chain.last_key() {
             error!("can't create section: section_auth signed with incorrect key");
@@ -155,10 +155,10 @@ impl SectionUtils for Section {
         )?;
 
         for peer in section.section_auth.value.peers() {
-            let member_info = MemberInfo::joined(peer);
-            let signed = create_first_signed(&public_key_set, &secret_key_share, &member_info)?;
-            let _ = section.members.update(Proven {
-                value: member_info,
+            let node_state = NodeState::joined(peer);
+            let signed = create_first_signed(&public_key_set, &secret_key_share, &node_state)?;
+            let _ = section.members.update(SectionSigned {
+                value: node_state,
                 signed,
             });
         }
@@ -208,7 +208,7 @@ impl SectionUtils for Section {
     /// Update the `SectionAuthorityProvider` of our section.
     fn update_elders(
         &mut self,
-        new_section_auth: Proven<SectionAuthorityProvider>,
+        new_section_auth: SectionSigned<SectionAuthorityProvider>,
         new_key_signed: Signed,
     ) -> bool {
         if new_section_auth.value.prefix() != *self.prefix()
@@ -247,13 +247,13 @@ impl SectionUtils for Section {
     }
 
     /// Update the member. Returns whether it actually changed anything.
-    fn update_member(&mut self, member_info: Proven<MemberInfo>) -> bool {
-        if !member_info.verify(&self.chain) {
-            error!("can't merge member {:?}", member_info.value);
+    fn update_member(&mut self, node_state: SectionSigned<NodeState>) -> bool {
+        if !node_state.verify(&self.chain) {
+            error!("can't merge member {:?}", node_state.value);
             return false;
         }
 
-        self.members.update(member_info)
+        self.members.update(node_state)
     }
 
     fn chain(&self) -> &SecuredLinkedList {
@@ -288,7 +288,7 @@ impl SectionUtils for Section {
         &self.section_auth.value
     }
 
-    fn proven_authority_provider(&self) -> &Proven<SectionAuthorityProvider> {
+    fn section_signed_authority_provider(&self) -> &SectionSigned<SectionAuthorityProvider> {
         &self.section_auth
     }
 
@@ -430,12 +430,12 @@ fn create_first_section_authority_provider(
     pk_set: &bls::PublicKeySet,
     sk_share: &bls::SecretKeyShare,
     mut peer: Peer,
-) -> Result<Proven<SectionAuthorityProvider>> {
+) -> Result<SectionSigned<SectionAuthorityProvider>> {
     peer.set_reachable(true);
     let section_auth =
         SectionAuthorityProvider::new(iter::once(peer), Prefix::default(), pk_set.clone());
     let signed = create_first_signed(pk_set, sk_share, &section_auth)?;
-    Ok(Proven::new(section_auth, signed))
+    Ok(SectionSigned::new(section_auth, signed))
 }
 
 fn create_first_signed<T: Serialize>(

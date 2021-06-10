@@ -20,8 +20,8 @@ use crate::{
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
     node::{
-        DkgKey, ElderCandidates, JoinResponse, MemberInfo, Network, Peer, PlainMessage, Proposal,
-        Proven, RelocateDetails, RelocatePromise, RoutingMsg, Section, Variant,
+        DkgKey, ElderCandidates, JoinResponse, Network, NodeState, Peer, PlainMessage, Proposal,
+        RelocateDetails, RelocatePromise, RoutingMsg, Section, SectionSigned, Variant,
     },
     DestInfo, DstLocation,
 };
@@ -31,20 +31,23 @@ use xor_name::XorName;
 // RoutingMsg sending
 impl Core {
     // Send NodeApproval to a joining node which makes them a section member
-    pub(crate) fn send_node_approval(&self, member_info: Proven<MemberInfo>) -> Result<Command> {
+    pub(crate) fn send_node_approval(
+        &self,
+        node_state: SectionSigned<NodeState>,
+    ) -> Result<Command> {
         info!(
             "Our section with {:?} has approved peer {:?}.",
             self.section.prefix(),
-            member_info.value.peer
+            node_state.value.peer
         );
 
-        let addr = *member_info.value.peer.addr();
-        let name = *member_info.value.peer.name();
+        let addr = *node_state.value.peer.addr();
+        let name = *node_state.value.peer.name();
 
         let variant = Variant::JoinResponse(Box::new(JoinResponse::Approval {
             genesis_key: *self.section.genesis_key(),
-            section_auth: self.section.proven_authority_provider().clone(),
-            member_info,
+            section_auth: self.section.section_signed_authority_provider().clone(),
+            node_state,
             section_chain: self.section.chain().clone(),
         }));
 

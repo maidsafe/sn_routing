@@ -14,7 +14,7 @@ use crate::{
         self, RelocateAction, RelocateDetailsUtils, RelocateState, SignedRelocateDetailsUtils,
     },
     routing::command::Command,
-    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
+    section::{NodeStateUtils, SectionAuthorityProviderUtils, SectionPeersUtils, SectionUtils},
     Event, ELDER_SIZE,
 };
 use sn_messaging::node::{

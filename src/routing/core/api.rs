@@ -14,13 +14,13 @@ use crate::{
     node::Node,
     peer::PeerUtils,
     routing::{command::Command, enduser_registry::SocketId},
-    section::{MemberInfoUtils, SectionAuthorityProviderUtils, SectionUtils},
+    section::{NodeStateUtils, SectionAuthorityProviderUtils, SectionUtils},
     Error, Event,
 };
 use bytes::Bytes;
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{MemberInfo, Network, Peer, Proposal, RoutingMsg, Section, Variant},
+    node::{Network, NodeState, Peer, Proposal, RoutingMsg, Section, Variant},
     section_info::Error as TargetSectionError,
     DestInfo, EndUser, Itinerary, SectionAuthorityProvider, SrcLocation,
 };
@@ -202,7 +202,11 @@ impl Core {
                     SectionAuthorityProvider {
                         prefix: *self.section.prefix(),
                         public_key_set,
-                        elders: self.section.proven_authority_provider().value.elders(),
+                        elders: self
+                            .section
+                            .section_signed_authority_provider()
+                            .value
+                            .elders(),
                     },
                 ))
             } else {
@@ -302,7 +306,7 @@ impl Core {
         destination_key: Option<bls::PublicKey>,
     ) -> Result<Vec<Command>> {
         self.propose(Proposal::Online {
-            member_info: MemberInfo::joined(peer),
+            node_state: NodeState::joined(peer),
             previous_name,
             destination_key,
         })

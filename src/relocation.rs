@@ -17,7 +17,7 @@ use crate::{
 };
 use sn_messaging::{
     node::{
-        MemberInfo, Network, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
+        Network, NodeState, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
         Section, SignedRelocateDetails, Variant,
     },
     MessageType,
@@ -32,7 +32,7 @@ pub(crate) fn actions(
     network: &Network,
     churn_name: &XorName,
     churn_signature: &bls::Signature,
-) -> Vec<(MemberInfo, RelocateAction)> {
+) -> Vec<(NodeState, RelocateAction)> {
     // Find the peers that pass the relocation check and take only the oldest ones to avoid
     // relocating too many nodes at the same time.
     let candidates: Vec<_> = section
@@ -268,10 +268,10 @@ fn trailing_zeros(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::proven,
+        agreement::test_utils::section_signed,
         peer::test_utils::arbitrary_unique_peers,
         routing::tests::SecretKeySet,
-        section::{MemberInfoUtils, SectionAuthorityProviderUtils},
+        section::{NodeStateUtils, SectionAuthorityProviderUtils},
         ELDER_SIZE, MIN_AGE,
     };
     use anyhow::Result;
@@ -331,13 +331,13 @@ mod tests {
             Prefix::default(),
             sk_set.public_keys(),
         );
-        let section_auth = proven(sk, section_auth)?;
+        let section_auth = section_signed(sk, section_auth)?;
 
         let mut section = Section::new(pk, SecuredLinkedList::new(pk), section_auth)?;
 
         for peer in &peers {
-            let info = MemberInfo::joined(*peer);
-            let info = proven(sk, info)?;
+            let info = NodeState::joined(*peer);
+            let info = section_signed(sk, info)?;
 
             assert!(section.update_member(info));
         }

@@ -9,7 +9,7 @@
 use std::cmp;
 
 use crate::{
-    agreement::ProvenUtils,
+    agreement::SectionSignedUtils,
     error::Result,
     messages::RoutingMsgUtils,
     network::NetworkUtils,
@@ -22,7 +22,10 @@ use crate::{
 };
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{MemberInfo, PeerState, PlainMessage, Proposal, Proven, RoutingMsg, Signed, Variant},
+    node::{
+        MembershipState, NodeState, PlainMessage, Proposal, RoutingMsg, SectionSigned, Signed,
+        Variant,
+    },
     DestInfo, DstLocation, SectionAuthorityProvider,
 };
 use xor_name::XorName;
@@ -40,15 +43,15 @@ impl Core {
 
         match proposal {
             Proposal::Online {
-                member_info,
+                node_state,
                 previous_name,
                 ..
             } => {
-                self.handle_online_agreement(member_info, previous_name, signed)
+                self.handle_online_agreement(node_state, previous_name, signed)
                     .await
             }
-            Proposal::Offline(member_info) => {
-                self.handle_offline_agreement(member_info, signed).await
+            Proposal::Offline(node_state) => {
+                self.handle_offline_agreement(node_state, signed).await
             }
             Proposal::SectionInfo(section_auth) => {
                 self.handle_section_info_agreement(section_auth, signed)
@@ -86,16 +89,20 @@ impl Core {
 
     async fn handle_online_agreement(
         &mut self,
-        new_info: MemberInfo,
+        new_info: NodeState,
         previous_name: Option<XorName>,
         signed: Signed,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        if let Some(old_info) = self.section.members().get_proven(new_info.peer.name()) {
+        if let Some(old_info) = self
+            .section
+            .members()
+            .get_section_signed(new_info.peer.name())
+        {
             // This node is rejoin with same name.
 
-            if old_info.value.state != PeerState::Left {
+            if old_info.value.state != MembershipState::Left {
                 debug!(
                     "Ignoring Online node {} - {:?} not Left.",
                     new_info.peer.name(),
@@ -117,7 +124,7 @@ impl Core {
             }
         }
 
-        let new_info = Proven {
+        let new_info = SectionSigned {
             value: new_info,
             signed,
         };
@@ -154,17 +161,17 @@ impl Core {
 
     async fn handle_offline_agreement(
         &mut self,
-        member_info: MemberInfo,
+        node_state: NodeState,
         signed: Signed,
     ) -> Result<Vec<Command>> {
         let mut commands = vec![];
 
-        let peer = member_info.peer;
+        let peer = node_state.peer;
         let age = peer.age();
         let signature = signed.signature.clone();
 
-        if !self.section.update_member(Proven {
-            value: member_info,
+        if !self.section.update_member(SectionSigned {
+            value: node_state,
             signed,
         }) {
             info!("ignore Offline: {:?}", peer);
@@ -200,7 +207,7 @@ impl Core {
 
         let equal_or_extension = section_auth.prefix() == *self.section.prefix()
             || section_auth.prefix().is_extension_of(self.section.prefix());
-        let section_auth = Proven::new(section_auth, signed.clone());
+        let section_auth = SectionSigned::new(section_auth, signed.clone());
 
         if equal_or_extension {
             // Our section of sub-section
@@ -260,7 +267,7 @@ impl Core {
 
     async fn handle_our_elders_agreement(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_signed: Signed,
     ) -> Result<Vec<Command>> {
         let updates = self

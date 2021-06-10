@@ -9,7 +9,7 @@
 mod dkg;
 mod dkg_msgs_utils;
 mod proposal;
-mod proven;
+mod section_signed;
 #[cfg(test)]
 pub mod test_utils;
 
@@ -18,7 +18,7 @@ pub(crate) use self::{
     dkg_msgs_utils::{DkgFailureSignedSetUtils, DkgFailureSignedUtils, DkgKeyUtils},
     proposal::{ProposalAggregator, ProposalError, ProposalUtils},
 };
-pub use proven::ProvenUtils;
+pub use section_signed::SectionSignedUtils;
 use serde::Serialize;
 pub(crate) use sn_messaging::node::{SignatureAggregator, Signed, SignedShare};
 

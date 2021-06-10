@@ -12,7 +12,7 @@ mod stats;
 
 use self::stats::NetworkStats;
 use crate::{
-    agreement::{verify_signed, ProvenUtils, Signed},
+    agreement::{verify_signed, SectionSignedUtils, Signed},
     peer::PeerUtils,
     section::SectionAuthorityProviderUtils,
     Error, Result,
@@ -20,7 +20,7 @@ use crate::{
 
 use secured_linked_list::SecuredLinkedList;
 use sn_messaging::{
-    node::{Network, OtherSection, Peer, PrefixMap, Proven},
+    node::{Network, OtherSection, Peer, PrefixMap, SectionSigned},
     SectionAuthorityProvider,
 };
 use std::iter;
@@ -59,7 +59,7 @@ pub trait NetworkUtils {
     /// needed in that case.
     fn update_section(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_signed: Option<Signed>,
         section_chain: &SecuredLinkedList,
     ) -> bool;
@@ -153,7 +153,7 @@ impl NetworkUtils for Network {
     /// needed in that case.
     fn update_section(
         &mut self,
-        section_auth: Proven<SectionAuthorityProvider>,
+        section_auth: SectionSigned<SectionAuthorityProvider>,
         key_signed: Option<Signed>,
         section_chain: &SecuredLinkedList,
     ) -> bool {
@@ -270,7 +270,7 @@ mod tests {
     use rand::Rng;
 
     #[test]
-    fn closest() {
+    fn closest() -> Result<()> {
         let sk = bls::SecretKey::random();
         let chain = SecuredLinkedList::new(sk.public_key());
 
@@ -280,8 +280,8 @@ mod tests {
 
         // Create map containing sections (00), (01) and (10)
         let mut map = Network::new();
-        let _ = map.update_section(gen_proven_section_auth(&sk, p01), None, &chain);
-        let _ = map.update_section(gen_proven_section_auth(&sk, p10), None, &chain);
+        let _ = map.update_section(gen_section_auth(&sk, p01)?, None, &chain);
+        let _ = map.update_section(gen_section_auth(&sk, p10)?, None, &chain);
 
         let mut rng = rand::thread_rng();
         let n01 = p01.substituted_in(rng.gen());
@@ -291,13 +291,15 @@ mod tests {
         assert_eq!(map.closest(&n01).map(|i| &i.prefix), Some(&p01));
         assert_eq!(map.closest(&n10).map(|i| &i.prefix), Some(&p10));
         assert_eq!(map.closest(&n11).map(|i| &i.prefix), Some(&p10));
+
+        Ok(())
     }
 
-    fn gen_proven_section_auth(
+    fn gen_section_auth(
         sk: &bls::SecretKey,
         prefix: Prefix,
-    ) -> Proven<SectionAuthorityProvider> {
+    ) -> Result<SectionSigned<SectionAuthorityProvider>> {
         let (section_auth, _, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
-        agreement::test_utils::proven(sk, section_auth).unwrap()
+        agreement::test_utils::section_signed(sk, section_auth)
     }
 }
