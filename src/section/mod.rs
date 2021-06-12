@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod member_info;
-mod section_authority_provider;
+pub(crate) mod section_authority_provider;
 mod section_keys;
 mod section_peers;
 

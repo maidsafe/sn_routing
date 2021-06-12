@@ -6,17 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod dkg;
+pub(crate) mod commands;
 mod dkg_msgs_utils;
 mod proposal;
 mod proven;
+mod session;
 #[cfg(test)]
 pub mod test_utils;
+mod voter;
 
 pub(crate) use self::{
-    dkg::{DkgCommands, DkgVoter},
-    dkg_msgs_utils::{DkgFailureSignedSetUtils, DkgFailureSignedUtils, DkgKeyUtils},
+    dkg_msgs_utils::{DkgFailureSignedSetUtils, DkgKeyUtils},
     proposal::{ProposalAggregator, ProposalError, ProposalUtils},
+    voter::DkgVoter,
 };
 pub use proven::ProvenUtils;
 use serde::Serialize;
