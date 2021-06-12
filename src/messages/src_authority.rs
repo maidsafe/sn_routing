@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::{self},
+    ed25519::{self},
     error::{Error, Result},
     peer::PeerUtils,
 };
@@ -37,7 +37,7 @@ pub trait SrcAuthorityUtils {
 impl SrcAuthorityUtils for SrcAuthority {
     fn src_location(&self) -> SrcLocation {
         match self {
-            SrcAuthority::Node { public_key, .. } => SrcLocation::Node(crypto::name(public_key)),
+            SrcAuthority::Node { public_key, .. } => SrcLocation::Node(ed25519::name(public_key)),
             SrcAuthority::BlsShare { src_name, .. } => SrcLocation::Section(*src_name),
             SrcAuthority::Section { src_name, .. } => SrcLocation::Section(*src_name),
         }
@@ -49,7 +49,7 @@ impl SrcAuthorityUtils for SrcAuthority {
 
     fn name(&self) -> XorName {
         match self {
-            SrcAuthority::Node { public_key, .. } => crypto::name(public_key),
+            SrcAuthority::Node { public_key, .. } => ed25519::name(public_key),
             SrcAuthority::BlsShare { src_name, .. } => *src_name,
             SrcAuthority::Section { src_name, .. } => *src_name,
         }
@@ -58,7 +58,7 @@ impl SrcAuthorityUtils for SrcAuthority {
     // If this location is `Node`, returns the corresponding `Peer` with `addr`. Otherwise error.
     fn peer(&self, addr: SocketAddr) -> Result<Peer> {
         match self {
-            SrcAuthority::Node { public_key, .. } => Ok(Peer::new(crypto::name(public_key), addr)),
+            SrcAuthority::Node { public_key, .. } => Ok(Peer::new(ed25519::name(public_key), addr)),
             SrcAuthority::Section { .. } | SrcAuthority::BlsShare { .. } => {
                 Err(Error::InvalidSrcLocation)
             }

@@ -212,7 +212,7 @@ impl SectionAuthorityProviderUtils for SectionAuthorityProvider {
 pub(crate) mod test_utils {
     use super::*;
     use crate::routing::tests::SecretKeySet;
-    use crate::{crypto, node::Node, MIN_ADULT_AGE, MIN_AGE};
+    use crate::{ed25519, node::Node, MIN_ADULT_AGE, MIN_AGE};
     use itertools::Itertools;
     use std::{cell::Cell, net::SocketAddr};
     use xor_name::Prefix;
@@ -241,7 +241,7 @@ pub(crate) mod test_utils {
                     MIN_ADULT_AGE
                 };
                 Node::new(
-                    crypto::gen_keypair(&prefix.range_inclusive(), age),
+                    ed25519::gen_keypair(&prefix.range_inclusive(), age),
                     gen_addr(),
                 )
             })

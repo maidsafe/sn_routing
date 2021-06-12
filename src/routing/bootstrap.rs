@@ -8,7 +8,7 @@
 
 use super::{comm::ConnectionEvent, Comm};
 use crate::{
-    crypto::{self},
+    ed25519::{self},
     error::{Error, Result},
     messages::{RoutingMsgUtils, VerifyStatus},
     node::Node,
@@ -157,7 +157,7 @@ impl<'a> State<'a> {
         );
 
         let age = relocate_details.relocate_details()?.age;
-        let new_keypair = crypto::gen_keypair(&name_prefix.range_inclusive(), age);
+        let new_keypair = ed25519::gen_keypair(&name_prefix.range_inclusive(), age);
         let new_name = XorName::from(PublicKey::from(new_keypair.public));
         let relocate_payload =
             RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
@@ -246,8 +246,8 @@ impl<'a> State<'a> {
                             .unwrap_or(FIRST_SECTION_MAX_AGE);
 
                         let new_keypair =
-                            crypto::gen_keypair(&Prefix::default().range_inclusive(), age);
-                        let new_name = crypto::name(&new_keypair.public);
+                            ed25519::gen_keypair(&Prefix::default().range_inclusive(), age);
+                        let new_name = ed25519::name(&new_keypair.public);
 
                         info!("Setting Node name to {}", new_name);
                         self.node = Node::new(new_keypair, self.node.addr);
@@ -616,7 +616,7 @@ mod tests {
         // Otherwise during the bootstrap process, node will change its id and age.
         let node_age = MIN_AGE + 2;
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), node_age),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), node_age),
             gen_addr(),
         );
         let peer = node.peer();
@@ -724,7 +724,7 @@ mod tests {
         let pk_set = sk_set.public_keys();
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let name = node.name();
@@ -816,7 +816,7 @@ mod tests {
         let pk_set = sk_set.public_keys();
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let node_name = node.name();
@@ -893,7 +893,7 @@ mod tests {
         let bootstrap_node = nodes.remove(0);
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
@@ -940,12 +940,12 @@ mod tests {
         let recv_rx = MessageReceiver::Deserialized(recv_rx);
 
         let bootstrap_node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let node_name = node.name();

@@ -76,7 +76,7 @@ mod tests {
     use super::*;
     use crate::{
         agreement::test_utils::proven,
-        crypto,
+        ed25519,
         section::test_utils::{gen_addr, gen_section_authority_provider},
         XorName, ELDER_SIZE, MIN_ADULT_AGE,
     };
@@ -207,7 +207,7 @@ mod tests {
             section_pk: bls::PublicKey,
         ) -> Result<RoutingMsg> {
             let sender = Node::new(
-                crypto::gen_keypair(&src_section.range_inclusive(), MIN_ADULT_AGE),
+                ed25519::gen_keypair(&src_section.range_inclusive(), MIN_ADULT_AGE),
                 gen_addr(),
             );
 

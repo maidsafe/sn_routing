@@ -12,7 +12,7 @@ mod src_authority;
 pub use self::{plain_message::PlainMessageUtils, src_authority::SrcAuthorityUtils};
 use crate::{
     agreement::ProvenUtils,
-    crypto::{self, Verifier},
+    ed25519::{self, Verifier},
     error::{Error, Result},
     node::Node,
     section::{SectionKeyShare, SectionUtils},
@@ -257,7 +257,7 @@ impl RoutingMsgUtils for RoutingMsg {
         })
         .map_err(|_| Error::InvalidMessage)?;
 
-        let signature = crypto::sign(&serialized, &node.keypair);
+        let signature = ed25519::sign(&serialized, &node.keypair);
         let src = SrcAuthority::Node {
             public_key: node.keypair.public,
             signature,

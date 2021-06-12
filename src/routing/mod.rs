@@ -26,7 +26,7 @@ use self::{
     dispatcher::Dispatcher,
 };
 use crate::{
-    crypto,
+    ed25519,
     error::Result,
     event::{Elders, Event, NodeElderChange},
     messages::RoutingMsgUtils,
@@ -101,17 +101,17 @@ impl Routing {
     /// caller to handle this case, for example by using a timeout.
     pub async fn new(config: Config) -> Result<(Self, EventStream)> {
         let keypair = config.keypair.unwrap_or_else(|| {
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE)
         });
-        let node_name = crypto::name(&keypair.public);
+        let node_name = ed25519::name(&keypair.public);
 
         let (event_tx, event_rx) = mpsc::channel(EVENT_CHANNEL_SIZE);
         let (connection_event_tx, mut connection_event_rx) = mpsc::channel(1);
 
         let (state, comm, backlog) = if config.first {
             // Genesis node having a fix age of 255.
-            let keypair = crypto::gen_keypair(&Prefix::default().range_inclusive(), 255);
-            let node_name = crypto::name(&keypair.public);
+            let keypair = ed25519::gen_keypair(&Prefix::default().range_inclusive(), 255);
+            let node_name = ed25519::name(&keypair.public);
 
             info!("{} Starting a new network as the genesis node.", node_name);
 

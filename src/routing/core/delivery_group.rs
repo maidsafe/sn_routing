@@ -167,7 +167,7 @@ mod tests {
     use super::*;
     use crate::{
         agreement::test_utils::proven,
-        crypto,
+        ed25519,
         section::{
             test_utils::{gen_addr, gen_section_authority_provider},
             MemberInfoUtils, SectionAuthorityProviderUtils, MIN_ADULT_AGE,
@@ -205,7 +205,7 @@ mod tests {
     fn delivery_targets_elder_to_our_adult() -> Result<()> {
         let (our_name, mut section, network, sk) = setup_elder()?;
 
-        let name = crypto::gen_name_with_age(MIN_ADULT_AGE);
+        let name = ed25519::gen_name_with_age(MIN_ADULT_AGE);
         let dst_name = section.prefix().substituted_in(name);
         let peer = Peer::new(dst_name, gen_addr());
         let member_info = MemberInfo::joined(peer);
