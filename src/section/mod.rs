@@ -24,7 +24,7 @@ pub use self::{
 };
 
 use crate::{
-    agreement::SectionSignedUtils,
+    dkg::SectionSignedUtils,
     error::{Error, Result},
     peer::PeerUtils,
     ELDER_SIZE, RECOMMENDED_SECTION_SIZE,

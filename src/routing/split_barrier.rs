@@ -8,7 +8,7 @@
 
 use std::mem;
 
-use crate::agreement::Signed;
+use crate::dkg::Signed;
 use sn_messaging::{node::SectionSigned, SectionAuthorityProvider};
 use xor_name::Prefix;
 

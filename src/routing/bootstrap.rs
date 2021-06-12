@@ -580,7 +580,7 @@ async fn send_messages(
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::*,
+        dkg::test_utils::*,
         error::Error as RoutingError,
         messages::RoutingMsgUtils,
         section::test_utils::*,

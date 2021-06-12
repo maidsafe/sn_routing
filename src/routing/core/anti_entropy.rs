@@ -75,7 +75,7 @@ pub(crate) struct Actions {
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::section_signed,
+        dkg::test_utils::section_signed,
         ed25519,
         section::test_utils::{gen_addr, gen_section_authority_provider},
         XorName, ELDER_SIZE, MIN_ADULT_AGE,

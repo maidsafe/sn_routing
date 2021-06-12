@@ -12,7 +12,7 @@ mod stats;
 
 use self::stats::NetworkStats;
 use crate::{
-    agreement::{verify_signed, SectionSignedUtils, Signed},
+    dkg::{verify_signed, SectionSignedUtils, Signed},
     peer::PeerUtils,
     section::SectionAuthorityProviderUtils,
     Error, Result,
@@ -266,7 +266,7 @@ impl OtherSectionUtils for OtherSection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{agreement, section};
+    use crate::{dkg, section};
     use rand::Rng;
 
     #[test]
@@ -300,6 +300,6 @@ mod tests {
         prefix: Prefix,
     ) -> Result<SectionSigned<SectionAuthorityProvider>> {
         let (section_auth, _, _) = section::test_utils::gen_section_authority_provider(prefix, 5);
-        agreement::test_utils::section_signed(sk, section_auth)
+        dkg::test_utils::section_signed(sk, section_auth)
     }
 }

@@ -8,7 +8,7 @@
 
 use super::{Comm, Command, Core, Dispatcher};
 use crate::{
-    agreement::{
+    dkg::{
         test_utils::{prove, section_signed},
         ProposalUtils,
     },

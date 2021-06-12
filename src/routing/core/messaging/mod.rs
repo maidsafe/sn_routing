@@ -11,7 +11,7 @@ mod sending;
 
 use super::Core;
 use crate::{
-    agreement::{ProposalUtils, SignedShare},
+    dkg::{ProposalUtils, SignedShare},
     error::Result,
     messages::RoutingMsgUtils,
     routing::command::Command,
