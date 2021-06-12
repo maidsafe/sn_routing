@@ -14,3 +14,4 @@ target/
 *.sublime-*
 .cargo/
 .DS_Store
+.core

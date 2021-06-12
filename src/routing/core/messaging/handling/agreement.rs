@@ -9,7 +9,7 @@
 use std::cmp;
 
 use crate::{
-    agreement::SectionSignedUtils,
+    dkg::SectionSignedUtils,
     error::Result,
     messages::RoutingMsgUtils,
     network::NetworkUtils,

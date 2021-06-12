@@ -8,7 +8,7 @@
 
 use super::Core;
 use crate::{
-    agreement::{DkgCommands, DkgFailureSignedSetUtils},
+    dkg::{DkgCommands, DkgFailureSignedSetUtils},
     error::Result,
     peer::PeerUtils,
     routing::command::Command,

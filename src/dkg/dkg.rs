@@ -588,7 +588,7 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        agreement::DkgKeyUtils, ed25519, node::test_utils::arbitrary_unique_nodes,
+        dkg::DkgKeyUtils, ed25519, node::test_utils::arbitrary_unique_nodes,
         section::test_utils::gen_addr, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use assert_matches::assert_matches;

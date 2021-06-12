@@ -8,7 +8,7 @@
 
 use super::super::Core;
 use crate::{
-    agreement::DkgKeyUtils,
+    dkg::DkgKeyUtils,
     error::Result,
     messages::RoutingMsgUtils,
     network::NetworkUtils,
