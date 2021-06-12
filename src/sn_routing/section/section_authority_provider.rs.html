@@ -489,7 +489,7 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">test_utils</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">routing</span>::<span class="ident">tests</span>::<span class="ident">SecretKeySet</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">crypto</span>, <span class="ident">node</span>::<span class="ident">Node</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ed25519</span>, <span class="ident">node</span>::<span class="ident">Node</span>, <span class="ident">MIN_ADULT_AGE</span>, <span class="ident">MIN_AGE</span>};
     <span class="kw">use</span> <span class="ident">itertools</span>::<span class="ident">Itertools</span>;
     <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cell</span>::<span class="ident">Cell</span>, <span class="ident">net</span>::<span class="ident">SocketAddr</span>};
     <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">Prefix</span>;
@@ -518,7 +518,7 @@
                     <span class="ident">MIN_ADULT_AGE</span>
                 };
                 <span class="ident">Node</span>::<span class="ident">new</span>(
-                    <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>),
+                    <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>),
                     <span class="ident">gen_addr</span>(),
                 )
             })

@@ -1062,7 +1062,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">comm</span>::<span class="ident">ConnectionEvent</span>, <span class="ident">Comm</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">crypto</span>::{<span class="self">self</span>},
+    <span class="ident">ed25519</span>::{<span class="self">self</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">messages</span>::{<span class="ident">RoutingMsgUtils</span>, <span class="ident">VerifyStatus</span>},
     <span class="ident">node</span>::<span class="ident">Node</span>,
@@ -1211,7 +1211,7 @@
         );
 
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">relocate_details</span>.<span class="ident">relocate_details</span>()<span class="question-mark">?</span>.<span class="ident">age</span>;
-        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
+        <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span> <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">name_prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
         <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">XorName</span>::<span class="ident">from</span>(<span class="ident">PublicKey</span>::<span class="ident">from</span>(<span class="ident">new_keypair</span>.<span class="ident">public</span>));
         <span class="kw">let</span> <span class="ident">relocate_payload</span> <span class="op">=</span>
             <span class="ident">RelocatePayload</span>::<span class="ident">new</span>(<span class="ident">relocate_details</span>, <span class="kw-2">&amp;</span><span class="ident">new_name</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">keypair</span>);
@@ -1300,8 +1300,8 @@
                             .<span class="ident">unwrap_or</span>(<span class="ident">FIRST_SECTION_MAX_AGE</span>);
 
                         <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span>
-                            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
-                        <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">crypto</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">new_keypair</span>.<span class="ident">public</span>);
+                            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">age</span>);
+                        <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">ed25519</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">new_keypair</span>.<span class="ident">public</span>);
 
                         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Setting Node name to {}&quot;</span>, <span class="ident">new_name</span>);
                         <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>);
@@ -1670,7 +1670,7 @@
         <span class="comment">// Otherwise during the bootstrap process, node will change its id and age.</span>
         <span class="kw">let</span> <span class="ident">node_age</span> <span class="op">=</span> <span class="ident">MIN_AGE</span> <span class="op">+</span> <span class="number">2</span>;
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">node_age</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">node_age</span>),
             <span class="ident">gen_addr</span>(),
         );
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">peer</span>();
@@ -1778,7 +1778,7 @@
         <span class="kw">let</span> <span class="ident">pk_set</span> <span class="op">=</span> <span class="ident">sk_set</span>.<span class="ident">public_keys</span>();
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
             <span class="ident">gen_addr</span>(),
         );
         <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
@@ -1870,7 +1870,7 @@
         <span class="kw">let</span> <span class="ident">pk_set</span> <span class="op">=</span> <span class="ident">sk_set</span>.<span class="ident">public_keys</span>();
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
             <span class="ident">gen_addr</span>(),
         );
         <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
@@ -1947,7 +1947,7 @@
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">nodes</span>.<span class="ident">remove</span>(<span class="number">0</span>);
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
             <span class="ident">gen_addr</span>(),
         );
 
@@ -1994,12 +1994,12 @@
         <span class="kw">let</span> <span class="ident">recv_rx</span> <span class="op">=</span> <span class="ident">MessageReceiver</span>::<span class="ident">Deserialized</span>(<span class="ident">recv_rx</span>);
 
         <span class="kw">let</span> <span class="ident">bootstrap_node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
             <span class="ident">gen_addr</span>(),
         );
 
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(
-            <span class="ident">crypto</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
+            <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">Prefix</span>::<span class="ident">default</span>().<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>),
             <span class="ident">gen_addr</span>(),
         );
         <span class="kw">let</span> <span class="ident">node_name</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">name</span>();
