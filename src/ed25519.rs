@@ -68,6 +68,9 @@ pub(crate) mod test_utils {
             // OK to unwrap because `from_bytes` returns error only if the input slice has incorrect
             // length. But here we only generate arrays of size `SECRET_KEY_LENGTH` which is the
             // correct one.
+            // D.I. Letting this go, not for above reason but proptest uses unwrap due to
+            // its structure.
+            // nosemgrep
             let secret = SecretKey::from_bytes(&bytes[..]).unwrap();
             let public = PublicKey::from(&secret);
 
