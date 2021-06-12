@@ -68,12 +68,15 @@ impl Debug for Node {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::crypto;
+    use crate::ed25519;
     use itertools::Itertools;
     use proptest::{collection::SizeRange, prelude::*};
 
     pub(crate) fn arbitrary_node() -> impl Strategy<Value = Node> {
-        (crypto::test_utils::arbitrary_keypair(), any::<SocketAddr>())
+        (
+            ed25519::test_utils::arbitrary_keypair(),
+            any::<SocketAddr>(),
+        )
             .prop_map(|(keypair, addr)| Node::new(keypair, addr))
     }
 

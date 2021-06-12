@@ -8,7 +8,7 @@
 
 use super::{DkgFailureSignedSetUtils, DkgFailureSignedUtils};
 use crate::{
-    crypto::{self, Keypair},
+    ed25519::{self, Keypair},
     error::Result,
     messages::RoutingMsgUtils,
     node::Node,
@@ -83,7 +83,7 @@ impl DkgVoter {
             return vec![];
         }
 
-        let name = crypto::name(&keypair.public);
+        let name = ed25519::name(&keypair.public);
         let participant_index = if let Some(index) = elder_candidates.position(&name) {
             index
         } else {
@@ -404,7 +404,7 @@ impl Session {
         if !self
             .elder_candidates
             .elders
-            .contains_key(&crypto::name(&signed.public_key))
+            .contains_key(&ed25519::name(&signed.public_key))
         {
             return None;
         }
@@ -588,7 +588,7 @@ impl DkgCommands for Option<DkgCommand> {
 mod tests {
     use super::*;
     use crate::{
-        agreement::DkgKeyUtils, crypto, node::test_utils::arbitrary_unique_nodes,
+        agreement::DkgKeyUtils, ed25519, node::test_utils::arbitrary_unique_nodes,
         section::test_utils::gen_addr, ELDER_SIZE, MIN_ADULT_AGE,
     };
     use assert_matches::assert_matches;
@@ -604,7 +604,7 @@ mod tests {
         let mut voter = DkgVoter::default();
 
         let node = Node::new(
-            crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+            ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
             gen_addr(),
         );
         let elder_candidates = ElderCandidates::new(iter::once(node.peer()), Prefix::default());

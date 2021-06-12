@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::{self, Digest256, Keypair, Verifier},
+    ed25519::{self, Digest256, Keypair, Verifier},
     peer::PeerUtils,
     section::ElderCandidatesUtils,
     supermajority,
@@ -49,7 +49,7 @@ impl DkgFailureSignedUtils for DkgFailureSigned {
     fn new(keypair: &Keypair, non_participants: &BTreeSet<XorName>, dkg_key: &DkgKey) -> Self {
         DkgFailureSigned {
             public_key: keypair.public,
-            signature: crypto::sign(&failure_signed_hash(dkg_key, non_participants), keypair),
+            signature: ed25519::sign(&failure_signed_hash(dkg_key, non_participants), keypair),
         }
     }
 
@@ -103,7 +103,7 @@ impl DkgFailureSignedSetUtils for DkgFailureSignedSet {
             .filter(|signed| {
                 elder_candidates
                     .elders
-                    .contains_key(&crypto::name(&signed.public_key))
+                    .contains_key(&ed25519::name(&signed.public_key))
                     && signed.public_key.verify(&hash, &signed.signature).is_ok()
             })
             .count();

@@ -12,7 +12,7 @@ use crate::{
         test_utils::{prove, proven},
         ProposalUtils,
     },
-    crypto,
+    ed25519,
     event::Event,
     messages::{PlainMessageUtils, RoutingMsgUtils, SrcAuthorityUtils, VerifyStatus},
     network::NetworkUtils,
@@ -65,7 +65,7 @@ async fn receive_matching_get_section_request_as_elder() -> Result<()> {
 
     let new_node_comm = create_comm().await?;
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         new_node_comm.our_connection_info(),
     );
     let new_node_name = new_node.name();
@@ -179,7 +179,7 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
 
     let new_node_comm = create_comm().await?;
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         new_node_comm.our_connection_info(),
     );
     let section_key = *dispatcher.core.read().await.section().chain().last_key();
@@ -233,14 +233,14 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let new_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), FIRST_SECTION_MIN_AGE),
         gen_addr(),
     );
     let section_key = *dispatcher.core.read().await.section().chain().last_key();
 
     let nonce: [u8; 32] = rand::random();
     let serialized = bincode::serialize(&(new_node.name(), nonce))?;
-    let nonce_signature = crypto::sign(&serialized, &dispatcher.core.read().await.node().keypair);
+    let nonce_signature = ed25519::sign(&serialized, &dispatcher.core.read().await.node().keypair);
 
     let rp = ResourceProof::new(RESOURCE_PROOF_DATA_SIZE, RESOURCE_PROOF_DIFFICULTY);
     let data = rp.create_proof_data(&nonce);
@@ -318,10 +318,10 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let dispatcher = Dispatcher::new(state, create_comm().await?);
 
     let relocated_node_old_keypair =
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
-    let relocated_node_old_name = crypto::name(&relocated_node_old_keypair.public);
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE);
+    let relocated_node_old_name = ed25519::name(&relocated_node_old_keypair.public);
     let relocated_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_AGE + 2),
         gen_addr(),
     );
 
@@ -1009,7 +1009,7 @@ async fn handle_bounced_untrusted_message() -> Result<()> {
     // Create the original message whose bounce we want to test. Attach a signed that starts
     // at `pk1`.
     let other_node = Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
         gen_addr(),
     );
 
@@ -1736,14 +1736,14 @@ pub fn init_log() {
 }
 
 fn create_peer(age: u8) -> Peer {
-    let name = crypto::gen_name_with_age(age);
+    let name = ed25519::gen_name_with_age(age);
     let mut peer = Peer::new(name, gen_addr());
     peer.set_reachable(true);
     peer
 }
 
 fn create_peer_in_prefix(prefix: &Prefix, age: u8) -> Peer {
-    let name = crypto::gen_name_with_age(age);
+    let name = ed25519::gen_name_with_age(age);
     let mut peer = Peer::new(prefix.substituted_in(name), gen_addr());
     peer.set_reachable(true);
     peer
@@ -1751,7 +1751,7 @@ fn create_peer_in_prefix(prefix: &Prefix, age: u8) -> Peer {
 
 fn create_node(age: u8) -> Node {
     Node::new(
-        crypto::gen_keypair(&Prefix::default().range_inclusive(), age),
+        ed25519::gen_keypair(&Prefix::default().range_inclusive(), age),
         gen_addr(),
     )
 }

@@ -9,7 +9,7 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    crypto::{self, Keypair, Verifier},
+    ed25519::{self, Keypair, Verifier},
     error::Error,
     network::NetworkUtils,
     peer::PeerUtils,
@@ -154,7 +154,7 @@ pub trait RelocatePayloadUtils {
 
 impl RelocatePayloadUtils for RelocatePayload {
     fn new(details: SignedRelocateDetails, new_name: &XorName, old_keypair: &Keypair) -> Self {
-        let signature_of_new_name_with_old_key = crypto::sign(&new_name.0, old_keypair);
+        let signature_of_new_name_with_old_key = ed25519::sign(&new_name.0, old_keypair);
 
         Self {
             details,
@@ -169,7 +169,7 @@ impl RelocatePayloadUtils for RelocatePayload {
             return false;
         };
 
-        let pub_key = if let Ok(pub_key) = crypto::pub_key(&details.pub_id) {
+        let pub_key = if let Ok(pub_key) = ed25519::pub_key(&details.pub_id) {
             pub_key
         } else {
             return false;
