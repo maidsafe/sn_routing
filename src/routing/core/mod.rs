@@ -14,7 +14,7 @@ mod messaging;
 
 use super::{command::Command, enduser_registry::EndUserRegistry, split_barrier::SplitBarrier};
 use crate::{
-    agreement::{DkgVoter, ProposalAggregator},
+    dkg::{DkgVoter, ProposalAggregator},
     error::Result,
     event::{Elders, Event, NodeElderChange},
     message_filter::MessageFilter,

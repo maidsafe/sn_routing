@@ -92,7 +92,7 @@ pub enum ProposalError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{agreement, section};
+    use crate::{dkg, section};
     use anyhow::Result;
     use std::fmt::Debug;
     use xor_name::Prefix;
@@ -108,7 +108,7 @@ mod tests {
         // Proposal::OurElders
         let new_sk = bls::SecretKey::random();
         let new_pk = new_sk.public_key();
-        let proven_section_auth = agreement::test_utils::proven(&new_sk, section_auth)?;
+        let proven_section_auth = dkg::test_utils::proven(&new_sk, section_auth)?;
         let proposal = Proposal::OurElders(proven_section_auth);
         verify_serialize_for_signing(&proposal, &new_pk)?;
 

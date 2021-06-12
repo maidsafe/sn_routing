@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    agreement::ProposalError,
+    dkg::ProposalError,
     messages::{CreateError, ExtendSignedChainError},
 };
 use qp2p::Error as Qp2pError;

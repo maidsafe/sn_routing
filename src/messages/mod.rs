@@ -11,7 +11,7 @@ mod src_authority;
 
 pub use self::{plain_message::PlainMessageUtils, src_authority::SrcAuthorityUtils};
 use crate::{
-    agreement::ProvenUtils,
+    dkg::ProvenUtils,
     ed25519::{self, Verifier},
     error::{Error, Result},
     node::Node,

@@ -166,7 +166,7 @@ fn get_peer(name: &XorName, section: &Section, network: &Network) -> Option<Peer
 mod tests {
     use super::*;
     use crate::{
-        agreement::test_utils::proven,
+        dkg::test_utils::proven,
         ed25519,
         section::{
             test_utils::{gen_addr, gen_section_authority_provider},

@@ -14,7 +14,7 @@ mod resource_proof;
 
 use super::super::Core;
 use crate::{
-    agreement::{DkgCommands, ProposalError, SignedShare},
+    dkg::{DkgCommands, ProposalError, SignedShare},
     error::{Error, Result},
     event::Event,
     messages::{MessageStatus, RoutingMsgUtils, SrcAuthorityUtils, VerifyStatus},
