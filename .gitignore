@@ -15,3 +15,4 @@ target/
 .cargo/
 .DS_Store
 .core
+core
