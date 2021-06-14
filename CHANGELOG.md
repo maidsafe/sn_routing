@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.77.0](https://github.com/maidsafe/sn_routing/compare/v0.76.1...v0.77.0) (2021-06-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename Proven to SectionSigned, MemberInfo to NodeState
+
+### api
+
+* rename Proven to SectionSigned, MemberInfo to NodeState ([cda7f78](https://github.com/maidsafe/sn_routing/commit/cda7f7888abe371bb15c195e73f81518e18b8871))
+
 ### [0.76.1](https://github.com/maidsafe/sn_routing/compare/v0.76.0...v0.76.1) (2021-06-12)
 
 ## [0.76.0](https://github.com/maidsafe/sn_routing/compare/v0.75.1...v0.76.0) (2021-06-10)
