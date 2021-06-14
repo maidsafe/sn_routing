@@ -7,8 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    dkg::dkg_msgs_utils::DkgFailureSignedUtils,
-    dkg::{commands::DkgCommand, dkg_msgs_utils::DkgFailureSignedSetUtils},
+    dkg::{
+        commands::DkgCommand,
+        dkg_msgs_utils::{DkgFailureSignedSetUtils, DkgFailureSignedUtils},
+    },
     ed25519::{self, Keypair},
     routing::command,
     section::{SectionAuthorityProviderUtils, SectionKeyShare},
