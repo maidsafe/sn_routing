@@ -115,7 +115,7 @@ jobs:
       # Install and run cargo udeps to find unused cargo dependencies
       - name: cargo-udeps unused dependency check
         run: |
-          cargo install cargo-udeps --locked
+          cargo install cargo-udeps
           cargo +nightly udeps --all-targets
 
   cargo-deny:
