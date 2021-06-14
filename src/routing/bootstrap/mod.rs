@@ -10,34 +10,10 @@ mod join;
 mod relocate;
 
 pub(crate) use join::join;
-pub(crate) use relocate::JoinAsRelocated;
+pub(crate) use relocate::JoiningAsRelocated;
 
-use crate::{
-    messages::{RoutingMsgUtils, VerifyStatus},
-    routing::comm::{Comm, SendStatus},
-};
-use sn_messaging::{node::RoutingMsg, MessageType};
-use std::net::SocketAddr;
-use xor_name::XorName;
-
-// Send message using `comm`.
-async fn send_message(comm: &Comm, message: MessageType, recipients: Vec<(XorName, SocketAddr)>) {
-    match comm
-        .send(&recipients, recipients.len(), message.clone())
-        .await
-    {
-        Ok(SendStatus::AllRecipients) | Ok(SendStatus::MinDeliveryGroupSizeReached(_)) => {}
-        Ok(SendStatus::MinDeliveryGroupSizeFailed(recipients)) => {
-            error!("Failed to send message {:?} to {:?}", message, recipients)
-        }
-        Err(err) => {
-            error!(
-                "Failed to send message {:?} to {:?}: {:?}",
-                message, recipients, err
-            )
-        }
-    }
-}
+use crate::messages::{RoutingMsgUtils, VerifyStatus};
+use sn_messaging::node::RoutingMsg;
 
 fn verify_message(message: &RoutingMsg, trusted_key: Option<&bls::PublicKey>) -> bool {
     match message.verify(trusted_key) {

@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{routing::Peer, section::SectionKeyShare, XorName};
+use crate::{node::Node, routing::Peer, section::SectionKeyShare, XorName};
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use sn_messaging::{
-    node::{DkgFailureSignedSet, Proposal, RoutingMsg, Signed, SignedRelocateDetails},
+    node::{DkgFailureSignedSet, Proposal, RoutingMsg, Section, Signed},
     section_info::SectionInfoMsg,
     DestInfo, Itinerary, MessageType, SectionAuthorityProvider,
 };
@@ -20,7 +20,6 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
-use tokio::sync::mpsc;
 
 /// Command for node.
 #[allow(clippy::large_enum_variant)]
@@ -70,14 +69,12 @@ pub(crate) enum Command {
     /// Schedule a timeout after the given duration. When the timeout expires, a `HandleTimeout`
     /// command is raised. The token is used to identify the timeout.
     ScheduleTimeout { duration: Duration, token: u64 },
-    /// Relocate
-    Relocate {
-        /// Contacts to re-bootstrap to
-        bootstrap_addrs: Vec<SocketAddr>,
-        /// Details of the relocation
-        details: SignedRelocateDetails,
-        /// RoutingMsg receiver to pass to the bootstrap task.
-        message_rx: mpsc::Receiver<(RoutingMsg, SocketAddr)>,
+    /// Relocation process is complete, switch to new section
+    HandlelocationComplete {
+        /// New Node state and information
+        node: Node,
+        /// New section where we relocated
+        section: Section,
     },
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),
@@ -192,14 +189,10 @@ impl Debug for Command {
                 .field("duration", duration)
                 .field("token", token)
                 .finish(),
-            Self::Relocate {
-                bootstrap_addrs,
-                details,
-                ..
-            } => f
-                .debug_struct("Relocate")
-                .field("bootstrap_addrs", bootstrap_addrs)
-                .field("details", details)
+            Self::HandlelocationComplete { node, section } => f
+                .debug_struct("HandlelocationComplete")
+                .field("node", node)
+                .field("section", section)
                 .finish(),
             Self::SetJoinsAllowed(joins_allowed) => f
                 .debug_tuple("SetJoinsAllowed")

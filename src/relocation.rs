@@ -13,6 +13,7 @@ use crate::{
     error::Error,
     network::NetworkUtils,
     peer::PeerUtils,
+    routing::bootstrap::JoiningAsRelocated,
     section::{SectionPeersUtils, SectionUtils},
 };
 use bls::PublicKey as BlsPublicKey;
@@ -20,8 +21,7 @@ use sn_messaging::node::{
     Network, NodeState, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
     Section, SignedRelocateDetails, Variant,
 };
-use std::{marker::Sized, net::SocketAddr};
-use tokio::sync::mpsc;
+use std::marker::Sized;
 use xor_name::XorName;
 
 /// Find all nodes to relocate after a churn event and create the relocate actions for them.
@@ -195,8 +195,8 @@ pub(crate) enum RelocateState {
     // can send the bytes (which are serialized `RelocatePromise` message) back to the elders who
     // will exchange it for an actual `Relocate` message.
     Delayed(RoutingMsg),
-    // Relocation in progress. The sender is used to pass messages to the bootstrap task.
-    InProgress(mpsc::Sender<(RoutingMsg, SocketAddr)>),
+    // Relocation in progress.
+    InProgress(Box<JoiningAsRelocated>),
 }
 
 /// Action to relocate a node.

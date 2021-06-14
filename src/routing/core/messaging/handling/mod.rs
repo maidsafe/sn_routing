@@ -352,13 +352,20 @@ impl Core {
                 Ok(vec![])
             }
             Variant::JoinAsRelocatedResponse(_) => {
-                if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
-                    if let Some(sender) = sender {
-                        trace!("Forwarding {:?} to the relocation task", msg);
-                        let _ = message_tx.send((msg, sender)).await;
-                    } else {
-                        error!("Missing sender of {:?}", msg);
+                match (sender, self.relocate_state.as_mut()) {
+                    (
+                        Some(sender),
+                        Some(RelocateState::InProgress(ref mut joining_as_relocated)),
+                    ) => {
+                        if let Some(cmd) = joining_as_relocated
+                            .handle_join_response(msg, sender)
+                            .await?
+                        {
+                            return Ok(vec![cmd]);
+                        }
                     }
+                    (Some(_), _) => {}
+                    (None, _) => error!("Missing sender of {:?}", msg),
                 }
 
                 Ok(vec![])

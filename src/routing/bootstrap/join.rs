@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{send_message, verify_message};
+use super::verify_message;
 use crate::{
     ed25519,
     error::{Error, Result},
     messages::RoutingMsgUtils,
     node::Node,
     peer::PeerUtils,
-    routing::comm::{Comm, ConnectionEvent},
+    routing::comm::{Comm, ConnectionEvent, SendStatus},
     section::{SectionAuthorityProviderUtils, SectionUtils},
     FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
@@ -410,7 +410,21 @@ async fn send_messages(
     comm: &Comm,
 ) -> Result<()> {
     while let Some((message, recipients)) = rx.recv().await {
-        send_message(comm, message, recipients).await;
+        match comm
+            .send(&recipients, recipients.len(), message.clone())
+            .await
+        {
+            Ok(SendStatus::AllRecipients) | Ok(SendStatus::MinDeliveryGroupSizeReached(_)) => {}
+            Ok(SendStatus::MinDeliveryGroupSizeFailed(recipients)) => {
+                error!("Failed to send message {:?} to {:?}", message, recipients)
+            }
+            Err(err) => {
+                error!(
+                    "Failed to send message {:?} to {:?}: {:?}",
+                    message, recipients, err
+                )
+            }
+        }
     }
     Ok(())
 }

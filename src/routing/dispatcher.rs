@@ -6,23 +6,23 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bootstrap::JoinAsRelocated, Comm, Command, Core};
+use super::{Comm, Command, Core};
 use crate::{
-    error::Result, event::Event, messages::RoutingMsgUtils, peer::PeerUtils,
+    error::Result, event::Event, messages::RoutingMsgUtils, node::Node, peer::PeerUtils,
     routing::comm::SendStatus, section::SectionPeersUtils, section::SectionUtils, Error, XorName,
 };
 use itertools::Itertools;
 use sn_data_types::PublicKey;
 use sn_messaging::{
     node::{
-        JoinAsRelocatedResponse, JoinRejectionReason, JoinResponse, RoutingMsg,
-        SignedRelocateDetails, SrcAuthority, Variant,
+        JoinAsRelocatedResponse, JoinRejectionReason, JoinResponse, RoutingMsg, Section,
+        SrcAuthority, Variant,
     },
     DstLocation, MessageType,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
-    sync::{mpsc, watch, RwLock},
+    sync::{watch, RwLock},
     time,
 };
 use tracing::Instrument;
@@ -214,13 +214,8 @@ impl Dispatcher {
                 .await
                 .into_iter()
                 .collect()),
-            Command::Relocate {
-                bootstrap_addrs,
-                details,
-                message_rx,
-            } => {
-                self.handle_relocate(bootstrap_addrs, details, message_rx)
-                    .await
+            Command::HandlelocationComplete { node, section } => {
+                self.handle_relocation_complete(node, section).await
             }
             Command::SetJoinsAllowed(joins_allowed) => {
                 self.core.read().await.set_joins_allowed(joins_allowed)
@@ -359,25 +354,17 @@ impl Dispatcher {
         }
     }
 
-    async fn handle_relocate(
+    async fn handle_relocation_complete(
         &self,
-        bootstrap_addrs: Vec<SocketAddr>,
-        details: SignedRelocateDetails,
-        message_rx: mpsc::Receiver<(RoutingMsg, SocketAddr)>,
+        new_node: Node,
+        new_section: Section,
     ) -> Result<Vec<Command>> {
-        let (genesis_key, node) = {
-            let state = self.core.read().await;
-            (*state.section().genesis_key(), state.node().clone())
-        };
-        let previous_name = node.name();
-
-        let joining = JoinAsRelocated::new(&self.comm, node, message_rx);
-        let (node, section) = joining.run(bootstrap_addrs, genesis_key, details).await?;
+        let previous_name = self.core.read().await.node().name();
+        let new_keypair = new_node.keypair.clone();
 
         let mut state = self.core.write().await;
         let event_tx = state.event_tx.clone();
-        let new_keypair = node.keypair.clone();
-        *state = Core::new(node, section, None, event_tx);
+        *state = Core::new(new_node, new_section, None, event_tx);
 
         state
             .send_event(Event::Relocated {
