@@ -109,7 +109,7 @@ where
                 key,
                 Item::new(value, custom_duration.or(self.item_duration)),
             )
-            .map(|item| item.object);
+            .and_then(|item| (!item.expired()).then(|| item.object));
         self.remove_expired().await;
         self.drop_excess().await;
         replaced
@@ -206,6 +206,18 @@ mod tests {
         let _ = cache.set(KEY, VALUE, None).await;
         let value = cache.get(&KEY).await;
         assert!(value.is_none(), "found expired value in cache");
+    }
+
+    #[tokio::test]
+    async fn set_do_not_return_expired_value() {
+        let timeout = Duration::from_millis(1);
+        let cache = Cache::with_expiry_duration(timeout);
+        let _ = cache.set(KEY, VALUE, None).await;
+        tokio::time::sleep(timeout).await;
+        let value = cache.get(&KEY).await;
+        assert!(value.is_none(), "found expired value in cache");
+        let value = cache.set(KEY, VALUE, None).await;
+        assert!(value.is_none(), "exposed expired value from cache");
     }
 
     #[tokio::test]
