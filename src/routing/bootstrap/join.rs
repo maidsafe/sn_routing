@@ -6,26 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{comm::ConnectionEvent, Comm};
+use super::{send_message, verify_message};
 use crate::{
-    ed25519::{self},
+    ed25519,
     error::{Error, Result},
-    messages::{RoutingMsgUtils, VerifyStatus},
+    messages::RoutingMsgUtils,
     node::Node,
     peer::PeerUtils,
-    relocation::{RelocatePayloadUtils, SignedRelocateDetailsUtils},
-    routing::comm::SendStatus,
+    routing::comm::{Comm, ConnectionEvent},
     section::{SectionAuthorityProviderUtils, SectionUtils},
     FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
 };
 use futures::future;
 use rand::seq::IteratorRandom;
 use resource_proof::ResourceProof;
-use sn_data_types::PublicKey;
 use sn_messaging::{
     node::{
-        JoinRejectionReason, JoinRequest, JoinResponse, RelocatePayload, ResourceProofResponse,
-        RoutingMsg, Section, SignedRelocateDetails, Variant,
+        JoinRejectionReason, JoinRequest, JoinResponse, ResourceProofResponse, RoutingMsg, Section,
+        Variant,
     },
     DestInfo, DstLocation, MessageType, WireMsg,
 };
@@ -39,74 +37,44 @@ use xor_name::{Prefix, XorName};
 
 const BACKLOG_CAPACITY: usize = 100;
 
-/// Bootstrap into the network as new node.
+/// Join the network as new node.
 ///
 /// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
 /// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
 /// for example by using a timeout.
-pub(crate) async fn initial(
+pub(crate) async fn join(
     node: Node,
     comm: &Comm,
     incoming_conns: &mut mpsc::Receiver<ConnectionEvent>,
     bootstrap_addr: SocketAddr,
 ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
     let (send_tx, send_rx) = mpsc::channel(1);
-    let recv_rx = MessageReceiver::Raw(incoming_conns);
 
     let span = trace_span!("bootstrap", name = %node.name());
 
-    let state = State::new(node, send_tx, recv_rx);
+    let state = Join::new(node, send_tx, incoming_conns);
 
-    future::join(
-        state.run(vec![bootstrap_addr], None, None),
-        send_messages(send_rx, comm),
-    )
-    .instrument(span)
-    .await
-    .0
+    future::join(state.run(bootstrap_addr), send_messages(send_rx, comm))
+        .instrument(span)
+        .await
+        .0
 }
 
-/// Re-bootstrap as a relocated node.
-///
-/// NOTE: It's not guaranteed this function ever returns. This can happen due to messages being
-/// lost in transit or other reasons. It's the responsibility of the caller to handle this case,
-/// for example by using a timeout.
-pub(crate) async fn relocate(
-    node: Node,
-    comm: &Comm,
-    recv_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
-    bootstrap_addrs: Vec<SocketAddr>,
-    genesis_key: bls::PublicKey,
-    relocate_details: SignedRelocateDetails,
-) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
-    let (send_tx, send_rx) = mpsc::channel(1);
-    let recv_rx = MessageReceiver::Deserialized(recv_rx);
-
-    let state = State::new(node, send_tx, recv_rx);
-
-    future::join(
-        state.run(bootstrap_addrs, Some(genesis_key), Some(relocate_details)),
-        send_messages(send_rx, comm),
-    )
-    .await
-    .0
-}
-
-struct State<'a> {
+struct Join<'a> {
     // Sender for outgoing messages.
     send_tx: mpsc::Sender<(MessageType, Vec<(XorName, SocketAddr)>)>,
     // Receiver for incoming messages.
-    recv_rx: MessageReceiver<'a>,
+    recv_rx: &'a mut mpsc::Receiver<ConnectionEvent>,
     node: Node,
     // Backlog for unknown messages
     backlog: VecDeque<(RoutingMsg, SocketAddr, DestInfo)>,
 }
 
-impl<'a> State<'a> {
+impl<'a> Join<'a> {
     fn new(
         node: Node,
         send_tx: mpsc::Sender<(MessageType, Vec<(XorName, SocketAddr)>)>,
-        recv_rx: MessageReceiver<'a>,
+        recv_rx: &'a mut mpsc::Receiver<ConnectionEvent>,
     ) -> Self {
         Self {
             send_tx,
@@ -116,90 +84,48 @@ impl<'a> State<'a> {
         }
     }
 
-    async fn run(
-        self,
-        bootstrap_addrs: Vec<SocketAddr>,
-        genesis_key: Option<bls::PublicKey>,
-        relocate_details: Option<SignedRelocateDetails>,
-    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
-        let (dest_pk, dest_xorname) = match relocate_details {
-            Some(ref details) => (
-                details.relocate_details()?.destination_key,
-                *details.destination()?,
-            ),
-            None => {
-                // Use our XorName as we do not know their name or section key yet.
-                (bls::SecretKey::random().public_key(), self.node.name())
-            }
-        };
-
-        let elders = bootstrap_addrs
-            .iter()
-            .map(|addr| (dest_xorname, *addr))
-            .collect();
-
-        self.join(dest_pk, elders, genesis_key, relocate_details)
-            .await
-    }
-
-    // Change our name to fit the destination section and apply the new age.
-    fn process_relocation(
-        &mut self,
-        prefix: &Prefix,
-        relocate_details: SignedRelocateDetails,
-    ) -> Result<RelocatePayload> {
-        // We are relocating so we need to change our name.
-        // Use a name that will match the destination even after multiple splits
-        let extra_split_count = 3;
-        let name_prefix = Prefix::new(
-            prefix.bit_count() + extra_split_count,
-            *relocate_details.destination()?,
-        );
-
-        let age = relocate_details.relocate_details()?.age;
-        let new_keypair = ed25519::gen_keypair(&name_prefix.range_inclusive(), age);
-        let new_name = XorName::from(PublicKey::from(new_keypair.public));
-        let relocate_payload =
-            RelocatePayload::new(relocate_details, &new_name, &self.node.keypair);
-
-        info!("Changing name to {}", new_name);
-        self.node = Node::new(new_keypair, self.node.addr);
-
-        Ok(relocate_payload)
-    }
-
     // Send `JoinRequest` and wait for the response. If the response is:
     // - `Retry`: repeat with the new info.
     // - `Redirect`: repeat with the new set of addresses.
     // - `ResourceChallenge`: carry out resource proof calculation.
     // - `Approval`: returns the initial `Section` value to use by this node,
     //    completing the bootstrap.
+    async fn run(
+        self,
+        bootstrap_addr: SocketAddr,
+    ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+        // Use our XorName as we do not know their name or section key yet.
+        let section_key = bls::SecretKey::random().public_key();
+        let dest_xorname = self.node.name();
+
+        let recipients = vec![(dest_xorname, bootstrap_addr)];
+
+        self.join(section_key, recipients).await
+    }
+
     async fn join(
         mut self,
         mut section_key: bls::PublicKey,
         mut recipients: Vec<(XorName, SocketAddr)>,
-        genesis_key: Option<bls::PublicKey>,
-        relocate_details: Option<SignedRelocateDetails>,
     ) -> Result<(Node, Section, Vec<(RoutingMsg, SocketAddr, DestInfo)>)> {
+        // We send a first join request to obtain the resource challenge, which
+        // we will then use to generate the challenge proof and send the
+        // `JoinRequest` again with it.
         let join_request = JoinRequest {
             section_key,
-            relocate_payload: None,
             resource_proof_response: None,
         };
-
-        // Avoid sending more than one request to the same peer.
-        let mut used_recipient = HashSet::<SocketAddr>::new();
 
         self.send_join_requests(join_request, &recipients, section_key)
             .await?;
 
-        let mut relocate_payload = None;
+        // Avoid sending more than one request to the same peer.
+        let mut used_recipient = HashSet::<SocketAddr>::new();
+
         loop {
             used_recipient.extend(recipients.iter().map(|(_, addr)| addr));
 
-            let (response, sender, dest_info) = self
-                .receive_join_response(genesis_key.as_ref(), relocate_payload.as_ref())
-                .await?;
+            let (response, sender, dest_info) = self.receive_join_response().await?;
 
             match response {
                 JoinResponse::Rejected(JoinRejectionReason::NodeNotReachable(addr)) => {
@@ -227,6 +153,7 @@ impl<'a> State<'a> {
                 }
                 JoinResponse::Retry(section_auth) => {
                     if section_auth.section_key() == section_key {
+                        debug!("Ignoring JoinResponse::Retry with invalid section authority provider key");
                         continue;
                     }
 
@@ -253,16 +180,7 @@ impl<'a> State<'a> {
                         self.node = Node::new(new_keypair, self.node.addr);
                     }
 
-                    // if we are relocating, and we didn't generate
-                    // the relocation payload yet, we do it now
-                    if relocate_payload.is_none() {
-                        if let Some(ref details) = relocate_details {
-                            relocate_payload =
-                                Some(self.process_relocation(&prefix, details.clone())?);
-                        }
-                    }
-
-                    if relocate_payload.is_some() || prefix.matches(&self.node.name()) {
+                    if prefix.matches(&self.node.name()) {
                         info!(
                             "Newer Join response for our prefix {:?} from {:?}",
                             section_auth, sender
@@ -270,7 +188,6 @@ impl<'a> State<'a> {
                         section_key = section_auth.section_key();
                         let join_request = JoinRequest {
                             section_key,
-                            relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
 
@@ -307,9 +224,7 @@ impl<'a> State<'a> {
                         );
                     }
 
-                    let prefix = section_auth.prefix;
-
-                    if relocate_payload.is_some() || prefix.matches(&self.node.name()) {
+                    if section_auth.prefix.matches(&self.node.name()) {
                         info!(
                             "Newer Join response for our prefix {:?} from {:?}",
                             section_auth, sender
@@ -317,7 +232,6 @@ impl<'a> State<'a> {
                         section_key = section_auth.section_key();
                         let join_request = JoinRequest {
                             section_key,
-                            relocate_payload: relocate_payload.clone(),
                             resource_proof_response: None,
                         };
 
@@ -344,7 +258,6 @@ impl<'a> State<'a> {
 
                     let join_request = JoinRequest {
                         section_key,
-                        relocate_payload: relocate_payload.clone(),
                         resource_proof_response: Some(ResourceProofResponse {
                             solution,
                             data,
@@ -393,31 +306,31 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    async fn receive_join_response(
-        &mut self,
-        expected_genesis_key: Option<&bls::PublicKey>,
-        relocate_payload: Option<&RelocatePayload>,
-    ) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
-        let destination = match relocate_payload {
-            Some(payload) => *payload.details.destination()?,
-            None => self.node.name(),
-        };
+    async fn receive_join_response(&mut self) -> Result<(JoinResponse, SocketAddr, DestInfo)> {
+        let destination = self.node.name();
 
-        while let Some((message, sender)) = self.recv_rx.next().await {
+        while let Some(event) = self.recv_rx.recv().await {
             // we are interested only in `JoinResponse` type of messages
-            let (routing_msg, dest_info, join_response) = match message {
-                MessageType::Node { .. }
-                | MessageType::Client { .. }
-                | MessageType::SectionInfo { .. } => continue,
-                MessageType::Routing { msg, dest_info } => {
-                    if let Variant::JoinResponse(resp) = &msg.variant {
-                        let join_response = resp.clone();
-                        (msg, dest_info, *join_response)
-                    } else {
-                        self.backlog_message(msg, sender, dest_info);
+            let (routing_msg, dest_info, join_response, sender) = match event {
+                ConnectionEvent::Received((sender, bytes)) => match WireMsg::deserialize(bytes) {
+                    Ok(MessageType::Node { .. })
+                    | Ok(MessageType::Client { .. })
+                    | Ok(MessageType::SectionInfo { .. }) => continue,
+                    Ok(MessageType::Routing { msg, dest_info }) => {
+                        if let Variant::JoinResponse(resp) = &msg.variant {
+                            let join_response = resp.clone();
+                            (msg, dest_info, *join_response, sender)
+                        } else {
+                            self.backlog_message(msg, sender, dest_info);
+                            continue;
+                        }
+                    }
+                    Err(error) => {
+                        debug!("Failed to deserialize message: {}", error);
                         continue;
                     }
-                }
+                },
+                ConnectionEvent::Disconnected(_) => continue,
             };
 
             match join_response {
@@ -440,26 +353,20 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    if !self.verify_message(&routing_msg, None) {
+                    if !verify_message(&routing_msg, None) {
                         continue;
                     }
 
                     return Ok((join_response, sender, dest_info));
                 }
                 JoinResponse::ResourceChallenge { .. } => {
-                    if relocate_payload.is_some() {
-                        warn!("Ignoring ResourceChallenge received when relocating");
-                        continue;
-                    }
-
-                    if !self.verify_message(&routing_msg, None) {
+                    if !verify_message(&routing_msg, None) {
                         continue;
                     }
 
                     return Ok((join_response, sender, dest_info));
                 }
                 JoinResponse::Approval {
-                    genesis_key,
                     ref section_auth,
                     ref node_state,
                     ..
@@ -469,20 +376,7 @@ impl<'a> State<'a> {
                         continue;
                     }
 
-                    if let Some(expected_genesis_key) = expected_genesis_key {
-                        if expected_genesis_key != &genesis_key {
-                            trace!("Genesis key doesn't match");
-                            continue;
-                        }
-                    }
-
-                    let trusted_key = if let Some(payload) = relocate_payload {
-                        Some(&payload.relocate_details()?.destination_key)
-                    } else {
-                        None
-                    };
-
-                    if !self.verify_message(&routing_msg, trusted_key) {
+                    if !verify_message(&routing_msg, None) {
                         continue;
                     }
 
@@ -501,22 +395,6 @@ impl<'a> State<'a> {
         Err(Error::InvalidState)
     }
 
-    fn verify_message(&self, message: &RoutingMsg, trusted_key: Option<&bls::PublicKey>) -> bool {
-        match message.verify(trusted_key) {
-            Ok(VerifyStatus::Full) => true,
-            Ok(VerifyStatus::Unknown) if trusted_key.is_none() => true,
-            Ok(VerifyStatus::Unknown) => {
-                // TODO: bounce
-                error!("Verification failed - untrusted message: {:?}", message);
-                false
-            }
-            Err(error) => {
-                error!("Verification failed - {}: {:?}", error, message);
-                false
-            }
-        }
-    }
-
     fn backlog_message(&mut self, message: RoutingMsg, sender: SocketAddr, dest_info: DestInfo) {
         while self.backlog.len() >= BACKLOG_CAPACITY {
             let _ = self.backlog.pop_front();
@@ -526,52 +404,13 @@ impl<'a> State<'a> {
     }
 }
 
-// Receiver of incoming messages that can be backed either by a raw `qp2p::ConnectionEvent` receiver
-// or by receiver of deserialized `RoutingMsg` and provides a unified interface on top of them.
-enum MessageReceiver<'a> {
-    Raw(&'a mut mpsc::Receiver<ConnectionEvent>),
-    Deserialized(mpsc::Receiver<(MessageType, SocketAddr)>),
-}
-
-impl<'a> MessageReceiver<'a> {
-    async fn next(&mut self) -> Option<(MessageType, SocketAddr)> {
-        match self {
-            Self::Raw(rx) => {
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        ConnectionEvent::Received((src, bytes)) => {
-                            match WireMsg::deserialize(bytes) {
-                                Ok(message) => {
-                                    return Some((message, src));
-                                }
-                                Err(error) => debug!("Failed to deserialize message: {}", error),
-                            }
-                        }
-                        ConnectionEvent::Disconnected(_) => {}
-                    }
-                }
-                None
-            }
-            Self::Deserialized(rx) => rx.recv().await,
-        }
-    }
-}
-
 // Keep reading messages from `rx` and send them using `comm`.
 async fn send_messages(
     mut rx: mpsc::Receiver<(MessageType, Vec<(XorName, SocketAddr)>)>,
     comm: &Comm,
 ) -> Result<()> {
     while let Some((message, recipients)) = rx.recv().await {
-        match comm
-            .send(&recipients, recipients.len(), message.clone())
-            .await?
-        {
-            SendStatus::AllRecipients | SendStatus::MinDeliveryGroupSizeReached(_) => {}
-            SendStatus::MinDeliveryGroupSizeFailed(recipients) => {
-                error!("Failed to send message {:?} to {:?}", message, recipients,)
-            }
-        }
+        send_message(comm, message, recipients).await;
     }
     Ok(())
 }
@@ -601,8 +440,7 @@ mod tests {
     #[tokio::test]
     async fn join_as_adult() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+        let (recv_tx, mut recv_rx) = mpsc::channel(1);
 
         let (section_auth, mut nodes, sk_set) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
@@ -620,15 +458,10 @@ mod tests {
             gen_addr(),
         );
         let peer = node.peer();
-        let state = State::new(node, send_tx, recv_rx);
+        let state = Join::new(node, send_tx, &mut recv_rx);
 
         // Create the bootstrap task, but don't run it yet.
-        let bootstrap = async move {
-            state
-                .run(vec![bootstrap_addr], None, None)
-                .await
-                .map_err(Error::from)
-        };
+        let bootstrap = async move { state.run(bootstrap_addr).await.map_err(Error::from) };
 
         // Create the task that executes the body of the test, but don't run it either.
         let others = async {
@@ -648,7 +481,6 @@ mod tests {
             assert_eq!(dest_info.dest, *peer.name());
             assert_matches!(message.variant, Variant::JoinRequest(request) => {
                 assert!(request.resource_proof_response.is_none());
-                assert!(request.relocate_payload.is_none());
             });
 
             // Send JoinResponse::Retry with section auth provider info
@@ -679,7 +511,6 @@ mod tests {
             );
             assert_matches!(message.variant, Variant::JoinRequest(request) => {
                 assert_eq!(request.section_key, pk);
-                assert!(request.relocate_payload.is_none());
             });
 
             // Send JoinResponse::Approval
@@ -715,8 +546,7 @@ mod tests {
     #[tokio::test]
     async fn join_receive_redirect_response() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+        let (recv_tx, mut recv_rx) = mpsc::channel(1);
 
         let (section_auth, mut nodes, sk_set) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
@@ -728,9 +558,9 @@ mod tests {
             gen_addr(),
         );
         let name = node.name();
-        let state = State::new(node, send_tx, recv_rx);
+        let state = Join::new(node, send_tx, &mut recv_rx);
 
-        let bootstrap_task = state.run(vec![bootstrap_node.addr], None, None);
+        let bootstrap_task = state.run(bootstrap_node.addr);
         let test_task = async move {
             // Receive JoinRequest
             let (message, recipients) = send_rx
@@ -807,8 +637,7 @@ mod tests {
     #[tokio::test]
     async fn join_invalid_redirect_response() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+        let (recv_tx, mut recv_rx) = mpsc::channel(1);
 
         let (section_auth, mut nodes, sk_set) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
@@ -820,9 +649,9 @@ mod tests {
             gen_addr(),
         );
         let node_name = node.name();
-        let state = State::new(node, send_tx, recv_rx);
+        let state = Join::new(node, send_tx, &mut recv_rx);
 
-        let bootstrap_task = state.run(vec![bootstrap_node.addr], None, None);
+        let bootstrap_task = state.run(bootstrap_node.addr);
         let test_task = async {
             let (message, _) = send_rx
                 .recv()
@@ -885,8 +714,7 @@ mod tests {
     #[tokio::test]
     async fn join_disallowed_response() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+        let (recv_tx, mut recv_rx) = mpsc::channel(1);
 
         let (section_auth, mut nodes, _) =
             gen_section_authority_provider(Prefix::default(), ELDER_SIZE);
@@ -898,9 +726,9 @@ mod tests {
         );
 
         let node_name = node.name();
-        let state = State::new(node, send_tx, recv_rx);
+        let state = Join::new(node, send_tx, &mut recv_rx);
 
-        let bootstrap_task = state.run(vec![bootstrap_node.addr], None, None);
+        let bootstrap_task = state.run(bootstrap_node.addr);
         let test_task = async {
             let (message, _) = send_rx
                 .recv()
@@ -936,8 +764,7 @@ mod tests {
     #[tokio::test]
     async fn join_invalid_retry_prefix_response() -> Result<()> {
         let (send_tx, mut send_rx) = mpsc::channel(1);
-        let (recv_tx, recv_rx) = mpsc::channel(1);
-        let recv_rx = MessageReceiver::Deserialized(recv_rx);
+        let (recv_tx, mut recv_rx) = mpsc::channel(1);
 
         let bootstrap_node = Node::new(
             ed25519::gen_keypair(&Prefix::default().range_inclusive(), MIN_ADULT_AGE),
@@ -961,13 +788,13 @@ mod tests {
             }
         };
 
-        let state = State::new(node, send_tx, recv_rx);
+        let state = Join::new(node, send_tx, &mut recv_rx);
 
         let section_key = bls::SecretKey::random().public_key();
         let elders = (0..ELDER_SIZE)
             .map(|_| (good_prefix.substituted_in(rand::random()), gen_addr()))
             .collect();
-        let join_task = state.join(section_key, elders, None, None);
+        let join_task = state.join(section_key, elders);
 
         let test_task = async {
             let (message, _) = send_rx
@@ -1023,7 +850,7 @@ mod tests {
 
     // test helper
     fn send_response(
-        recv_tx: &mpsc::Sender<(MessageType, SocketAddr)>,
+        recv_tx: &mpsc::Sender<ConnectionEvent>,
         variant: Variant,
         bootstrap_node: &Node,
         section_key: bls::PublicKey,
@@ -1036,16 +863,17 @@ mod tests {
             section_key,
         )?;
 
-        recv_tx.try_send((
+        recv_tx.try_send(ConnectionEvent::Received((
+            bootstrap_node.addr,
             MessageType::Routing {
                 msg: message,
                 dest_info: DestInfo {
                     dest: node_name,
                     dest_section_pk: section_key,
                 },
-            },
-            bootstrap_node.addr,
-        ))?;
+            }
+            .serialize()?,
+        )))?;
 
         Ok(())
     }

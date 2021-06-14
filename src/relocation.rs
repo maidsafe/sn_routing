@@ -15,12 +15,10 @@ use crate::{
     peer::PeerUtils,
     section::{SectionPeersUtils, SectionUtils},
 };
-use sn_messaging::{
-    node::{
-        Network, NodeState, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
-        Section, SignedRelocateDetails, Variant,
-    },
-    MessageType,
+use bls::PublicKey as BlsPublicKey;
+use sn_messaging::node::{
+    Network, NodeState, Peer, RelocateDetails, RelocatePayload, RelocatePromise, RoutingMsg,
+    Section, SignedRelocateDetails, Variant,
 };
 use std::{marker::Sized, net::SocketAddr};
 use tokio::sync::mpsc;
@@ -115,6 +113,8 @@ pub trait SignedRelocateDetailsUtils {
     fn signed_msg(&self) -> &RoutingMsg;
 
     fn destination(&self) -> Result<&XorName, Error>;
+
+    fn destination_key(&self) -> Result<BlsPublicKey, Error>;
 }
 
 impl SignedRelocateDetailsUtils for SignedRelocateDetails {
@@ -141,6 +141,10 @@ impl SignedRelocateDetailsUtils for SignedRelocateDetails {
 
     fn destination(&self) -> Result<&XorName, Error> {
         Ok(&self.relocate_details()?.destination)
+    }
+
+    fn destination_key(&self) -> Result<BlsPublicKey, Error> {
+        Ok(self.relocate_details()?.destination_key)
     }
 }
 
@@ -192,7 +196,7 @@ pub(crate) enum RelocateState {
     // will exchange it for an actual `Relocate` message.
     Delayed(RoutingMsg),
     // Relocation in progress. The sender is used to pass messages to the bootstrap task.
-    InProgress(mpsc::Sender<(MessageType, SocketAddr)>),
+    InProgress(mpsc::Sender<(RoutingMsg, SocketAddr)>),
 }
 
 /// Action to relocate a node.
