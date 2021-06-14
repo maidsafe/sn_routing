@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.77.2](https://github.com/maidsafe/sn_routing/compare/v0.77.1...v0.77.2) (2021-06-14)
+
+
+### Bug Fixes
+
+* **cache:** Prevent exposing expired values from Cache::set ([e54f9c6](https://github.com/maidsafe/sn_routing/commit/e54f9c675110cda33ea44e3cf207373e8f0830c9))
+
 ### [0.77.1](https://github.com/maidsafe/sn_routing/compare/v0.77.0...v0.77.1) (2021-06-14)
 
 ## [0.77.0](https://github.com/maidsafe/sn_routing/compare/v0.76.1...v0.77.0) (2021-06-14)
