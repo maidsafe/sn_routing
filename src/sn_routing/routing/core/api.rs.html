@@ -309,6 +309,10 @@
 <span id="308">308</span>
 <span id="309">309</span>
 <span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -326,13 +330,13 @@
     <span class="ident">node</span>::<span class="ident">Node</span>,
     <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">routing</span>::{<span class="ident">command</span>::<span class="ident">Command</span>, <span class="ident">enduser_registry</span>::<span class="ident">SocketId</span>},
-    <span class="ident">section</span>::{<span class="ident">MemberInfoUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
+    <span class="ident">section</span>::{<span class="ident">NodeStateUtils</span>, <span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
     <span class="ident">Error</span>, <span class="ident">Event</span>,
 };
 <span class="kw">use</span> <span class="ident">bytes</span>::<span class="ident">Bytes</span>;
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::{<span class="ident">MemberInfo</span>, <span class="ident">Network</span>, <span class="ident">Peer</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">Variant</span>},
+    <span class="ident">node</span>::{<span class="ident">Network</span>, <span class="ident">NodeState</span>, <span class="ident">Peer</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">Variant</span>},
     <span class="ident">section_info</span>::<span class="ident">Error</span> <span class="kw">as</span> <span class="ident">TargetSectionError</span>,
     <span class="ident">DestInfo</span>, <span class="ident">EndUser</span>, <span class="ident">Itinerary</span>, <span class="ident">SectionAuthorityProvider</span>, <span class="ident">SrcLocation</span>,
 };
@@ -514,7 +518,11 @@
                     <span class="ident">SectionAuthorityProvider</span> {
                         <span class="ident">prefix</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(),
                         <span class="ident">public_key_set</span>,
-                        <span class="ident">elders</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_authority_provider</span>().<span class="ident">value</span>.<span class="ident">elders</span>(),
+                        <span class="ident">elders</span>: <span class="self">self</span>
+                            .<span class="ident">section</span>
+                            .<span class="ident">section_signed_authority_provider</span>()
+                            .<span class="ident">value</span>
+                            .<span class="ident">elders</span>(),
                     },
                 ))
             } <span class="kw">else</span> {
@@ -614,7 +622,7 @@
         <span class="ident">destination_key</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bls</span>::<span class="ident">PublicKey</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">propose</span>(<span class="ident">Proposal</span>::<span class="ident">Online</span> {
-            <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>::<span class="ident">joined</span>(<span class="ident">peer</span>),
+            <span class="ident">node_state</span>: <span class="ident">NodeState</span>::<span class="ident">joined</span>(<span class="ident">peer</span>),
             <span class="ident">previous_name</span>,
             <span class="ident">destination_key</span>,
         })

@@ -304,6 +304,13 @@
 <span id="303">303</span>
 <span id="304">304</span>
 <span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -316,7 +323,7 @@
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">cmp</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::<span class="ident">ProvenUtils</span>,
+    <span class="ident">agreement</span>::<span class="ident">SectionSignedUtils</span>,
     <span class="ident">error</span>::<span class="prelude-ty">Result</span>,
     <span class="ident">messages</span>::<span class="ident">RoutingMsgUtils</span>,
     <span class="ident">network</span>::<span class="ident">NetworkUtils</span>,
@@ -329,7 +336,10 @@
 };
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::{<span class="ident">MemberInfo</span>, <span class="ident">PeerState</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>, <span class="ident">Proven</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Signed</span>, <span class="ident">Variant</span>},
+    <span class="ident">node</span>::{
+        <span class="ident">MembershipState</span>, <span class="ident">NodeState</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">SectionSigned</span>, <span class="ident">Signed</span>,
+        <span class="ident">Variant</span>,
+    },
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">SectionAuthorityProvider</span>,
 };
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
@@ -347,15 +357,15 @@
 
         <span class="kw">match</span> <span class="ident">proposal</span> {
             <span class="ident">Proposal</span>::<span class="ident">Online</span> {
-                <span class="ident">member_info</span>,
+                <span class="ident">node_state</span>,
                 <span class="ident">previous_name</span>,
                 ..
             } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_online_agreement</span>(<span class="ident">member_info</span>, <span class="ident">previous_name</span>, <span class="ident">signed</span>)
+                <span class="self">self</span>.<span class="ident">handle_online_agreement</span>(<span class="ident">node_state</span>, <span class="ident">previous_name</span>, <span class="ident">signed</span>)
                     .<span class="kw">await</span>
             }
-            <span class="ident">Proposal</span>::<span class="ident">Offline</span>(<span class="ident">member_info</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">handle_offline_agreement</span>(<span class="ident">member_info</span>, <span class="ident">signed</span>).<span class="kw">await</span>
+            <span class="ident">Proposal</span>::<span class="ident">Offline</span>(<span class="ident">node_state</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">handle_offline_agreement</span>(<span class="ident">node_state</span>, <span class="ident">signed</span>).<span class="kw">await</span>
             }
             <span class="ident">Proposal</span>::<span class="ident">SectionInfo</span>(<span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">handle_section_info_agreement</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>)
@@ -393,16 +403,20 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_online_agreement</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">new_info</span>: <span class="ident">MemberInfo</span>,
+        <span class="ident">new_info</span>: <span class="ident">NodeState</span>,
         <span class="ident">previous_name</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">old_info</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">get_proven</span>(<span class="ident">new_info</span>.<span class="ident">peer</span>.<span class="ident">name</span>()) {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">old_info</span>) <span class="op">=</span> <span class="self">self</span>
+            .<span class="ident">section</span>
+            .<span class="ident">members</span>()
+            .<span class="ident">get_section_signed</span>(<span class="ident">new_info</span>.<span class="ident">peer</span>.<span class="ident">name</span>())
+        {
             <span class="comment">// This node is rejoin with same name.</span>
 
-            <span class="kw">if</span> <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">PeerState</span>::<span class="ident">Left</span> {
+            <span class="kw">if</span> <span class="ident">old_info</span>.<span class="ident">value</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">MembershipState</span>::<span class="ident">Left</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(
                     <span class="string">&quot;Ignoring Online node {} - {:?} not Left.&quot;</span>,
                     <span class="ident">new_info</span>.<span class="ident">peer</span>.<span class="ident">name</span>(),
@@ -424,7 +438,7 @@
             }
         }
 
-        <span class="kw">let</span> <span class="ident">new_info</span> <span class="op">=</span> <span class="ident">Proven</span> {
+        <span class="kw">let</span> <span class="ident">new_info</span> <span class="op">=</span> <span class="ident">SectionSigned</span> {
             <span class="ident">value</span>: <span class="ident">new_info</span>,
             <span class="ident">signed</span>,
         };
@@ -461,17 +475,17 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_offline_agreement</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">member_info</span>: <span class="ident">MemberInfo</span>,
+        <span class="ident">node_state</span>: <span class="ident">NodeState</span>,
         <span class="ident">signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">commands</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[];
 
-        <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">member_info</span>.<span class="ident">peer</span>;
+        <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="ident">node_state</span>.<span class="ident">peer</span>;
         <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">peer</span>.<span class="ident">age</span>();
         <span class="kw">let</span> <span class="ident">signature</span> <span class="op">=</span> <span class="ident">signed</span>.<span class="ident">signature</span>.<span class="ident">clone</span>();
 
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_member</span>(<span class="ident">Proven</span> {
-            <span class="ident">value</span>: <span class="ident">member_info</span>,
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">update_member</span>(<span class="ident">SectionSigned</span> {
+            <span class="ident">value</span>: <span class="ident">node_state</span>,
             <span class="ident">signed</span>,
         }) {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;ignore Offline: {:?}&quot;</span>, <span class="ident">peer</span>);
@@ -507,7 +521,7 @@
 
         <span class="kw">let</span> <span class="ident">equal_or_extension</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>() <span class="op">=</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
             <span class="op">|</span><span class="op">|</span> <span class="ident">section_auth</span>.<span class="ident">prefix</span>().<span class="ident">is_extension_of</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>());
-        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">Proven</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>.<span class="ident">clone</span>());
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="ident">SectionSigned</span>::<span class="ident">new</span>(<span class="ident">section_auth</span>, <span class="ident">signed</span>.<span class="ident">clone</span>());
 
         <span class="kw">if</span> <span class="ident">equal_or_extension</span> {
             <span class="comment">// Our section of sub-section</span>
@@ -567,7 +581,7 @@
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_our_elders_agreement</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="ident">key_signed</span>: <span class="ident">Signed</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">updates</span> <span class="op">=</span> <span class="self">self</span>

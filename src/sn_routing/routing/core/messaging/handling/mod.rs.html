@@ -1090,7 +1090,7 @@
             <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section_chain</span>().<span class="ident">root_key</span>()
         };
         <span class="kw">let</span> <span class="ident">truncated_chain</span> <span class="op">=</span> <span class="ident">chain</span>.<span class="ident">get_proof_chain_to_current</span>(<span class="kw-2">&amp;</span><span class="ident">given_key</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_authority_provider</span>();
+        <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">section_signed_authority_provider</span>();
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">SectionKnowledge</span> {
             <span class="ident">src_info</span>: (<span class="ident">section_auth</span>.<span class="ident">clone</span>(), <span class="ident">truncated_chain</span>),
             <span class="ident">msg</span>: <span class="prelude-val">Some</span>(<span class="ident">msg</span>),

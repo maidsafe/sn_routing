@@ -41,7 +41,7 @@
 <span class="kw">mod</span> <span class="ident">dkg</span>;
 <span class="kw">mod</span> <span class="ident">dkg_msgs_utils</span>;
 <span class="kw">mod</span> <span class="ident">proposal</span>;
-<span class="kw">mod</span> <span class="ident">proven</span>;
+<span class="kw">mod</span> <span class="ident">section_signed</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">test_utils</span>;
 
@@ -50,7 +50,7 @@
     <span class="ident">dkg_msgs_utils</span>::{<span class="ident">DkgFailureSignedSetUtils</span>, <span class="ident">DkgFailureSignedUtils</span>, <span class="ident">DkgKeyUtils</span>},
     <span class="ident">proposal</span>::{<span class="ident">ProposalAggregator</span>, <span class="ident">ProposalError</span>, <span class="ident">ProposalUtils</span>},
 };
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">proven</span>::<span class="ident">ProvenUtils</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">section_signed</span>::<span class="ident">SectionSignedUtils</span>;
 <span class="kw">use</span> <span class="ident">serde</span>::<span class="ident">Serialize</span>;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::{<span class="ident">SignatureAggregator</span>, <span class="ident">Signed</span>, <span class="ident">SignedShare</span>};
 

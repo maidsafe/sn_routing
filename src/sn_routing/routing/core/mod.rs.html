@@ -334,7 +334,7 @@
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::<span class="ident">node</span>::<span class="ident">SignatureAggregator</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
-    <span class="ident">node</span>::{<span class="ident">Network</span>, <span class="ident">Proposal</span>, <span class="ident">Proven</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">Variant</span>},
+    <span class="ident">node</span>::{<span class="ident">Network</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">SectionSigned</span>, <span class="ident">Variant</span>},
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">MessageId</span>, <span class="ident">SectionAuthorityProvider</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">collections</span>::<span class="ident">BTreeSet</span>;
@@ -433,7 +433,7 @@
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">update_section_knowledge</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="ident">section_auth</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
+        <span class="ident">section_auth</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">SectionAuthorityProvider</span><span class="op">&gt;</span>,
         <span class="ident">section_chain</span>: <span class="ident">SecuredLinkedList</span>,
     ) {
         <span class="kw">let</span> <span class="ident">prefix</span> <span class="op">=</span> <span class="ident">section_auth</span>.<span class="ident">value</span>.<span class="ident">prefix</span>;
@@ -479,7 +479,7 @@
                 <span class="self">self</span>.<span class="ident">print_network_stats</span>();
 
                 <span class="comment">// Sending SectionKnowledge to other sections for new SAP.</span>
-                <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_authority_provider</span>();
+                <span class="kw">let</span> <span class="ident">section_auth</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">section_signed_authority_provider</span>();
                 <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">SectionKnowledge</span> {
                     <span class="ident">src_info</span>: (<span class="ident">section_auth</span>.<span class="ident">clone</span>(), <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">clone</span>()),
                     <span class="ident">msg</span>: <span class="prelude-val">None</span>,

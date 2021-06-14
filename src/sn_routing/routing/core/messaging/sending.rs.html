@@ -400,6 +400,9 @@
 <span id="399">399</span>
 <span id="400">400</span>
 <span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -423,8 +426,8 @@
 <span class="kw">use</span> <span class="ident">secured_linked_list</span>::<span class="ident">SecuredLinkedList</span>;
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">node</span>::{
-        <span class="ident">DkgKey</span>, <span class="ident">ElderCandidates</span>, <span class="ident">JoinResponse</span>, <span class="ident">MemberInfo</span>, <span class="ident">Network</span>, <span class="ident">Peer</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>,
-        <span class="ident">Proven</span>, <span class="ident">RelocateDetails</span>, <span class="ident">RelocatePromise</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">Variant</span>,
+        <span class="ident">DkgKey</span>, <span class="ident">ElderCandidates</span>, <span class="ident">JoinResponse</span>, <span class="ident">Network</span>, <span class="ident">NodeState</span>, <span class="ident">Peer</span>, <span class="ident">PlainMessage</span>, <span class="ident">Proposal</span>,
+        <span class="ident">RelocateDetails</span>, <span class="ident">RelocatePromise</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">SectionSigned</span>, <span class="ident">Variant</span>,
     },
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>,
 };
@@ -434,20 +437,23 @@
 <span class="comment">// RoutingMsg sending</span>
 <span class="kw">impl</span> <span class="ident">Core</span> {
     <span class="comment">// Send NodeApproval to a joining node which makes them a section member</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">send_node_approval</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">member_info</span>: <span class="ident">Proven</span><span class="op">&lt;</span><span class="ident">MemberInfo</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">send_node_approval</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">node_state</span>: <span class="ident">SectionSigned</span><span class="op">&lt;</span><span class="ident">NodeState</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;Our section with {:?} has approved peer {:?}.&quot;</span>,
             <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>(),
-            <span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>
+            <span class="ident">node_state</span>.<span class="ident">value</span>.<span class="ident">peer</span>
         );
 
-        <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">addr</span>();
-        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">member_info</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>();
+        <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">node_state</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">addr</span>();
+        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="kw-2">*</span><span class="ident">node_state</span>.<span class="ident">value</span>.<span class="ident">peer</span>.<span class="ident">name</span>();
 
         <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">JoinResponse</span>::<span class="ident">Approval</span> {
             <span class="ident">genesis_key</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">genesis_key</span>(),
-            <span class="ident">section_auth</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">proven_authority_provider</span>().<span class="ident">clone</span>(),
-            <span class="ident">member_info</span>,
+            <span class="ident">section_auth</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">section_signed_authority_provider</span>().<span class="ident">clone</span>(),
+            <span class="ident">node_state</span>,
             <span class="ident">section_chain</span>: <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">clone</span>(),
         }));
 
