@@ -32,8 +32,9 @@ use sn_messaging::node::Error as AggregatorError;
 use sn_messaging::{
     client::ClientMsg,
     node::{
-        DkgFailureSignedSet, JoinRejectionReason, JoinRequest, JoinResponse, Network, Peer,
-        Proposal, RoutingMsg, Section, SignedRelocateDetails, SrcAuthority, Variant,
+        DkgFailureSignedSet, JoinAsRelocatedRequest, JoinAsRelocatedResponse, JoinRejectionReason,
+        JoinRequest, JoinResponse, Network, Peer, Proposal, RoutingMsg, Section,
+        SignedRelocateDetails, SrcAuthority, Variant,
     },
     section_info::{GetSectionResponse, SectionInfoMsg},
     DestInfo, DstLocation, EndUser, MessageType, SectionAuthorityProvider,
@@ -143,19 +144,8 @@ impl Core {
                     },
                 }]
             }
-            SectionInfoMsg::GetSectionResponse(_) => {
-                if let Some(RelocateState::InProgress(tx)) = &mut self.relocate_state {
-                    trace!("Forwarding {:?} to the bootstrap task", message);
-                    let _ = tx
-                        .send((
-                            MessageType::SectionInfo {
-                                msg: message,
-                                dest_info,
-                            },
-                            sender,
-                        ))
-                        .await;
-                }
+            SectionInfoMsg::GetSectionResponse(response) => {
+                error!("GetSectionResponse unexpectedly received: {:?}", response);
                 vec![]
             }
             SectionInfoMsg::SectionInfoUpdate(error) => {
@@ -296,6 +286,10 @@ impl Core {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 self.handle_join_request(msg.src.peer(sender)?, *join_request.clone())
             }
+            Variant::JoinAsRelocatedRequest(join_request) => {
+                let sender = sender.ok_or(Error::InvalidSrcLocation)?;
+                self.handle_join_as_relocated_request(msg.src.peer(sender)?, *join_request.clone())
+            }
             Variant::UserMessage(content) => {
                 let bytes = Bytes::from(content.clone());
                 self.handle_user_message(msg, bytes).await
@@ -353,22 +347,15 @@ impl Core {
                 commands.extend(result?);
                 Ok(commands)
             }
-            Variant::JoinResponse(_) => {
+            Variant::JoinResponse(join_response) => {
+                debug!("Ignoring unexpected message: {:?}", join_response);
+                Ok(vec![])
+            }
+            Variant::JoinAsRelocatedResponse(_) => {
                 if let Some(RelocateState::InProgress(message_tx)) = &mut self.relocate_state {
                     if let Some(sender) = sender {
-                        trace!("Forwarding {:?} to the bootstrap task", msg);
-                        let _ = message_tx
-                            .send((
-                                MessageType::Routing {
-                                    msg: msg.clone(),
-                                    dest_info: DestInfo {
-                                        dest: src_name,
-                                        dest_section_pk: *self.section.chain().last_key(),
-                                    },
-                                },
-                                sender,
-                            ))
-                            .await;
+                        trace!("Forwarding {:?} to the relocation task", msg);
+                        let _ = message_tx.send((msg, sender)).await;
                     } else {
                         error!("Missing sender of {:?}", msg);
                     }
@@ -566,87 +553,48 @@ impl Core {
             return Ok(vec![]);
         }
 
-        // This joining node is being relocated to us.
-        let (mut age, previous_name, destination_key) =
-            if let Some(ref payload) = join_request.relocate_payload {
-                if !payload.verify_identity(peer.name()) {
-                    debug!(
-                        "Ignoring relocation JoinRequest from {} - invalid signature.",
-                        peer
-                    );
-                    return Ok(vec![]);
-                }
+        if !self.joins_allowed {
+            debug!(
+                "Rejecting JoinRequest from {} - joins currently not allowed.",
+                peer,
+            );
+            let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
+                JoinRejectionReason::JoinsDisallowed,
+            )));
 
-                let details = payload.relocate_details()?;
+            trace!("Sending {:?} to {}", variant, peer);
+            return Ok(vec![self.send_direct_message(
+                (*peer.name(), *peer.addr()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
+        }
 
-                if !self.section.prefix().matches(&details.destination) {
-                    debug!(
-                        "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
-                         our prefix {:?}.",
-                        peer,
-                        details.destination,
-                        self.section.prefix()
-                    );
-                    return Ok(vec![]);
-                }
+        // Start as Adult as long as passed resource signed.
+        let mut age = MIN_ADULT_AGE;
 
-                if !self
-                    .verify_message(payload.details.signed_msg())
-                    .unwrap_or(false)
-                {
-                    debug!("Ignoring relocation JoinRequest from {} - untrusted.", peer);
-                    return Ok(vec![]);
-                }
-
-                (
-                    details.age,
-                    Some(details.pub_id),
-                    Some(details.destination_key),
-                )
-            } else if !self.joins_allowed {
+        // During the first section, node shall use ranged age to avoid too many nodes got
+        // relocated at the same time. After the first section got split, later on nodes shall
+        // only start with age of MIN_ADULT_AGE
+        if self.section.prefix().is_empty() {
+            if peer.age() < FIRST_SECTION_MIN_AGE || peer.age() > FIRST_SECTION_MAX_AGE {
                 debug!(
-                    "Rejecting JoinRequest from {} - joins currently not allowed.",
-                    peer,
-                );
-                let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
-                    JoinRejectionReason::JoinsDisallowed,
-                )));
-                trace!("Sending {:?} to {}", variant, peer);
-                return Ok(vec![self.send_direct_message(
-                    (*peer.name(), *peer.addr()),
-                    variant,
-                    *self.section.chain().last_key(),
-                )?]);
-            } else {
-                // Start as Adult as long as passed resource signeding.
-                (MIN_ADULT_AGE, None, None)
-            };
-
-        // Age differentiate only applies to the new node.
-        if join_request.relocate_payload.is_none() {
-            // During the first section, node shall use ranged age to avoid too many nodes got
-            // relocated at the same time. After the first section got split, later on nodes shall
-            // only start with age of MIN_ADULT_AGE
-            if self.section.prefix().is_empty() {
-                if peer.age() < FIRST_SECTION_MIN_AGE || peer.age() > FIRST_SECTION_MAX_AGE {
-                    debug!(
-                        "Ignoring JoinRequest from {} - first-section node having wrong age {:?}",
-                        peer,
-                        peer.age(),
-                    );
-                    return Ok(vec![]);
-                } else {
-                    age = peer.age();
-                }
-            } else if peer.age() != MIN_ADULT_AGE {
-                // After section split, new node has to join with age of MIN_ADULT_AGE.
-                debug!(
-                    "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
+                    "Ignoring JoinRequest from {} - first-section node having wrong age {:?}",
                     peer,
                     peer.age(),
                 );
                 return Ok(vec![]);
+            } else {
+                age = peer.age();
             }
+        } else if peer.age() != MIN_ADULT_AGE {
+            // After section split, new node has to join with age of MIN_ADULT_AGE.
+            debug!(
+                "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
+                peer,
+                peer.age(),
+            );
+            return Ok(vec![]);
         }
 
         // Requires the node name matches the age.
@@ -658,20 +606,117 @@ impl Core {
             return Ok(vec![]);
         }
 
-        // Require resource signed only if joining as a new node.
-        if previous_name.is_none() {
-            if let Some(response) = join_request.resource_proof_response {
-                if !self.validate_resource_proof_response(peer.name(), response) {
-                    debug!(
-                        "Ignoring JoinRequest from {} - invalid resource signed response",
-                        peer
-                    );
-                    return Ok(vec![]);
-                }
-            } else {
-                return Ok(vec![self.send_resource_proof_challenge(&peer)?]);
+        // Require resource signed if joining as a new node.
+        if let Some(response) = join_request.resource_proof_response {
+            if !self.validate_resource_proof_response(peer.name(), response) {
+                debug!(
+                    "Ignoring JoinRequest from {} - invalid resource signed response",
+                    peer
+                );
+                return Ok(vec![]);
             }
+        } else {
+            return Ok(vec![self.send_resource_proof_challenge(&peer)?]);
         }
+
+        Ok(vec![Command::ProposeOnline {
+            peer,
+            previous_name: None,
+            destination_key: None,
+        }])
+    }
+
+    pub(crate) fn handle_join_as_relocated_request(
+        &mut self,
+        peer: Peer,
+        join_request: JoinAsRelocatedRequest,
+    ) -> Result<Vec<Command>> {
+        debug!("Received {:?} from {}", join_request, peer);
+        let payload = if let Some(payload) = join_request.relocate_payload {
+            payload
+        } else {
+            let variant = Variant::JoinAsRelocatedResponse(Box::new(
+                JoinAsRelocatedResponse::Retry(self.section.authority_provider().clone()),
+            ));
+
+            trace!("Sending {:?} to {}", variant, peer);
+            return Ok(vec![self.send_direct_message(
+                (*peer.name(), *peer.addr()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
+        };
+
+        if !self.section.prefix().matches(peer.name())
+            || join_request.section_key != *self.section.chain().last_key()
+        {
+            debug!(
+                "JoinAsRelocatedRequest from {} - name doesn't match our prefix {:?}.",
+                peer,
+                self.section.prefix()
+            );
+
+            let variant = Variant::JoinAsRelocatedResponse(Box::new(
+                JoinAsRelocatedResponse::Retry(self.section.authority_provider().clone()),
+            ));
+            trace!("Sending {:?} to {}", variant, peer);
+            return Ok(vec![self.send_direct_message(
+                (*peer.name(), *peer.addr()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
+        }
+
+        if self.section.members().is_joined(peer.name()) {
+            debug!(
+                "Ignoring JoinAsRelocatedRequest from {} - already member of our section.",
+                peer
+            );
+            return Ok(vec![]);
+        }
+
+        // This joining node is being relocated to us.
+        if !payload.verify_identity(peer.name()) {
+            debug!(
+                "Ignoring JoinAsRelocatedRequest from {} - invalid signature.",
+                peer
+            );
+            return Ok(vec![]);
+        }
+
+        let details = payload.relocate_details()?;
+
+        if !self.section.prefix().matches(&details.destination) {
+            debug!(
+                "Ignoring JoinAsRelocatedRequest from {} - destination {} doesn't match \
+                         our prefix {:?}.",
+                peer,
+                details.destination,
+                self.section.prefix()
+            );
+            return Ok(vec![]);
+        }
+
+        if !self
+            .verify_message(payload.details.signed_msg())
+            .unwrap_or(false)
+        {
+            debug!("Ignoring JoinAsRelocatedRequest from {} - untrusted.", peer);
+            return Ok(vec![]);
+        }
+
+        // Requires the node name matches the age.
+        let age = details.age;
+        if age != peer.age() {
+            debug!(
+                "Ignoring JoinAsRelocatedRequest from {} - required age {:?} not presented.",
+                peer, age,
+            );
+            return Ok(vec![]);
+        }
+
+        let previous_name = Some(details.pub_id);
+        let destination_key = Some(details.destination_key);
 
         Ok(vec![Command::ProposeOnline {
             peer,

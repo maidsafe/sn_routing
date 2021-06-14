@@ -36,9 +36,9 @@ use sn_data_types::{Keypair, PublicKey};
 use sn_messaging::{
     location::{Aggregation, Itinerary},
     node::{
-        JoinRequest, JoinResponse, MembershipState, Network, NodeState, Peer, PlainMessage,
-        Proposal, RelocateDetails, RelocatePayload, ResourceProofResponse, RoutingMsg, Section,
-        SectionSigned, Signed, SignedRelocateDetails, Variant,
+        JoinAsRelocatedRequest, JoinRequest, JoinResponse, MembershipState, Network, NodeState,
+        Peer, PlainMessage, Proposal, RelocateDetails, RelocatePayload, ResourceProofResponse,
+        RoutingMsg, Section, SectionSigned, Signed, SignedRelocateDetails, Variant,
     },
     section_info::{GetSectionResponse, SectionInfoMsg},
     DestInfo, DstLocation, MessageType, SectionAuthorityProvider, SrcLocation,
@@ -189,7 +189,6 @@ async fn receive_join_request_without_resource_proof_response() -> Result<()> {
         DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
-            relocate_payload: None,
             resource_proof_response: None,
         })),
         section_key,
@@ -252,7 +251,6 @@ async fn receive_join_request_with_resource_proof_response() -> Result<()> {
         DstLocation::DirectAndUnrouted,
         Variant::JoinRequest(Box::new(JoinRequest {
             section_key,
-            relocate_payload: None,
             resource_proof_response: Some(ResourceProofResponse {
                 solution,
                 data,
@@ -360,10 +358,9 @@ async fn receive_join_request_from_relocated_node() -> Result<()> {
     let join_request = RoutingMsg::single_src(
         &relocated_node,
         DstLocation::DirectAndUnrouted,
-        Variant::JoinRequest(Box::new(JoinRequest {
+        Variant::JoinAsRelocatedRequest(Box::new(JoinAsRelocatedRequest {
             section_key,
             relocate_payload: Some(relocate_payload),
-            resource_proof_response: None,
         })),
         section_key,
     )?;

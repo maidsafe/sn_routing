@@ -77,7 +77,7 @@ pub(crate) enum Command {
         /// Details of the relocation
         details: SignedRelocateDetails,
         /// RoutingMsg receiver to pass to the bootstrap task.
-        message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
+        message_rx: mpsc::Receiver<(RoutingMsg, SocketAddr)>,
     },
     /// Attempt to set JoinsAllowed flag.
     SetJoinsAllowed(bool),

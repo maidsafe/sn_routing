@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bootstrap, Comm, Command, Core};
+use super::{bootstrap::JoinAsRelocated, Comm, Command, Core};
 use crate::{
     error::Result, event::Event, messages::RoutingMsgUtils, peer::PeerUtils,
     routing::comm::SendStatus, section::SectionPeersUtils, section::SectionUtils, Error, XorName,
@@ -15,7 +15,8 @@ use itertools::Itertools;
 use sn_data_types::PublicKey;
 use sn_messaging::{
     node::{
-        JoinRejectionReason, JoinResponse, RoutingMsg, SignedRelocateDetails, SrcAuthority, Variant,
+        JoinAsRelocatedResponse, JoinRejectionReason, JoinResponse, RoutingMsg,
+        SignedRelocateDetails, SrcAuthority, Variant,
     },
     DstLocation, MessageType,
 };
@@ -38,9 +39,6 @@ pub(crate) struct Dispatcher {
 impl Dispatcher {
     pub fn new(state: Core, comm: Comm) -> Self {
         let (cancel_timer_tx, cancel_timer_rx) = watch::channel(false);
-
-        // Take out the initial value.
-
         Self {
             core: RwLock::new(state),
             comm,
@@ -107,17 +105,37 @@ impl Dispatcher {
                 message,
                 dest_info,
             } => {
-                if let (Variant::JoinRequest(join_request), Some(sender)) =
-                    (&message.variant, &sender)
-                {
-                    // Do this check only for the initial join request
-                    if join_request.relocate_payload.is_none()
-                        && join_request.resource_proof_response.is_none()
-                        && self.comm.is_reachable(sender).await.is_err()
-                    {
-                        let variant = Variant::JoinResponse(Box::new(JoinResponse::Rejected(
-                            JoinRejectionReason::NodeNotReachable(*sender),
-                        )));
+                if let Some(sender) = &sender {
+                    // let's then see if we need to do a reachability test
+                    let failure = match &message.variant {
+                        Variant::JoinRequest(join_request) => {
+                            // Do this check only for the initial join request
+                            if join_request.resource_proof_response.is_none()
+                                && self.comm.is_reachable(sender).await.is_err()
+                            {
+                                Some(Variant::JoinResponse(Box::new(JoinResponse::Rejected(
+                                    JoinRejectionReason::NodeNotReachable(*sender),
+                                ))))
+                            } else {
+                                None
+                            }
+                        }
+                        Variant::JoinAsRelocatedRequest(join_request) => {
+                            // Do this check only for the initial join request
+                            if join_request.relocate_payload.is_none()
+                                && self.comm.is_reachable(sender).await.is_err()
+                            {
+                                Some(Variant::JoinAsRelocatedResponse(Box::new(
+                                    JoinAsRelocatedResponse::NodeNotReachable(*sender),
+                                )))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+
+                    if let Some(variant) = failure {
                         let section_key = *self.core.read().await.section().chain.last_key();
                         if let SrcAuthority::Node { public_key, .. } = message.src {
                             trace!("Sending {:?} to {}", variant, sender);
@@ -129,6 +147,7 @@ impl Dispatcher {
                         }
                     }
                 }
+
                 self.core
                     .write()
                     .await
@@ -344,7 +363,7 @@ impl Dispatcher {
         &self,
         bootstrap_addrs: Vec<SocketAddr>,
         details: SignedRelocateDetails,
-        message_rx: mpsc::Receiver<(MessageType, SocketAddr)>,
+        message_rx: mpsc::Receiver<(RoutingMsg, SocketAddr)>,
     ) -> Result<Vec<Command>> {
         let (genesis_key, node) = {
             let state = self.core.read().await;
@@ -352,15 +371,8 @@ impl Dispatcher {
         };
         let previous_name = node.name();
 
-        let (node, section, backlog) = bootstrap::relocate(
-            node,
-            &self.comm,
-            message_rx,
-            bootstrap_addrs,
-            genesis_key,
-            details,
-        )
-        .await?;
+        let joining = JoinAsRelocated::new(&self.comm, node, message_rx);
+        let (node, section) = joining.run(bootstrap_addrs, genesis_key, details).await?;
 
         let mut state = self.core.write().await;
         let event_tx = state.event_tx.clone();
@@ -374,14 +386,6 @@ impl Dispatcher {
             })
             .await;
 
-        let commands = backlog
-            .into_iter()
-            .map(|(message, sender, dest_info)| Command::HandleMessage {
-                message,
-                sender: Some(sender),
-                dest_info,
-            })
-            .collect();
-        Ok(commands)
+        Ok(vec![])
     }
 }

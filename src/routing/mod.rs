@@ -143,7 +143,7 @@ impl Routing {
                 Comm::bootstrap(config.transport_config, connection_event_tx).await?;
             let node = Node::new(keypair, comm.our_connection_info());
             let (node, section, backlog) =
-                bootstrap::initial(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
+                bootstrap::join(node, &comm, &mut connection_event_rx, bootstrap_addr).await?;
             let state = Core::new(node, section, None, event_tx);
 
             (state, comm, backlog)

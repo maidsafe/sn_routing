@@ -47,7 +47,6 @@ async fn test_node_bootstrapping() -> Result<()> {
     // spawn genesis node events listener
     let genesis_handler = tokio::spawn(async move {
         assert_next_event!(event_stream, Event::EldersChanged { .. });
-
         assert_next_event!(event_stream, Event::MemberJoined { .. });
     });
 
