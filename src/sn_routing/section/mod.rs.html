@@ -465,7 +465,7 @@
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
 <span class="kw">mod</span> <span class="ident">node_state</span>;
-<span class="kw">mod</span> <span class="ident">section_authority_provider</span>;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">section_authority_provider</span>;
 <span class="kw">mod</span> <span class="ident">section_keys</span>;
 <span class="kw">mod</span> <span class="ident">section_peers</span>;
 
@@ -482,7 +482,7 @@
 };
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">agreement</span>::<span class="ident">SectionSignedUtils</span>,
+    <span class="ident">dkg</span>::<span class="ident">SectionSignedUtils</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
     <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">ELDER_SIZE</span>, <span class="ident">RECOMMENDED_SECTION_SIZE</span>,
