@@ -15,7 +15,7 @@ use std::hash::Hash;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-///
+/// A [`BTreeMap`]-backed cache supporting capacity- and duration-based expiry.
 #[derive(Debug)]
 pub struct Cache<T, V>
 where
@@ -58,17 +58,17 @@ where
         }
     }
 
-    ///
+    /// Returns the number of items in the cache.
     pub async fn len(&self) -> usize {
         self.items.read().await.len()
     }
 
-    ///
+    /// Returns `true` if the cache contains no items.
     pub async fn is_empty(&self) -> bool {
         self.items.read().await.is_empty()
     }
 
-    ///
+    /// Returns the number of items in the cache that match the given predicate.
     pub async fn count<P>(&self, predicate: P) -> usize
     where
         P: FnMut(&(&T, &Item<V>)) -> bool,
@@ -76,7 +76,9 @@ where
         self.items.read().await.iter().filter(predicate).count()
     }
 
+    /// Get a value from the cache if one is set and not expired.
     ///
+    /// A clone of the value is returned, so this is only implemented when `V: Clone`.
     pub async fn get(&self, key: &T) -> Option<V>
     where
         T: Eq + Hash,
@@ -90,7 +92,11 @@ where
             .map(|k| k.object.clone())
     }
 
+    /// Set a value in the cache and return the previous value, if any.
     ///
+    /// This will override an existing value for the same key, if there is one. `custom_duration`
+    /// can be set to override `self.item_duration`. If the new item causes the cache to exceed its
+    /// capacity, the oldest entry in the cache will be removed.
     pub async fn set(&self, key: T, value: V, custom_duration: Option<Duration>) -> Option<V>
     where
         T: Eq + Hash + Clone,
@@ -109,7 +115,7 @@ where
         replaced
     }
 
-    ///
+    /// Remove expired items from the cache storage.
     #[allow(unused_assignments)]
     pub async fn remove_expired(&self) {
         let mut expired_keys = Vec::new();
@@ -127,7 +133,7 @@ where
         }
     }
 
-    /// removes keys beyond capacity
+    /// Remove items that exceed capacity, oldest first.
     #[allow(unused_assignments)]
     async fn drop_excess(&self) {
         let len = self.len().await;
@@ -150,7 +156,7 @@ where
         }
     }
 
-    ///
+    /// Remove an item from the cache, returning the removed value.
     pub async fn remove(&self, key: &T) -> Option<V>
     where
         T: Eq + Hash,
@@ -158,7 +164,7 @@ where
         self.items.write().await.remove(key).map(|item| item.object)
     }
 
-    ///
+    /// Clear the cache, removing all items.
     pub async fn clear(&self) {
         self.items.write().await.clear()
     }
