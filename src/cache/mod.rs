@@ -116,9 +116,8 @@ where
     }
 
     /// Remove expired items from the cache storage.
-    #[allow(unused_assignments)]
     pub async fn remove_expired(&self) {
-        let mut expired_keys = Vec::new();
+        let expired_keys: Vec<_>;
         {
             let read_items = self.items.read().await;
             expired_keys = read_items
@@ -134,12 +133,11 @@ where
     }
 
     /// Remove items that exceed capacity, oldest first.
-    #[allow(unused_assignments)]
     async fn drop_excess(&self) {
         let len = self.len().await;
         if len > self.capacity {
             let excess = len - self.capacity;
-            let mut excess_keys = Vec::new();
+            let excess_keys: Vec<_>;
             {
                 let read_items = self.items.read().await;
                 let mut items = read_items.iter().collect_vec();
