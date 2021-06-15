@@ -15,7 +15,7 @@ use crate::{
     peer::PeerUtils,
     routing::comm::{Comm, ConnectionEvent},
     section::{SectionAuthorityProviderUtils, SectionUtils},
-    FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE,
+    FIRST_SECTION_MAX_AGE, FIRST_SECTION_MIN_AGE, MIN_ADULT_AGE,
 };
 use futures::future;
 use rand::seq::IteratorRandom;
@@ -181,6 +181,17 @@ impl<'a> Join<'a> {
                     }
 
                     if prefix.matches(&self.node.name()) {
+                        // After section split, new node must join with the age of MIN_ADULT_AGE.
+                        if !prefix.is_empty() && self.node.age() != MIN_ADULT_AGE
+                        {
+                            let new_keypair =
+                                ed25519::gen_keypair(&prefix.range_inclusive(), MIN_ADULT_AGE);
+                            let new_name = ed25519::name(&new_keypair.public);
+
+                            info!("Setting Node name to {}", new_name);
+                            self.node = Node::new(new_keypair, self.node.addr);
+                        }
+
                         info!(
                             "Newer Join response for our prefix {:?} from {:?}",
                             section_auth, sender

@@ -589,12 +589,15 @@ impl Core {
             }
         } else if peer.age() != MIN_ADULT_AGE {
             // After section split, new node has to join with age of MIN_ADULT_AGE.
-            debug!(
-                "Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}",
-                peer,
-                peer.age(),
-            );
-            return Ok(vec![]);
+            let variant = Variant::JoinResponse(Box::new(JoinResponse::Retry(
+                self.section.authority_provider().clone(),
+            )));
+            trace!("New node after section split must join with age of MIN_ADULT_AGE. Sending {:?} to {}", variant, peer);
+            return Ok(vec![self.send_direct_message(
+                (*peer.name(), *peer.addr()),
+                variant,
+                *self.section.chain().last_key(),
+            )?]);
         }
 
         // Requires the node name matches the age.
