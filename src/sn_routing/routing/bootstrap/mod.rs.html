@@ -53,8 +53,6 @@
 <span id="52">52</span>
 <span id="53">53</span>
 <span id="54">54</span>
-<span id="55">55</span>
-<span id="56">56</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -88,12 +86,10 @@
         <span class="prelude-val">Ok</span>(<span class="ident">SendStatus</span>::<span class="ident">MinDeliveryGroupSizeFailed</span>(<span class="ident">recipients</span>)) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Failed to send message {:?} to {:?}&quot;</span>, <span class="ident">message</span>, <span class="ident">recipients</span>)
         }
-        <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> {
-            <span class="macro">error</span><span class="macro">!</span>(
-                <span class="string">&quot;Failed to send message {:?} to {:?}: {:?}&quot;</span>,
-                <span class="ident">message</span>, <span class="ident">recipients</span>, <span class="ident">err</span>
-            )
-        }
+        <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">error</span><span class="macro">!</span>(
+            <span class="string">&quot;Failed to send message {:?} to {:?}: {:?}&quot;</span>,
+            <span class="ident">message</span>, <span class="ident">recipients</span>, <span class="ident">err</span>
+        ),
     }
 }
 

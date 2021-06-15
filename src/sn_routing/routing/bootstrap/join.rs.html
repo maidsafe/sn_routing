@@ -879,6 +879,33 @@
 <span id="878">878</span>
 <span id="879">879</span>
 <span id="880">880</span>
+<span id="881">881</span>
+<span id="882">882</span>
+<span id="883">883</span>
+<span id="884">884</span>
+<span id="885">885</span>
+<span id="886">886</span>
+<span id="887">887</span>
+<span id="888">888</span>
+<span id="889">889</span>
+<span id="890">890</span>
+<span id="891">891</span>
+<span id="892">892</span>
+<span id="893">893</span>
+<span id="894">894</span>
+<span id="895">895</span>
+<span id="896">896</span>
+<span id="897">897</span>
+<span id="898">898</span>
+<span id="899">899</span>
+<span id="900">900</span>
+<span id="901">901</span>
+<span id="902">902</span>
+<span id="903">903</span>
+<span id="904">904</span>
+<span id="905">905</span>
+<span id="906">906</span>
+<span id="907">907</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -897,7 +924,7 @@
     <span class="ident">peer</span>::<span class="ident">PeerUtils</span>,
     <span class="ident">routing</span>::<span class="ident">comm</span>::{<span class="ident">Comm</span>, <span class="ident">ConnectionEvent</span>},
     <span class="ident">section</span>::{<span class="ident">SectionAuthorityProviderUtils</span>, <span class="ident">SectionUtils</span>},
-    <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>,
+    <span class="ident">FIRST_SECTION_MAX_AGE</span>, <span class="ident">FIRST_SECTION_MIN_AGE</span>, <span class="ident">MIN_ADULT_AGE</span>,
 };
 <span class="kw">use</span> <span class="ident">futures</span>::<span class="ident">future</span>;
 <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">seq</span>::<span class="ident">IteratorRandom</span>;
@@ -1063,6 +1090,16 @@
                     }
 
                     <span class="kw">if</span> <span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">node</span>.<span class="ident">name</span>()) {
+                        <span class="comment">// After section split, new node must join with the age of MIN_ADULT_AGE.</span>
+                        <span class="kw">if</span> <span class="op">!</span><span class="ident">prefix</span>.<span class="ident">is_empty</span>() <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">age</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">MIN_ADULT_AGE</span> {
+                            <span class="kw">let</span> <span class="ident">new_keypair</span> <span class="op">=</span>
+                                <span class="ident">ed25519</span>::<span class="ident">gen_keypair</span>(<span class="kw-2">&amp;</span><span class="ident">prefix</span>.<span class="ident">range_inclusive</span>(), <span class="ident">MIN_ADULT_AGE</span>);
+                            <span class="kw">let</span> <span class="ident">new_name</span> <span class="op">=</span> <span class="ident">ed25519</span>::<span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="ident">new_keypair</span>.<span class="ident">public</span>);
+
+                            <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;Setting Node name to {}&quot;</span>, <span class="ident">new_name</span>);
+                            <span class="self">self</span>.<span class="ident">node</span> <span class="op">=</span> <span class="ident">Node</span>::<span class="ident">new</span>(<span class="ident">new_keypair</span>, <span class="self">self</span>.<span class="ident">node</span>.<span class="ident">addr</span>);
+                        }
+
                         <span class="macro">info</span><span class="macro">!</span>(
                             <span class="string">&quot;Newer Join response for our prefix {:?} from {:?}&quot;</span>,
                             <span class="ident">section_auth</span>, <span class="ident">sender</span>
@@ -1220,16 +1257,33 @@
                 <span class="op">|</span> <span class="ident">JoinResponse</span>::<span class="ident">Rejected</span>(<span class="ident">JoinRejectionReason</span>::<span class="ident">JoinsDisallowed</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">join_response</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>));
                 }
-                <span class="ident">JoinResponse</span>::<span class="ident">Retry</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>)
-                <span class="op">|</span> <span class="ident">JoinResponse</span>::<span class="ident">Redirect</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">JoinResponse</span>::<span class="ident">Retry</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="kw">if</span> <span class="op">!</span><span class="ident">section_auth</span>.<span class="ident">prefix</span>.<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">destination</span>) {
-                        <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Invalid JoinResponse bad prefix: {:?}&quot;</span>, <span class="ident">join_response</span>);
+                        <span class="macro">error</span><span class="macro">!</span>(
+                            <span class="string">&quot;Invalid JoinResponse::Retry bad prefix: {:?}&quot;</span>,
+                            <span class="ident">join_response</span>
+                        );
                         <span class="kw">continue</span>;
                     }
 
                     <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">elders</span>.<span class="ident">is_empty</span>() {
                         <span class="macro">error</span><span class="macro">!</span>(
-                            <span class="string">&quot;Invalid JoinResponse, empty list of Elders: {:?}&quot;</span>,
+                            <span class="string">&quot;Invalid JoinResponse::Retry, empty list of Elders: {:?}&quot;</span>,
+                            <span class="ident">join_response</span>
+                        );
+                        <span class="kw">continue</span>;
+                    }
+
+                    <span class="kw">if</span> <span class="op">!</span><span class="ident">verify_message</span>(<span class="kw-2">&amp;</span><span class="ident">routing_msg</span>, <span class="prelude-val">None</span>) {
+                        <span class="kw">continue</span>;
+                    }
+
+                    <span class="kw">return</span> <span class="prelude-val">Ok</span>((<span class="ident">join_response</span>, <span class="ident">sender</span>, <span class="ident">dest_info</span>));
+                }
+                <span class="ident">JoinResponse</span>::<span class="ident">Redirect</span>(<span class="kw-2">ref</span> <span class="ident">section_auth</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="kw">if</span> <span class="ident">section_auth</span>.<span class="ident">elders</span>.<span class="ident">is_empty</span>() {
+                        <span class="macro">error</span><span class="macro">!</span>(
+                            <span class="string">&quot;Invalid JoinResponse::Redirect, empty list of Elders: {:?}&quot;</span>,
                             <span class="ident">join_response</span>
                         );
                         <span class="kw">continue</span>;

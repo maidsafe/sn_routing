@@ -738,6 +738,9 @@
 <span id="737">737</span>
 <span id="738">738</span>
 <span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1330,12 +1333,15 @@
             }
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">MIN_ADULT_AGE</span> {
             <span class="comment">// After section split, new node has to join with age of MIN_ADULT_AGE.</span>
-            <span class="macro">debug</span><span class="macro">!</span>(
-                <span class="string">&quot;Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}&quot;</span>,
-                <span class="ident">peer</span>,
-                <span class="ident">peer</span>.<span class="ident">age</span>(),
-            );
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+            <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">JoinResponse</span>::<span class="ident">Retry</span>(
+                <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">clone</span>(),
+            )));
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;New node after section split must join with age of MIN_ADULT_AGE. Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_direct_message</span>(
+                (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()),
+                <span class="ident">variant</span>,
+                <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+            )<span class="question-mark">?</span>]);
         }
 
         <span class="comment">// Requires the node name matches the age.</span>
