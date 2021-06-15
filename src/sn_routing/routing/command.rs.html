@@ -309,7 +309,7 @@
         <span class="doccomment">/// Details of the relocation</span>
         <span class="ident">details</span>: <span class="ident">SignedRelocateDetails</span>,
         <span class="doccomment">/// RoutingMsg receiver to pass to the bootstrap task.</span>
-        <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">MessageType</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
+        <span class="ident">message_rx</span>: <span class="ident">mpsc</span>::<span class="ident">Receiver</span><span class="op">&lt;</span>(<span class="ident">RoutingMsg</span>, <span class="ident">SocketAddr</span>)<span class="op">&gt;</span>,
     },
     <span class="doccomment">/// Attempt to set JoinsAllowed flag.</span>
     <span class="ident">SetJoinsAllowed</span>(<span class="ident">bool</span>),

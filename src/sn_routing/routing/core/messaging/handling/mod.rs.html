@@ -693,6 +693,51 @@
 <span id="692">692</span>
 <span id="693">693</span>
 <span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2021 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -728,8 +773,9 @@
 <span class="kw">use</span> <span class="ident">sn_messaging</span>::{
     <span class="ident">client</span>::<span class="ident">ClientMsg</span>,
     <span class="ident">node</span>::{
-        <span class="ident">DkgFailureSignedSet</span>, <span class="ident">JoinRejectionReason</span>, <span class="ident">JoinRequest</span>, <span class="ident">JoinResponse</span>, <span class="ident">Network</span>, <span class="ident">Peer</span>,
-        <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>, <span class="ident">SignedRelocateDetails</span>, <span class="ident">SrcAuthority</span>, <span class="ident">Variant</span>,
+        <span class="ident">DkgFailureSignedSet</span>, <span class="ident">JoinAsRelocatedRequest</span>, <span class="ident">JoinAsRelocatedResponse</span>, <span class="ident">JoinRejectionReason</span>,
+        <span class="ident">JoinRequest</span>, <span class="ident">JoinResponse</span>, <span class="ident">Network</span>, <span class="ident">Peer</span>, <span class="ident">Proposal</span>, <span class="ident">RoutingMsg</span>, <span class="ident">Section</span>,
+        <span class="ident">SignedRelocateDetails</span>, <span class="ident">SrcAuthority</span>, <span class="ident">Variant</span>,
     },
     <span class="ident">section_info</span>::{<span class="ident">GetSectionResponse</span>, <span class="ident">SectionInfoMsg</span>},
     <span class="ident">DestInfo</span>, <span class="ident">DstLocation</span>, <span class="ident">EndUser</span>, <span class="ident">MessageType</span>, <span class="ident">SectionAuthorityProvider</span>,
@@ -839,19 +885,8 @@
                     },
                 }]
             }
-            <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="ident">tx</span>)) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">relocate_state</span> {
-                    <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Forwarding {:?} to the bootstrap task&quot;</span>, <span class="ident">message</span>);
-                    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">tx</span>
-                        .<span class="ident">send</span>((
-                            <span class="ident">MessageType</span>::<span class="ident">SectionInfo</span> {
-                                <span class="ident">msg</span>: <span class="ident">message</span>,
-                                <span class="ident">dest_info</span>,
-                            },
-                            <span class="ident">sender</span>,
-                        ))
-                        .<span class="kw">await</span>;
-                }
+            <span class="ident">SectionInfoMsg</span>::<span class="ident">GetSectionResponse</span>(<span class="ident">response</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;GetSectionResponse unexpectedly received: {:?}&quot;</span>, <span class="ident">response</span>);
                 <span class="macro">vec</span><span class="macro">!</span>[]
             }
             <span class="ident">SectionInfoMsg</span>::<span class="ident">SectionInfoUpdate</span>(<span class="ident">error</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -992,6 +1027,10 @@
                 <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
                 <span class="self">self</span>.<span class="ident">handle_join_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())
             }
+            <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedRequest</span>(<span class="ident">join_request</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="ident">sender</span>.<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">InvalidSrcLocation</span>)<span class="question-mark">?</span>;
+                <span class="self">self</span>.<span class="ident">handle_join_as_relocated_request</span>(<span class="ident">msg</span>.<span class="ident">src</span>.<span class="ident">peer</span>(<span class="ident">sender</span>)<span class="question-mark">?</span>, <span class="kw-2">*</span><span class="ident">join_request</span>.<span class="ident">clone</span>())
+            }
             <span class="ident">Variant</span>::<span class="ident">UserMessage</span>(<span class="ident">content</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">bytes</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">content</span>.<span class="ident">clone</span>());
                 <span class="self">self</span>.<span class="ident">handle_user_message</span>(<span class="ident">msg</span>, <span class="ident">bytes</span>).<span class="kw">await</span>
@@ -1049,22 +1088,15 @@
                 <span class="ident">commands</span>.<span class="ident">extend</span>(<span class="ident">result</span><span class="question-mark">?</span>);
                 <span class="prelude-val">Ok</span>(<span class="ident">commands</span>)
             }
-            <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">join_response</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Ignoring unexpected message: {:?}&quot;</span>, <span class="ident">join_response</span>);
+                <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[])
+            }
+            <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedResponse</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">RelocateState</span>::<span class="ident">InProgress</span>(<span class="ident">message_tx</span>)) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">relocate_state</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sender</span>) <span class="op">=</span> <span class="ident">sender</span> {
-                        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Forwarding {:?} to the bootstrap task&quot;</span>, <span class="ident">msg</span>);
-                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>
-                            .<span class="ident">send</span>((
-                                <span class="ident">MessageType</span>::<span class="ident">Routing</span> {
-                                    <span class="ident">msg</span>: <span class="ident">msg</span>.<span class="ident">clone</span>(),
-                                    <span class="ident">dest_info</span>: <span class="ident">DestInfo</span> {
-                                        <span class="ident">dest</span>: <span class="ident">src_name</span>,
-                                        <span class="ident">dest_section_pk</span>: <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
-                                    },
-                                },
-                                <span class="ident">sender</span>,
-                            ))
-                            .<span class="kw">await</span>;
+                        <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Forwarding {:?} to the relocation task&quot;</span>, <span class="ident">msg</span>);
+                        <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">message_tx</span>.<span class="ident">send</span>((<span class="ident">msg</span>, <span class="ident">sender</span>)).<span class="kw">await</span>;
                     } <span class="kw">else</span> {
                         <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Missing sender of {:?}&quot;</span>, <span class="ident">msg</span>);
                     }
@@ -1262,87 +1294,48 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
-        <span class="comment">// This joining node is being relocated to us.</span>
-        <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">age</span>, <span class="ident">previous_name</span>, <span class="ident">destination_key</span>) <span class="op">=</span>
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">ref</span> <span class="ident">payload</span>) <span class="op">=</span> <span class="ident">join_request</span>.<span class="ident">relocate_payload</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">payload</span>.<span class="ident">verify_identity</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
-                    <span class="macro">debug</span><span class="macro">!</span>(
-                        <span class="string">&quot;Ignoring relocation JoinRequest from {} - invalid signature.&quot;</span>,
-                        <span class="ident">peer</span>
-                    );
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-                }
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">joins_allowed</span> {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Rejecting JoinRequest from {} - joins currently not allowed.&quot;</span>,
+                <span class="ident">peer</span>,
+            );
+            <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">JoinResponse</span>::<span class="ident">Rejected</span>(
+                <span class="ident">JoinRejectionReason</span>::<span class="ident">JoinsDisallowed</span>,
+            )));
 
-                <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span> <span class="ident">payload</span>.<span class="ident">relocate_details</span>()<span class="question-mark">?</span>;
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_direct_message</span>(
+                (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()),
+                <span class="ident">variant</span>,
+                <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+            )<span class="question-mark">?</span>]);
+        }
 
-                <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">details</span>.<span class="ident">destination</span>) {
-                    <span class="macro">debug</span><span class="macro">!</span>(
-                        <span class="string">&quot;Ignoring relocation JoinRequest from {} - destination {} doesn&#39;t match \
-                         our prefix {:?}.&quot;</span>,
-                        <span class="ident">peer</span>,
-                        <span class="ident">details</span>.<span class="ident">destination</span>,
-                        <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
-                    );
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-                }
+        <span class="comment">// Start as Adult as long as passed resource signed.</span>
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">MIN_ADULT_AGE</span>;
 
-                <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
-                    .<span class="ident">verify_message</span>(<span class="ident">payload</span>.<span class="ident">details</span>.<span class="ident">signed_msg</span>())
-                    .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>)
-                {
-                    <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Ignoring relocation JoinRequest from {} - untrusted.&quot;</span>, <span class="ident">peer</span>);
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-                }
-
-                (
-                    <span class="ident">details</span>.<span class="ident">age</span>,
-                    <span class="prelude-val">Some</span>(<span class="ident">details</span>.<span class="ident">pub_id</span>),
-                    <span class="prelude-val">Some</span>(<span class="ident">details</span>.<span class="ident">destination_key</span>),
-                )
-            } <span class="kw">else</span> <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">joins_allowed</span> {
+        <span class="comment">// During the first section, node shall use ranged age to avoid too many nodes got</span>
+        <span class="comment">// relocated at the same time. After the first section got split, later on nodes shall</span>
+        <span class="comment">// only start with age of MIN_ADULT_AGE</span>
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_empty</span>() {
+            <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&lt;</span> <span class="ident">FIRST_SECTION_MIN_AGE</span> <span class="op">|</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&gt;</span> <span class="ident">FIRST_SECTION_MAX_AGE</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(
-                    <span class="string">&quot;Rejecting JoinRequest from {} - joins currently not allowed.&quot;</span>,
-                    <span class="ident">peer</span>,
-                );
-                <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">JoinResponse</span>::<span class="ident">Rejected</span>(
-                    <span class="ident">JoinRejectionReason</span>::<span class="ident">JoinsDisallowed</span>,
-                )));
-                <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
-                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_direct_message</span>(
-                    (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()),
-                    <span class="ident">variant</span>,
-                    <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
-                )<span class="question-mark">?</span>]);
-            } <span class="kw">else</span> {
-                <span class="comment">// Start as Adult as long as passed resource signeding.</span>
-                (<span class="ident">MIN_ADULT_AGE</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>)
-            };
-
-        <span class="comment">// Age differentiate only applies to the new node.</span>
-        <span class="kw">if</span> <span class="ident">join_request</span>.<span class="ident">relocate_payload</span>.<span class="ident">is_none</span>() {
-            <span class="comment">// During the first section, node shall use ranged age to avoid too many nodes got</span>
-            <span class="comment">// relocated at the same time. After the first section got split, later on nodes shall</span>
-            <span class="comment">// only start with age of MIN_ADULT_AGE</span>
-            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">is_empty</span>() {
-                <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&lt;</span> <span class="ident">FIRST_SECTION_MIN_AGE</span> <span class="op">|</span><span class="op">|</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">&gt;</span> <span class="ident">FIRST_SECTION_MAX_AGE</span> {
-                    <span class="macro">debug</span><span class="macro">!</span>(
-                        <span class="string">&quot;Ignoring JoinRequest from {} - first-section node having wrong age {:?}&quot;</span>,
-                        <span class="ident">peer</span>,
-                        <span class="ident">peer</span>.<span class="ident">age</span>(),
-                    );
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-                } <span class="kw">else</span> {
-                    <span class="ident">age</span> <span class="op">=</span> <span class="ident">peer</span>.<span class="ident">age</span>();
-                }
-            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">MIN_ADULT_AGE</span> {
-                <span class="comment">// After section split, new node has to join with age of MIN_ADULT_AGE.</span>
-                <span class="macro">debug</span><span class="macro">!</span>(
-                    <span class="string">&quot;Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}&quot;</span>,
+                    <span class="string">&quot;Ignoring JoinRequest from {} - first-section node having wrong age {:?}&quot;</span>,
                     <span class="ident">peer</span>,
                     <span class="ident">peer</span>.<span class="ident">age</span>(),
                 );
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+            } <span class="kw">else</span> {
+                <span class="ident">age</span> <span class="op">=</span> <span class="ident">peer</span>.<span class="ident">age</span>();
             }
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">age</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">MIN_ADULT_AGE</span> {
+            <span class="comment">// After section split, new node has to join with age of MIN_ADULT_AGE.</span>
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Ignoring JoinRequest from {} - non-first-section node having wrong age {:?}&quot;</span>,
+                <span class="ident">peer</span>,
+                <span class="ident">peer</span>.<span class="ident">age</span>(),
+            );
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
         <span class="comment">// Requires the node name matches the age.</span>
@@ -1354,20 +1347,117 @@
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
         }
 
-        <span class="comment">// Require resource signed only if joining as a new node.</span>
-        <span class="kw">if</span> <span class="ident">previous_name</span>.<span class="ident">is_none</span>() {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">response</span>) <span class="op">=</span> <span class="ident">join_request</span>.<span class="ident">resource_proof_response</span> {
-                <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">validate_resource_proof_response</span>(<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">response</span>) {
-                    <span class="macro">debug</span><span class="macro">!</span>(
-                        <span class="string">&quot;Ignoring JoinRequest from {} - invalid resource signed response&quot;</span>,
-                        <span class="ident">peer</span>
-                    );
-                    <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
-                }
-            } <span class="kw">else</span> {
-                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_resource_proof_challenge</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>)<span class="question-mark">?</span>]);
+        <span class="comment">// Require resource signed if joining as a new node.</span>
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">response</span>) <span class="op">=</span> <span class="ident">join_request</span>.<span class="ident">resource_proof_response</span> {
+            <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">validate_resource_proof_response</span>(<span class="ident">peer</span>.<span class="ident">name</span>(), <span class="ident">response</span>) {
+                <span class="macro">debug</span><span class="macro">!</span>(
+                    <span class="string">&quot;Ignoring JoinRequest from {} - invalid resource signed response&quot;</span>,
+                    <span class="ident">peer</span>
+                );
+                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
             }
+        } <span class="kw">else</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_resource_proof_challenge</span>(<span class="kw-2">&amp;</span><span class="ident">peer</span>)<span class="question-mark">?</span>]);
         }
+
+        <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">ProposeOnline</span> {
+            <span class="ident">peer</span>,
+            <span class="ident">previous_name</span>: <span class="prelude-val">None</span>,
+            <span class="ident">destination_key</span>: <span class="prelude-val">None</span>,
+        }])
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_join_as_relocated_request</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">peer</span>: <span class="ident">Peer</span>,
+        <span class="ident">join_request</span>: <span class="ident">JoinAsRelocatedRequest</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Received {:?} from {}&quot;</span>, <span class="ident">join_request</span>, <span class="ident">peer</span>);
+        <span class="kw">let</span> <span class="ident">payload</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">payload</span>) <span class="op">=</span> <span class="ident">join_request</span>.<span class="ident">relocate_payload</span> {
+            <span class="ident">payload</span>
+        } <span class="kw">else</span> {
+            <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(
+                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Retry</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">clone</span>()),
+            ));
+
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_direct_message</span>(
+                (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()),
+                <span class="ident">variant</span>,
+                <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+            )<span class="question-mark">?</span>]);
+        };
+
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="ident">peer</span>.<span class="ident">name</span>())
+            <span class="op">|</span><span class="op">|</span> <span class="ident">join_request</span>.<span class="ident">section_key</span> <span class="op">!</span><span class="op">=</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>()
+        {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;JoinAsRelocatedRequest from {} - name doesn&#39;t match our prefix {:?}.&quot;</span>,
+                <span class="ident">peer</span>,
+                <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
+            );
+
+            <span class="kw">let</span> <span class="ident">variant</span> <span class="op">=</span> <span class="ident">Variant</span>::<span class="ident">JoinAsRelocatedResponse</span>(<span class="ident">Box</span>::<span class="ident">new</span>(
+                <span class="ident">JoinAsRelocatedResponse</span>::<span class="ident">Retry</span>(<span class="self">self</span>.<span class="ident">section</span>.<span class="ident">authority_provider</span>().<span class="ident">clone</span>()),
+            ));
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;Sending {:?} to {}&quot;</span>, <span class="ident">variant</span>, <span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="self">self</span>.<span class="ident">send_direct_message</span>(
+                (<span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">name</span>(), <span class="kw-2">*</span><span class="ident">peer</span>.<span class="ident">addr</span>()),
+                <span class="ident">variant</span>,
+                <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">chain</span>().<span class="ident">last_key</span>(),
+            )<span class="question-mark">?</span>]);
+        }
+
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">members</span>().<span class="ident">is_joined</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Ignoring JoinAsRelocatedRequest from {} - already member of our section.&quot;</span>,
+                <span class="ident">peer</span>
+            );
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="comment">// This joining node is being relocated to us.</span>
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">payload</span>.<span class="ident">verify_identity</span>(<span class="ident">peer</span>.<span class="ident">name</span>()) {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Ignoring JoinAsRelocatedRequest from {} - invalid signature.&quot;</span>,
+                <span class="ident">peer</span>
+            );
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="kw">let</span> <span class="ident">details</span> <span class="op">=</span> <span class="ident">payload</span>.<span class="ident">relocate_details</span>()<span class="question-mark">?</span>;
+
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>().<span class="ident">matches</span>(<span class="kw-2">&amp;</span><span class="ident">details</span>.<span class="ident">destination</span>) {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Ignoring JoinAsRelocatedRequest from {} - destination {} doesn&#39;t match \
+                         our prefix {:?}.&quot;</span>,
+                <span class="ident">peer</span>,
+                <span class="ident">details</span>.<span class="ident">destination</span>,
+                <span class="self">self</span>.<span class="ident">section</span>.<span class="ident">prefix</span>()
+            );
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
+            .<span class="ident">verify_message</span>(<span class="ident">payload</span>.<span class="ident">details</span>.<span class="ident">signed_msg</span>())
+            .<span class="ident">unwrap_or</span>(<span class="bool-val">false</span>)
+        {
+            <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;Ignoring JoinAsRelocatedRequest from {} - untrusted.&quot;</span>, <span class="ident">peer</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="comment">// Requires the node name matches the age.</span>
+        <span class="kw">let</span> <span class="ident">age</span> <span class="op">=</span> <span class="ident">details</span>.<span class="ident">age</span>;
+        <span class="kw">if</span> <span class="ident">age</span> <span class="op">!</span><span class="op">=</span> <span class="ident">peer</span>.<span class="ident">age</span>() {
+            <span class="macro">debug</span><span class="macro">!</span>(
+                <span class="string">&quot;Ignoring JoinAsRelocatedRequest from {} - required age {:?} not presented.&quot;</span>,
+                <span class="ident">peer</span>, <span class="ident">age</span>,
+            );
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[]);
+        }
+
+        <span class="kw">let</span> <span class="ident">previous_name</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">details</span>.<span class="ident">pub_id</span>);
+        <span class="kw">let</span> <span class="ident">destination_key</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">details</span>.<span class="ident">destination_key</span>);
 
         <span class="prelude-val">Ok</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Command</span>::<span class="ident">ProposeOnline</span> {
             <span class="ident">peer</span>,
