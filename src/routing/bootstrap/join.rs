@@ -182,8 +182,7 @@ impl<'a> Join<'a> {
 
                     if prefix.matches(&self.node.name()) {
                         // After section split, new node must join with the age of MIN_ADULT_AGE.
-                        if !prefix.is_empty() && self.node.age() != MIN_ADULT_AGE
-                        {
+                        if !prefix.is_empty() && self.node.age() != MIN_ADULT_AGE {
                             let new_keypair =
                                 ed25519::gen_keypair(&prefix.range_inclusive(), MIN_ADULT_AGE);
                             let new_name = ed25519::name(&new_keypair.public);
@@ -349,16 +348,33 @@ impl<'a> Join<'a> {
                 | JoinResponse::Rejected(JoinRejectionReason::JoinsDisallowed) => {
                     return Ok((join_response, sender, dest_info));
                 }
-                JoinResponse::Retry(ref section_auth)
-                | JoinResponse::Redirect(ref section_auth) => {
+                JoinResponse::Retry(ref section_auth) => {
                     if !section_auth.prefix.matches(&destination) {
-                        error!("Invalid JoinResponse bad prefix: {:?}", join_response);
+                        error!(
+                            "Invalid JoinResponse::Retry bad prefix: {:?}",
+                            join_response
+                        );
                         continue;
                     }
 
                     if section_auth.elders.is_empty() {
                         error!(
-                            "Invalid JoinResponse, empty list of Elders: {:?}",
+                            "Invalid JoinResponse::Retry, empty list of Elders: {:?}",
+                            join_response
+                        );
+                        continue;
+                    }
+
+                    if !verify_message(&routing_msg, None) {
+                        continue;
+                    }
+
+                    return Ok((join_response, sender, dest_info));
+                }
+                JoinResponse::Redirect(ref section_auth) => {
+                    if section_auth.elders.is_empty() {
+                        error!(
+                            "Invalid JoinResponse::Redirect, empty list of Elders: {:?}",
                             join_response
                         );
                         continue;

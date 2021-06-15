@@ -30,12 +30,10 @@ async fn send_message(comm: &Comm, message: MessageType, recipients: Vec<(XorNam
         Ok(SendStatus::MinDeliveryGroupSizeFailed(recipients)) => {
             error!("Failed to send message {:?} to {:?}", message, recipients)
         }
-        Err(err) => {
-            error!(
-                "Failed to send message {:?} to {:?}: {:?}",
-                message, recipients, err
-            )
-        }
+        Err(err) => error!(
+            "Failed to send message {:?} to {:?}: {:?}",
+            message, recipients, err
+        ),
     }
 }
 
