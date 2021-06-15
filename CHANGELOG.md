@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.77.4](https://github.com/maidsafe/sn_routing/compare/v0.77.3...v0.77.4) (2021-06-15)
+
+
+### Bug Fixes
+
+* avoid dropping JoinResponse::Redirect mistakenly ([b60510e](https://github.com/maidsafe/sn_routing/commit/b60510eeaa8bfcc128106bcfc7143fc33bdaa302))
+* new node after section split retry with MIN_ADULT_AGE ([e4238b6](https://github.com/maidsafe/sn_routing/commit/e4238b6830c44c3ebf8da30082f5f27d9fb5162a))
+
 ### [0.77.3](https://github.com/maidsafe/sn_routing/compare/v0.77.2...v0.77.3) (2021-06-15)
 
 ### [0.77.2](https://github.com/maidsafe/sn_routing/compare/v0.77.1...v0.77.2) (2021-06-14)
