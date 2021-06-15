@@ -249,26 +249,23 @@ impl Core {
         };
         let src_name = msg.src.name();
 
-        match &msg.variant {
+        match msg.variant {
             Variant::SectionKnowledge { src_info, msg } => {
-                let src_info = src_info.clone();
                 self.update_section_knowledge(src_info.0, src_info.1);
-                if let Some(bounced_msg) = msg {
+                if let Some(message) = msg {
                     Ok(vec![Command::HandleMessage {
                         sender,
-                        message: *bounced_msg.clone(),
+                        message: *message,
                         dest_info,
                     }])
                 } else {
                     Ok(vec![])
                 }
             }
-            Variant::Sync { section, network } => {
-                self.handle_sync(section.clone(), network.clone()).await
-            }
+            Variant::Sync { section, network } => self.handle_sync(section, network).await,
             Variant::Relocate(_) => {
                 if msg.src.is_section() {
-                    let signed_relocate = SignedRelocateDetails::new(msg.clone())?;
+                    let signed_relocate = SignedRelocateDetails::new(msg)?;
                     Ok(self
                         .handle_relocate(signed_relocate)
                         .await?
@@ -278,19 +275,17 @@ impl Core {
                     Err(Error::InvalidSrcLocation)
                 }
             }
-            Variant::RelocatePromise(promise) => {
-                self.handle_relocate_promise(*promise, msg.clone()).await
-            }
-            Variant::StartConnectivityTest(name) => Ok(vec![Command::TestConnectivity(*name)]),
+            Variant::RelocatePromise(promise) => self.handle_relocate_promise(promise, msg).await,
+            Variant::StartConnectivityTest(name) => Ok(vec![Command::TestConnectivity(name)]),
             Variant::JoinRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                self.handle_join_request(msg.src.peer(sender)?, *join_request.clone())
+                self.handle_join_request(msg.src.peer(sender)?, *join_request)
             }
             Variant::JoinAsRelocatedRequest(join_request) => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
-                self.handle_join_as_relocated_request(msg.src.peer(sender)?, *join_request.clone())
+                self.handle_join_as_relocated_request(msg.src.peer(sender)?, *join_request)
             }
-            Variant::UserMessage(content) => {
+            Variant::UserMessage(ref content) => {
                 let bytes = Bytes::from(content.clone());
                 self.handle_user_message(msg, bytes).await
             }
@@ -302,7 +297,7 @@ impl Core {
                 Ok(vec![self.handle_bounced_untrusted_message(
                     msg.src.peer(sender)?,
                     dest_info.dest_section_pk,
-                    *bounced_msg.clone(),
+                    *bounced_msg,
                 )?])
             }
             Variant::SectionKnowledgeQuery {
@@ -311,8 +306,8 @@ impl Core {
             } => {
                 let sender = sender.ok_or(Error::InvalidSrcLocation)?;
                 Ok(vec![self.handle_section_knowledge_query(
-                    *last_known_key,
-                    returned_msg.clone(),
+                    last_known_key,
+                    returned_msg,
                     sender,
                     src_name,
                     msg.src.src_location().to_dst(),
@@ -321,27 +316,27 @@ impl Core {
             Variant::DkgStart {
                 dkg_key,
                 elder_candidates,
-            } => self.handle_dkg_start(*dkg_key, elder_candidates.clone()),
+            } => self.handle_dkg_start(dkg_key, elder_candidates),
             Variant::DkgMessage { dkg_key, message } => {
-                self.handle_dkg_message(*dkg_key, message.clone(), src_name)
+                self.handle_dkg_message(dkg_key, message, src_name)
             }
             Variant::DkgFailureObservation {
                 dkg_key,
                 signed,
                 non_participants,
-            } => self.handle_dkg_failure_observation(*dkg_key, non_participants, *signed),
+            } => self.handle_dkg_failure_observation(dkg_key, &non_participants, signed),
             Variant::DkgFailureAgreement(signeds) => {
-                self.handle_dkg_failure_agreement(&msg.src.name(), signeds)
+                self.handle_dkg_failure_agreement(&src_name, &signeds)
             }
             Variant::Propose {
                 content,
                 signed_share,
             } => {
                 let mut commands = vec![];
-                let result = self.handle_proposal(content.clone(), signed_share.clone());
+                let result = self.handle_proposal(content, signed_share.clone());
 
                 if let Some(addr) = sender {
-                    commands.extend(self.check_lagging((src_name, addr), signed_share)?);
+                    commands.extend(self.check_lagging((src_name, addr), &signed_share)?);
                 }
 
                 commands.extend(result?);
